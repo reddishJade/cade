@@ -10,10 +10,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Awaitable, cast
 
 from xcode.ai.events import (
     FinalMessage,
@@ -26,15 +26,8 @@ from xcode.ai.events import (
     UsageUpdate,
 )
 from xcode.ai.providers.base import StreamProvider
-from xcode.ai.providers._codec import provider_function_name
-from xcode.ai.types import ToolDefinition
-from xcode.agent.context import (
-    ContextAssemblyInput,
-    ContextBlock,
-    ContextCollectionInput,
-)
+from xcode.ai.types import StreamOptions, ToolDefinition
 from xcode.agent.types import (
-    AgentTool,
     CancellationSignal,
     ContentBlock,
     TextContent,
@@ -64,69 +57,79 @@ async def call_provider(
     metrics: AgentLoopMetrics,
     provider: StreamProvider,
     current_step: int = 0,
-) -> _ProviderResponse:
-    messages = context.messages
-    blocks: list[ContextBlock] = []
-
-    # 1. 收集阶段：仅当有 assembler 消费时才运行 collector
-    if config.context_collectors and config.context_assembler:
-        collect_input = ContextCollectionInput(
-            system_prompt=context.system_prompt,
-            messages=messages,
-            tools=list(context.tools or []),
-            current_step=current_step,
-        )
-        blocks = config.context_collectors.collect(collect_input)
-
-    # 2. 组装阶段：将 blocks 注入消息列表
-    if config.context_assembler:
-        assembly_input = ContextAssemblyInput(
-            system_prompt=context.system_prompt,
-            messages=messages,
-            tools=list(context.tools or []),
-            context_blocks=blocks,
-            current_step=current_step,
-        )
-        assembly_result = config.context_assembler.assemble(assembly_input)
-        messages = assembly_result.messages
-
-    # 3. 旧版 transform_context 仍保留
-    if config.transform_context:
-        messages = config.transform_context(messages, signal)
-
-    convert_fn = config.convert_to_llm or (lambda msgs: [])
-    llm_messages = convert_fn(messages)
-    tool_definitions = _tools_to_definitions(context.tools)
+) -> _ProviderResponse | None:
+    """调用 provider；若流式生成期间被打断则返回 None。"""
+    assembly = config.request_assembler.assemble(
+        context,
+        current_step=current_step,
+        options=config.options,
+    )
     if config.before_provider_request:
-        config.before_provider_request(llm_messages, tool_definitions)
+        config.before_provider_request(assembly)
 
     started = perf_counter()
     events = await _collect_provider_events(
         provider,
-        llm_messages,
-        tool_definitions,
-        config,
+        list(assembly.wire_messages),
+        list(assembly.tools),
+        assembly.options,
         emit,
+        signal,
     )
     elapsed = round((perf_counter() - started) * 1000, 3)
     metrics.model_latencies_ms.append(elapsed)
+    if events is None:
+        return None
     return _provider_events_to_response(events, metrics, lambda _event: None)
+
+
+def _is_cancelled(signal: CancellationSignal | None) -> bool:
+    return signal is not None and signal.is_cancelled()
+
+
+def _abort_inflight_stream(provider: StreamProvider) -> None:
+    """尽力中止在途 HTTP 流：关闭底层连接使阻塞读取立刻失败。"""
+    abort = getattr(provider, "abort_active_stream", None)
+    if not callable(abort):
+        return
+    try:
+        abort()
+    except Exception:
+        pass
+
+
+async def _aclose_stream(stream_iter: AsyncIterator[ProviderEvent]) -> None:
+    """尽快关闭异步流迭代器，让底层生成器的清理逻辑及时执行。"""
+    aclose = getattr(stream_iter, "aclose", None)
+    if not callable(aclose):
+        return
+    try:
+        await cast(Awaitable[None], aclose())
+    except Exception:
+        pass
 
 
 async def _collect_provider_events(
     provider: StreamProvider,
     llm_messages: list[Message],
     tool_definitions: list[ToolDefinition],
-    config: AgentLoopConfig,
+    options: StreamOptions | None,
     emit: Callable[[AgentEvent], None],
-) -> list[ProviderEvent]:
+    signal: CancellationSignal | None = None,
+) -> list[ProviderEvent] | None:
+    """逐事件收集 provider 流；取消时中止在途请求并返回 None。"""
     events: list[ProviderEvent] = []
     text_parts: list[str] = []
     try:
         kwargs = {}
-        if config.options is not None:
-            kwargs["options"] = config.options
-        async for event in provider.stream(llm_messages, tool_definitions, **kwargs):
+        if options is not None:
+            kwargs["options"] = options
+        stream_iter = provider.stream(llm_messages, tool_definitions, **kwargs)
+        async for event in stream_iter:
+            if _is_cancelled(signal):
+                _abort_inflight_stream(provider)
+                await _aclose_stream(stream_iter)
+                return None
             events.append(event)
             if isinstance(event, TextDelta):
                 _append_text_delta(text_parts, event, emit)
@@ -136,6 +139,9 @@ async def _collect_provider_events(
                 await asyncio.sleep(0)
         return events
     except Exception as e:
+        if _is_cancelled(signal):
+            # 打断触发的连接关闭会使阻塞读取抛出异常，属预期路径。
+            return None
         events.append(FinalMessage(content=f"Provider error: {e}", stop_reason="error"))
         return events
 
@@ -225,32 +231,3 @@ def _tool_call_content_blocks(event: ToolCallEvent) -> list[ToolCallContent]:
         )
         for call in event.calls
     ]
-
-
-def _tools_to_definitions(tools: list[AgentTool] | None) -> list[ToolDefinition]:
-    if not tools:
-        return []
-    result: list[ToolDefinition] = []
-    for t in tools:
-        desc = t.description
-        examples = getattr(t, "examples", [])
-        if examples:
-            example_lines = ["\n", "Examples:"]
-            for ex in examples:
-                example_lines.append(
-                    f"  - {ex.get('name', '')}: "
-                    f"input={json.dumps(ex.get('input', {}), ensure_ascii=False)}, "
-                    f'output="{ex.get("output", "")}"'
-                )
-            desc += "\n".join(example_lines)
-        builtin = getattr(t, "builtin", None)
-        provider_name = provider_function_name(t.name)
-        result.append(
-            ToolDefinition(
-                name=provider_name,
-                description=desc,
-                parameters=dict(t.parameters),
-                builtin=builtin if isinstance(builtin, dict) else None,
-            )
-        )
-    return result

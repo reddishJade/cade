@@ -29,8 +29,6 @@ from xcode.ai.models import get_models, get_providers
 from .repl_sessions import (
     print_saved_conversation,
     resume_interactively,
-    sync_agent_history,
-    sync_compaction_source,
 )
 from .repl_skills import (
     activate_skill,
@@ -38,7 +36,6 @@ from .repl_skills import (
     parse_skill_invocation,
 )
 from .repl_tools import (
-    event_to_dict,
     file_reference_event,
     final_stop_reason,
     run_shell_shortcut,
@@ -151,9 +148,19 @@ def current_model_options(app: object) -> tuple[str, ...]:
     return tuple(all_models)
 
 
+def _sync_mode_from_agent(app: ReplApp, state: ReplState) -> None:
+    """让 CLI 侧模式与 agent harness 保持一致。
+
+    新会话取配置的默认模式，恢复会话取 transcript 中持久化的模式。
+    """
+    agent = getattr(app, "agent", None)
+    mode = getattr(agent, "current_mode", None)
+    if mode in {"plan", "build", "act"}:
+        state.mode = mode
+
+
 def run_repl(
     app: ReplApp,
-    sessions_dir: Path,
     prompt_session: PromptLike | None = None,
     resume_latest: bool = False,
     auto_continue: bool = False,
@@ -162,8 +169,8 @@ def run_repl(
     project_root: Path | None = None,
 ) -> int:
     _suppress_windows_ptk_shutdown_noise()
-    root = (project_root or sessions_dir).resolve()
-    store = SessionStore(sessions_dir, project_root=root)
+    root = (project_root or Path.cwd()).resolve()
+    store = app.session_store
     markdown_renderer = renderer or TerminalMarkdownRenderer()
     registry = tuple(getattr(app, "registry", ()) or ())
 
@@ -189,7 +196,8 @@ def run_repl(
         pass
     agent = getattr(app, "agent", None)
     if agent is not None:
-        agent.approval_callback = hitl_handler
+        if getattr(agent, "approval_policy", "on-request") == "on-request":
+            agent.user_approval_callback = hitl_handler
         agent.session_id = store.session_id
         if hasattr(agent, "set_session_grant_store_provider"):
             agent.set_session_grant_store_provider(
@@ -234,16 +242,33 @@ def run_repl(
 
     elif resume_latest:
         resume_interactively(store, session)
-        sync_agent_history(app, store)
+        app.restore_session()
 
     if selected_view is not None:
         from .repl_sessions import resumed_message, print_loaded_history
 
         print(resumed_message(selected_view))
         print_loaded_history(store)
-        sync_agent_history(app, store)
+        app.restore_session()
+
+    _sync_mode_from_agent(app, state)
 
     while True:
+        if app.agent.has_pending_input():
+            _run_snapshotted_turn(
+                _AgentTurnContext(
+                    app=app,
+                    store=store,
+                    renderer=markdown_renderer,
+                    state=state,
+                    session=session,
+                    project_root=root,
+                    text=None,
+                    display_text=None,
+                ),
+                snapshot_store,
+            )
+            continue
         text, should_exit = _read_repl_text(state, session, store)
         if should_exit:
             return 0
@@ -290,9 +315,6 @@ def run_repl(
             _print_raw_output(output)
             continue
 
-        message_id = store.append("user", text)
-        sync_compaction_source(app, store, message_id)
-
         expanded_text, references = expand_file_references(text, root)
         if references:
             store.append("event", file_reference_event(references))
@@ -302,12 +324,11 @@ def run_repl(
             renderer=markdown_renderer,
             state=state,
             session=session,
+            project_root=root,
             text=expanded_text,
+            display_text=text,
         )
         _run_snapshotted_turn(ctx, snapshot_store)
-        follow_up = app.agent.take_follow_up()
-        if follow_up is not None:
-            state.pending_inject = str(follow_up.content)
 
 
 def _read_repl_text(
@@ -316,11 +337,6 @@ def _read_repl_text(
     store: SessionStore,
 ) -> tuple[str | None, bool]:
     """读取下一条输入，并统一处理双击 Ctrl+C 退出。"""
-    if state.pending_inject is not None:
-        text = state.pending_inject
-        state.pending_inject = None
-        return text or None, False
-
     try:
         prompt_text: PromptText = (
             ""
@@ -392,7 +408,9 @@ class _AgentTurnContext:
     renderer: MarkdownRenderer
     state: ReplState
     session: PromptLike
-    text: str
+    project_root: Path
+    text: str | None
+    display_text: str | None
 
 
 def _run_agent_turn(ctx: _AgentTurnContext) -> list[str]:
@@ -404,12 +422,12 @@ def _run_agent_turn(ctx: _AgentTurnContext) -> list[str]:
         ctx.state.pending_partial = None
         if partial_text:
             agent = getattr(ctx.app, "agent", None)
-            steer = getattr(agent, "steer", None)
-            if callable(steer):
+            inject = getattr(agent, "inject", None)
+            if callable(inject):
                 from xcode.agent.messages import AssistantMessage
                 from xcode.agent.types import TextContent
 
-                steer(
+                inject(
                     AssistantMessage(
                         content=[
                             TextContent(
@@ -424,7 +442,7 @@ def _run_agent_turn(ctx: _AgentTurnContext) -> list[str]:
                     f"[Context: assistant was interrupted mid-response]\n"
                     f"{partial_text}\n"
                     f"[end of partial response]\n"
-                    f"{text}"
+                    f"{text or ''}"
                 )
 
     try:
@@ -432,15 +450,11 @@ def _run_agent_turn(ctx: _AgentTurnContext) -> list[str]:
         if not callable(ask_stream):
             raise TypeError("app does not support ask_stream")
         typed_ask_stream = cast(Callable[..., Iterator[AgentHarnessEvent]], ask_stream)
-        for event in typed_ask_stream(text, mode=ctx.state.mode):
-            # ponytail: 只记录有意义的事件，不存流式碎片
-            if event.type not in {
-                "message_start",
-                "message_stop",
-                "reasoning_delta",
-                "text_delta",
-            }:
-                ctx.store.append("event", event_to_dict(event))
+        for event in typed_ask_stream(
+            text,
+            mode=ctx.state.mode,
+            display_question=ctx.display_text,
+        ):
             turn.handle_event(event)
     except KeyboardInterrupt:
         turn.interrupted = True
@@ -461,9 +475,12 @@ def _run_agent_turn(ctx: _AgentTurnContext) -> list[str]:
             except (EOFError, KeyboardInterrupt):
                 inject_text = ""
             if inject_text:
-                ctx.state.pending_inject = inject_text
-                message_id = ctx.store.append("user", inject_text)
-                sync_compaction_source(ctx.app, ctx.store, message_id)
+                from xcode.agent.messages import UserMessage
+
+                ctx.app.agent.followup(
+                    UserMessage(content=inject_text),
+                    display_text=inject_text,
+                )
             else:
                 ctx.state.pending_partial = None
                 print("[interrupt cancelled]")
@@ -475,11 +492,17 @@ def _run_agent_turn(ctx: _AgentTurnContext) -> list[str]:
 
     if turn.stopped_reason:
         print(turn.stopped_reason)
-    if turn.step_answers:
-        answer = "\n\n".join(turn.step_answers)
-        ctx.store.append("assistant", answer)
-        ctx.store.update_summary()
+    _refresh_context_summary(ctx)
     return turn.tool_names_in_turn
+
+
+def _refresh_context_summary(ctx: _AgentTurnContext) -> None:
+    """回合结束后更新底栏的上下文与用量统计。"""
+    from .repl_commands import _compute_context_summary
+
+    agent = getattr(ctx.app, "agent", None)
+    if agent is not None:
+        _compute_context_summary(agent, ctx.project_root, ctx.state)
 
 
 class _ReplTurnRenderer:

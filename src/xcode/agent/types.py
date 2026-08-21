@@ -6,9 +6,9 @@ import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import json
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from xcode.ai.types import ToolArguments
 
@@ -84,6 +84,66 @@ type QueueMode = Literal["all", "one-at-a-time"]
 type ToolExecutionMode = Literal["sequential", "parallel"]
 type ToolResultDetails = object
 
+
+class TerminalRenderIntent(BaseModel):
+    """将工具结果呈现为一次本地终端执行。"""
+
+    kind: Literal["terminal"] = "terminal"
+    command: str
+    cwd: str
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class DiffRenderIntent(BaseModel):
+    """将工具结果呈现为结构化文件差异。"""
+
+    kind: Literal["diff"] = "diff"
+    patch: str
+    files: tuple[str, ...] = ()
+    first_changed_line: int | None = None
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class LocationRenderIntent(BaseModel):
+    """将工具结果关联到文件或目录位置。"""
+
+    kind: Literal["location"] = "location"
+    path: str
+    line_start: int | None = None
+    line_end: int | None = None
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class SubagentRenderIntent(BaseModel):
+    """将工具结果关联到一批可追踪的子代理运行。"""
+
+    kind: Literal["subagent"] = "subagent"
+    batch_id: str
+    run_ids: tuple[str, ...]
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+type ToolRenderIntent = Annotated[
+    TerminalRenderIntent
+    | DiffRenderIntent
+    | LocationRenderIntent
+    | SubagentRenderIntent,
+    Field(discriminator="kind"),
+]
+
+_TOOL_RENDER_INTENT_ADAPTER = TypeAdapter(ToolRenderIntent)
+
+
+def parse_tool_render_intent(value: object) -> ToolRenderIntent | None:
+    """从持久化事件解码严格的工具呈现意图。"""
+    if value is None:
+        return None
+    try:
+        return _TOOL_RENDER_INTENT_ADAPTER.validate_python(value)
+    except ValidationError:
+        return None
+
+
 type ContentBlock = (
     TextContent | ImageContent | FileContent | ToolCallContent | ThinkingContent
 )
@@ -101,6 +161,7 @@ class AgentToolResult:
     details: ToolResultDetails | None = None
     is_error: bool = False
     terminate: bool = False
+    render_intent: ToolRenderIntent | None = None
 
     def __init__(
         self,
@@ -108,11 +169,13 @@ class AgentToolResult:
         details: ToolResultDetails | None = None,
         is_error: bool = False,
         terminate: bool = False,
+        render_intent: ToolRenderIntent | None = None,
     ) -> None:
         self.content = content or []
         self.details = details
         self.is_error = is_error
         self.terminate = terminate
+        self.render_intent = render_intent
 
 
 type ToolUpdateCallback = Callable[[AgentToolResult], None]
@@ -132,6 +195,9 @@ class ApprovalRequest:
     action_input: ToolInput
     allowed_scopes: tuple[ApprovalScope, ...]
     reason: str
+    transcript: str = ""
+    working_directory: str = ""
+    turn_id: str = ""
 
 
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
@@ -153,16 +219,19 @@ class ToolOutput(str):
 
     metadata: dict[str, object]
     is_error: bool
+    render_intent: ToolRenderIntent | None
 
     def __new__(
         cls,
         content: str,
         metadata: Mapping[str, object] | None = None,
         is_error: bool = False,
+        render_intent: ToolRenderIntent | None = None,
     ) -> "ToolOutput":
         output = str.__new__(cls, content)
         output.metadata = dict(metadata) if metadata else {}
         output.is_error = is_error
+        output.render_intent = render_intent
         return output
 
 
@@ -174,9 +243,24 @@ class ToolSpec:
     description: str
     input_hint: str
     handler: ActionHandler
-    schema: dict[str, Any] | None = None
+    schema: Mapping[str, Any] | None = None
     prompt_snippet: str | None = None
     prompt_guidelines: tuple[str, ...] = ()
+
+
+def materialize_json_mapping(value: object) -> dict[str, object]:
+    """把只读 JSON 映射递归转换为库可识别的普通容器。"""
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): _materialize_json_value(item) for key, item in value.items()}
+
+
+def _materialize_json_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return materialize_json_mapping(value)
+    if isinstance(value, list | tuple):
+        return [_materialize_json_value(item) for item in value]
+    return value
 
 
 AGENT_CONTENT_BLOCKS_METADATA_KEY = "agent_content_blocks"
@@ -267,8 +351,10 @@ class ToolSpecAdapter:
             self._spec.handler, dict(params), _text_update
         )
         metadata = getattr(content, "metadata", None)
+        render_intent = getattr(content, "render_intent", None)
         return AgentToolResult(
             content=[TextContent(text=str(content))],
             details=metadata if isinstance(metadata, dict) else None,
             is_error=bool(getattr(content, "is_error", False)),
+            render_intent=render_intent,
         )

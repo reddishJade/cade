@@ -272,8 +272,8 @@ def make_bottom_toolbar(
         parts.append(f"mode: {state.mode}")
         if state.context_usage:
             parts.append(f"context: {state.context_usage}")
-        if state.context_cost:
-            parts.append(f"cost: {state.context_cost}")
+        if state.usage_stats:
+            parts.append(f"usage: {state.usage_stats}")
         return "  ".join(parts)
 
     return toolbar
@@ -338,7 +338,7 @@ def create_prompt_session(
     try:
         from prompt_toolkit.history import FileHistory
 
-        history_dir = (project_root or Path.cwd()) / ".local"
+        history_dir = (project_root or Path.cwd()) / ".xcode"
         history_dir.mkdir(parents=True, exist_ok=True)
         history = FileHistory(str(history_dir / "repl_history"))
     except OSError:

@@ -33,6 +33,7 @@ def _build_config_parser(subparsers) -> None:
             "  chat_model        Model ID, e.g. deepseek-v4-flash, gpt-5.5\n"
             "  base_url          API base URL\n"
             "  api_key           API key (or set via env var instead)\n"
+            "  context_window    Context window token override (int, e.g. 262144)\n"
             "  thinking          Enable reasoning mode (true/false)\n"
             "  reasoning_effort  Level: off/minimal/low/medium/high/xhigh/max\n"
             "  clear_thinking    Strip thinking tags from output (true/false)\n"
@@ -76,7 +77,8 @@ def _build_config_parser(subparsers) -> None:
             "Set a single field value in a profile without interactive prompts. "
             "Useful for quick changes or scripting.\n\n"
             "Available fields: transport, chat_model, base_url, api_key, "
-            "thinking (bool), reasoning_effort, clear_thinking (bool), tool_stream (bool)"
+            "context_window (int), thinking (bool), reasoning_effort, "
+            "clear_thinking (bool), tool_stream (bool)"
         ),
     )
     set_p.add_argument("name", help="Profile name")
@@ -180,20 +182,19 @@ def main() -> int:
 
 
 def _run(args, runtime_config) -> int:
-    app = _build_app_from_config(args.project_root, runtime_config)
-    if args.prompt:
-        _print_stream(app.ask_stream(args.prompt))
-        return 0
     sessions_dir = (
         args.sessions_dir
         or resolve_config_path(args.project_root, runtime_config.paths.sessions_dir)
-        or (args.project_root / ".local" / "sessions")
+        or (args.project_root / ".xcode" / "sessions")
     )
+    app = _build_app_from_config(args.project_root, runtime_config, sessions_dir)
+    if args.prompt:
+        _print_stream(app.ask_stream(args.prompt))
+        return 0
     if args.command == "tui":
         return run_tui(
             app,
             args.project_root,
-            sessions_dir,
             session_id=args.session,
             auto_continue=args.continue_,
             resume_latest=args.resume,
@@ -202,34 +203,33 @@ def _run(args, runtime_config) -> int:
         if args.session:
             return run_repl(
                 app,
-                sessions_dir,
                 session_id=args.session,
                 project_root=args.project_root,
             )
         if args.continue_:
-            return run_repl(
-                app, sessions_dir, auto_continue=True, project_root=args.project_root
-            )
+            return run_repl(app, auto_continue=True, project_root=args.project_root)
         if args.resume:
-            return run_repl(
-                app, sessions_dir, resume_latest=True, project_root=args.project_root
-            )
-        return run_repl(app, sessions_dir, project_root=args.project_root)
+            return run_repl(app, resume_latest=True, project_root=args.project_root)
+        return run_repl(app, project_root=args.project_root)
 
     return run_tui(
         app,
         args.project_root,
-        sessions_dir,
         session_id=args.session,
         auto_continue=args.continue_,
         resume_latest=args.resume,
     )
 
 
-def _build_app_from_config(project_root: Path, runtime_config):
+def _build_app_from_config(
+    project_root: Path,
+    runtime_config,
+    sessions_dir: Path,
+):
     return build_app(
         project_root=project_root,
         runtime_config=runtime_config,
+        sessions_dir=sessions_dir,
     )
 
 

@@ -14,6 +14,7 @@ from xcode.coding_agent.execution_modes import ExecutionMode
 from xcode.harness.observability import ExternalHookDiagnostic
 from xcode.harness.skill_activation import ExplicitSkillActivationResult
 from xcode.agent.types import ApprovalCallback, ToolSpec
+from xcode.harness.session import SessionStore
 
 
 class ToolRegistryApp(Protocol):
@@ -23,25 +24,46 @@ class ToolRegistryApp(Protocol):
 
 class ReplAgent(Protocol):
     @property
-    def approval_callback(self) -> ApprovalCallback | None: ...
-    @approval_callback.setter
-    def approval_callback(self, value: ApprovalCallback | None) -> None: ...
+    def current_approval_callback(self) -> ApprovalCallback | None: ...
+
+    @property
+    def user_approval_callback(self) -> ApprovalCallback | None: ...
+
+    @user_approval_callback.setter
+    def user_approval_callback(self, value: ApprovalCallback | None) -> None: ...
+
+    @property
+    def auto_approval_callback(self) -> ApprovalCallback | None: ...
 
     cancellation_token: CancellationToken
 
-    def try_steer(self, msg: UserMessage) -> bool: ...
+    def steer(
+        self,
+        msg: UserMessage,
+        *,
+        display_text: str | None = None,
+    ) -> SubmitOutcome: ...
 
-    def follow_up(self, msg: UserMessage) -> bool: ...
+    def followup(
+        self,
+        msg: UserMessage,
+        *,
+        display_text: str | None = None,
+    ) -> SubmitOutcome: ...
+
+    def inject(self, msg: AgentMessage) -> SubmitOutcome: ...
 
     def submit_busy_message(
         self,
         msg: UserMessage,
         mode: BusyMessageMode = BusyMessageMode.STEER,
+        *,
+        display_text: str | None = None,
     ) -> SubmitOutcome: ...
 
     def interrupt(self, reason: str = "interrupted by user") -> bool: ...
 
-    def take_follow_up(self) -> UserMessage | None: ...
+    def has_pending_input(self) -> bool: ...
 
     def load_history(self, messages: list[AgentMessage]) -> None: ...
 
@@ -97,8 +119,28 @@ class ReplApp(ModelControlApp, ToolRegistryApp, Protocol):
     @property
     def registry(self) -> tuple[ToolSpec, ...]: ...
 
+    @property
+    def session_store(self) -> SessionStore: ...
+
     def ask_stream(
-        self, question: str, mode: ExecutionMode | None = None
+        self,
+        question: str | None,
+        mode: ExecutionMode | None = None,
+        *,
+        display_question: str | None = None,
     ) -> Iterator[AgentHarnessEvent]: ...
 
+    def restore_session(self) -> None: ...
+
     def hook_diagnostics(self) -> tuple[ExternalHookDiagnostic, ...]: ...
+
+    def record_compaction(
+        self,
+        *,
+        summary: str,
+        messages_before: int,
+        messages_after: int,
+        tokens_before: int,
+        tokens_after: int,
+        replacement: list[AgentMessage],
+    ) -> str: ...

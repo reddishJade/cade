@@ -1,8 +1,8 @@
 """树结构会话存储：每条 entry 带 id/parent_id，支持会话内分支。
 
 文件格式：每个会话一个 .jsonl 文件，每行是一个树 entry：
-  {"id":"e1","parent_id":null,"type":"user","content":"...","created_at":"..."}
-  {"id":"e2","parent_id":"e1","type":"assistant","content":"...","created_at":"..."}
+  {"id":"e1","parent_id":null,"type":"event","content":{"type":"inbox/inserted",...}}
+  {"id":"e2","parent_id":"e1","type":"event","content":{"type":"inbox/claimed",...}}
 
 head_id 记录在 session_index.json 的 metadata 中。
 分支只需在同文件中追加不同 parent_id 的 entry。
@@ -21,13 +21,13 @@ from uuid import uuid4
 import filelock
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from ..skill_activation import is_skill_activation_content
 from .types import (
     JsonValue,
     SessionEntry,
     SessionInfoView,
     TreeNode,
 )
+from .schema import SESSION_EVENT_SCHEMA_VERSION
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 SUMMARY_USER_CHARS = 120
@@ -83,7 +83,7 @@ class TreeSessionRepo:
             timeout=lock_timeout_seconds,
         )
         self.current_path = self._new_path()
-        self.artifacts_dir = self.project_root / ".local" / "session_artifacts"
+        self.artifacts_dir = self.project_root / ".xcode" / "session_artifacts"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 公共 API ──
@@ -106,8 +106,6 @@ class TreeSessionRepo:
             )
             with self.current_path.open("a", encoding="utf-8") as f:
                 f.write(entry.model_dump_json() + "\n")
-            if record_type == "user":
-                self.ensure_metadata(str(content))
             self._save_head_id(entry_id)
             return entry_id
 
@@ -181,6 +179,33 @@ class TreeSessionRepo:
         fork.artifacts_dir = self.artifacts_dir
         return fork
 
+    def spawn_child(self, title: str, summary: str = "") -> TreeSessionRepo:
+        """创建空的直接子会话，并在索引中持久化 lineage。"""
+        parent = self.ensure_metadata()
+        with self._lock:
+            child_path = self._new_path()
+            child_path.touch(exist_ok=False)
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            metadata = TreeMetadata(
+                id=self._session_id(child_path),
+                title=title,
+                summary=summary or "Subagent session started.",
+                project_path=parent.project_path,
+                transcript_path=str(child_path),
+                created_at=now,
+                updated_at=now,
+                parent_id=parent.id,
+            )
+            self._upsert_metadata(metadata)
+        child = TreeSessionRepo.__new__(TreeSessionRepo)
+        child.sessions_dir = self.sessions_dir
+        child.project_root = self.project_root
+        child.index_path = self.index_path
+        child._lock = self._lock
+        child.current_path = child_path
+        child.artifacts_dir = self.artifacts_dir
+        return child
+
     def clear(self) -> None:
         with self._lock:
             self.current_path = self._new_path()
@@ -209,7 +234,11 @@ class TreeSessionRepo:
         """回退指定轮次：将 head_id 往回移动。"""
         with self._lock:
             branch = self.build_branch()
-            user_indices = [i for i, e in enumerate(branch) if e.type == "user"]
+            user_indices = [
+                i
+                for i, entry in enumerate(branch)
+                if _claimed_user_text(entry) is not None
+            ]
             if not user_indices:
                 return 0
             target_idx = max(0, len(user_indices) - turns)
@@ -218,47 +247,9 @@ class TreeSessionRepo:
             return len(user_indices) - target_idx
 
     def user_turn_count(self) -> int:
-        return sum(1 for e in self.read_entries() if e.type == "user")
-
-    def compact_current_session(self, max_tool_result_chars: int = 200) -> int:
-        """压缩当前会话，截断过长工具结果。"""
-        with self._lock:
-            entries = self.read_entries()
-            if not entries:
-                return 0
-            compacted = 0
-            new_data: list[dict] = []
-            for e in entries:
-                row = {
-                    "id": e.id,
-                    "parent_id": e.parent_id,
-                    "type": e.type,
-                    "content": e.content,
-                    "created_at": e.created_at,
-                }
-                if (
-                    e.type == "event"
-                    and isinstance(e.content, dict)
-                    and e.content.get("type") == "tool_result"
-                ):
-                    data = e.content.get("data")
-                    if isinstance(data, dict) and "content" in data:
-                        content_str = str(data["content"])
-                        if is_skill_activation_content(content_str):
-                            new_data.append(row)
-                            continue
-                        if len(content_str) > max_tool_result_chars:
-                            data["content"] = (
-                                "[Previous tool_result compacted; "
-                                f"{len(content_str)} chars removed]"
-                            )
-                            compacted += 1
-                new_data.append(row)
-            if compacted > 0:
-                with self.current_path.open("w", encoding="utf-8") as f:
-                    for row in new_data:
-                        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            return compacted
+        return sum(
+            1 for entry in self.read_entries() if _claimed_user_text(entry) is not None
+        )
 
     def list_sessions(self, limit: int = 10) -> list[Path]:
         return [item.path for item in self.list_infos(limit=limit)]
@@ -307,8 +298,9 @@ class TreeSessionRepo:
             user_text = ""
             assistant_text: str | None = None
             for e in entries:
-                if e.type == "user" and not user_text:
-                    user_text = _collapse_text(str(e.content))
+                claimed_text = _claimed_user_text(e)
+                if claimed_text is not None and not user_text:
+                    user_text = _collapse_text(claimed_text)
                 elif e.type == "assistant" and assistant_text is None:
                     assistant_text = _collapse_text(str(e.content))
             summary = (
@@ -362,24 +354,13 @@ class TreeSessionRepo:
         }
 
     def get_user_messages(self) -> list[SessionEntry]:
-        """当前会话所有 user 消息，去重。"""
+        """当前会话所有已 claim 的用户输入，去重。"""
         raw = self.read_entries()
         seen: set[str] = set()
         out: list[SessionEntry] = []
         for e in raw:
-            if e.type == "user":
-                text = str(e.content)
-            elif e.type == "event" and isinstance(e.content, dict):
-                data = e.content.get("data")
-                if (
-                    e.content.get("type") == "message_start"
-                    and isinstance(data, dict)
-                    and data.get("role") == "user"
-                ):
-                    text = str(data.get("content", ""))
-                else:
-                    continue
-            else:
+            text = _claimed_user_text(e)
+            if text is None:
                 continue
             if text not in seen:
                 seen.add(text)
@@ -388,7 +369,11 @@ class TreeSessionRepo:
 
     def get_forkable_user_messages(self) -> list[SessionEntry]:
         """返回当前分支中可被 fork_from_entry 接受的用户消息。"""
-        return [entry for entry in self.build_branch() if entry.type == "user"]
+        return [
+            entry
+            for entry in self.build_branch()
+            if _claimed_user_text(entry) is not None
+        ]
 
     def jump_to_entry(self, entry_id: str) -> bool:
         """将 head_id 指向指定 entry，实现树内导航。"""
@@ -766,6 +751,8 @@ _NOISY_EVENT_TYPES = frozenset(
         "tool_update",  # 进度更新，无意义
         "tool_use",  # 树只看 user/assistant 消息
         "tool_result",
+        "inbox/inserted",
+        "inbox/discarded",
     }
 )
 
@@ -817,8 +804,9 @@ def _filter_tree_entries(
 
 def _node_label(e: SessionEntry, child_count: int) -> str:
     """生成树节点展示文本。"""
-    if e.type == "user":
-        text = _collapse_text(str(e.content))
+    claimed_text = _claimed_user_text(e)
+    if claimed_text is not None:
+        text = _collapse_text(claimed_text)
         return f"user: {_truncate(text, 60)}"
     if e.type == "assistant":
         text = _collapse_text(str(e.content))
@@ -852,3 +840,24 @@ def _node_label(e: SessionEntry, child_count: int) -> str:
             return f"{sub}: {_truncate(data_str, 50)}"
         return sub or "event"
     return e.type[:20]
+
+
+def _claimed_user_text(entry: SessionEntry) -> str | None:
+    """从严格 inbox claim schema 读取用户展示文本。"""
+    if entry.type != "event" or not isinstance(entry.content, dict):
+        return None
+    if entry.content.get("type") != "inbox/claimed":
+        return None
+    if entry.content.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION:
+        return None
+    data = entry.content.get("data")
+    if not isinstance(data, dict):
+        return None
+    message = data.get("message")
+    if not isinstance(message, list) or len(message) != 1:
+        return None
+    encoded = message[0]
+    if not isinstance(encoded, dict) or encoded.get("kind") != "user":
+        return None
+    display = data.get("display_text")
+    return display if isinstance(display, str) else None

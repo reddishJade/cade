@@ -16,6 +16,8 @@ from pydantic import (
     field_validator,
 )
 
+from .security.approval import ApprovalPolicy
+
 DirAccess = Literal["read", "write", "read_write"]
 
 ProviderTransport = Literal[
@@ -24,7 +26,6 @@ ProviderTransport = Literal[
     "deepseek_chat",
     "mimo_chat",
 ]
-ApprovalPolicy = Literal["always", "never"]
 HookEventName = Literal[
     "pre_tool",
     "post_tool",
@@ -38,6 +39,7 @@ HookFailurePolicy = Literal["ignore", "warn", "fail"]
 PROFILE_MAIN = "main"
 PROFILE_SUBAGENT = "subagent"
 PROFILE_FALLBACK = "fallback"
+PROFILE_REVIEWER = "reviewer"
 DEFAULT_PROMPT_MODULES: tuple[str, ...] = (
     "identity",
     "tool_discipline",
@@ -53,7 +55,7 @@ DEFAULT_PROMPT_MODULES: tuple[str, ...] = (
 
 
 class AgentConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     max_steps: Annotated[StrictInt, Field(gt=0)] | None = None
     compact_threshold: StrictInt = 0
     compact_token_threshold: StrictInt = 0
@@ -81,6 +83,7 @@ class ModelProfileRuntimeConfig(BaseModel):
     chat_model: str = "deepseek-v4-flash"
     base_url: str = "https://api.deepseek.com"
     api_key: str = ""
+    context_window: StrictInt | None = Field(default=None, gt=0)
     thinking: StrictBool = True
     reasoning_effort: str | None = "high"
     clear_thinking: StrictBool = False
@@ -95,6 +98,7 @@ class ProviderRuntimeConfig(BaseModel):
             PROFILE_MAIN: ModelProfileRuntimeConfig(),
             PROFILE_SUBAGENT: ModelProfileRuntimeConfig(),
             PROFILE_FALLBACK: ModelProfileRuntimeConfig(),
+            PROFILE_REVIEWER: ModelProfileRuntimeConfig(),
         }
     )
 
@@ -138,6 +142,7 @@ class ModeRulesetRuntimeConfig(BaseModel):
 
 class ExecutionModesRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    default_mode: Literal["plan", "build", "act"] = "act"
     plan: ModeRulesetRuntimeConfig = Field(default_factory=ModeRulesetRuntimeConfig)
     build: ModeRulesetRuntimeConfig = Field(default_factory=ModeRulesetRuntimeConfig)
     act: ModeRulesetRuntimeConfig = Field(default_factory=ModeRulesetRuntimeConfig)
@@ -145,7 +150,12 @@ class ExecutionModesRuntimeConfig(BaseModel):
 
 class SecurityRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    approval_policy: ApprovalPolicy = "never"
+    approval_policy: ApprovalPolicy = "on-request"
+    auto_review_timeout_seconds: StrictFloat | StrictInt = Field(
+        default=90.0,
+        gt=0,
+        le=300,
+    )
     restricted_dirs: tuple[str, ...] = ()
     permissions: dict[str, Literal["allow", "ask", "deny"]] = Field(
         default_factory=dict,
@@ -158,9 +168,6 @@ class SecurityRuntimeConfig(BaseModel):
     global_default: str | None = None
     external_directories: tuple[SecurityExternalDirectory, ...] = ()
     sensitive_path_overrides: tuple[SecuritySensitivePathOverride, ...] = ()
-
-    def resolve_approval_policy(self) -> str:
-        return self.approval_policy
 
 
 _INSTRUCTION_PRIORITIES: frozenset[str] = frozenset(
@@ -342,7 +349,7 @@ def discover_runtime_config(
 ) -> XcodeRuntimeConfig:
     global_path = Path.home() / ".xcode" / "settings.json"
     project_path = explicit_path or project_root / "xcode.config.json"
-    local_path = project_root / ".local" / "settings.json"
+    local_path = project_root / ".xcode" / "settings.json"
     global_raw = _load_raw_config(global_path)
     project_raw = _load_raw_config(project_path)
     local_raw = _load_raw_config(local_path)
@@ -451,6 +458,7 @@ def _resolve_model_profiles(
             resolved[name] = profile
     resolved.setdefault(PROFILE_SUBAGENT, resolved.get(PROFILE_MAIN, {}))
     resolved.setdefault(PROFILE_FALLBACK, resolved.get(PROFILE_MAIN, {}))
+    resolved.setdefault(PROFILE_REVIEWER, resolved.get(PROFILE_MAIN, {}))
     return resolved
 
 

@@ -20,20 +20,14 @@ from xcode.agent.types import AgentToolResult
 from xcode.agent.types import TextContent, ToolCallContent
 from xcode.agent.types import ToolSpec
 from xcode.agent.results import AgentLoopResult
-from xcode.ai.providers.base import ModelProvider
-from xcode.harness.config import AgentConfig
 from xcode.harness.skill_activation import (
     ExplicitSkillActivationResult,
     is_skill_activation_content,
 )
 from xcode.harness.agent_runtime._mode_protocol import ToolGateMode
-from xcode.harness.agent_runtime.agent_helpers import run_coro_sync
-from xcode.harness.agent_runtime.config import (
-    AgentRuntimeConfig,
-    GateConfig,
-    TurnSnapshot,
-    build_turn_context_messages,
-)
+from xcode.harness.agent_runtime.agent_helpers import aiter_to_sync_iter, run_coro_sync
+from xcode.harness.agent_runtime.config import build_turn_context_messages
+from xcode.harness.agent_runtime.composition import AgentComposition
 from xcode.harness.agent_runtime.events import AgentHarnessEvent
 from xcode.harness.agent_runtime.goal import GoalController
 from xcode.harness.agent_runtime.harness import AgentHarness
@@ -54,29 +48,27 @@ class CodingAgentHarness(AgentHarness):
 
     def __init__(
         self,
-        provider: ModelProvider,
-        registry: tuple[ToolSpec, ...],
-        config: AgentConfig | None = None,
-        gate: GateConfig | None = None,
-        runtime: AgentRuntimeConfig | None = None,
+        composition: AgentComposition,
+        runtime: CodingAgentRuntimeConfig,
     ) -> None:
-        gate = gate or GateConfig()
-        runtime = runtime or CodingAgentRuntimeConfig()
-        if not isinstance(runtime, CodingAgentRuntimeConfig):
-            raise TypeError("CodingAgentHarness requires CodingAgentRuntimeConfig")
         self._coding_runtime = runtime
-        self._mode = ExecutionModeState()
+        self._mode = ExecutionModeState(initial_mode=runtime.initial_mode)
         self._memory_manager = runtime.memory_manager
         self._session_history = runtime.session_history
         self._todo_state = runtime.todo_state
-        self._goal_session_id = gate.session_id
-        super().__init__(provider, registry, config, gate, runtime)
+        self._goal_session_id = runtime.gate.session_id
+        super().__init__(composition, runtime)
         self._goal = GoalController(lambda: self.provider)
         if self._session_history is not None:
             self._session_history.set_session_id(self.session_id)
-        from xcode.coding_agent.tools.subagent import bind_subagent_permission_gate
+        from xcode.coding_agent.tools.subagent import bind_subagent_runtime
 
-        bind_subagent_permission_gate(self._registry, self._gate)
+        bind_subagent_runtime(
+            self.registry,
+            lambda: self.composition,
+            self._gate,
+            self.cancellation_token,
+        )
 
     # ── AgentHarness 扩展点覆盖 ──
 
@@ -91,7 +83,7 @@ class CodingAgentHarness(AgentHarness):
     def _build_context_messages(
         self,
         question: str,
-        snapshot: TurnSnapshot,
+        composition: AgentComposition,
     ) -> list[AgentMessage]:
         memory_overview: str | None = None
         if self._resumed_notice is not None and self._memory_manager is not None:
@@ -102,7 +94,7 @@ class CodingAgentHarness(AgentHarness):
             memory_overview = render_memory_overview(self._memory_manager)
         return build_turn_context_messages(
             question,
-            snapshot,
+            composition,
             self._resumed_notice,
             mode_notice=mode_notice(self._mode.current_mode),
             memory_overview=memory_overview,
@@ -167,6 +159,11 @@ class CodingAgentHarness(AgentHarness):
             self._todo_state.replace([])
 
     # ── 编码特定公共 API ──
+
+    @property
+    def current_mode(self) -> ExecutionMode:
+        """返回当前执行模式（新会话为配置的默认模式）。"""
+        return self._mode.current_mode
 
     def available_skill_names(self) -> tuple[str, ...]:
         """返回当前运行时允许显式激活的技能名称。"""
@@ -268,18 +265,35 @@ class CodingAgentHarness(AgentHarness):
         return result
 
     def run_stream(
-        self, question: str, mode: ExecutionMode | None = None
+        self,
+        question: str | None,
+        mode: ExecutionMode | None = None,
+        *,
+        display_question: str | None = None,
     ) -> Iterator[AgentHarnessEvent]:
         if mode is not None:
             self._mode.set_mode(mode)
-        yield from super().run_stream(question)
+        yield from aiter_to_sync_iter(
+            self.arun_stream(
+                question,
+                display_question=display_question,
+            ),
+            self.cancellation_token,
+        )
 
     async def arun_stream(
-        self, question: str, mode: ExecutionMode | None = None
+        self,
+        question: str | None,
+        mode: ExecutionMode | None = None,
+        *,
+        display_question: str | None = None,
     ) -> AsyncIterator[AgentHarnessEvent]:
         if mode is not None:
             self._mode.set_mode(mode)
-        async for event in super().arun_stream(question):
+        async for event in super().arun_stream(
+            question,
+            display_question=display_question,
+        ):
             yield event
 
     # ── 技能激活内部 ──

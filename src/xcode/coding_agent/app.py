@@ -17,9 +17,13 @@ from xcode.harness.agent_runtime import (
     AgentHarnessEvent,
 )
 from xcode.coding_agent.harness import CodingAgentHarness
+from xcode.agent.messages import AgentMessage, UserMessage
 from xcode.agent.types import ToolSpec
 from xcode.harness.observability import ExternalHookDiagnostic, ExternalHookRunner
 from xcode.harness.session_todo import SessionTodoState
+from xcode.harness.session import SessionStore
+from xcode.harness.session.recorder import SessionRecorder
+from xcode.harness.session.replay import replay_session
 from xcode.ai.providers.registry import ProviderSettings, build_provider_bundle
 from . import assembly as _assembly
 from .assembly import (
@@ -28,6 +32,7 @@ from .assembly import (
 )
 
 if TYPE_CHECKING:
+    from xcode.harness.agent_runtime.subagents import SubagentSessionManager
     from xcode.harness.memory import MemoryManager
     from xcode.harness.mcp import McpRuntimeRegistry
 
@@ -43,6 +48,8 @@ class XcodeApp:
 
     memory_manager: MemoryManager | None = None
     mcp_runtime: McpRuntimeRegistry | None = None
+    subagents: SubagentSessionManager | None = None
+    session_recorder: SessionRecorder | None = None
     _model_profiles: dict[str, Any] | None = None
     _env_files: tuple[Path, ...] = ()
     _closers: tuple[Callable[[], None], ...] = ()
@@ -62,6 +69,8 @@ class XcodeApp:
         from xcode.ai.providers.registry import ModelProfileConfig
         from xcode.ai.providers.registry import ModelProfileProto
 
+        if profile not in {"main", "subagent"}:
+            raise ValueError("profile must be main or subagent")
         if not self._model_profiles:
             return self.agent.provider.model
         profile_config = self._model_profiles.get(profile)
@@ -72,6 +81,7 @@ class XcodeApp:
             chat_model=model,
             base_url=base_url or profile_config.base_url,
             api_key=api_key or profile_config.api_key,
+            context_window=getattr(profile_config, "context_window", None),
             thinking=thinking if thinking is not None else profile_config.thinking,
             reasoning_effort=reasoning_effort
             if reasoning_effort is not None
@@ -86,30 +96,15 @@ class XcodeApp:
                 model_profiles={profile: new_cfg},
             )
         )
-        new_provider = (
-            bundle.llm if profile == "main" else bundle.llms.get("subagent", bundle.llm)
-        )
+        new_provider = bundle.llms.get(profile, bundle.llm)
         if profile == "main":
-            self._refresh_main_provider(new_provider)
+            self.agent.replace_primary_provider(new_provider)
+        elif self.subagents is None:
+            raise RuntimeError("subagent runtime is not configured")
         else:
-            self.agent.provider = new_provider
+            self.subagents.replace_provider(new_provider)
         self._model_profiles[profile] = new_cfg
         return model
-
-    def _refresh_main_provider(self, new_provider: Any) -> None:
-        """热替换主 provider，保留 fallback 容灾包装层。
-
-        agent.provider 已被 _FallbackWithRetryPrimary 包装时（启动时按
-        fallback profile 配置包装）调用 replace_primary 原地换主并重置容灾
-        计数；否则直接赋值。
-        """
-        from xcode.harness.agent_runtime.fallback import _FallbackSwitchingProvider
-
-        current = self.agent.provider
-        if isinstance(current, _FallbackSwitchingProvider):
-            current.replace_primary(new_provider)
-        else:
-            self.agent.provider = new_provider
 
     def get_model_info(self) -> dict[str, str]:
         provider = self.agent.provider
@@ -129,20 +124,72 @@ class XcodeApp:
         return info
 
     def ask(self, question: str) -> str:
-        return self.agent.run(question).answer
+        answer = ""
+        for event in self.ask_stream(question):
+            if event.type == "final":
+                answer = event.data.answer
+        return answer
 
     async def aask(self, question: str) -> str:
-        return (await self.agent.run_async(question)).answer
+        answer = ""
+        async for event in self.aask_stream(question):
+            if event.type == "final":
+                answer = event.data.answer
+        return answer
+
+    @property
+    def session_store(self) -> SessionStore:
+        recorder = self.session_recorder
+        if recorder is None:
+            raise RuntimeError("session recorder is not configured")
+        return recorder.store
 
     def ask_stream(
-        self, question: str, mode: ExecutionMode | None = None
+        self,
+        question: str | None,
+        mode: ExecutionMode | None = None,
+        *,
+        display_question: str | None = None,
     ) -> Iterator[AgentHarnessEvent]:
-        yield from self.agent.run_stream(question, mode=mode)
+        recorder = self.session_recorder
+        if recorder is None:
+            raise RuntimeError("session recorder is not configured")
+        recorder.bind_agent(self.agent)
+        if question is not None:
+            self.agent.followup(
+                UserMessage(content=question),
+                display_text=display_question,
+            )
+        for event in self.agent.run_stream(
+            None,
+            mode=mode,
+            display_question=display_question,
+        ):
+            recorder.record_event(event)
+            yield event
 
     async def aask_stream(
-        self, question: str, mode: ExecutionMode | None = None
+        self,
+        question: str | None,
+        mode: ExecutionMode | None = None,
+        *,
+        display_question: str | None = None,
     ) -> AsyncIterator[AgentHarnessEvent]:
-        async for event in self.agent.arun_stream(question, mode=mode):
+        recorder = self.session_recorder
+        if recorder is None:
+            raise RuntimeError("session recorder is not configured")
+        recorder.bind_agent(self.agent)
+        if question is not None:
+            self.agent.followup(
+                UserMessage(content=question),
+                display_text=display_question,
+            )
+        async for event in self.agent.arun_stream(
+            None,
+            mode=mode,
+            display_question=display_question,
+        ):
+            recorder.record_event(event)
             yield event
 
     def hook_diagnostics(self) -> tuple[ExternalHookDiagnostic, ...]:
@@ -150,6 +197,32 @@ class XcodeApp:
         if self.external_hook_runner is None:
             return ()
         return self.external_hook_runner.diagnostics()
+
+    def record_compaction(
+        self,
+        *,
+        summary: str,
+        messages_before: int,
+        messages_after: int,
+        tokens_before: int,
+        tokens_after: int,
+        replacement: list[AgentMessage],
+    ) -> str:
+        recorder = self.session_recorder
+        if recorder is None:
+            raise RuntimeError("session recorder is not configured")
+        return recorder.record_compaction(
+            summary=summary,
+            messages_before=messages_before,
+            messages_after=messages_after,
+            tokens_before=tokens_before,
+            tokens_after=tokens_after,
+            replacement=replacement,
+        )
+
+    def restore_session(self) -> None:
+        """从当前 session branch 恢复完整 agent 运行状态。"""
+        replay_session(self.agent, self.session_store, self.contextual_state)
 
     def mcp_status(self) -> tuple[dict[str, object], ...]:
         """返回 MCP server 运行时状态快照。"""
@@ -166,9 +239,9 @@ class XcodeApp:
     def close(self) -> None:
         if self._closed:
             return
-        self._closed = True
         for closer in self._closers:
             closer()
+        self._closed = True
 
 
 def build_app(
@@ -178,12 +251,17 @@ def build_app(
     skills_dir: Path | None = None,
     audit_path: Path | None = None,
     runtime_config: XcodeRuntimeConfig | None = None,
+    sessions_dir: Path | None = None,
 ) -> XcodeApp:
     """装配完整的 Xcode 应用。"""
     cfg = _assembly.resolve_config(
         project_root, env_files, agent_config, skills_dir, audit_path, runtime_config
     )
-    infra = build_shared_infra(project_root, cfg.runtime_config)
+    infra = build_shared_infra(
+        project_root,
+        cfg.runtime_config,
+        sessions_dir=sessions_dir,
+    )
 
     # 使用共享的 MemoryManager 实例，确保 compactor 和 agent 使用同一实例
     memory_manager = infra.memory_manager
@@ -206,10 +284,12 @@ def build_app(
         closers,
         skill_registry,
         mcp_runtime_registry,
+        subagents,
     ) = _assembly.build_tool_registry(
         project_root=project_root,
-        llm=providers.llm,
+        subagent_provider=providers.llms.get("subagent", providers.llm),
         runtime_config=cfg.runtime_config,
+        session_recorder=infra.session_recorder,
         contextual_state=infra.contextual_state,
         cancel_event=infra.cancellation_token,
         skills_dir=cfg.skills_dir,
@@ -217,6 +297,19 @@ def build_app(
         session_history=infra.session_history,
         todo_state=todo_state,
     )
+
+    auto_approval_callback = None
+    security = cfg.runtime_config.security
+    if security.approval_policy == "on-request":
+        from xcode.harness.security import AutoApprovalReviewer
+
+        auto_reviewer = AutoApprovalReviewer(
+            providers.llms.get("reviewer", providers.llm),
+            timeout_seconds=float(security.auto_review_timeout_seconds),
+            max_workers=cfg.agent_config.tool_workers,
+        )
+        auto_approval_callback = auto_reviewer
+        closers = (*closers, auto_reviewer.close)
 
     fallback_provider = providers.llms.get("fallback")
     # 为 LayeredCompactor 接入 LLM 驱动的摘要生成，替代纯规则 fallback
@@ -231,6 +324,8 @@ def build_app(
         config=cfg.agent_config,
         audit_path=cfg.audit_path,
         runtime_config=cfg.runtime_config,
+        session_recorder=infra.session_recorder,
+        session_inbox=infra.session_inbox,
         contextual_state=infra.contextual_state,
         shell_spec=shell_spec,
         compactor=infra.compactor,
@@ -242,6 +337,7 @@ def build_app(
         memory_manager=memory_manager,
         session_history=infra.session_history,
         todo_state=todo_state,
+        auto_approval_callback=auto_approval_callback,
     )
 
     return XcodeApp(
@@ -251,6 +347,8 @@ def build_app(
         external_hook_runner=external_hook_runner,
         memory_manager=memory_manager,
         mcp_runtime=mcp_runtime_registry,
+        subagents=subagents,
+        session_recorder=infra.session_recorder,
         _env_files=cfg.env_files,
         _model_profiles=cfg.runtime_config.provider.model_profiles,
         _closers=closers,

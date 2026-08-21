@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import jsonschema
@@ -36,7 +36,9 @@ from xcode.agent.types import (
     TextContent,
     ToolArguments,
     ToolCallContent,
+    ToolRenderIntent,
     ToolResultContentBlock,
+    materialize_json_mapping,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,9 @@ class ExecutedToolBatch:
 
 # ── 取消检查（共享工具） ──
 
+# 打断后等待可取消工具（如 bash 杀进程）自行收尾的宽限期。
+_TOOL_CANCEL_GRACE_SECONDS = 5.0
+
 
 def is_cancelled(signal: CancellationSignal | None) -> bool:
     return bool(signal and signal.is_cancelled())
@@ -59,6 +64,12 @@ def cancel_reason(signal: CancellationSignal | None) -> str:
     if signal is None:
         return "interrupted by user"
     return signal.reason
+
+
+async def _wait_cancellation(signal: CancellationSignal) -> None:
+    """轮询取消信号，供工具执行竞争使用。"""
+    while not is_cancelled(signal):
+        await asyncio.sleep(0.01)
 
 
 # ── 工具执行调度 ──
@@ -98,12 +109,11 @@ def validate_tool_arguments(
     tool_call: ToolCallContent,
     args: ToolArguments,
 ) -> str | None:
-    try:
-        schema = dict(tool.parameters)
-    except Exception as exc:
-        return f"tool schema error for {tool_call.name}: {exc}"
+    schema = materialize_json_mapping(tool.parameters)
     try:
         jsonschema.validate(instance=args, schema=schema)
+    except jsonschema.SchemaError as exc:
+        return f"tool schema error for {tool_call.name}: {exc.message}"
     except jsonschema.ValidationError as exc:
         path = (
             ".".join(str(part) for part in exc.absolute_path)
@@ -202,7 +212,7 @@ async def _execute_parallel(
                 emit,
             )
 
-    tasks = []
+    pending: dict[asyncio.Task[tuple[ToolResultMessage, bool]], ToolCallContent] = {}
     for tool_call in tool_calls:
         emit(
             ToolExecutionStartEvent(
@@ -211,21 +221,53 @@ async def _execute_parallel(
                 args=tool_call.arguments or {},
             )
         )
-        tasks.append(execute_limited(tool_call))
+        pending[asyncio.create_task(execute_limited(tool_call))] = tool_call
 
-    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-    results: list[ToolResultMessage] = []
-    terminate_flags: list[bool] = []
-    for raw_result in raw_results:
-        if isinstance(raw_result, tuple) and len(raw_result) == 2:
-            results.append(raw_result[0])
-            terminate_flags.append(raw_result[1])
-        elif isinstance(raw_result, BaseException):
-            logger.exception(
-                "Tool execution raised unexpected exception", exc_info=raw_result
+    completed: dict[str, tuple[ToolResultMessage, bool]] = {}
+    while pending:
+        if is_cancelled(signal):
+            # 打断：先给可取消工具（如 bash 杀进程）宽限期自行收尾，
+            # 宽限期后仍未完成的工具直接放弃并返回打断结果。
+            done, still_pending = await asyncio.wait(
+                pending, timeout=_TOOL_CANCEL_GRACE_SECONDS
             )
+            for task in done:
+                _append_execution_result(task, pending[task], completed)
+            for task in still_pending:
+                tool_call = pending[task]
+                task.cancel()
+                interrupted, interrupted_terminate = _error_result(
+                    tool_call, cancel_reason(signal)
+                )
+                completed[tool_call.id] = (interrupted, interrupted_terminate)
+                _emit_tool_end(tool_call, interrupted, True, emit)
+            break
+        done, pending_set = await asyncio.wait(
+            pending, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in done:
+            _append_execution_result(task, pending[task], completed)
+        pending = {task: pending[task] for task in pending_set}
+
+    ordered = [completed[call.id] for call in tool_calls if call.id in completed]
+    results = [entry[0] for entry in ordered]
+    terminate_flags = [entry[1] for entry in ordered]
     all_terminate = len(terminate_flags) > 0 and all(terminate_flags)
     return ExecutedToolBatch(results=results, terminate=all_terminate)
+
+
+def _append_execution_result(
+    task: asyncio.Task[tuple[ToolResultMessage, bool]],
+    tool_call: ToolCallContent,
+    completed: dict[str, tuple[ToolResultMessage, bool]],
+) -> None:
+    """把已完成任务的执行结果收集进批次；异常任务记录日志并跳过。"""
+    try:
+        result, terminate = task.result()
+    except Exception:
+        logger.exception("Tool execution raised unexpected exception")
+        return
+    completed[tool_call.id] = (result, terminate)
 
 
 async def _execute_one(
@@ -321,7 +363,13 @@ async def _execute_one_impl(
         signal,
     )
 
-    result_msg = _tool_result_message(tool_call, content, is_error, tool_result.details)
+    result_msg = _tool_result_message(
+        tool_call,
+        content,
+        is_error,
+        tool_result.details,
+        tool_result.render_intent,
+    )
     return result_msg, terminate
 
 
@@ -376,8 +424,44 @@ async def _run_tool_handler(
     on_update: Callable[[AgentToolResult], None],
     timeout_seconds: float | None,
 ) -> tuple[AgentToolResult, list[ToolResultContentBlock], bool, bool]:
+    execution = tool.execute(tool_call.id, args, signal, on_update=on_update)
+    tool_task = asyncio.create_task(
+        _await_tool_execution(execution, tool_call, timeout_seconds)
+    )
+    if signal is None:
+        return await tool_task
+
+    cancel_waiter = asyncio.create_task(_wait_cancellation(signal))
     try:
-        execution = tool.execute(tool_call.id, args, signal, on_update=on_update)
+        done, _pending = await asyncio.wait(
+            {tool_task, cancel_waiter}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if tool_task in done:
+            return tool_task.result()
+        # 打断：先给可感知取消的工具（如 bash 杀进程）宽限期自行收尾，
+        # 保留其真实输出；宽限期后仍未返回则放弃等待并给出打断结果。
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(tool_task), timeout=_TOOL_CANCEL_GRACE_SECONDS
+            )
+        except TimeoutError:
+            tool_task.cancel()
+            interrupted = AgentToolResult(
+                content=[TextContent(text=cancel_reason(signal))],
+                is_error=True,
+            )
+            return interrupted, interrupted.content, True, False
+    finally:
+        cancel_waiter.cancel()
+
+
+async def _await_tool_execution(
+    execution: Awaitable[AgentToolResult],
+    tool_call: ToolCallContent,
+    timeout_seconds: float | None,
+) -> tuple[AgentToolResult, list[ToolResultContentBlock], bool, bool]:
+    """等待工具执行并按超时/异常约定转换为结果。"""
+    try:
         if timeout_seconds is not None and timeout_seconds > 0:
             tool_result = await asyncio.wait_for(execution, timeout=timeout_seconds)
         else:
@@ -443,6 +527,7 @@ def _tool_result_message(
     content: list[ToolResultContentBlock],
     is_error: bool,
     metadata: object = None,
+    render_intent: ToolRenderIntent | None = None,
 ) -> ToolResultMessage:
     result_content: ToolResultMessageContent
     if not content:
@@ -459,6 +544,7 @@ def _tool_result_message(
         content=result_content,
         is_error=is_error,
         metadata=metadata if isinstance(metadata, dict) else None,
+        render_intent=render_intent,
     )
 
 

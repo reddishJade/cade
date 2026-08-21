@@ -57,12 +57,9 @@ from ..repl import current_effort_options, current_model_options
 from ..repl_sessions import (
     print_saved_conversation,
     select_session_interactively,
-    sync_agent_history,
-    sync_compaction_source,
 )
 from ..repl_skills import activate_skill, available_skill_names, parse_skill_invocation
 from ..repl_tools import (
-    event_to_dict,
     file_reference_event,
     run_shell_shortcut,
 )
@@ -76,7 +73,6 @@ from .state import (
     _QuestionChoiceRequest,
     _TuiState,
 )
-from xcode.harness.session import SessionStore
 from xcode.harness.snapshot import SnapshotStore, SnapshotUnsupportedError
 from .widgets import (
     TuiInputLexer,
@@ -113,13 +109,11 @@ if TYPE_CHECKING:
     from xcode.harness.security.permission_model import (
         SessionGrantStoreManager,
     )
-    from xcode.harness.session import SessionStore
 
 
 def run_tui(
     app: ReplApp,
     project_root: Path,
-    sessions_dir: Path,
     *,
     resume_latest: bool = False,
     auto_continue: bool = False,
@@ -129,7 +123,6 @@ def run_tui(
         return _XcodeTui(
             app,
             project_root,
-            sessions_dir,
             resume_latest=resume_latest,
             auto_continue=auto_continue,
             session_id=session_id,
@@ -147,7 +140,6 @@ class _XcodeTui:
         self,
         app: ReplApp,
         project_root: Path,
-        sessions_dir: Path | None = None,
         input: Input | None = None,
         output: Output | None = None,
         *,
@@ -157,10 +149,7 @@ class _XcodeTui:
     ) -> None:
         self._agent_app = app
         self._project_root = project_root
-        self._store: SessionStore = SessionStore(
-            sessions_dir or project_root / ".local" / "sessions",
-            project_root=project_root,
-        )
+        self._store = app.session_store
         self._repl_state = ReplState()
         self._snapshot_store = _init_snapshot_store(project_root)
         self._state = _TuiState(mode=self._repl_state.mode, project_root=project_root)
@@ -168,6 +157,7 @@ class _XcodeTui:
 
         self._permanent_grant_store = FileGrantStore.for_project_root(project_root)
         self._restore_startup_session(resume_latest, auto_continue, session_id)
+        self._sync_mode_from_agent()
         self._scrollback = 0
         self._committing = False
         self._grant_store_manager: SessionGrantStoreManager | None = None
@@ -380,7 +370,8 @@ class _XcodeTui:
         # ── Wire agent hooks ──
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
-            agent.approval_callback = self._approval_callback
+            if getattr(agent, "approval_policy", "on-request") == "on-request":
+                agent.user_approval_callback = self._approval_callback
             agent.session_id = self._store.session_id
             if hasattr(agent, "set_session_grant_store_provider"):
                 agent.set_session_grant_store_provider(
@@ -516,13 +507,12 @@ class _XcodeTui:
         outcome = self._agent_app.agent.submit_busy_message(
             UserMessage(content=expanded_text),
             self._repl_state.busy_mode,
+            display_text=text,
         )
         self._state.add_user(text)
         if references:
             self._store.append("event", file_reference_event(references))
         if outcome.status is SubmitStatus.STEER_ACCEPTED:
-            message_id = self._store.append("user", text)
-            sync_compaction_source(self._agent_app, self._store, message_id)
             self._state.log.append(
                 _LogEntry("system", f"[steer] accepted by {outcome.run_id}")
             )
@@ -537,10 +527,9 @@ class _XcodeTui:
             self._state.log.append(
                 _LogEntry("system", "[interrupt] cancelling before replacement run")
             )
-        else:
-            self._repl_state.pending_inject = expanded_text
+        elif outcome.status is SubmitStatus.INJECT_QUEUED:
             self._state.log.append(
-                _LogEntry("system", "[followup] active run already finished")
+                _LogEntry("system", "[steer] queued for the next run")
             )
         self._refresh()
 
@@ -622,11 +611,12 @@ class _XcodeTui:
             self._refresh()
             return
         if self._state.running:
-            self._agent_app.agent.interrupt("interrupted by user")
-            self._store.append(
-                "event", {"type": "interrupted", "data": "interrupted by user"}
-            )
-            self._state.log.append(_LogEntry("stop", "[interrupt requested]"))
+            accepted = self._agent_app.agent.interrupt("interrupted by user")
+            if accepted:
+                self._store.append(
+                    "event", {"type": "interrupted", "data": "interrupted by user"}
+                )
+                self._state.log.append(_LogEntry("stop", "[interrupt] stopping run"))
             self._refresh()
             return
         now = perf_counter()
@@ -669,8 +659,6 @@ class _XcodeTui:
             self._refresh()
             return
 
-        message_id = self._store.append("user", text)
-        sync_compaction_source(self._agent_app, self._store, message_id)
         expanded_text, references = expand_file_references(text, self._project_root)
         if references:
             self._store.append("event", file_reference_event(references))
@@ -684,7 +672,7 @@ class _XcodeTui:
         self._refresh()
         thread = threading.Thread(
             target=self._run_turn,
-            args=(expanded_text,),
+            args=(expanded_text, text),
             daemon=True,
         )
         thread.start()
@@ -738,11 +726,7 @@ class _XcodeTui:
                 self._state.log.append(_LogEntry("system", output.rstrip()))
             if preserve_running:
                 self._refresh()
-                if (
-                    self._repl_state.pending_inject is not None
-                    and not self._state.running
-                ):
-                    self._submit_pending_inject()
+                self._submit_pending_input()
             else:
                 self._finish_command(text, should_exit)
 
@@ -753,7 +737,7 @@ class _XcodeTui:
 
     def _record_command(self, text: str) -> None:
         """记录用户输入的命令，命令本身不进入 agent 回合。"""
-        self._store.append("user", text)
+        self._store.append("event", {"type": "command", "data": text})
         self._state.add_command(text)
 
     def _show_native_command_choice(self, text: str) -> bool:
@@ -810,8 +794,9 @@ class _XcodeTui:
                     cast(SnapshotStore, self._snapshot_store).fork_session(
                         parent_session_id, meta.id
                     )
-                sync_agent_history(self._agent_app, self._store)
+                self._agent_app.restore_session()
                 self._state.restore_history(self._store.build_branch())
+                self._sync_mode_from_agent()
                 self._state.log.append(
                     _LogEntry("system", f'Forked at: "{meta.title if meta else ""}"')
                 )
@@ -829,7 +814,7 @@ class _XcodeTui:
 
             def resume(session: object) -> None:
                 self._store.resume(getattr(session, "id", ""))
-                sync_agent_history(self._agent_app, self._store)
+                self._agent_app.restore_session()
                 self._restore_session_history()
 
             self._open_command_choices(
@@ -850,8 +835,9 @@ class _XcodeTui:
                 if not self._store.jump_to_entry(node_id):
                     self._state.log.append(_LogEntry("error", "Failed to set entry."))
                     return
-                sync_agent_history(self._agent_app, self._store)
+                self._agent_app.restore_session()
                 self._state.restore_history(self._store.build_branch())
+                self._sync_mode_from_agent()
 
             self._open_command_choices(
                 [
@@ -987,12 +973,12 @@ class _XcodeTui:
         if should_exit:
             print_saved_conversation(self._store)
             self._application.exit()
-        self._submit_pending_inject()
+        self._submit_pending_input()
 
     def _clear_session(self) -> None:
         """在 inline TUI 内创建空会话，不切换到终端清屏输出。"""
         self._store.clear()
-        sync_agent_history(self._agent_app, self._store)
+        self._agent_app.restore_session()
         self._state.restore_history([])
         self._state.log.append(_LogEntry("system", self._header_text()))
         self._scrollback = 0
@@ -1038,6 +1024,18 @@ class _XcodeTui:
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
             agent.session_id = self._store.session_id
+        self._sync_mode_from_agent()
+
+    def _sync_mode_from_agent(self) -> None:
+        """让 TUI 与 REPL 状态中的模式与 agent harness 保持一致。
+
+        新会话取配置的默认模式，恢复会话取 transcript 中持久化的模式。
+        """
+        agent = getattr(self._agent_app, "agent", None)
+        mode = getattr(agent, "current_mode", None)
+        if mode in {"plan", "build", "act"}:
+            self._repl_state.mode = mode
+            self._state.mode = mode
 
     def _restore_startup_session(
         self,
@@ -1067,7 +1065,7 @@ class _XcodeTui:
         if selected is None:
             return
         self._store.resume(selected.id)
-        sync_agent_history(self._agent_app, self._store)
+        self._agent_app.restore_session()
         self._state.restore_history(self._store.build_branch())
 
     # ── HITL ──
@@ -1233,12 +1231,17 @@ class _XcodeTui:
             self._state.pending_hitl = None
         return result
 
-    def _submit_pending_inject(self) -> None:
-        """在命令设置注入内容后，以普通用户回合继续执行。"""
-        text = self._repl_state.pending_inject
-        self._repl_state.pending_inject = None
-        if text:
-            self._submit(text)
+    def _submit_pending_input(self) -> None:
+        """宿主只根据 durable inbox 的 wake 状态启动运行。"""
+        if self._state.running or not self._agent_app.agent.has_pending_input():
+            return
+        self._state.running = True
+        self._refresh()
+        threading.Thread(
+            target=self._run_turn,
+            args=(None, None),
+            daemon=True,
+        ).start()
 
     def _accept_approval_choice(self) -> None:
         choice = self._approval_choices.current_value
@@ -1269,54 +1272,20 @@ class _XcodeTui:
 
     # ── Turn 执行 ──
 
-    def _run_turn(self, text: str) -> None:
+    def _run_turn(self, text: str | None, display_text: str | None) -> None:
         snapshot = self._snapshot_store
         _snapshot_ctx = _enter_snapshot_ctx(snapshot, self._store.session_id)
         turn_log_start = len(self._state.log)
 
         answer = ""
         tool_names: list[str] = []
-        thinking_parts: list[str] = []
-        thinking_started_at: float | None = None
-
-        def flush_thinking() -> None:
-            nonlocal thinking_started_at
-            if not thinking_parts:
-                return
-            duration_ms = int(
-                (perf_counter() - thinking_started_at) * 1000
-                if thinking_started_at is not None
-                else 0
-            )
-            self._store.append(
-                "event",
-                {
-                    "type": "thinking",
-                    "data": {
-                        "content": "".join(thinking_parts),
-                        "duration_ms": duration_ms,
-                    },
-                },
-            )
-            thinking_parts.clear()
-            thinking_started_at = None
-
         try:
             self._last_stream_refresh = 0.0
-            for event in self._agent_app.ask_stream(text, mode=self._repl_state.mode):
-                if event.type == "reasoning_delta":
-                    thinking_parts.append(event.data)
-                    if thinking_started_at is None:
-                        thinking_started_at = perf_counter()
-                else:
-                    flush_thinking()
-                if event.type not in {
-                    "message_start",
-                    "message_stop",
-                    "reasoning_delta",
-                    "text_delta",
-                }:
-                    self._store.append("event", event_to_dict(event))
+            for event in self._agent_app.ask_stream(
+                text,
+                mode=self._repl_state.mode,
+                display_question=display_text,
+            ):
                 if isinstance(event, (FinalStructuredEvent,)):
                     answer = event.data.answer
                 if isinstance(event, (ToolUseStructuredEvent,)):
@@ -1324,7 +1293,6 @@ class _XcodeTui:
                 self._dispatch_agent_event(event)
         except Exception as exc:
             self._wait_for_agent_events()
-            flush_thinking()
             self._save_partial_answer(turn_log_start)
             detail = str(exc) or repr(exc)
             self._state.log.append(
@@ -1336,12 +1304,8 @@ class _XcodeTui:
             return
 
         self._wait_for_agent_events()
-        flush_thinking()
 
-        if answer:
-            self._store.append("assistant", answer)
-            self._store.update_summary()
-        else:
+        if not answer:
             self._save_partial_answer(turn_log_start)
 
         self._refresh()
@@ -1358,11 +1322,7 @@ class _XcodeTui:
         """保留回合内容，允许完成后继续折叠和滚动查看。"""
         self._committing = False
         self._refresh()
-        follow_up = self._agent_app.agent.take_follow_up()
-        if isinstance(follow_up, UserMessage):
-            self._submit(str(follow_up.content))
-            return
-        self._submit_pending_inject()
+        self._submit_pending_input()
 
     def _save_partial_answer(self, turn_log_start: int) -> None:
         """将中断前已经流式显示的回答写入会话，供恢复和后续注入使用。"""
@@ -1374,8 +1334,10 @@ class _XcodeTui:
         if self._state.streaming_answer is not None:
             partial = (partial + self._state.streaming_answer.content()).strip()
         if partial:
-            self._store.append("assistant", partial)
-            self._store.update_summary()
+            recorder = getattr(self._agent_app, "session_recorder", None)
+            if recorder is None:
+                raise RuntimeError("session recorder is not configured")
+            recorder.record_assistant(partial)
 
     def _dispatch_agent_event(self, event: AgentHarnessEvent) -> None:
         """将 agent 事件放入队列，由 UI loop 批量更新显示状态。"""
@@ -1556,8 +1518,8 @@ class _XcodeTui:
         parts: list[str] = []
         if self._repl_state.context_usage:
             parts.append(f"context: {self._repl_state.context_usage}")
-        if self._repl_state.context_cost:
-            parts.append(f"cost: {self._repl_state.context_cost}")
+        if self._repl_state.usage_stats:
+            parts.append(f"usage: {self._repl_state.usage_stats}")
         if not parts:
             return left
         right = "  ".join(parts)
@@ -1590,7 +1552,7 @@ def _tui_history(project_root: Path) -> History | None:
     try:
         from prompt_toolkit.history import FileHistory
 
-        history_dir = project_root / ".local"
+        history_dir = project_root / ".xcode"
         history_dir.mkdir(parents=True, exist_ok=True)
         return FileHistory(str(history_dir / "repl_history"))
     except OSError:

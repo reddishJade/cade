@@ -18,6 +18,7 @@ from xcode.ai.types import (
     ThinkingBudgets,
     ToolDefinition,
 )
+from xcode.ai.usage import UsageAccumulator, UsageTotals
 
 from ._codec import normalize_cross_provider_messages, to_chat_messages, to_chat_tools
 from ._runtime import ProviderRuntime
@@ -64,10 +65,13 @@ class OpenAICompatProvider:
             client = _OpenAIClient(api_key=config.api_key, base_url=config.base_url)
         self.client = client
         self.config = config
+        self._usage = UsageAccumulator(config.model)
         self.runtime = ProviderRuntime()
         self.transport = transport
         self._current_options: StreamOptions | None = None
         self._metrics: dict[str, object] = self._init_metrics()
+        self._active_stream: Any | None = None
+        self._abort_pending = False
 
     @property
     def model(self) -> str:
@@ -86,8 +90,23 @@ class OpenAICompatProvider:
         return self.config.reasoning_effort
 
     @property
+    def context_window(self) -> int | None:
+        """配置覆盖的上下文窗口；None 表示使用模型注册表默认值。"""
+        return self.config.context_window
+
+    @property
     def metrics(self) -> dict[str, object]:
         return self._metrics
+
+    @property
+    def usage_totals(self) -> UsageTotals:
+        """本 provider 实例的累计用量与成本。"""
+        return self._usage.totals
+
+    @property
+    def cache_hit_rate(self) -> float | None:
+        """最近一次请求的缓存命中率；尚无 usage 记录时为 None。"""
+        return self._usage.cache_hit_rate
 
     def _init_metrics(self) -> dict[str, object]:
         return {
@@ -178,9 +197,39 @@ class OpenAICompatProvider:
             if extra_headers:
                 params["extra_headers"] = extra_headers
 
+        self._abort_pending = False
         stream = self.runtime.run(lambda: self.client.chat.completions.create(**params))
-        intercepted = self._intercept_usage(stream, message_count)
-        return chat_stream_to_events(intercepted)
+        self._active_stream = stream
+        if self._abort_pending:
+            # 请求建立期间收到打断：立即关闭，避免阻塞读取。
+            self._close_stream(stream)
+        try:
+            intercepted = self._intercept_usage(stream, message_count)
+            yield from chat_stream_to_events(intercepted)
+        finally:
+            if self._active_stream is stream:
+                self._active_stream = None
+
+    def abort_active_stream(self) -> None:
+        """从任意线程中止在途流式请求，使阻塞的 chunk 读取立即失败。
+
+        interrupt 路径调用此方法以在模型生成期间真正停止响应；
+        底层连接被关闭后，读取会抛出异常，由消费端识别为取消。
+        """
+        self._abort_pending = True
+        self._close_stream(self._active_stream)
+
+    def _close_stream(self, stream: Any | None) -> None:
+        """尽力关闭流句柄；句柄缺失或不可关闭时静默忽略。"""
+        if stream is None:
+            return
+        close = getattr(stream, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception:
+            pass
 
     # ── metrics 拦截 ──
 
@@ -206,6 +255,12 @@ class OpenAICompatProvider:
             self._metrics["cache_hit_rate"] = cache_usage.hit_rate
             self._metrics["prompt_cache_hit_tokens"] = cache_usage.hit_tokens
             self._metrics["prompt_cache_miss_tokens"] = cache_usage.miss_tokens
+
+            self._usage.record(
+                prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                cache_usage=cache_usage,
+            )
 
             completion_details = getattr(usage, "completion_tokens_details", None)
             reasoning = (

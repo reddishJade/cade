@@ -38,7 +38,6 @@ from .repl_sessions import (
     resume_latest,
     resumed_message,
     select_session_interactively,
-    sync_agent_history,
 )
 from .repl_settings import (
     handle_effort_command,
@@ -70,6 +69,13 @@ from xcode.harness.session import SessionStore
 from xcode.harness.snapshot import SnapshotStore, TurnSnapshotRecord
 
 
+def _queue_followup(ctx: CommandContext, text: str) -> None:
+    """把斜杠命令产生的模型输入写入 durable inbox。"""
+    from xcode.agent.messages import UserMessage
+
+    ctx.app.agent.followup(UserMessage(content=text), display_text=text)
+
+
 def cmd_help(cmd: str, ctx: CommandContext) -> bool:
     """打印帮助信息。"""
     print(HELP_TEXT)
@@ -79,7 +85,7 @@ def cmd_help(cmd: str, ctx: CommandContext) -> bool:
 def cmd_clear(cmd: str, ctx: CommandContext) -> bool:
     """清空当前会话记录并开始新会话。"""
     ctx.store.clear()
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     clear_terminal_display()
     print_startup_banner(ctx.app, ctx.project_root)
     return False
@@ -93,12 +99,10 @@ def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
         return False
 
     def _fork_title(e: SessionEntry) -> str:
-        if e.type == "user":
-            return str(e.content)
         if isinstance(e.content, dict):
             data = e.content.get("data")
             if isinstance(data, dict):
-                return str(data.get("content", ""))
+                return str(data.get("display_text", ""))
         return ""
 
     choices = [
@@ -118,7 +122,7 @@ def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
     meta = ctx.store.current_metadata()
     if ctx.snapshot_store is not None and meta is not None:
         ctx.snapshot_store.fork_session(parent_session_id, meta.id)
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     print(f'Forked at: "{meta.title if meta else selected.id[:8]}"')
     return False
 
@@ -130,7 +134,7 @@ def cmd_clone(cmd: str, ctx: CommandContext) -> bool:
     fork_meta = ctx.store.current_metadata()
     if ctx.snapshot_store is not None and fork_meta is not None:
         ctx.snapshot_store.fork_session(parent_session_id, fork_meta.id)
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     if fork_meta is not None:
         print(f'Cloned: "{fork_meta.title}"')
     return False
@@ -146,7 +150,7 @@ def cmd_rewind(cmd: str, ctx: CommandContext) -> bool:
             ctx.store.session_id,
             ctx.store.user_turn_count(),
         )
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     turn_label = "turn" if turns == 1 else "turns"
     print(f"Rewound {turns} user {turn_label} ({removed} transcript records removed).")
     return False
@@ -161,18 +165,18 @@ def cmd_resume(cmd: str, ctx: CommandContext) -> bool:
             view = resume_latest(ctx.store)
             if view:
                 _print_resumed_session(view, ctx)
-                sync_agent_history(ctx.app, ctx.store)
+                ctx.app.restore_session()
             else:
                 print("No conversations found.")
             return False
         ctx.store.resume(target)
         _print_resumed_session(current_view(ctx.store), ctx)
-        sync_agent_history(ctx.app, ctx.store)
+        ctx.app.restore_session()
         return False
     resume_interactively(
         ctx.store, ctx.prompt_session, show_history=ctx.show_session_history
     )
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     return False
 
 
@@ -198,7 +202,7 @@ def cmd_tree(cmd: str, ctx: CommandContext) -> bool:
         print("Failed to set entry.")
         return False
 
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     print(f"Moved to: {selected.title}")
     return False
 
@@ -214,7 +218,7 @@ def cmd_continue(cmd: str, ctx: CommandContext) -> bool:
         return False
     ctx.store.resume(view.id)
     _print_resumed_session(view, ctx)
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     return False
 
 
@@ -230,7 +234,7 @@ def cmd_sessions(cmd: str, ctx: CommandContext) -> bool:
         return False
 
     ctx.store.resume(selected.id)
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
     _print_resumed_session(selected, ctx)
     return False
 
@@ -514,7 +518,7 @@ def cmd_plan(cmd: str, ctx: CommandContext) -> bool:
     )
     parts = cmd.split(maxsplit=1)
     if len(parts) == 2 and parts[1].strip():
-        ctx.state.pending_inject = parts[1].strip()
+        _queue_followup(ctx, parts[1].strip())
     return False
 
 
@@ -522,16 +526,16 @@ def cmd_build(cmd: str, ctx: CommandContext) -> bool:
     """进入 Build Mode（自动执行工作区变更，保留显式规则和硬边界）。"""
     ctx.state.mode = "build"
     print(
-        "Build Mode enabled. Workspace mutations and shell commands run "
-        "automatically; explicit permission rules and hard safety boundaries apply."
+        "Build Mode enabled. Workspace mutations run automatically; boundary "
+        "actions use automatic approval review without pausing for user input."
     )
     return False
 
 
 def cmd_act(cmd: str, ctx: CommandContext) -> bool:
-    """进入 Act Mode，恢复全部工具使用权限。"""
+    """进入 Act Mode，边界动作恢复人工审批。"""
     ctx.state.mode = "act"
-    print("Act Mode enabled. Normal tool use restored within policy.")
+    print("Act Mode enabled. Boundary actions require user approval.")
     return False
 
 
@@ -583,15 +587,12 @@ def cmd_steer(cmd: str, ctx: CommandContext) -> bool:
         return False
     msg = parts[1].strip()
     from xcode.agent.messages import UserMessage
-    from .repl_sessions import sync_compaction_source
 
-    if ctx.app.agent.try_steer(UserMessage(content=msg)):
-        message_id = ctx.store.append("user", msg)
-        sync_compaction_source(ctx.app, ctx.store, message_id)
+    outcome = ctx.app.agent.steer(UserMessage(content=msg))
+    if not outcome.wake_required:
         print("[steer] injected into the active run")
     else:
-        ctx.state.pending_inject = msg
-        print("[steer] no active run; sending as a normal message")
+        print("[steer] queued for the next run")
     return False
 
 
@@ -600,7 +601,7 @@ def cmd_queue(cmd: str, ctx: CommandContext) -> bool:
     parts = cmd.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
         print(f"Current busy-message mode: {ctx.state.busy_mode.value}")
-        print("Usage: /queue steer|followup|collect|interrupt|<message>")
+        print("Usage: /queue steer|followup|interrupt|<message>")
         return False
     msg = parts[1].strip()
     from xcode.harness.agent_runtime import BusyMessageMode
@@ -612,12 +613,8 @@ def cmd_queue(cmd: str, ctx: CommandContext) -> bool:
 
     from xcode.agent.messages import UserMessage
 
-    queued = ctx.app.agent.follow_up(UserMessage(content=msg))
-    if queued is False:
-        ctx.state.pending_inject = msg
-        print("[queued] no active run; sending as a normal message")
-    else:
-        print("[queued] will start a new run after the current run finishes")
+    ctx.app.agent.followup(UserMessage(content=msg))
+    print("[queued] will start a new run after the current run finishes")
     return False
 
 
@@ -669,10 +666,17 @@ def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
     # 5) 替换 agent 历史
     cast(Callable, load_history)(after_msgs)
 
-    # 6) 也裁剪会话日志
-    ctx.store.compact_current_session(max_tool_result_chars=200)
+    # 6) 追加新的上下文 epoch，原始 transcript 保持不变
+    ctx.app.record_compaction(
+        summary=summary_text or "",
+        messages_before=len(before_msgs),
+        messages_after=len(after_msgs),
+        tokens_before=before_tokens,
+        tokens_after=after_tokens,
+        replacement=after_msgs,
+    )
 
-    # 7) 打印结构化摘要——类似 pi 的格式
+    # 7) 打印结构化摘要
     saved = before_tokens - after_tokens
     print("\n [compaction]\n")
     print(f" Compacted from {before_tokens:,} tokens")
@@ -755,14 +759,15 @@ def cmd_goal(cmd: str, ctx: CommandContext) -> bool:
         else:
             agent.resume_goal()
             _persist_goal_state(ctx)
-            ctx.state.pending_inject = (
-                "Continue working toward the active goal:\n\n" + active
+            _queue_followup(
+                ctx,
+                "Continue working toward the active goal:\n\n" + active,
             )
             print(f"Goal resumed: {active}")
         return False
     agent.set_goal(condition)
     _persist_goal_state(ctx)
-    ctx.state.pending_inject = condition
+    _queue_followup(ctx, condition)
     print(f"Goal set: {condition}")
     return False
 
@@ -887,7 +892,7 @@ def cmd_skill(cmd: str, ctx: CommandContext) -> bool:
     if result.status in {"activated", "already_active"} and len(parts) == 3:
         prompt = parts[2].strip()
         if prompt:
-            ctx.state.pending_inject = prompt
+            _queue_followup(ctx, prompt)
     return False
 
 
@@ -1084,7 +1089,12 @@ def _count_tokens_by_message_role(messages: list[object]) -> dict[str, int]:
     return result
 
 
-def _get_context_window(model_name: str) -> int:
+def _get_context_window(
+    model_name: str, context_window_override: int | None = None
+) -> int:
+    """返回模型上下文窗口；优先使用 provider profile 的覆盖值。"""
+    if context_window_override is not None and context_window_override > 0:
+        return context_window_override
     from xcode.ai.models import get_providers, get_models
 
     for provider in get_providers():
@@ -1095,13 +1105,21 @@ def _get_context_window(model_name: str) -> int:
 
 
 def _get_model_cost(model_name: str) -> object | None:
-    from xcode.ai.models import get_providers, get_models
+    from xcode.ai.models import get_model_cost as _resolve_model_cost
 
-    for provider in get_providers():
-        for model in get_models(provider):
-            if model.id == model_name:
-                return model.cost
-    return None
+    return _resolve_model_cost(model_name)
+
+
+def _usage_stats_for_agent(agent: object) -> str:
+    """从 provider 累计用量生成底栏摘要；无 usage 记录时返回空串。"""
+    from xcode.ai.usage import format_usage_stats
+
+    provider = getattr(agent, "provider", None)
+    totals = getattr(provider, "usage_totals", None)
+    if totals is None or totals.requests == 0:
+        return ""
+    hit_rate = getattr(provider, "cache_hit_rate", None)
+    return format_usage_stats(totals, hit_rate)
 
 
 def _compute_context_summary(
@@ -1209,7 +1227,9 @@ def _compute_context_summary(
     provider = getattr(agent, "provider", None)
     inner = getattr(provider, "active_provider", provider)
     model_name = getattr(inner, "model", "unknown") if inner else "unknown"
-    context_window = _get_context_window(model_name)
+    context_window = _get_context_window(
+        model_name, getattr(inner, "context_window", None)
+    )
     cost = _get_model_cost(model_name)
 
     total = sum(t for _, t in categories)
@@ -1237,6 +1257,7 @@ def _compute_context_summary(
     state.model_name = model_name
     state.context_usage = context_str
     state.context_cost = cost_str
+    state.usage_stats = _usage_stats_for_agent(agent)
 
     return _ContextSummary(
         categories=categories,
@@ -1262,8 +1283,10 @@ def cmd_context(cmd: str, ctx: CommandContext) -> bool:
     summary = _compute_context_summary(agent, ctx.project_root, ctx.state)
 
     cost_str = f" · ${summary.spent:.2f}" if summary.spent > 0 else ""
+    usage_str = f" · {ctx.state.usage_stats}" if ctx.state.usage_stats else ""
     print(
-        f" Context Usage · {summary.model_name} · {ctx.state.context_usage}{cost_str}"
+        f" Context Usage · {summary.model_name} · "
+        f"{ctx.state.context_usage}{usage_str}{cost_str}"
     )
     print()
 
@@ -1340,7 +1363,7 @@ def cmd_btw(cmd: str, ctx: CommandContext) -> bool:
 
     print()
 
-    sync_agent_history(ctx.app, ctx.store)
+    ctx.app.restore_session()
 
     return False
 
@@ -1392,7 +1415,7 @@ def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
     agent = getattr(ctx.app, "agent", None)
     approval_callback = cast(
         "PermissionApprovalCallback | None",
-        getattr(agent, "approval_callback", None) if agent else None,
+        getattr(agent, "current_approval_callback", None) if agent else None,
     )
 
     for record in reversed(records):
@@ -1630,14 +1653,14 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     "/build": CommandEntry(
         handler=cmd_build,
         desc=(
-            "Enter Build Mode: workspace mutations and shell commands run "
-            "automatically within configured safety boundaries."
+            "Enter Build Mode: automatic execution with model-reviewed "
+            "boundary actions."
         ),
         group=COMMAND_GROUP_MODE,
     ),
     "/act": CommandEntry(
         handler=cmd_act,
-        desc="Enter Act Mode and allow normal tool use within policy.",
+        desc="Enter Act Mode with user approval for boundary actions.",
         accepts_args=True,
         group=COMMAND_GROUP_MODE,
     ),
@@ -1694,7 +1717,7 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/mcp": CommandEntry(
         handler=cmd_mcp,
-        desc="Show MCP server status or reload .local/mcp_config.json.",
+        desc="Show MCP server status or reload .xcode/mcp_config.json.",
         args_desc="status|reload",
         accepts_args=True,
         group=COMMAND_GROUP_INFO,
