@@ -90,7 +90,7 @@ def _compute_would_resolve(
     return "would_call_approval"
 
 
-def compute_shadow_approval_candidate(
+def compute_approval_candidate(
     action: Action,
     *,
     session_grant_store: GrantStore | None = None,
@@ -204,6 +204,4 @@ def _is_sensitive_path(path: str, *, access: PermissionAccess = "read") -> bool:
 
 def _is_blocked_workspace_path(path: str) -> bool:
     parts = tuple(part for part in path.split("/") if part)
-    if any(part in BLOCKED_PATH_PARTS for part in parts):
-        return True
-    return ".local" in parts and "chroma_db" in parts
+    return any(part in BLOCKED_PATH_PARTS for part in parts)

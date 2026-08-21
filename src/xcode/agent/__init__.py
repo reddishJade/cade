@@ -15,6 +15,7 @@ from .context import (
     ContextCollectionInput,
     ContextCollector,
     ContextCollectorRegistry,
+    FrozenContextCollectorRegistry,
     ContextExpiry,
     ContextPriority,
     DefaultContextAssembler,
@@ -34,6 +35,13 @@ from .messages import (
 )
 from .types import AgentTool, CancellationSignal
 from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
+from .request import (
+    DefaultRequestAssembler,
+    RequestAssembler,
+    RequestAssembly,
+    RequestContextTrace,
+    RequestHygiene,
+)
 
 __all__ = [
     "ActiveDiffCollector",
@@ -56,6 +64,7 @@ __all__ = [
     "ContextCollectionInput",
     "ContextCollector",
     "ContextCollectorRegistry",
+    "FrozenContextCollectorRegistry",
     "ContextExpiry",
     "ContextPriority",
     "DefaultContextAssembler",
@@ -63,6 +72,11 @@ __all__ = [
     "InstructionSource",
     "NotesCollector",
     "RecentValidationCollector",
+    "DefaultRequestAssembler",
+    "RequestAssembler",
+    "RequestAssembly",
+    "RequestContextTrace",
+    "RequestHygiene",
     "run_agent_loop",
     "SystemMessage",
     "ToolResultMessage",

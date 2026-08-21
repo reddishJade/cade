@@ -32,9 +32,9 @@ class ReplState:
     verbosity: VerbosityLevel = "normal"
     exit_pending: float = 0.0
     pending_partial: tuple[str, str] | None = None
-    pending_inject: str | None = None
     context_usage: str = ""
     context_cost: str = ""
+    usage_stats: str = ""
     last_dir: str = ""
     model_name: str = ""
     thinking_collapsed: bool = False

@@ -29,8 +29,13 @@ from xcode.agent.events import (
     ToolExecutionEndEvent,
     CompactionEvent,
 )
-from xcode.agent.messages import AssistantMessage
-from xcode.agent.types import TextContent, ToolCallContent, AgentToolResult
+from xcode.agent.messages import AssistantMessage, UserMessage
+from xcode.agent.types import (
+    AgentToolResult,
+    TerminalRenderIntent,
+    TextContent,
+    ToolCallContent,
+)
 
 
 def test_translate_start_event_returns_none() -> None:
@@ -79,6 +84,10 @@ def test_tool_execution_end() -> None:
                 tool_name="read_file",
                 content="result text",
                 metadata={"permission_notice": "Allowed by session grant"},
+                render_intent=TerminalRenderIntent(
+                    command="pwd",
+                    cwd="/project",
+                ),
             ),
             is_error=False,
         ),
@@ -87,6 +96,10 @@ def test_tool_execution_end() -> None:
     assert isinstance(result, ToolResultStructuredEvent)
     assert result.data.status == "ok"
     assert result.data.permission_notice == "Allowed by session grant"
+    assert result.data.render_intent == TerminalRenderIntent(
+        command="pwd",
+        cwd="/project",
+    )
 
 
 def test_tool_execution_end_error() -> None:
@@ -109,11 +122,13 @@ def test_compaction_event() -> None:
             messages_after=3,
             summary_token_estimate=200,
             trigger="token_limit",
+            replacement=[UserMessage(content="summary")],
         ),
         state,
     )
     assert isinstance(result, CompactionStructuredEvent)
     assert result.data.messages_removed == 5
+    assert result.data.replacement == (UserMessage(content="summary"),)
 
 
 class TestTranslateMessageUpdate:

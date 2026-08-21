@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xcode.ai.providers.base import ModelProvider
-from xcode.agent.types import ToolSpec
+from xcode.agent.types import ApprovalCallback, ToolSpec
 from xcode.agent.context import (
     ActiveDiffCollector,
     ContextCollectorRegistry,
@@ -24,11 +24,17 @@ from xcode.coding_agent.execution_modes import (
 )
 
 from xcode.harness.agent_runtime import (
+    AgentComposition,
     CancellationToken,
     ContextualRetrievalState,
 )
 from xcode.coding_agent.harness import CodingAgentHarness
-from xcode.harness.agent_runtime.config import GateConfig
+from xcode.harness.agent_runtime.config import (
+    GateConfig,
+    GateRuntimeConfig,
+    build_request_assembler,
+    resolve_permission_policy,
+)
 from xcode.harness.agent_runtime.compaction import CompactController, LayeredCompactor
 from xcode.harness.agent_runtime.prompting import build_runtime_context_provider
 from xcode.harness.config import AgentConfig, XcodeRuntimeConfig
@@ -41,6 +47,8 @@ from xcode.harness.observability import (
     SignalHookManager,
 )
 from xcode.harness.security.permission_model import PolicyEvaluator
+from xcode.harness.session.recorder import SessionRecorder
+from xcode.harness.session.inbox import SessionInbox
 
 from .security import (
     external_directories_from_security,
@@ -58,13 +66,16 @@ if TYPE_CHECKING:
 def build_hook_manager(
     contextual_state: ContextualRetrievalState | None,
     external_hook_runner: ExternalHookRunner | None,
+    session_recorder: SessionRecorder,
     project_root: Path,
     *,
     subagent: bool,
-) -> HookManager | None:
-    if contextual_state is None and external_hook_runner is None:
-        return None
+) -> HookManager:
     manager = SignalHookManager()
+    manager.register(
+        "before_provider_request",
+        session_recorder.record_provider_request,
+    )
     if contextual_state is not None:
 
         def record_post_tool(record: object) -> None:
@@ -105,6 +116,8 @@ def build_agent(
     config: AgentConfig,
     audit_path: Path | None,
     runtime_config: XcodeRuntimeConfig,
+    session_recorder: SessionRecorder,
+    session_inbox: SessionInbox,
     contextual_state: ContextualRetrievalState | None = None,
     shell_spec: ShellSpec | None = None,
     compact_controller: CompactController | None = None,
@@ -117,14 +130,15 @@ def build_agent(
     memory_manager: Any | None = None,
     session_history: Any | None = None,
     todo_state: SessionTodoState | None = None,
+    auto_approval_callback: ApprovalCallback | None = None,
 ) -> CodingAgentHarness:
     from xcode.harness.memory import MemoryManager
 
     memory_manager = memory_manager or MemoryManager(project_root)
-
     hook_manager = build_hook_manager(
         contextual_state,
         external_hook_runner,
+        session_recorder,
         project_root,
         subagent=False,
     )
@@ -148,49 +162,68 @@ def build_agent(
 
         context_collectors.register(SkillIndexCollector(skill_registry))
 
-    return CodingAgentHarness(
-        provider=llm,
+    runtime_context_provider = build_runtime_context_provider(
+        project_root,
+        registry,
+        shell_spec=shell_spec,
+        contextual_state=contextual_state,
+        modules=runtime_config.prompt.modules,
+        memory_manager=memory_manager,
+        todo_context_provider=(
+            todo_state.render_context if todo_state is not None else None
+        ),
+        identity=CORE_IDENTITY,
+    )
+    gate = GateConfig(
+        permission_policy=resolve_permission_policy(
+            project_root,
+            permission_policy_from_security(sec),
+        ),
+        approval_policy=sec.approval_policy,
+        restricted_dirs=sec.restricted_dirs,
+        hook_constraint_providers=hook_constraint_providers,
+        external_directories=external_directories_from_security(sec),
+        sensitive_path_overrides=sensitive_path_overrides_from_security(
+            sec, project_root
+        ),
+        user_rulesets=mode_rulesets_from_runtime_config(runtime_config),
+        default_mode_rulesets=build_default_mode_rulesets(project_root),
+        mode_fallbacks=DEFAULT_MODE_FALLBACKS,
+        shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
+        tool_path_extractors={"apply_patch": extract_patch_paths},
+    )
+    composition = AgentComposition.create(
+        primary_provider=llm,
+        fallback_provider=fallback_provider,
         registry=registry,
         config=config,
-        gate=GateConfig(
-            permission_policy=permission_policy_from_security(sec),
-            restricted_dirs=sec.restricted_dirs,
-            hook_constraint_providers=hook_constraint_providers,
-            hook_manager=hook_manager,
-            external_hook_runner=external_hook_runner,
-            external_hooks_cwd=project_root,
-            audit_logger=JsonlAuditLogger(audit_path).write if audit_path else None,
-            external_directories=external_directories_from_security(sec),
-            sensitive_path_overrides=sensitive_path_overrides_from_security(
-                sec, project_root
-            ),
-            user_rulesets=mode_rulesets_from_runtime_config(runtime_config),
-            default_mode_rulesets=build_default_mode_rulesets(project_root),
-            mode_fallbacks=DEFAULT_MODE_FALLBACKS,
-            shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
-            tool_path_extractors={"apply_patch": extract_patch_paths},
+        gate=gate,
+        request_assembler=build_request_assembler(
+            runtime_config.request_hygiene,
+            context_collectors,
+            DefaultContextAssembler(),
         ),
+        runtime_context_provider=runtime_context_provider,
+    )
+
+    return CodingAgentHarness(
+        composition=composition,
         runtime=CodingAgentRuntimeConfig(
+            initial_mode=runtime_config.execution_modes.default_mode,
+            session_inbox=session_inbox,
+            gate=GateRuntimeConfig(
+                auto_approval_callback=auto_approval_callback,
+                hook_manager=hook_manager,
+                external_hook_runner=external_hook_runner,
+                external_hooks_cwd=project_root,
+                audit_logger=(
+                    JsonlAuditLogger(audit_path).write if audit_path else None
+                ),
+            ),
             compactor=compactor,
             compact_controller=compact_controller,
             cancellation_token=cancellation_token,
-            runtime_context_provider=build_runtime_context_provider(
-                project_root,
-                registry,
-                shell_spec=shell_spec,
-                contextual_state=contextual_state,
-                modules=runtime_config.prompt.modules,
-                memory_manager=memory_manager,
-                todo_context_provider=(
-                    todo_state.render_context if todo_state is not None else None
-                ),
-                identity=CORE_IDENTITY,
-            ),
-            fallback_provider=fallback_provider,
             project_root=project_root,
-            request_hygiene=runtime_config.request_hygiene,
-            context_collectors=context_collectors,
-            context_assembler=DefaultContextAssembler(),
             skill_registry=skill_registry,
             memory_manager=memory_manager,
             session_history=session_history,

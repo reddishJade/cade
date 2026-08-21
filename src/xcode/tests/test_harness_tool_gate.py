@@ -5,15 +5,49 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
+from xcode.agent.config import AgentContext, BeforeToolCallContext
+from xcode.agent.messages import AssistantMessage, UserMessage
+from xcode.agent.request import DefaultRequestAssembler
+from xcode.agent.types import ToolCallContent
+from xcode.harness.agent_runtime.composition import AgentComposition
 from xcode.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
 from xcode.harness.agent_runtime.harness import AgentHarness
-from xcode.harness.agent_runtime.tool_gate import _permission_notice, _stricter_decision
+from xcode.harness.config import AgentConfig
+from xcode.harness.agent_runtime.tool_gate import (
+    _approval_transcript,
+    _permission_notice,
+    _stricter_decision,
+)
 from xcode.harness.security import PermissionEngineResult
 from xcode.harness.security.permission_model import (
     ApprovalResult,
     ExternalDirectory,
     SensitivePathOverride,
 )
+from xcode.harness.session import SessionInbox, SessionStore
+
+
+def _runtime(tmp_path: Path) -> AgentRuntimeConfig:
+    store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    return AgentRuntimeConfig(
+        session_inbox=SessionInbox(store),
+        project_root=tmp_path,
+    )
+
+
+def _composition(
+    gate: GateConfig,
+    provider: Any | None = None,
+) -> AgentComposition:
+    return AgentComposition.create(
+        primary_provider=cast(Any, provider or object()),
+        fallback_provider=None,
+        registry=(),
+        config=AgentConfig(),
+        gate=gate,
+        request_assembler=DefaultRequestAssembler(),
+        runtime_context_provider=None,
+    )
 
 
 class TestStricterDecision:
@@ -45,14 +79,63 @@ def test_permission_notice_describes_automatic_session_grant() -> None:
     assert _permission_notice(result) == "Allowed by session grant"
 
 
+def test_permission_notice_describes_auto_review() -> None:
+    result = PermissionEngineResult(
+        decision="allow",
+        blocked=False,
+        source="auto_review",
+        metadata={
+            "approval_reviewer": "auto_review",
+            "approval_rationale": "运行指定的本地聚焦测试是用户授权的常规验证。",
+            "approval_risk": "low",
+            "approval_authorization": "high",
+        },
+        approval_result=ApprovalResult(decision="allow", scope="once"),
+    )
+
+    assert (
+        _permission_notice(result) == "Automatic approval review approved "
+        "(risk: low, authorization: high): "
+        "运行指定的本地聚焦测试是用户授权的常规验证。"
+    )
+
+
+def test_auto_review_transcript_preserves_roles_and_skips_internal_continue() -> None:
+    ctx = BeforeToolCallContext(
+        assistant_message=AssistantMessage(
+            content=[
+                ToolCallContent(
+                    id="call-1",
+                    name="bash",
+                    arguments={"command": "pytest -q"},
+                )
+            ]
+        ),
+        tool_call=ToolCallContent(id="call-1", name="bash", arguments={}),
+        args={},
+        context=AgentContext(
+            messages=[
+                UserMessage(content="实现并验证这次权限重构"),
+                UserMessage(content="continue"),
+            ]
+        ),
+    )
+
+    transcript = _approval_transcript(ctx)
+
+    assert "<user trust=trusted>" in transcript
+    assert "实现并验证这次权限重构" in transcript
+    assert "continue" not in transcript
+    assert "<assistant trust=untrusted>" in transcript
+    assert "pytest -q" in transcript
+
+
 def test_agent_harness_propagates_external_directories(tmp_path: Path) -> None:
     external = ExternalDirectory(path=tmp_path / "shared", access="read")
 
     harness = AgentHarness(
-        provider=cast(Any, object()),
-        registry=(),
-        gate=GateConfig(external_directories=(external,)),
-        runtime=AgentRuntimeConfig(project_root=tmp_path),
+        composition=_composition(GateConfig(external_directories=(external,))),
+        runtime=_runtime(tmp_path),
     )
 
     assert harness.external_directories == (external,)
@@ -63,11 +146,26 @@ def test_agent_harness_propagates_sensitive_path_overrides(tmp_path: Path) -> No
     override = SensitivePathOverride(path=tmp_path / ".env", access="read")
 
     harness = AgentHarness(
-        provider=cast(Any, object()),
-        registry=(),
-        gate=GateConfig(sensitive_path_overrides=(override,)),
-        runtime=AgentRuntimeConfig(project_root=tmp_path),
+        composition=_composition(GateConfig(sensitive_path_overrides=(override,))),
+        runtime=_runtime(tmp_path),
     )
 
     assert harness.sensitive_path_overrides == (override,)
     assert harness._gate.snapshot().sensitive_path_overrides == (override,)
+
+
+def test_agent_harness_replaces_the_whole_provider_generation(tmp_path: Path) -> None:
+    first_provider = object()
+    second_provider = object()
+    harness = AgentHarness(
+        composition=_composition(GateConfig(), first_provider),
+        runtime=_runtime(tmp_path),
+    )
+    first_generation = harness.composition.generation_id
+
+    second_generation = harness.replace_primary_provider(cast(Any, second_provider))
+
+    assert second_generation != first_generation
+    assert harness.composition.generation_id == second_generation
+    assert harness.composition.primary_provider is second_provider
+    assert harness.provider is second_provider
