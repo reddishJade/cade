@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from xcode.ai.types import Cost, Model
 
@@ -67,7 +68,13 @@ _MODELS: dict[str, dict[str, Model]] = {
             reasoning=True,
             context_window=1_000_000,
             max_tokens=384_000,
-            cost=Cost(input=0.435, output=0.87, cache_read=0.003625),
+            cost=Cost(
+                input=1.32,
+                output=3.96,
+                cache_read=0.044,
+                peak_hours=((1, 4), (6, 10)),
+                off_peak_factor=0.5,
+            ),
         ),
         "deepseek-v4-flash": Model(
             id="deepseek-v4-flash",
@@ -77,7 +84,13 @@ _MODELS: dict[str, dict[str, Model]] = {
             reasoning=True,
             context_window=1_000_000,
             max_tokens=384_000,
-            cost=Cost(input=0.14, output=0.28, cache_read=0.0028),
+            cost=Cost(
+                input=0.44,
+                output=1.32,
+                cache_read=0.014,
+                peak_hours=((1, 4), (6, 10)),
+                off_peak_factor=0.5,
+            ),
         ),
     },
     "chatglm": {
@@ -169,6 +182,15 @@ def get_model(provider_name: str, model_id: str) -> Model | None:
     return _MODELS.get(provider_name, {}).get(model_id)
 
 
+def get_model_cost(model_name: str, now: datetime | None = None) -> Cost | None:
+    """解析模型单价（美元/百万 token），声明了分时计价的模型按时刻折算费率。"""
+    for provider_models in _MODELS.values():
+        model = provider_models.get(model_name)
+        if model is not None:
+            return model.cost.effective(now)
+    return None
+
+
 def resolve_model(provider_name: str, model_id: str) -> Model:
     """解析模型定义，支持三层回退策略。"""
     model = get_model(provider_name, model_id)
@@ -202,8 +224,18 @@ def effective_compact_threshold(
     reserve_tokens: int = 0,
     fallback_threshold: int = 32000,
     trigger_ratio: float = 0.7,
+    context_window_override: int | None = None,
 ) -> int:
-    context_window = get_model_context_window(model)
+    """计算自动压缩触发线。
+
+    context_window_override 优先于模型注册表默认窗口，允许在配置中
+    限制实际使用的上下文窗口（如 1M 窗口的模型只用 256K）。
+    """
+    context_window = (
+        context_window_override
+        if context_window_override is not None and context_window_override > 0
+        else get_model_context_window(model)
+    )
     if context_window is not None:
         ratio_threshold = int(context_window * trigger_ratio)
         reserved_threshold = context_window - max(reserve_tokens, 0)

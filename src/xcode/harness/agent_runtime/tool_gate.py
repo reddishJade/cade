@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -46,6 +47,7 @@ from ..security.permission_model import (
     Rule,
     SensitivePathOverride,
 )
+from ..security.approval import ApprovalPolicy, ApprovalsReviewer
 from ...agent.types import (
     ApprovalCallback,
     ToolSpec,
@@ -100,10 +102,12 @@ class _RedactingAdapter(ToolSpecAdapter):
             self._spec.handler, dict(params), _redacted_update
         )
         metadata = getattr(content, "metadata", None)
+        render_intent = getattr(content, "render_intent", None)
         return AgentToolResult(
             content=[TextContent(text=redact_text(str(content)))],
             details=metadata if isinstance(metadata, dict) else None,
             is_error=bool(getattr(content, "is_error", False)),
+            render_intent=render_intent,
         )
 
 
@@ -112,7 +116,9 @@ class ToolGateSnapshot:
     """ToolGate 在单个 turn 中使用的冻结配置。"""
 
     approval_callback: ApprovalCallback | None
+    approvals_reviewer: ApprovalsReviewer
     permission_policy: PermissionPolicy | None
+    approval_policy: ApprovalPolicy
     tool_map: dict[str, ToolSpec]
     restricted_dirs: tuple[str, ...] = ()
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = ()
@@ -136,11 +142,13 @@ class ToolGate:
     def __init__(
         self,
         mode_state: ToolGateMode,
-        approval_callback: ApprovalCallback | None,
+        user_approval_callback: ApprovalCallback | None,
+        auto_approval_callback: ApprovalCallback | None,
         permission_policy: PermissionPolicy | None,
         hook_manager: HookManager | None,
         audit_logger: AuditLogger | None,
         session_id: str,
+        approval_policy: ApprovalPolicy = "on-request",
         external_hook_runner: ExternalHookRunner | None = None,
         external_hooks_subagent: bool = False,
         external_hooks_cwd: Path | None = None,
@@ -154,11 +162,11 @@ class ToolGate:
         session_grant_store_provider: Callable[[], GrantStore | None] | None = None,
         permanent_grant_store: GrantStore | None = None,
         user_ruleset: tuple[Rule, ...] = (),
-        user_rulesets: dict[str, tuple[Rule, ...]] | None = None,
-        default_mode_rulesets: dict[str, tuple[Rule, ...]] | None = None,
-        mode_fallbacks: dict[str, PermissionDecision] | None = None,
-        shell_unresolved_policies: dict[str, PermissionDecision] | None = None,
-        tool_path_extractors: dict[str, PathExtractor] | None = None,
+        user_rulesets: Mapping[str, tuple[Rule, ...]] | None = None,
+        default_mode_rulesets: Mapping[str, tuple[Rule, ...]] | None = None,
+        mode_fallbacks: Mapping[str, PermissionDecision] | None = None,
+        shell_unresolved_policies: Mapping[str, PermissionDecision] | None = None,
+        tool_path_extractors: Mapping[str, PathExtractor] | None = None,
     ) -> None:
         self._mode = mode_state
         self._user_ruleset = user_ruleset
@@ -167,7 +175,9 @@ class ToolGate:
         self._mode_fallbacks = mode_fallbacks or {}
         self._shell_unresolved_policies = shell_unresolved_policies or {}
         self._tool_path_extractors = tool_path_extractors or {}
-        self._approval_callback = approval_callback
+        self._user_approval_callback = user_approval_callback
+        self._auto_approval_callback = auto_approval_callback
+        self._approval_policy: ApprovalPolicy = approval_policy
         self._permission_policy = permission_policy
         self._restricted_dirs = restricted_dirs
         self._hook_constraint_providers = hook_constraint_providers
@@ -207,15 +217,25 @@ class ToolGate:
     def _shell_unresolved_policy_for_mode(self, mode_name: str) -> PermissionDecision:
         return self._shell_unresolved_policies.get(mode_name, "ask")
 
+    def _approval_callback_for_mode(
+        self, reviewer: ApprovalsReviewer
+    ) -> ApprovalCallback | None:
+        if reviewer == "auto_review":
+            return self._auto_approval_callback
+        return self._user_approval_callback
+
     def snapshot(self) -> ToolGateSnapshot:
         mode_name = self._mode.current_mode
         default_rules = self._default_ruleset_for_mode(mode_name)
         fallback = self._fallback_for_mode(mode_name)
         shell_unresolved_policy = self._shell_unresolved_policy_for_mode(mode_name)
+        reviewer = self._mode.approvals_reviewer
         return ToolGateSnapshot(
             user_ruleset=self._ruleset_for_mode(mode_name),
-            approval_callback=self._approval_callback,
+            approval_callback=self._approval_callback_for_mode(reviewer),
+            approvals_reviewer=reviewer,
             permission_policy=self._permission_policy,
+            approval_policy=self._approval_policy,
             tool_map={},
             restricted_dirs=self._restricted_dirs,
             hook_constraint_providers=self._hook_constraint_providers,
@@ -227,7 +247,7 @@ class ToolGate:
             mode_ruleset=default_rules,
             mode_fallback=fallback,
             shell_unresolved_policy=shell_unresolved_policy,
-            tool_path_extractors=self._tool_path_extractors,
+            tool_path_extractors=dict(self._tool_path_extractors),
         )
 
     def snapshot_for(self, registry: tuple[ToolSpec, ...]) -> ToolGateSnapshot:
@@ -236,10 +256,13 @@ class ToolGate:
         default_rules = self._default_ruleset_for_mode(mode_name)
         fallback = self._fallback_for_mode(mode_name)
         shell_unresolved_policy = self._shell_unresolved_policy_for_mode(mode_name)
+        reviewer = self._mode.approvals_reviewer
         return ToolGateSnapshot(
             user_ruleset=self._ruleset_for_mode(mode_name),
-            approval_callback=self._approval_callback,
+            approval_callback=self._approval_callback_for_mode(reviewer),
+            approvals_reviewer=reviewer,
             permission_policy=self._permission_policy,
+            approval_policy=self._approval_policy,
             tool_map={tool.name: tool for tool in registry},
             restricted_dirs=self._restricted_dirs,
             hook_constraint_providers=self._hook_constraint_providers,
@@ -251,7 +274,7 @@ class ToolGate:
             mode_ruleset=default_rules,
             mode_fallback=fallback,
             shell_unresolved_policy=shell_unresolved_policy,
-            tool_path_extractors=self._tool_path_extractors,
+            tool_path_extractors=dict(self._tool_path_extractors),
         )
 
     def adapt_tools(self, registry: tuple[ToolSpec, ...]) -> list[AgentTool]:
@@ -262,13 +285,42 @@ class ToolGate:
         return [_RedactingAdapter(spec) for spec in registry]
 
     @property
-    def approval_callback(self) -> ApprovalCallback | None:
-        """返回当前 HITL 审批回调。"""
-        return self._approval_callback
+    def current_approval_callback(self) -> ApprovalCallback | None:
+        """返回当前 execution mode 实际使用的审批回调。"""
+        return self._approval_callback_for_mode(self._mode.approvals_reviewer)
 
-    def set_approval_callback(self, approval_callback: ApprovalCallback | None) -> None:
-        """更新后续工具适配与前置检查使用的 HITL 回调。"""
-        self._approval_callback = approval_callback
+    @property
+    def user_approval_callback(self) -> ApprovalCallback | None:
+        return self._user_approval_callback
+
+    @property
+    def auto_approval_callback(self) -> ApprovalCallback | None:
+        return self._auto_approval_callback
+
+    @property
+    def approval_policy(self) -> ApprovalPolicy:
+        """返回 ask 的会话处理策略。"""
+        return self._approval_policy
+
+    @property
+    def approvals_reviewer(self) -> ApprovalsReviewer:
+        """返回当前 execution mode 的审批者类型。"""
+        return self._mode.approvals_reviewer
+
+    @property
+    def correlation(self) -> RuntimeCorrelation:
+        """返回这个 gate 自己的运行关联域。"""
+        return self._correlation
+
+    def set_user_approval_callback(
+        self, approval_callback: ApprovalCallback | None
+    ) -> None:
+        """更新 Act 等人工审批模式使用的回调。"""
+        self._user_approval_callback = approval_callback
+
+    def set_permission_policy(self, policy: PermissionPolicy | None) -> None:
+        """应用新 composition generation 的静态权限策略。"""
+        self._permission_policy = policy
 
     def set_session_grant_store_provider(
         self, provider: Callable[[], GrantStore | None] | None
@@ -286,19 +338,26 @@ class ToolGate:
         if isinstance(store, _ClearableGrantStore):
             store.clear()
 
-    def fork_for_subagent(self) -> ToolGate:
-        """派生隔离运行状态、共享权限配置和 grant 的子代理门控。"""
+    def fork_for_subagent(
+        self,
+        session_id: str | None = None,
+        hook_manager: HookManager | None = None,
+    ) -> ToolGate:
+        """派生独立 correlation、共享权限配置和 grant 的子代理门控。"""
+        child_session_id = session_id or self._session_id
         return ToolGate(
             mode_state=self._mode,
-            approval_callback=self._approval_callback,
+            user_approval_callback=self._user_approval_callback,
+            auto_approval_callback=self._auto_approval_callback,
             permission_policy=self._permission_policy,
-            hook_manager=self._hook_manager,
+            approval_policy=self._approval_policy,
+            hook_manager=hook_manager,
             audit_logger=self._audit_logger,
-            session_id=self._session_id,
+            session_id=child_session_id,
             external_hook_runner=self._external_hook_runner,
             external_hooks_subagent=True,
             external_hooks_cwd=self._external_hooks_cwd,
-            correlation=self._correlation,
+            correlation=RuntimeCorrelation(child_session_id),
             restricted_dirs=self._restricted_dirs,
             hook_constraint_providers=self._hook_constraint_providers,
             project_root=self._project_root,
@@ -348,7 +407,13 @@ class ToolGate:
                 tool_call.id,
             )
             permission_result = self._precheck_permission(
-                tool_call.name, args, decision, snapshot, tool_call.id
+                tool_call.name,
+                args,
+                decision,
+                snapshot,
+                tool_call.id,
+                approval_transcript=_approval_transcript(ctx),
+                approval_turn_id=self._correlation.turn_id,
             )
             if permission_result is not None:
                 perm_result = self._last_perm_results.pop(tool_call.id, None)
@@ -521,6 +586,9 @@ class ToolGate:
         execution_decision: PermissionDecision,
         snapshot: ToolGateSnapshot,
         tool_call_id: str,
+        *,
+        approval_transcript: str = "",
+        approval_turn_id: str = "",
     ) -> BeforeToolCallResult | None:
         action_profiles: dict[str, tuple[str, str]] = {}
         for spec in snapshot.tool_map.values():
@@ -543,6 +611,7 @@ class ToolGate:
                 user_ruleset=snapshot.user_ruleset,
                 mode_fallback=snapshot.mode_fallback,
                 shell_unresolved_policy=snapshot.shell_unresolved_policy,
+                approval_policy=snapshot.approval_policy,
             )
         )
         result = engine.decide(
@@ -551,6 +620,9 @@ class ToolGate:
             execution_decision=execution_decision,
             tool_spec=snapshot.tool_map.get(tool_name),
             approval_callback=snapshot.approval_callback,
+            approvals_reviewer=snapshot.approvals_reviewer,
+            approval_transcript=approval_transcript,
+            approval_turn_id=approval_turn_id,
         )
         self._last_perm_results[tool_call_id] = result
         if result.blocked:
@@ -564,6 +636,72 @@ class ToolGate:
 
 
 # ── 模块级辅助 ──
+
+
+def _approval_transcript(ctx: BeforeToolCallContext) -> str:
+    """构建 reviewer 使用的有界会话证据，保留角色和信任边界。"""
+    entries: list[str] = []
+    if ctx.context.system_prompt.strip():
+        entries.append(
+            _format_transcript_entry("system", ctx.context.system_prompt, 8_000)
+        )
+    messages = [
+        *ctx.context.request_prefix,
+        *ctx.context.messages,
+        ctx.assistant_message,
+    ]
+    for message in messages[-40:]:
+        role = str(getattr(message, "role", "unknown"))
+        content = _transcript_message_text(message)
+        if not content or (role == "user" and content.casefold() == "continue"):
+            continue
+        per_entry_limit = 4_000 if role == "tool_result" else 8_000
+        entries.append(_format_transcript_entry(role, content, per_entry_limit))
+    return _truncate_transcript("\n\n".join(entries), 40_000)
+
+
+def _transcript_message_text(message: object) -> str:
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, TextContent) and block.text:
+                parts.append(block.text)
+                continue
+            if isinstance(block, ToolCallContent):
+                arguments = json.dumps(
+                    block.arguments or {},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                )
+                parts.append(f"tool_call {block.name}: {arguments}")
+                continue
+            text = getattr(block, "content", None) or getattr(block, "text", None)
+            if isinstance(text, str) and text:
+                parts.append(text)
+        return "\n".join(parts).strip()
+    summary = getattr(message, "summary", None)
+    if isinstance(summary, str):
+        return summary.strip()
+    return ""
+
+
+def _format_transcript_entry(role: str, content: str, limit: int) -> str:
+    trust = "trusted" if role in {"system", "user"} else "untrusted"
+    return f"<{role} trust={trust}>\n{_truncate_transcript(content, limit)}\n</{role}>"
+
+
+def _truncate_transcript(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    marker = "<truncated />"
+    remaining = max(0, limit - len(marker))
+    prefix = remaining // 2
+    suffix = remaining - prefix
+    return f"{text[:prefix]}{marker}{text[-suffix:]}"
 
 
 def _tool_results_count_as_progress(
@@ -599,6 +737,18 @@ def _permission_notice(result: PermissionEngineResult | None) -> str | None:
         return None
     if result.approval_result.decision != "allow":
         return None
+    metadata = result.metadata or {}
+    if metadata.get("approval_reviewer") == "auto_review":
+        rationale = str(metadata.get("approval_rationale") or "").strip()
+        risk = str(metadata.get("approval_risk") or "unknown")
+        authorization = str(metadata.get("approval_authorization") or "unknown")
+        prefix = (
+            "Automatic approval review approved "
+            f"(risk: {risk}, authorization: {authorization})"
+        )
+        if rationale:
+            return f"{prefix}: {rationale}"
+        return prefix
     if result.matched_rule == "session_grant":
         return "Allowed by session grant"
     if result.matched_rule == "persistent_grant":

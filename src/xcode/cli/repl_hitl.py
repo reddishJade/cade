@@ -14,9 +14,8 @@ from rich.panel import Panel
 import questionary
 
 from .repl_tools import brief_input
-from xcode.harness.security import HITLResult
+from xcode.harness.security import HITLDecision, HITLResult, HITLScope
 from xcode.harness.security.permission_model.utils import command_grant_pattern
-from xcode.harness.security.permissions import HITLDecision, HITLScope
 from xcode.agent.types import ApprovalRequest, ApprovalScope, ToolInput, ToolSpec
 
 
@@ -166,7 +165,7 @@ def approval_scope_lines(
     if "permanent" in allowed_scopes:
         lines.append(
             "[yellow]Always allow: save this rule for this project in "
-            ".local/approval_grants.json.[/yellow]"
+            ".xcode/approval_grants.json.[/yellow]"
         )
     return lines
 
