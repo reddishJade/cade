@@ -178,25 +178,6 @@ xcode --resume
 
 ---
 
-## 工具能力
-
-稳定工具默认注册：`read_file`、`write_file`、`edit_file`、`apply_patch`、
-`glob_files`、`find_files`、`list_dir`、`grep_search`、`websearch`、
-`webfetch`、`question`、`bash`、`search_tools`、`subagent`、`todowrite`、
-`history`、`search_memory`、`new_context`。发现 skill 时注册 `load_skill`；存在 MCP 配置时
-注册 `mcp__{server}__{tool}` 动态工具。
-
-`search_memory` 是只读、低风险的 BM25 检索工具。运行时不会在每轮自动
-注入检索结果；resume/rebuild 才会在独立预算内注入项目与用户记忆。长期
-记忆只保存用户规则、架构决定和经过验证的跨 session 事实，当前进度与
-下一步动作由项目根 `NOTE.md` 负责。
-
-`history` 只读取当前 session 的当前分支：`list_windows` 列换窗边界，
-`search` 按关键词定位旧记录，`read` 分页读取某条完整原文，
-`around` 读取 message id 的原文邻域。history 是无损事实源，不依赖递归摘要。
-
----
-
 ## 配置
 
 配置发现栈（优先级从低到高）：
@@ -223,11 +204,6 @@ provider。权限提示和 shell 效果分析用于帮助用户了解并确认�
 
 ## 架构
 
-详细不变量与运行路径见 [docs/architecture.md](docs/architecture.md)，测试边界见
-[docs/testing.md](docs/testing.md)。工程决策记录在
-[.agents/notes/README.md](.agents/notes/README.md)，事故复盘规范见
-[docs/postmortem/README.md](docs/postmortem/README.md)。
-
 五层架构，自底向上：
 
 | Layer | 路径 | 职责 |
@@ -240,86 +216,6 @@ provider。权限提示和 shell 效果分析用于帮助用户了解并确认�
 | `server/` | `src/xcode/server/` | 浏览器工作台：FastAPI + WebSocket 实时事件流 + 零构建前端 |
 
 运行路径：`main.py` → `build_app()` → `CodingAgentHarness` → `Agent` loop → provider stream → tool execution。
-
----
-
-## 评估与验证
-
-### 长程任务 benchmark
-
-`benchmarks/` 提供无摘要换窗消融实验：对同一模型、温度和任务，配对运行
-完整历史 baseline 与在声明边界开启 fresh context 的 Xcode 配置。任务成功由测试进程判定，状态保持由文件哈希、禁止路径和验证命令判定。
-
-```powershell
-uv run python -m benchmarks.runners.run_ablation benchmarks/tasks/long_horizon `
-  --repeat 3 --temperature 0 --max-pair-attempts 2 --require-complete-usage
-```
-
-实验设计、任务格式和报告口径见 [benchmarks/README.md](benchmarks/README.md)。
-
-### 工具调度 benchmark
-
-确定性消融实验通过生产 `execute_tool_calls()` 重放相同的 5、10、20 文件
-读取批次，对比强制串行与副作用感知并发调度，并用混合读写 workload 验证
-写操作不与其他工具重叠。该命令不调用模型 API：
-
-```powershell
-uv run python -m benchmarks.runners.run_tool_scheduling `
-  benchmarks/tasks/parallel_reads --repeat 10 --warmup 1
-```
-
-报告按 workload 给出工具阶段 P50/P95 延迟、配对加速比、最大并发度、输出
-等价率和写隔离率；这些结果不等同于端到端 Agent 延迟。
-`benchmarks/scripts/run_tool_worker_sweep.sh` 可在独立目录中扫描
-1/2/4/8/16 worker 数，互不覆盖历史结果。
-
-### 单元测试
-
-```powershell
-uv run pytest src/xcode/tests -q --tb=short
-```
-
----
-
-## 开发指南
-
-### 静态检查
-
-```powershell
-uv run ruff check src/ --fix
-uv run ruff format src/
-uv run pyright src/
-```
-
-### 代码规范
-
-- Python 3.12+，完整类型注解
-- ruff 格式化（行宽 88），零 `# noqa`
-- 纯函数优先，职责分离（IO / 计算 / 展示）
-- 异常捕获明确具体类型，禁止 bare `except:`
-
-详细规范见 [AGENTS.md](AGENTS.md)。
-
----
-
-## 开发者文档导航
-
-### 核心设计与实战
-* [设计理念与核心实现机制](docs/design-philosophy.md)：可回放账本、执行模式分权、Bubblewrap 沙箱、并发分区与分层压缩
-* [实战场景与工作流指南](docs/examples.md)：从 Plan 规划到 Build 落地、分支探索、快照撤销与 MCP/Hooks 实战
-* [五层架构与执行模型](docs/architecture.md)：系统分层、单向数据流与执行协议不变量
-* [浏览器工作台技术栈](docs/web.md)：FastAPI + WebSocket 事件流、REST API、零构建前端与进程模型
-
-### 模块指南 (docs/guide/)
-* [安装与环境准备](docs/guide/install.md) · [模型与 Provider 配置](docs/guide/providers.md) · [快速上手与终端交互](docs/guide/quickstart.md)
-* [执行模式 (Plan/Build/Act)](docs/guide/modes.md) · [会话账本与分层压缩](docs/guide/sessions.md) · [权限引擎与 Linux 沙箱](docs/guide/security.md)
-* [核心工具箱与并发调度](docs/guide/tools.md) · [配置系统与设置浏览器](docs/guide/configuration.md) · [MCP 服务与工具扩展](docs/guide/mcp.md)
-* [Skills 技能系统](docs/guide/skills.md) · [Subagents 子代理架构](docs/guide/subagents.md) · [长期记忆系统](docs/guide/memory.md) · [外部事件 Hooks](docs/guide/hooks.md)
-* [Slash 命令完全手册](docs/guide/slash-commands.md) · [CLI 命令行参数速查](docs/guide/cli.md)
-
-### 参考与评测
-* [运行时配置参考 (CONFIG.md)](CONFIG.md) · [Benchmark 实验设计与评估](benchmarks/README.md) · [项目主页 (GitHub Pages)](https://reddishjade.github.io/xcode/)
-
 
 ---
 
