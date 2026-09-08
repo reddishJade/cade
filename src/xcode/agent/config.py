@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import SkipValidation
 
-from xcode.ai.providers.base import StreamProvider
-from xcode.ai.types import StreamOptions, ThinkingLevel
 from xcode.agent.types import (
     AgentTool,
     AgentToolResult,
@@ -20,7 +19,11 @@ from xcode.agent.types import (
     ToolResultContentBlock,
     ToolResultDetails,
 )
+from xcode.ai.providers.base import StreamProvider
+from xcode.ai.types import StreamOptions, ThinkingLevel
 
+from .context import ContextState
+from .context_manager import ContextManager
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage
 from .request import DefaultRequestAssembler, RequestAssembler, RequestAssembly
 
@@ -46,6 +49,14 @@ class AgentContext(BaseModel):
     request_prefix: list[AgentMessage] = Field(default_factory=list)
     messages: list[AgentMessage] = Field(default_factory=list)
     tools: list[Annotated[AgentTool, SkipValidation]] = Field(default_factory=list)
+    context_state: Annotated[ContextState, SkipValidation] = Field(
+        default_factory=ContextState
+    )
+    context_manager: Annotated[ContextManager | None, SkipValidation] = None
+    state: dict[str, object] = Field(default_factory=dict)
+    project_root: Path | None = None
+    cwd: Path | None = None
+    request_token_budget: Annotated[int, Field(ge=0)] = 0
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
@@ -100,32 +111,6 @@ class AgentLoopTurnUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ── 压缩指令 ──
-
-
-type CompactPriority = Literal[
-    "architecture_decision",
-    "modified_file",
-    "verification_status",
-    "todo",
-    "tool_output",
-]
-
-
-class CompactInstructions(BaseModel):
-    priorities: list[CompactPriority] = Field(
-        default_factory=lambda: [
-            "architecture_decision",
-            "modified_file",
-            "verification_status",
-            "todo",
-            "tool_output",
-        ]
-    )
-    frozen_identifiers: list[str] = Field(default_factory=list)
-    model_config = ConfigDict(extra="forbid")
-
-
 # ── Callable type aliases（引用本模块上下文类型）──
 
 
@@ -141,9 +126,11 @@ type CompletionVerifier = Callable[[list[AgentMessage]], Awaitable[str | None]]
 
 # ── Callable type aliases（原 hooks.py）──
 
-type ArchiveWriter = Callable[[list[AgentMessage]], str | None]
-type ShouldCompactHook = Callable[[list[AgentMessage]], bool]
-type CompactHook = Callable[[list[AgentMessage]], list[AgentMessage]]
+type ContextWindowResetReason = Literal["token_limit", "manual", "model"]
+type RolloverDecisionHook = Callable[
+    [list[AgentMessage]], ContextWindowResetReason | None
+]
+type ContextWindowRolloverHook = Callable[[list[AgentMessage]], list[AgentMessage]]
 type IsToolProductiveHook = Callable[
     [list[ToolCallContent], list[ToolResultMessage]], bool
 ]
@@ -156,6 +143,7 @@ type BeforeProviderRequestHook = Callable[[RequestAssembly], None]
 class AgentLoopConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
     provider: Annotated[StreamProvider | None, SkipValidation] = None
+    request_token_budget: Annotated[int, Field(ge=0)] = 0
     tool_execution: ToolExecutionMode = "parallel"
     tool_workers: int = 4
     tool_timeout_seconds: float = 120.0
@@ -187,10 +175,8 @@ class AgentLoopConfig(BaseModel):
     )  # 豁免重复检测的工具名集合
     max_consecutive_idle_steps: int = 4  # 连续 4 次工具调用无产出则终止
 
-    should_compact: ShouldCompactHook | None = None
-    compact: CompactHook | None = None
-    compact_instructions: CompactInstructions | None = None
-    archive_writer: ArchiveWriter | None = None
+    rollover_decision: RolloverDecisionHook | None = None
+    rollover_context: ContextWindowRolloverHook | None = None
 
     is_tool_productive: IsToolProductiveHook | None = None
     before_provider_request: BeforeProviderRequestHook | None = None

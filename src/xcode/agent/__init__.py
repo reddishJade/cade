@@ -15,15 +15,26 @@ from .context import (
     ContextCollectionInput,
     ContextCollector,
     ContextCollectorRegistry,
-    FrozenContextCollectorRegistry,
     ContextExpiry,
     ContextPriority,
+    ContextSection,
+    ContextState,
     DefaultContextAssembler,
+    FrozenContextCollectorRegistry,
     InstructionCollector,
     InstructionSource,
     NotesCollector,
     RecentValidationCollector,
+    WorldState,
+    make_collector_section,
+    make_state_section,
     trim_to_budget,
+)
+from .context_manager import (
+    ContextManager,
+    ContextTokenUsage,
+    ContextWindowState,
+    PromptCacheMetadata,
 )
 from .events import AgentEvent
 from .messages import (
@@ -33,8 +44,6 @@ from .messages import (
     ToolResultMessage,
     UserMessage,
 )
-from .types import AgentTool, CancellationSignal
-from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 from .request import (
     DefaultRequestAssembler,
     RequestAssembler,
@@ -42,6 +51,8 @@ from .request import (
     RequestContextTrace,
     RequestHygiene,
 )
+from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
+from .types import AgentTool, CancellationSignal
 
 __all__ = [
     "ActiveDiffCollector",
@@ -51,7 +62,6 @@ __all__ = [
     "AgentLoopConfig",
     "AgentLoopMetrics",
     "AgentLoopResult",
-    "TerminationReason",
     "AgentMessage",
     "AgentTool",
     "AssistantMessage",
@@ -64,22 +74,32 @@ __all__ = [
     "ContextCollectionInput",
     "ContextCollector",
     "ContextCollectorRegistry",
-    "FrozenContextCollectorRegistry",
     "ContextExpiry",
+    "ContextManager",
     "ContextPriority",
+    "ContextSection",
+    "ContextState",
+    "ContextTokenUsage",
+    "ContextWindowState",
     "DefaultContextAssembler",
+    "DefaultRequestAssembler",
+    "FrozenContextCollectorRegistry",
     "InstructionCollector",
     "InstructionSource",
     "NotesCollector",
+    "PromptCacheMetadata",
     "RecentValidationCollector",
-    "DefaultRequestAssembler",
     "RequestAssembler",
     "RequestAssembly",
     "RequestContextTrace",
     "RequestHygiene",
-    "run_agent_loop",
     "SystemMessage",
+    "TerminationReason",
     "ToolResultMessage",
-    "trim_to_budget",
     "UserMessage",
+    "WorldState",
+    "make_collector_section",
+    "make_state_section",
+    "run_agent_loop",
+    "trim_to_budget",
 ]

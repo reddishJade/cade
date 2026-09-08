@@ -9,12 +9,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Protocol
 
+from xcode.agent.types import ToolSpec
 from xcode.ai.events import ToolCall
+from xcode.harness.security.approval import ApprovalsReviewer
 from xcode.harness.security.permission_model import Rule
 from xcode.harness.security.permissions import PermissionDecision
-from xcode.harness.security.approval import ApprovalsReviewer
-from xcode.agent.types import ToolSpec
-
 
 ExecutionMode = Literal["plan", "build", "act"]
 
@@ -32,10 +31,12 @@ class ExecutionModeState:
         self,
         max_plan_turns: int = 8,
         initial_mode: ExecutionMode = "act",
+        approval_router: Literal["mode", "user", "auto"] = "mode",
     ) -> None:
         self._current_mode: ExecutionMode = initial_mode
         self._plan_enter_step = 0
         self._max_plan_turns = max_plan_turns
+        self._approval_router = approval_router
 
     @property
     def current_mode(self) -> ExecutionMode:
@@ -43,7 +44,11 @@ class ExecutionModeState:
 
     @property
     def approvals_reviewer(self) -> ApprovalsReviewer:
-        """Build 使用自动 reviewer；其他模式不隐式替用户授权。"""
+        """Build 使用自动 reviewer；approval_router 可强制固定路由。"""
+        if self._approval_router == "auto":
+            return "auto_review"
+        if self._approval_router == "user":
+            return "user"
         return "auto_review" if self._current_mode == "build" else "user"
 
     def set_mode(self, mode: ExecutionMode) -> None:
@@ -85,6 +90,9 @@ class PlanPolicy:
             "webfetch",
             "websearch",
             "question",
+            "history",
+            "search_memory",
+            "new_context",
         }
     )
 
@@ -200,6 +208,8 @@ def build_default_mode_rulesets(
         Rule(action="load_skill", effect="allow"),
         Rule(action="subagent", effect="allow"),
         Rule(action="search_memory", effect="allow"),
+        Rule(action="history", effect="allow"),
+        Rule(action="new_context", effect="allow"),
         Rule(action="mcp__*", effect="allow"),
         Rule(action="mcp_tool_search", effect="allow"),
     )
@@ -226,6 +236,8 @@ def build_default_mode_rulesets(
             effect="allow",
             resource_pattern=".xcode/plans/*.md",
         ),
+        Rule(action="write_file", effect="allow", resource_pattern="NOTE.md"),
+        Rule(action="edit_file", effect="allow", resource_pattern="NOTE.md"),
     )
     if project_root is not None:
         plan_pattern = (project_root.resolve() / ".xcode" / "plans" / "*.md").as_posix()
@@ -240,10 +252,20 @@ def build_default_mode_rulesets(
                 effect="allow",
                 resource_pattern=plan_pattern,
             ),
+            Rule(
+                action="write_file",
+                effect="allow",
+                resource_pattern=(project_root.resolve() / "NOTE.md").as_posix(),
+            ),
+            Rule(
+                action="edit_file",
+                effect="allow",
+                resource_pattern=(project_root.resolve() / "NOTE.md").as_posix(),
+            ),
         )
     return {
         "plan": plan_rules,
-        # Xcode 尚无 OS 级 shell sandbox，因此 Build 不能默认放行任意命令。
+        # Sandbox 不消除项目内破坏和语义风险，Build 仍审查任意 shell 命令。
         "build": read_rules + write_rules + ask_shell_rules,
         # Act 以 ask 为兜底；显式放行只读工具，其他工具需用户审批。
         "act": read_rules + ask_write_rules + ask_shell_rules,

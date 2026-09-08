@@ -7,39 +7,47 @@
 
 from __future__ import annotations
 
+import platform
 from collections.abc import AsyncIterator, Callable, Iterator
 from copy import deepcopy
+from pathlib import Path
 from threading import Lock
 
+from xcode.ai.events import ToolCall
 from xcode.ai.providers.base import ModelProvider
 
 from ...agent.agent import Agent
+from ...agent.context_manager import ContextManager
 from ...agent.messages import (
     AgentMessage,
     SystemMessage,
     UserMessage,
 )
-from ...agent.types import ToolSpec
+from ...agent.types import ApprovalCallback, ToolSpec
+from ..observability import HookRecord, RuntimeCorrelation
+from ..security.approval import ApprovalPolicy, ApprovalsReviewer
+from ..security.permission_model import GrantStore
+from ..security.permissions import PermissionDecision, PermissionPolicy
+from ._mode_protocol import ToolGateMode
 from .agent_helpers import aiter_to_sync_iter, run_coro_sync
 from .cancellation import CancellationToken
+from .composition import AgentComposition
 from .config import (
     AgentRuntimeConfig,
     build_loop_config,
-    record_last_prompt_tokens,
 )
-from .composition import AgentComposition
 from .events import (
+    AgentHarnessEvent,
     _StreamTranslationState,
     _translate_event,
-    AgentHarnessEvent,
 )
 from .fallback import _FallbackWithRetryPrimary
 from .message_codec import messages_from_run_state
 from .result import (
+    AgentHarnessResult,
+    RunState,
     _build_structured_result,
     _final_event,
-    RunState,
-    AgentHarnessResult,
 )
 from .run_control import (
     ActiveRunHandle,
@@ -48,13 +56,6 @@ from .run_control import (
     SubmitOutcome,
 )
 from .tool_gate import ToolGate
-from ._mode_protocol import ToolGateMode
-from xcode.ai.events import ToolCall
-from ..security.permissions import PermissionDecision, PermissionPolicy
-from ..security.approval import ApprovalPolicy, ApprovalsReviewer
-from ..observability import HookRecord, RuntimeCorrelation
-from ..security.permission_model import GrantStore
-from ...agent.types import ApprovalCallback
 
 _PROMPT_VERSION_CACHE: str | None = None
 
@@ -105,8 +106,8 @@ class AgentHarness:
         gate_runtime = runtime.gate
         self.project_root = runtime.project_root
         self._runtime = runtime
-        self.compactor = runtime.compactor
-        self._compact_controller = runtime.compact_controller
+        self.context_rollover = runtime.context_rollover
+        self._context_window_controller = runtime.context_window_controller
         self.cancellation_token = runtime.cancellation_token or CancellationToken()
         supplied_gate = runtime.gate_instance
         self._correlation = (
@@ -114,8 +115,6 @@ class AgentHarness:
             if supplied_gate is not None
             else gate_runtime.correlation or RuntimeCorrelation(gate_runtime.session_id)
         )
-        self._last_prompt_tokens: int | None = None
-
         self._hook_manager = gate_runtime.hook_manager
         self.external_directories = gate.external_directories
         self.sensitive_path_overrides = gate.sensitive_path_overrides
@@ -148,7 +147,9 @@ class AgentHarness:
             tool_path_extractors=gate.tool_path_extractors,
         )
         self.audit_logger = gate_runtime.audit_logger
-        self._history: list[AgentMessage] = []
+        self._context_manager = ContextManager()
+        self._history = self._context_manager.history
+        self._context_state = self._context_manager.context_state
         self._resumed_notice: str | None = None
         self._run_controller = SessionRunController(runtime.session_inbox)
 
@@ -185,6 +186,38 @@ class AgentHarness:
             return [SystemMessage(content="\n\n".join(p for p in parts if p))]
         return []
 
+    def _build_context_snapshot_state(
+        self,
+        active_registry: tuple[ToolSpec, ...],
+    ) -> dict[str, object]:
+        """构建供 world state 使用的环境、工具、权限和模式快照。"""
+        permission_policy = self.permission_policy
+        policy_payload = (
+            {
+                "global_default": permission_policy.global_default,
+                "rules": tuple(repr(rule) for rule in permission_policy.rules),
+            }
+            if permission_policy is not None
+            else None
+        )
+        mode = self._build_gate_mode()
+        return {
+            "environment": {
+                "cwd": str(Path.cwd()),
+                "project_root": str(self.project_root)
+                if self.project_root is not None
+                else None,
+                "platform": platform.platform(),
+            },
+            "tools": tuple(tool.name for tool in active_registry),
+            "permissions": {
+                "approval_policy": self.approval_policy,
+                "restricted_dirs": tuple(self.restricted_dirs),
+                "permission_policy": policy_payload,
+            },
+            "mode": {"current_mode": mode.current_mode},
+        }
+
     def _build_loop_config_extras(self) -> dict:
         """子类可返回额外的 build_loop_config 参数。"""
         return {}
@@ -195,7 +228,6 @@ class AgentHarness:
 
     def _post_run(self, final: AgentHarnessResult) -> None:
         """turn 完成后的子类钩子。例如记忆反馈。"""
-        pass
 
     # ── 公共 API ──
 
@@ -324,14 +356,20 @@ class AgentHarness:
         """返回 durable inbox 是否存在需要启动的新输入。"""
         return self._run_controller.has_waking_input()
 
-    def request_compaction(self) -> None:
-        if self._compact_controller is not None:
-            self._compact_controller.request()
+    def request_context_window(self) -> bool:
+        if self._context_window_controller is None:
+            return False
+        return self._context_window_controller.request("manual")
 
     def clear_history(self) -> None:
-        self._history = []
+        self._context_manager.clear()
         self._gate.clear_session_grants()
         self._reset_provider_conversation_state()
+
+    @property
+    def context_manager(self) -> ContextManager:
+        """返回当前 session 的统一上下文状态管理器。"""
+        return self._context_manager
 
     @property
     def current_approval_callback(self) -> ApprovalCallback | None:
@@ -373,7 +411,8 @@ class AgentHarness:
         self._run_controller.reload()
 
     def load_history(self, messages: list[AgentMessage]) -> None:
-        self._history = deepcopy(messages)
+        self._context_manager.replace_history(deepcopy(messages))
+        self._context_manager.context_state.reset()
         self._post_load_history(messages)
         if not messages:
             self._gate.clear_session_grants()
@@ -381,13 +420,13 @@ class AgentHarness:
 
     def _post_load_history(self, messages: list[AgentMessage]) -> None:
         """load_history 的子类钩子，例如恢复技能激活。"""
-        pass
 
     def set_resumed_notice(self, notice: str) -> None:
         self._resumed_notice = notice
 
     def load_run_state(self, run_state: RunState) -> None:
-        self._history = messages_from_run_state(run_state)
+        self._context_manager.replace_history(messages_from_run_state(run_state))
+        self._context_manager.context_state.reset()
         self._reset_provider_conversation_state()
 
     def history_messages(self) -> list[AgentMessage]:
@@ -458,6 +497,7 @@ class AgentHarness:
         registry_snapshot = composition.registry
         active_registry = self._build_active_registry(registry_snapshot)
         context_messages = self._build_context_messages(question, composition)
+        context_snapshot_state = self._build_context_snapshot_state(active_registry)
         self._resumed_notice = None
         history_messages = self.history_messages()
         turn_agent = Agent(self._gate.adapt_tools(active_registry))
@@ -470,12 +510,16 @@ class AgentHarness:
             provider=provider,
             gate=self._gate,
             registry=active_registry,
-            compactor=self.compactor,
-            manual_compact_requested=(
-                self._compact_controller.consume if self._compact_controller else None
+            context_rollover=self.context_rollover,
+            requested_rollover=(
+                self._context_window_controller.consume
+                if self._context_window_controller
+                else None
             ),
-            compact_controller=self._compact_controller,
-            last_prompt_tokens=self._last_prompt_tokens,
+            last_prompt_tokens=self._context_manager.token_usage.last_prompt_tokens,
+            get_last_prompt_tokens=lambda: (
+                self._context_manager.token_usage.last_prompt_tokens
+            ),
             steer=inject_runtime,
             emit_hook=lambda rec: _emit_hook(self._hook_manager, rec),
             get_prompt_version=_get_prompt_version,
@@ -507,6 +551,10 @@ class AgentHarness:
                 signal=self.cancellation_token,
                 history=history_messages,
                 request_prefix=context_messages,
+                context_manager=self._context_manager,
+                state=context_snapshot_state,
+                project_root=self.project_root,
+                cwd=Path.cwd(),
                 step_input=run_handle.claim_step_input,
                 finish_step_input=run_handle.finish_step_input,
                 reopen_step_input=run_handle.reopen_step_input,
@@ -520,9 +568,6 @@ class AgentHarness:
 
             result = turn_agent.last_result
             assert result is not None
-
-            self._history = list(result.surface)
-            self._last_prompt_tokens = record_last_prompt_tokens(result.surface)
 
             visible_result = (
                 result.model_copy(

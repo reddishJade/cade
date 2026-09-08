@@ -3,28 +3,29 @@
 from __future__ import annotations
 
 from xcode.agent.context import (
+    MANIFEST_MAX_BYTES,
+    ContextAssemblyInput,
     ContextBlock,
     ContextBlockSource,
-    ContextPriority,
-    ContextExpiry,
     ContextBlockTarget,
     ContextCollectionInput,
-    ContextAssemblyInput,
-    DefaultContextAssembler,
-    trim_to_budget,
-    _is_expired,
-    _block_to_text,
-    _apply_size_budget,
-    _utf8_prefix,
-    _condense_manifest,
-    _extract_key_sections,
-    _drop_fenced_blocks,
-    _prepare_manifest,
-    MANIFEST_MAX_BYTES,
     ContextCollectorRegistry,
+    ContextState,
+    ContextExpiry,
+    ContextPriority,
+    DefaultContextAssembler,
+    InstructionCollector,
+    make_collector_section,
+    make_state_section,
+    _apply_size_budget,
+    _block_to_text,
+    _is_expired,
+    _prepare_manifest,
+    _utf8_prefix,
+    trim_to_budget,
 )
 from xcode.agent.messages import SystemMessage, UserMessage
-
+from xcode.agent.types import ToolSpec, ToolSpecAdapter
 
 # ── ContextBlock ──
 
@@ -155,9 +156,31 @@ class TestTrimToBudget:
                 token_count=20,
             ),
         ]
-        used, dropped = trim_to_budget(blocks, budget=30, base_tokens=0)
+        used, _dropped = trim_to_budget(blocks, budget=30, base_tokens=0)
         assert len(used) == 1
         assert used[0].priority == ContextPriority.CRITICAL
+
+    def test_same_priority_preserves_collector_order(self) -> None:
+        blocks = [
+            ContextBlock(
+                source=ContextBlockSource.INSTRUCTION,
+                priority=ContextPriority.CRITICAL,
+                content="first",
+                token_count=5,
+                block_id="first",
+            ),
+            ContextBlock(
+                source=ContextBlockSource.INSTRUCTION,
+                priority=ContextPriority.CRITICAL,
+                content="second",
+                token_count=1,
+                block_id="second",
+            ),
+        ]
+
+        used, _dropped = trim_to_budget(blocks, budget=6, base_tokens=0)
+
+        assert [block.block_id for block in used] == ["first", "second"]
 
 
 # ── DefaultContextAssembler ──
@@ -233,6 +256,43 @@ class TestDefaultContextAssembler:
         )
         assert len(result.blocks_dropped) == 1
 
+    def test_budget_includes_prompt_and_tool_tokens(self) -> None:
+        tool = ToolSpecAdapter(
+            ToolSpec(
+                name="read_file",
+                description="Read a file.",
+                input_hint="path",
+                handler=lambda _data, _update=None: "contents",
+                schema={"type": "object", "properties": {"path": {"type": "string"}}},
+            )
+        )
+        base_input = ContextAssemblyInput(
+            system_prompt="system instructions " * 20,
+            messages=[UserMessage(content="history " * 20)],
+            tools=[tool],
+        )
+        assembler = DefaultContextAssembler()
+        base = assembler.assemble(base_input).total_tokens
+        block = ContextBlock(
+            source=ContextBlockSource.NOTES,
+            priority=ContextPriority.LOW,
+            content="keep this note",
+            token_count=1,
+        )
+
+        result = assembler.assemble(
+            ContextAssemblyInput(
+                system_prompt=base_input.system_prompt,
+                messages=base_input.messages,
+                tools=base_input.tools,
+                context_blocks=[block],
+                token_budget=base,
+            )
+        )
+
+        assert result.blocks_dropped == [block]
+        assert result.base_tokens == base
+
 
 # ── _apply_size_budget ──
 
@@ -262,20 +322,21 @@ class TestUtf8Prefix:
         assert len(result) <= 5
 
 
-# ── _condense_manifest ──
+# ── _prepare_manifest ──
 
 
-class TestCondenseManifest:
+class TestPrepareManifest:
     def test_short_text_returns_as_is(self) -> None:
         text = "Short content here"
         assert _prepare_manifest(text) == text
 
-    def test_long_manifest_gets_truncated_and_tagged(self) -> None:
+    def test_long_manifest_keeps_byte_limited_prefix(self) -> None:
         text = "x" * (MANIFEST_MAX_BYTES + 1000)
-        result = _condense_manifest(text)
-        assert "<manifest-truncated>" in result
+        result = _prepare_manifest(text)
+        assert result == text[:MANIFEST_MAX_BYTES]
+        assert len(result.encode("utf-8")) == MANIFEST_MAX_BYTES
 
-    def test_key_sections_preserved(self) -> None:
+    def test_long_manifest_keeps_only_prefix(self) -> None:
         text = (
             "Opening context\n"
             "## Priority\n"
@@ -283,51 +344,146 @@ class TestCondenseManifest:
             "## Checklist\n"
             "- check A\n\n" + "x" * 50000
         )
-        result = _condense_manifest(text)
-        assert "Priority" in result
-        assert "Checklist" in result
-
-    def test_non_key_section_not_in_key_sections(self) -> None:
-        text = "Opening\n## Random Section\n- stuff\n\n" + "y" * 50000
-        sections = _extract_key_sections(text)
-        assert not any("random section" in s.lower() for s in sections)
-
-
-# ── _extract_key_sections ──
-
-
-class TestExtractKeySections:
-    def test_extracts_matching_sections(self) -> None:
-        text = "## Priority\n- high\n\n## Git Safety\n- never rebase\n"
-        sections = _extract_key_sections(text)
-        assert len(sections) >= 1
-        assert any("priority" in s.lower() for s in sections)
-
-    def test_ignores_non_matching_sections(self) -> None:
-        text = "## Unrelated Topic\n- stuff\n"
-        assert _extract_key_sections(text) == []
-
-
-# ── _drop_fenced_blocks ──
-
-
-class TestDropFencedBlocks:
-    def test_removes_fenced_content(self) -> None:
-        lines = ["line1", "```", "hidden", "```", "line2"]
-        result = _drop_fenced_blocks(lines)
-        assert result == ["line1", "line2"]
-
-
-# ── _prepare_manifest ──
-
-
-class TestPrepareManifest:
-    def test_short_passthrough(self) -> None:
-        assert _prepare_manifest("small") == "small"
+        result = _prepare_manifest(text)
+        assert result == text[:MANIFEST_MAX_BYTES]
 
     def test_long_condenses(self) -> None:
         result = _prepare_manifest("x" * (MANIFEST_MAX_BYTES + 100))
-        assert "<manifest-truncated>" in result
+        assert result == "x" * MANIFEST_MAX_BYTES
+
+
+# ── InstructionCollector ──
+
+
+class TestInstructionCollector:
+    def test_instruction_sources_share_one_byte_budget(self, tmp_path) -> None:
+        first = tmp_path / "first.md"
+        first.write_bytes(b"a" * 20_000)
+        (tmp_path / "AGENTS.md").write_bytes(b"b" * 20_000)
+
+        collector = InstructionCollector(
+            sources=({"type": "file", "path": "first.md"},),
+            project_root=tmp_path,
+        )
+        blocks = collector.collect(ContextCollectionInput())
+
+        assert len(blocks) == 2
+        assert blocks[0].content == "a" * 20_000
+        assert blocks[1].content == "b" * (MANIFEST_MAX_BYTES - 20_000)
+
+    def test_fenced_content_is_preserved(self, tmp_path) -> None:
+        agents = tmp_path / "AGENTS.md"
+        content = "```powershell\n重要命令\n```\n"
+        agents.write_bytes(content.encode("utf-8"))
+
+        collector = InstructionCollector(project_root=tmp_path)
+        blocks = collector.collect(ContextCollectionInput())
+
+        assert len(blocks) == 1
+        assert blocks[0].content == content
+
+    def test_hierarchy_is_loaded_from_root_to_cwd_and_override_wins(
+        self, tmp_path
+    ) -> None:
+        child = tmp_path / "child"
+        nested = child / "nested"
+        nested.mkdir(parents=True)
+        (tmp_path / "AGENTS.md").write_text("root", encoding="utf-8")
+        (child / "AGENTS.md").write_text("child", encoding="utf-8")
+        (child / "AGENTS.override.md").write_text("override", encoding="utf-8")
+        (nested / "AGENTS.md").write_text("nested", encoding="utf-8")
+
+        blocks = InstructionCollector(project_root=tmp_path).collect(
+            ContextCollectionInput(cwd=nested)
+        )
+
+        assert [block.content for block in blocks] == ["root", "override", "nested"]
+        assert all(block.scope == "project" for block in blocks)
+
+
+class TestWorldState:
+    def test_unchanged_section_is_not_rendered_twice(self) -> None:
+        class _Collector:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def collect(self, _input: ContextCollectionInput) -> list[ContextBlock]:
+                self.calls += 1
+                return [
+                    ContextBlock(
+                        source=ContextBlockSource.INSTRUCTION,
+                        priority=ContextPriority.CRITICAL,
+                        target=ContextBlockTarget.SYSTEM,
+                        content="stable instruction",
+                        block_id="stable",
+                    )
+                ]
+
+        collector = _Collector()
+        registry = ContextCollectorRegistry()
+        registry.register_section(make_collector_section("agents", collector))
+        assembler = DefaultContextAssembler()
+        state = ContextState()
+        from xcode.agent.config import AgentContext
+        from xcode.agent.request import DefaultRequestAssembler
+
+        request_assembler = DefaultRequestAssembler(
+            context_collectors=registry,
+            context_assembler=assembler,
+        )
+        context = AgentContext(context_state=state)
+
+        first = request_assembler.assemble(context, current_step=1, options=None)
+        second = request_assembler.assemble(context, current_step=2, options=None)
+
+        assert collector.calls == 2
+        assert "stable instruction" in str(first.messages)
+        assert "stable instruction" in str(second.messages)
+        assert [trace.block_id for trace in first.context_trace] == ["stable"]
+        assert second.context_trace == ()
+
+    def test_changed_section_renders_a_replacement_notice(self) -> None:
+        class _Collector:
+            def __init__(self) -> None:
+                self.value = "before"
+
+            def collect(self, _input: ContextCollectionInput) -> list[ContextBlock]:
+                return [
+                    ContextBlock(
+                        source=ContextBlockSource.NOTES,
+                        priority=ContextPriority.MEDIUM,
+                        target=ContextBlockTarget.USER_CONTEXT,
+                        content=self.value,
+                    )
+                ]
+
+        collector = _Collector()
+        registry = ContextCollectorRegistry()
+        registry.register_section(make_collector_section("notes", collector))
+        from xcode.agent.config import AgentContext
+        from xcode.agent.request import DefaultRequestAssembler
+
+        context = AgentContext(context_state=ContextState())
+        request_assembler = DefaultRequestAssembler(context_collectors=registry)
+        request_assembler.assemble(context, current_step=1, options=None)
+        collector.value = "after"
+        assembly = request_assembler.assemble(context, current_step=2, options=None)
+
+        assert assembly.context_trace[0].block_id == "notes"
+        assert 'status="updated"' in str(assembly.messages)
+
+    def test_state_section_reports_removal(self) -> None:
+        section = make_state_section(
+            "mode",
+            "mode",
+            ContextBlockSource.MODE,
+        )
+        state = ContextState()
+        input_with_mode = ContextCollectionInput(state={"mode": {"current": "act"}})
+        assert state.world_state.render((section,), input_with_mode)
+        removed = state.world_state.render((section,), ContextCollectionInput())
+
+        assert removed[0].content == '<context-section id="mode" status="removed" />'
 
 
 # ── ContextCollectorRegistry ──

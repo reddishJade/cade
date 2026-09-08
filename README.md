@@ -30,6 +30,7 @@
 
 - Python **3.12** 或更高
 - [uv](https://docs.astral.sh/uv/)（推荐）或 pip
+- Linux 默认 shell sandbox 需要 `bubblewrap`（可执行文件名 `bwrap`）
 
 ### 从源码安装（开发模式）
 
@@ -94,13 +95,17 @@ xcode tui
 # CLI / REPL 模式（多轮对话，支持 /slash 命令）
 xcode cli
 
-# 管理 provider API 配置
-xcode config list
-xcode config add main
-xcode config set main chat_model deepseek-v4-flash
+# 浏览器工作台（FastAPI + WebSocket 实时事件流）
+xcode web            # 默认 http://127.0.0.1:8787
+xcode web --open     # 启动后自动打开浏览器
+xcode web --port 9000
 
-# 首次使用引导
+# 首次使用引导（配置 Provider 与 API key）
 xcode setup
+
+# 打开交互式配置浏览器（调整执行模式、审批策略、Shell 等）
+xcode config
+xcode config approval
 
 # 自定义配置
 xcode --config .xcode/settings.json
@@ -121,7 +126,7 @@ xcode --resume
 | `/steer` | 模式控制 | 注入实时引导 |
 | `/queue` | 模式控制 | 设置忙时消息策略，或在当前 run 后排队新 run |
 | `/help` | 信息工具 | 显示帮助 |
-| `/compact` | 会话回滚 | 手动触发上下文压缩 |
+| `/new-context` | 上下文窗口 | 关闭当前工作窗口并开启新窗口，不生成摘要 |
 | `/rewind [N]` | 会话回滚 | 撤销最近 N 轮交互 |
 | `/undo [N\|--list]` | 会话回滚 | 文件级撤销（快照恢复） |
 | `/clear` | 会话生命周期 | 开始新会话 |
@@ -155,38 +160,21 @@ xcode --resume
 ## 核心能力
 
 - **结构化 Agent 循环** — `CodingAgentHarness` 消费 provider 流式事件，统一处理 text、reasoning、tool_use、tool_result 和 final answer。
-- **可回放事实账本** — session 以 append-only 事件记录用户输入、provider 实际请求、工具语义、compaction epoch、子代理生命周期和最终回答。
+- **可回放事实账本** — session 以 append-only 事件记录用户输入、provider 实际请求、工具语义、换窗边界、子代理生命周期和最终回答。
 - **三执行模式** — `plan`（只读）、`build`（自动执行并由独立 reviewer 审批边界动作）、`act`（边界动作询问用户），规则引擎按 findLast 覆盖权限。
 - **核心工具闭环** — 内置文件读写编辑、glob/grep/bash/subagent/webfetch/websearch/question/todowrite 等工具。`edit_file` 依赖 read-before-edit SHA256 指纹校验。
 - **工具并发分区** — 只读且并发安全的工具并行执行；写操作、高风险命令保持串行。
 - **权限与审计** — `PermissionEngine` 统一执行工具权限判定、自动/人工审批和输出脱敏；`JsonlAuditLogger` 记录审计日志；Build 中需要 review 的 shell 动作不会暂停询问用户。
-- **上下文压缩与恢复** — `LayeredCompactor` 裁剪过期读取、大输出和旧工具结果；compact 后按 session 写入 checkpoint，resume 使用 checkpoint + 原文 tail 重建上下文。
+- **Linux shell sandbox** — Agent 的 `bash` 默认在 bubblewrap 中运行：项目与 `/tmp` 可写、宿主其余路径只读、凭据路径不可读、网络隔离；审批策略与隔离策略彼此独立。
+- **上下文换窗与恢复** — `ContextWindowRollover` 直接开启无摘要的新工作窗口；`history` 检索无损 session 账本，项目根 `NOTE.md` 保存当前执行前沿。
 - **REPL 会话管理** — `/slash` 命令支持 plan/build/act、会话分支、回退、undo（快照恢复）、模型切换、config 管理、session transcript 落盘。
 - **TUI 全屏终端** — 基于 `prompt-toolkit` 的类 VSCode 全屏交互界面。
+- **浏览器工作台** — `xcode web` 启动 FastAPI + WebSocket 服务，单页面前端实时渲染结构化事件流：步骤脊柱、thinking、工具卡片与审批弹窗；会话账本可通过 REST 回放。
 - **Subagent 委托** — `subagent` 单入口委派子任务，持久化 batch/run 谱系与终态；子 agent 共享项目目录，并继承父 agent 的权限门控。
 - **类型化工具呈现** — terminal、diff、location 和 subagent 由工具产生结构化 intent，REPL/TUI 共享投影逻辑。
 - **MCP 协议** — 基于官方 Python SDK 连接本地 stdio server，自动发现 `.xcode/mcp_config.json` 并注册 `mcp__{server}__{tool}` 动态工具。
-- **记忆系统** — 项目根 `MEMORY.md` + 用户级 `~/.xcode/memory/` 是可审查的长期事实源；Agent 通过 BM25 工具按需检索。
+- **记忆系统** — `MEMORY.md` 与用户级 memory 保存稳定长期事实，`NOTE.md` 保存短期工作状态，无损 session history 是最终事实源。
 - **外部 Hook** — 可配置事件驱动的外部命令 hooks（git 前置检查、自定义通知等）。
-
----
-
-## 工具能力
-
-稳定工具默认注册：`read_file`、`write_file`、`edit_file`、`apply_patch`、
-`glob_files`、`find_files`、`list_dir`、`grep_search`、`websearch`、
-`webfetch`、`question`、`bash`、`search_tools`、`subagent`、`todowrite`、
-`history`、`search_memory`。发现 skill 时注册 `load_skill`；存在 MCP 配置时
-注册 `mcp__{server}__{tool}` 动态工具。
-
-`search_memory` 是只读、低风险的 BM25 检索工具。运行时不会在每轮自动
-注入检索结果；resume/rebuild 才会在独立预算内注入项目与用户记忆。长期
-记忆只保存用户规则、架构决定和经过验证的跨 session 事实，当前进度与
-下一步动作由 `.xcode/checkpoints/<session-id>/checkpoint.md` 负责。
-
-`history` 只读取当前 session 的当前分支：`search` 按关键词定位旧消息，
-`around` 按 message id 读取原文邻域。compact 后的 checkpoint 滚动更新，
-旧 checkpoint 是下一轮摘要的权威基线；退化摘要不会覆盖已有可用状态。
 
 ---
 
@@ -216,97 +204,18 @@ provider。权限提示和 shell 效果分析用于帮助用户了解并确认�
 
 ## 架构
 
-详细不变量与运行路径见 [docs/architecture.md](docs/architecture.md)，测试边界见
-[docs/testing.md](docs/testing.md)。工程决策记录在
-[.agents/notes/README.md](.agents/notes/README.md)，事故复盘规范见
-[docs/postmortem/README.md](docs/postmortem/README.md)。
-
 五层架构，自底向上：
 
 | Layer | 路径 | 职责 |
 |---|---|---|
 | `ai/` | `src/xcode/ai/` | 多 provider LLM API：OpenAI-compatible 基类 + DeepSeek/ChatGLM/MiMo 适配器，流式传输、缓存、thinking |
-| `agent/` | `src/xcode/agent/` | Agent loop 合约：消息/事件类型、上下文压缩、工具执行分区、watchdog、provider 抽象 |
+| `agent/` | `src/xcode/agent/` | Agent loop 合约：消息/事件类型、上下文换窗、工具执行分区、watchdog、provider 抽象 |
 | `harness/` | `src/xcode/harness/` | 运行时配置、session 事实账本、权限/审计、MCP、skill、记忆、hooks 和本地执行协议 |
 | `coding_agent/` | `src/xcode/coding_agent/` | 产品工具装配：文件读写编辑、glob/grep/bash/subagent/webfetch/websearch 等 |
 | `cli/` | `src/xcode/cli/` | REPL UI、TUI、slash command 系统、setup wizard、配置管理 |
+| `server/` | `src/xcode/server/` | 浏览器工作台：FastAPI + WebSocket 实时事件流 + 零构建前端 |
 
 运行路径：`main.py` → `build_app()` → `CodingAgentHarness` → `Agent` loop → provider stream → tool execution。
-
----
-
-## 评估与验证
-
-### 长程任务 benchmark
-
-`benchmarks/` 提供上下文压缩消融实验：对同一模型、温度和任务，配对运行
-完整历史 baseline 与启用 `LayeredCompactor`、checkpoint、resume 的 Xcode
-配置。任务成功由测试进程判定，状态保持由文件哈希、禁止路径和验证命令判定。
-
-```powershell
-uv run python -m benchmarks.runners.run_ablation benchmarks/tasks/long_horizon `
-  --repeat 3 --temperature 0 --max-pair-attempts 2 --require-complete-usage
-```
-
-实验设计、任务格式和报告口径见 [benchmarks/README.md](benchmarks/README.md)。
-
-### 工具调度 benchmark
-
-确定性消融实验通过生产 `execute_tool_calls()` 重放相同的 5、10、20 文件
-读取批次，对比强制串行与副作用感知并发调度，并用混合读写 workload 验证
-写操作不与其他工具重叠。该命令不调用模型 API：
-
-```powershell
-uv run python -m benchmarks.runners.run_tool_scheduling `
-  benchmarks/tasks/parallel_reads --repeat 10 --warmup 1
-```
-
-报告按 workload 给出工具阶段 P50/P95 延迟、配对加速比、最大并发度、输出
-等价率和写隔离率；这些结果不等同于端到端 Agent 延迟。
-`benchmarks/scripts/run_tool_worker_sweep.sh` 可在独立目录中扫描
-1/2/4/8/16 worker 数，互不覆盖历史结果。
-
-### 单元测试
-
-```powershell
-uv run pytest src/xcode/tests -q --tb=short
-```
-
----
-
-## 开发指南
-
-### 静态检查
-
-```powershell
-uv run ruff check src/ --fix
-uv run ruff format src/
-uv run pyright src/
-```
-
-### 代码规范
-
-- Python 3.12+，完整类型注解
-- ruff 格式化（行宽 88），零 `# noqa`
-- 纯函数优先，职责分离（IO / 计算 / 展示）
-- 异常捕获明确具体类型，禁止 bare `except:`
-
-详细规范见 [AGENTS.md](AGENTS.md)。
-
----
-
-## 文档导航
-
-| 文档 | 内容 |
-|---|---|
-| [项目主页](https://reddishjade.github.io/xcode/) | GitHub Pages 中英双语介绍站 |
-| [AGENTS.md](AGENTS.md) | Agent 开发入口、编码规范 |
-| [CONFIG.md](CONFIG.md) | 运行时配置参考 |
-| `src/xcode/main.py` | CLI 入口点与子命令 |
-| `src/xcode/coding_agent/assembly/` | Coding 产品装配与工具注册 |
-| [docs/memory-architecture.md](docs/memory-architecture.md) | 记忆系统架构 |
-| [docs/review-standards.md](docs/review-standards.md) | 代码审查标准 |
-
 
 ---
 

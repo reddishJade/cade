@@ -7,18 +7,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+from xcode.agent.config import AgentContext
+from xcode.agent.messages import SystemMessage, UserMessage
+from xcode.agent.request import DefaultRequestAssembler
 from xcode.coding_agent.app import XcodeApp
-from xcode.agent.messages import UserMessage
+from xcode.harness.agent_runtime.config import _build_before_provider_request_closure
 from xcode.harness.agent_runtime.events import (
     AgentHarnessEvent,
     FinalStructuredEvent,
     TextDeltaStructuredEvent,
 )
-from xcode.harness.agent_runtime.config import _build_before_provider_request_closure
 from xcode.harness.agent_runtime.result import AgentHarnessResult
-from xcode.agent.config import AgentContext
-from xcode.agent.messages import SystemMessage
-from xcode.agent.request import DefaultRequestAssembler
 from xcode.harness.observability import RuntimeCorrelation
 from xcode.harness.session import InboxLane, SessionInbox, SessionStore
 from xcode.harness.session.recorder import SessionRecorder
@@ -128,7 +127,9 @@ def test_app_records_programmatic_turn_without_stream_fragments(tmp_path: Path) 
     assert branch[3].content == "done"
 
 
-def test_compaction_appends_epoch_without_rewriting_history(tmp_path: Path) -> None:
+def test_context_reset_appends_epoch_without_rewriting_history(
+    tmp_path: Path,
+) -> None:
     recorder = _recorder(tmp_path)
     inbox = SessionInbox(recorder.store)
     inbox.insert(
@@ -138,12 +139,10 @@ def test_compaction_appends_epoch_without_rewriting_history(tmp_path: Path) -> N
     transcript = recorder.store.current_path
     original = transcript.read_bytes()
 
-    recorder.record_compaction(
-        summary="current state",
+    recorder.record_context_window_reset(
+        window_id="window-2",
         messages_before=12,
         messages_after=4,
-        tokens_before=9000,
-        tokens_after=2000,
         replacement=[UserMessage(content="current state")],
     )
 
@@ -152,8 +151,9 @@ def test_compaction_appends_epoch_without_rewriting_history(tmp_path: Path) -> N
     assert len(updated) > len(original)
     event = recorder.store.build_branch()[-1].content
     assert isinstance(event, dict)
-    assert event["type"] == "compaction"
-    assert event["data"]["summary"] == "current state"
+    assert event["type"] == "context_window_reset"
+    assert event["data"]["window_id"] == "window-2"
+    assert event["data"]["trigger"] == "manual"
     assert event["data"]["generation"] == 1
     assert len(event["data"]["surface_sha256"]) == 64
 
@@ -223,6 +223,9 @@ def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
     assert record.metadata["assembly"] == {
         "current_step": 1,
         "hygiene_applied": True,
+        "estimated_tokens": 1,
+        "token_budget": 0,
+        "budget_remaining": 0,
         "context_trace": [],
     }
     assert record.metadata["options"] == {}

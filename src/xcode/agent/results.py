@@ -5,13 +5,15 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import SkipValidation
-from enum import StrEnum
 
+from xcode.ai.events import ProviderFailure
 from xcode.ai.providers.base import StreamProvider
+
 from .messages import AgentMessage
 
 
@@ -33,6 +35,7 @@ class AgentLoopMetrics(BaseModel):
     tool_latencies_ms: list[float] = Field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    context_window_resets: int = 0
     model_config = ConfigDict(extra="forbid")
 
 
@@ -43,6 +46,7 @@ class AgentLoopResult(BaseModel):
     termination_reason: TerminationReason = TerminationReason.COMPLETED
     watchdog_reason: str | None = None
     error_detail: str | None = None
+    provider_failure: ProviderFailure | None = None
     metrics: AgentLoopMetrics | None = None
     active_provider: Annotated[StreamProvider | None, SkipValidation] = None
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)

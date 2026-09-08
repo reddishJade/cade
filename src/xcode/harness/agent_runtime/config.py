@@ -5,34 +5,33 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from xcode.ai.models import effective_rollover_threshold, get_model_context_window
 from xcode.ai.providers.base import ModelProvider
 
-from xcode.ai.models import effective_compact_threshold
-from ...agent._compaction import extract_prompt_tokens_from_usage
+from ...agent._codec import convert_to_llm as _convert_to_llm
+from ...agent._context_window import extract_prompt_tokens_from_usage
 from ...agent.config import (
     AgentLoopConfig,
     AgentLoopTurnUpdate,
     CompletionVerifier,
+    ContextWindowResetReason,
 )
 from ...agent.context import ContextCollectorRegistry, DefaultContextAssembler
-from ...agent._codec import convert_to_llm as _convert_to_llm
-from ...agent.request import (
-    DefaultRequestAssembler,
-    RequestAssembly,
-    RequestHygiene,
-)
-from .prompting.citations import decorate_citable_messages
 from ...agent.messages import (
     AgentMessage,
     AssistantMessage,
     SystemMessage,
     UserMessage,
 )
-from ..config import RequestHygieneConfig
-from ..security import PermissionDecision, PermissionPolicy
-from ..security.approval import ApprovalPolicy
+from ...agent.request import (
+    DefaultRequestAssembler,
+    RequestAssembly,
+    RequestHygiene,
+)
+from ...agent.types import ApprovalCallback, ToolSpec
+from ..config import AgentConfig, RequestHygieneConfig
 from ..observability import (
     AuditLogger,
     ExternalHookRunner,
@@ -41,22 +40,22 @@ from ..observability import (
     RuntimeCorrelation,
     hook_correlation_fields,
 )
+from ..security import PermissionDecision, PermissionPolicy
+from ..security.approval import ApprovalPolicy
 from ..security.permission_model import (
     ExternalDirectory,
     GrantStore,
-    PolicyEvaluator,
     PathExtractor,
+    PolicyEvaluator,
     Rule,
     SensitivePathOverride,
 )
-from ...agent.types import ApprovalCallback, ToolSpec
-from .cancellation import CancellationToken
 from ..session.inbox import SessionInbox
-
-
-from .compaction import CompactController, estimate_message_tokens
 from ._mode_protocol import RuntimeModeState
-from .message_codec import messages_from_compacted_dicts
+from .cancellation import CancellationToken
+from .context_window import ContextWindowController, estimate_message_tokens
+from .message_codec import messages_from_provider_dicts
+from .prompting.citations import decorate_citable_messages
 from .tool_gate import ToolGate
 
 if TYPE_CHECKING:
@@ -70,7 +69,7 @@ def _convert_to_llm_with_citations(
     return _convert_to_llm(decorated)
 
 
-StructuredCompactor = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+ContextRollover = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
 RuntimeContextProvider = Callable[[str], list[str]]
 
 
@@ -118,8 +117,8 @@ class AgentRuntimeConfig:
     session_inbox: SessionInbox
     gate: GateRuntimeConfig = field(default_factory=GateRuntimeConfig)
     gate_instance: ToolGate | None = None
-    compactor: StructuredCompactor | None = None
-    compact_controller: CompactController | None = None
+    context_rollover: ContextRollover | None = None
+    context_window_controller: ContextWindowController | None = None
     cancellation_token: CancellationToken | None = None
     project_root: Path | None = None
 
@@ -146,26 +145,29 @@ def build_turn_context_messages(
     return typed
 
 
-def _compact_and_emit(
+def _rollover_and_emit(
     loop_messages: list[AgentMessage],
-    compactor: StructuredCompactor | None,
+    context_rollover: ContextRollover | None,
     emit_hook: Callable[[HookRecord], None],
     correlation: RuntimeCorrelation,
 ) -> list[AgentMessage]:
-    """执行消息压缩并发射 Hook。"""
+    """切换上下文窗口并发射 Hook。"""
+    if context_rollover is None:
+        return loop_messages
+    dict_messages = [_to_dict_safe(message) for message in loop_messages]
+    next_window = context_rollover(dict_messages)
     current = correlation.snapshot()
     emit_hook(
         HookRecord(
-            "on_compact",
-            metadata={"messages": len(loop_messages)},
+            "on_context_window_reset",
+            metadata={
+                "messages_before": len(loop_messages),
+                "messages_after": len(next_window),
+            },
             **hook_correlation_fields(current),
         )
     )
-    if compactor is None:
-        return loop_messages
-    dict_messages = [_to_dict_safe(m) for m in loop_messages]
-    compacted = compactor(dict_messages)
-    return messages_from_compacted_dicts(compacted)
+    return messages_from_provider_dicts(next_window)
 
 
 def _to_dict_safe(message: AgentMessage) -> dict[str, Any]:
@@ -228,6 +230,9 @@ def _build_before_provider_request_closure(
                     "assembly": {
                         "current_step": assembly.current_step,
                         "hygiene_applied": assembly.hygiene_applied,
+                        "estimated_tokens": assembly.estimated_tokens,
+                        "token_budget": assembly.token_budget,
+                        "budget_remaining": assembly.budget_remaining,
                         "context_trace": [
                             {
                                 "source": trace.source,
@@ -236,6 +241,10 @@ def _build_before_provider_request_closure(
                                 "included": trace.included,
                                 "token_count": trace.token_count,
                                 "content_sha256": trace.content_sha256,
+                                "provenance": trace.provenance,
+                                "truncated": trace.truncated,
+                                "truncation_reason": trace.truncation_reason,
+                                "scope": trace.scope,
                             }
                             for trace in assembly.context_trace
                         ],
@@ -306,14 +315,14 @@ def build_loop_config(
     provider: ModelProvider,
     gate: ToolGate,
     registry: tuple[ToolSpec, ...],
-    compactor: StructuredCompactor | None,
-    manual_compact_requested: Callable[[], bool] | None,
-    compact_controller: CompactController | None,
+    context_rollover: ContextRollover | None,
+    requested_rollover: Callable[[], ContextWindowResetReason | None] | None,
     last_prompt_tokens: int | None,
     steer: Callable[[AgentMessage], None],
     emit_hook: Callable[[HookRecord], None],
     get_prompt_version: Callable[[], str],
     correlation: RuntimeCorrelation | None = None,
+    get_last_prompt_tokens: Callable[[], int | None] | None = None,
     # 领域扩展参数由上层装配后注入。
     mode_state: RuntimeModeState | None = None,
     watchdog_repeated_tool_skip: frozenset[str] | None = None,
@@ -322,20 +331,26 @@ def build_loop_config(
     active_correlation = correlation or RuntimeCorrelation("local")
     gate_snapshot = gate.snapshot_for(registry)
 
-    def should_compact_fn(loop_messages: list[AgentMessage]) -> bool:
-        return _should_compact(
+    def rollover_decision_fn(
+        loop_messages: list[AgentMessage],
+    ) -> ContextWindowResetReason | None:
+        return _rollover_decision(
             loop_messages,
-            compactor,
-            manual_compact_requested,
-            last_prompt_tokens,
+            context_rollover,
+            requested_rollover,
+            (
+                get_last_prompt_tokens()
+                if get_last_prompt_tokens is not None
+                else last_prompt_tokens
+            ),
             composition,
             provider,
         )
 
-    def compact_fn(loop_messages: list[AgentMessage]) -> list[AgentMessage]:
-        return _compact_and_emit(
+    def rollover_fn(loop_messages: list[AgentMessage]) -> list[AgentMessage]:
+        return _rollover_and_emit(
             loop_messages,
-            compactor,
+            context_rollover,
             emit_hook,
             active_correlation,
         )
@@ -366,6 +381,7 @@ def build_loop_config(
 
     return AgentLoopConfig(
         provider=provider,
+        request_token_budget=_request_token_budget(provider, composition.config),
         request_assembler=composition.request_assembler,
         max_steps=composition.config.max_steps,
         tool_workers=composition.config.tool_workers,
@@ -378,8 +394,10 @@ def build_loop_config(
         watchdog_repeated_tool_limit=composition.config.watchdog_repeated_tool_limit,
         watchdog_repeated_tool_skip=watchdog_repeated_tool_skip or frozenset(),
         max_consecutive_idle_steps=4,
-        should_compact=should_compact_fn,
-        compact=compact_fn,
+        rollover_decision=(
+            rollover_decision_fn if context_rollover is not None else None
+        ),
+        rollover_context=rollover_fn if context_rollover is not None else None,
         completion_verifier=completion_verifier,
         is_tool_productive=gate.build_is_tool_productive_hook(gate_snapshot),
         before_tool_call=gate.build_before_tool_hook(gate_snapshot),
@@ -395,40 +413,53 @@ def build_loop_config(
     )
 
 
-def _should_compact(
+def _request_token_budget(provider: ModelProvider, config: AgentConfig) -> int:
+    """计算留出输出空间后的 provider 输入预算。"""
+    override = getattr(provider, "context_window", None)
+    window = override if isinstance(override, int) and override > 0 else None
+    if window is None:
+        model = getattr(provider, "model", "")
+        window = get_model_context_window(str(model))
+    if window is None:
+        return 0
+    return max(1, window - max(config.reserve_tokens, 0))
+
+
+def _rollover_decision(
     messages: list[AgentMessage],
-    compactor: StructuredCompactor | None,
-    manual_compact_requested: Callable[[], bool] | None,
+    context_rollover: ContextRollover | None,
+    requested_rollover: Callable[[], ContextWindowResetReason | None] | None,
     last_prompt_tokens: int | None,
     composition: AgentComposition,
     provider: ModelProvider,
-) -> bool:
-    if compactor is None:
-        return False
-    if manual_compact_requested and manual_compact_requested():
-        return True
-    if last_prompt_tokens is not None:
-        model_name = provider.model
-        model_str = str(model_name) if model_name is not None else None
-        # 使用 context_window - reserve_tokens 作为精确触发线
-        trigger = effective_compact_threshold(
-            model_str,
-            reserve_tokens=composition.config.reserve_tokens,
-            trigger_ratio=composition.config.compact_trigger_ratio,
-            context_window_override=getattr(provider, "context_window", None),
-        )
-        return last_prompt_tokens >= trigger
+) -> ContextWindowResetReason | None:
+    if context_rollover is None:
+        return None
+    requested = requested_rollover() if requested_rollover is not None else None
+    if requested in {"manual", "model"}:
+        return requested
+    if not composition.config.automatic_rollover:
+        return None
+    if (
+        composition.config.rollover_message_threshold > 0
+        and len(messages) >= composition.config.rollover_message_threshold
+    ):
+        return "token_limit"
     from .agent_helpers import to_dict
 
-    msg_dicts = [to_dict(m) for m in messages]
-    return (
-        composition.config.compact_threshold > 0
-        and len(messages) > composition.config.compact_threshold
-    ) or (
-        composition.config.compact_token_threshold > 0
-        and estimate_message_tokens(msg_dicts)
-        > composition.config.compact_token_threshold
+    measured_tokens = last_prompt_tokens
+    if measured_tokens is None:
+        measured_tokens = estimate_message_tokens([to_dict(m) for m in messages])
+    trigger = effective_rollover_threshold(
+        provider.model,
+        reserve_tokens=composition.config.reserve_tokens,
+        trigger_ratio=composition.config.rollover_trigger_ratio,
+        context_window_override=getattr(provider, "context_window", None),
     )
+    thresholds = [trigger]
+    if composition.config.rollover_token_threshold > 0:
+        thresholds.append(composition.config.rollover_token_threshold)
+    return "token_limit" if measured_tokens >= min(thresholds) else None
 
 
 def tool_definition_to_dict(tool: Any) -> dict[str, Any]:

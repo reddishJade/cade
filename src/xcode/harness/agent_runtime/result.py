@@ -6,13 +6,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ...agent.results import AgentLoopResult, TerminationReason
-from ...agent.messages import AssistantMessage
-from xcode.ai.events import ToolCall
 from xcode.agent.types import TextContent, ToolCallContent
+from xcode.ai.events import ProviderFailure, ToolCall
+
+from ...agent.messages import AssistantMessage
+from ...agent.results import AgentLoopResult, TerminationReason
+from ..observability import EventCorrelation
 from .agent_helpers import text_from_blocks, to_dict
 from .events import FinalStructuredEvent
-from ..observability import EventCorrelation
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,7 @@ class RunState:
         return {"messages": self.messages}
 
     @classmethod
-    def from_dict(cls, payload: object) -> "RunState":
+    def from_dict(cls, payload: object) -> RunState:
         """从 JSON 字典恢复运行状态。"""
         if not isinstance(payload, Mapping):
             return cls(messages=[])
@@ -44,6 +45,7 @@ class AgentHarnessResult:
     metrics: dict[str, Any] | None = None
     watchdog_reason: str | None = None
     error_detail: str | None = None
+    provider_failure: ProviderFailure | None = None
     needs_follow_up: bool = False
     last_agent: str = "main"
     run_state: RunState | None = None
@@ -89,6 +91,7 @@ def _build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
             "model_time_ms": sum(result.metrics.model_latencies_ms),
             "tool_time_ms": sum(result.metrics.tool_latencies_ms),
             "steps": result.metrics.steps,
+            "context_window_resets": result.metrics.context_window_resets,
         }
 
     if (
@@ -112,6 +115,7 @@ def _build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
         metrics=metrics,
         watchdog_reason=result.watchdog_reason,
         error_detail=result.error_detail,
+        provider_failure=result.provider_failure,
         run_state=RunState(
             messages=[to_dict(message) for message in result.surface],
         ),

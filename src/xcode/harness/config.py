@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -16,6 +17,7 @@ from pydantic import (
     field_validator,
 )
 
+from .execution_env.sandbox import NetworkAccess, SandboxMode
 from .security.approval import ApprovalPolicy
 
 DirAccess = Literal["read", "write", "read_write"]
@@ -25,12 +27,13 @@ ProviderTransport = Literal[
     "chatglm_chat",
     "deepseek_chat",
     "mimo_chat",
+    "custom",
 ]
 HookEventName = Literal[
     "pre_tool",
     "post_tool",
     "on_error",
-    "on_compact",
+    "on_context_window_reset",
     "before_agent_start",
     "before_provider_request",
 ]
@@ -57,12 +60,13 @@ DEFAULT_PROMPT_MODULES: tuple[str, ...] = (
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     max_steps: Annotated[StrictInt, Field(gt=0)] | None = None
-    compact_threshold: StrictInt = 0
-    compact_token_threshold: StrictInt = 0
-    max_recent_messages: StrictInt = 10
-    keep_recent_tokens: StrictInt = 20000
+    rollover_message_threshold: StrictInt = 0
+    rollover_token_threshold: StrictInt = 0
+    automatic_rollover: StrictBool = True
+    fallback_recent_messages: StrictInt = 10
+    fallback_recent_tokens: StrictInt = 20000
     reserve_tokens: StrictInt = 16384
-    compact_trigger_ratio: StrictFloat = Field(default=0.7, gt=0, lt=1)
+    rollover_trigger_ratio: StrictFloat = Field(default=0.95, gt=0, le=1)
     tool_workers: StrictInt = 4
     tool_timeout_seconds: StrictFloat | StrictInt = 120.0
     watchdog_repeated_tool_limit: StrictInt = 3
@@ -148,14 +152,25 @@ class ExecutionModesRuntimeConfig(BaseModel):
     act: ModeRulesetRuntimeConfig = Field(default_factory=ModeRulesetRuntimeConfig)
 
 
+class SandboxRuntimeConfig(BaseModel):
+    """Linux Agent shell 的 OS sandbox 配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: SandboxMode = SandboxMode.WORKSPACE_WRITE
+    network_access: NetworkAccess = NetworkAccess.DENY
+
+
 class SecurityRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approval_policy: ApprovalPolicy = "on-request"
+    approval_router: Literal["mode", "user", "auto"] = "mode"
+    non_workspace_access: StrictBool = True
     auto_review_timeout_seconds: StrictFloat | StrictInt = Field(
         default=90.0,
         gt=0,
         le=300,
     )
+    sandbox: SandboxRuntimeConfig = Field(default_factory=SandboxRuntimeConfig)
     restricted_dirs: tuple[str, ...] = ()
     permissions: dict[str, Literal["allow", "ask", "deny"]] = Field(
         default_factory=dict,
@@ -282,7 +297,7 @@ class ExternalHookRuntimeConfig(BaseModel):
 
     @field_validator("timeout")
     @classmethod
-    def _validate_timeout(cls, v: float | int) -> float | int:
+    def _validate_timeout(cls, v: float) -> float | int:
         if v <= 0:
             raise ValueError("timeout must be positive")
         return v
@@ -386,7 +401,7 @@ def _load_raw_config(path: Path | None) -> dict[str, Any]:
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError(f"runtime config must be a JSON object: {path}")
+        raise TypeError(f"runtime config must be a JSON object: {path}")
     return data
 
 
@@ -513,11 +528,13 @@ def _load_provider_transport(
             return "deepseek_chat"
         case "mimo_chat":
             return "mimo_chat"
+        case "custom":
+            return "custom"
         case _:
             raise ValueError(
                 f"Unsupported provider transport: {value!r}. "
                 "Supported transports: openai_chat, chatglm_chat, "
-                "deepseek_chat, mimo_chat"
+                "deepseek_chat, mimo_chat, custom"
             )
 
 

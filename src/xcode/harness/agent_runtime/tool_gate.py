@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-import json
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -18,42 +17,46 @@ from ...agent.config import (
     BeforeToolCallResult,
     IsToolProductiveHook,
 )
-from ...agent.types import AgentTool, AgentToolResult, CancellationSignal
-from ...agent.types import TextContent, ToolCallContent, ToolSpecAdapter
-from ._mode_protocol import ToolGateMode
-from .tool_audit import build_audit_record, emit_audit
-from .tool_hooks import emit_hook, emit_tool_hook, tool_result_text
-from ..security import (
-    PermissionEngine,
-    PermissionEngineConfig,
-    PermissionDecision,
-    PermissionEngineResult,
-    PermissionPolicy,
+from ...agent.types import (
+    AgentTool,
+    AgentToolResult,
+    ApprovalCallback,
+    CancellationSignal,
+    TextContent,
+    ToolCallContent,
+    ToolSpec,
+    ToolSpecAdapter,
+    stringify_tool_input,
 )
 from ..observability import (
     AuditLogger,
     ExternalHookRunner,
+    HookCorrelationFields,
     HookManager,
     HookRecord,
     RuntimeCorrelation,
     hook_correlation_fields,
-    HookCorrelationFields,
+    redact_text,
 )
+from ..security import (
+    PermissionDecision,
+    PermissionEngine,
+    PermissionEngineConfig,
+    PermissionEngineResult,
+    PermissionPolicy,
+)
+from ..security.approval import ApprovalPolicy, ApprovalsReviewer
 from ..security.permission_model import (
     ExternalDirectory,
     GrantStore,
-    PolicyEvaluator,
     PathExtractor,
+    PolicyEvaluator,
     Rule,
     SensitivePathOverride,
 )
-from ..security.approval import ApprovalPolicy, ApprovalsReviewer
-from ...agent.types import (
-    ApprovalCallback,
-    ToolSpec,
-    stringify_tool_input,
-)
-from ..observability import redact_text
+from ._mode_protocol import ToolGateMode
+from .tool_audit import build_audit_record, emit_audit
+from .tool_hooks import emit_hook, emit_tool_hook, tool_result_text
 
 
 @runtime_checkable
@@ -98,9 +101,7 @@ class _RedactingAdapter(ToolSpecAdapter):
                     AgentToolResult(content=[TextContent(text=redact_text(text))])
                 )
 
-        content = await asyncio.to_thread(
-            self._spec.handler, dict(params), _redacted_update
-        )
+        content = await self._execute_handler(dict(params), _redacted_update)
         metadata = getattr(content, "metadata", None)
         render_intent = getattr(content, "render_intent", None)
         return AgentToolResult(
@@ -591,10 +592,13 @@ class ToolGate:
         approval_turn_id: str = "",
     ) -> BeforeToolCallResult | None:
         action_profiles: dict[str, tuple[str, str]] = {}
+        path_extractors = dict(snapshot.tool_path_extractors)
         for spec in snapshot.tool_map.values():
-            profile = _TOOL_ACTION_PROFILES.get(spec.name)
+            profile = spec.action_profile or _TOOL_ACTION_PROFILES.get(spec.name)
             if profile is not None:
                 action_profiles[spec.name] = profile
+            if spec.path_extractor is not None:
+                path_extractors.setdefault(spec.name, spec.path_extractor)
         engine = PermissionEngine(
             PermissionEngineConfig(
                 static_policy=snapshot.permission_policy,
@@ -606,7 +610,7 @@ class ToolGate:
                 session_grant_store=snapshot.session_grant_store,
                 permanent_grant_store=snapshot.permanent_grant_store,
                 tool_action_profiles=action_profiles,
-                tool_path_extractors=snapshot.tool_path_extractors,
+                tool_path_extractors=path_extractors,
                 mode_ruleset=snapshot.mode_ruleset,
                 user_ruleset=snapshot.user_ruleset,
                 mode_fallback=snapshot.mode_fallback,
@@ -709,13 +713,20 @@ def _tool_results_count_as_progress(
     tool_results: list[Any],
     tool_map: dict[str, ToolSpec],
 ) -> bool:
-    for _, tool_result in zip(tool_uses, tool_results, strict=True):
-        is_ok = (hasattr(tool_result, "is_error") and not tool_result.is_error) or (
-            hasattr(tool_result, "status") and tool_result.status == "ok"
-        )
-        if not is_ok:
-            continue
-    return True
+    del tool_map
+    if not tool_uses or not tool_results:
+        return False
+    results_by_id = {
+        str(getattr(result, "tool_call_id", "")): result for result in tool_results
+    }
+    for tool_use, positional_result in zip(tool_uses, tool_results):
+        result = results_by_id.get(tool_use.id, positional_result)
+        is_error = getattr(result, "is_error", None)
+        if isinstance(is_error, bool) and not is_error:
+            return True
+        if is_error is None and getattr(result, "status", None) == "ok":
+            return True
+    return False
 
 
 def _stricter_decision(
