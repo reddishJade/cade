@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from xcode.harness.security.permission_model.action import (
     ActionExtractor,
-    _normalize_path_text,
     _filesystem_command_path_arguments,
+    _normalize_path_text,
 )
 
 
@@ -36,6 +36,21 @@ def test_unknown_tool() -> None:
     extractor = ActionExtractor()
     action = extractor.extract("unknown_tool", {}, None)
     assert action.capability == "unknown"
+
+
+def test_custom_tool_profile_extracts_declared_path_target() -> None:
+    extractor = ActionExtractor()
+    action = extractor.extract(
+        "custom_export",
+        {"destination": "reports/result.txt"},
+        ("write", "path"),
+        path_extractor=lambda data: (str(data["destination"]),),
+    )
+
+    assert action.capability == "write"
+    assert action.operation == "custom_export"
+    assert [target.value for target in action.targets] == ["reports/result.txt"]
+    assert action.targets[0].access == "write"
 
 
 def test_apply_patch_uses_injected_path_extractor() -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from xcode.ai.events import StopReason
 from xcode.agent.types import (
     ContentBlock,
     FileContent,
@@ -14,6 +13,7 @@ from xcode.agent.types import (
     ToolRenderIntent,
     ToolResultContent,
 )
+from xcode.ai.events import ProviderFailure, StopReason
 
 type UserContent = str | list[TextContent | ImageContent | FileContent]
 type ToolResultMessageContent = (
@@ -51,6 +51,7 @@ class AssistantMessage(BaseModel):
     phase: str | None = None
     stop_reason: StopReason = "end_turn"
     error_message: str | None = None
+    provider_failure: ProviderFailure | None = None
     model: str = ""
     provider: str = ""
     timestamp: int = 0
@@ -70,14 +71,6 @@ class ToolResultMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class CompactionSummaryMessage(BaseModel):
-    role: str = "compaction_summary"
-    summary: str = ""
-    tokens_before: int = 0
-    timestamp: int = 0
-    model_config = ConfigDict(extra="forbid")
-
-
 class BranchSummaryMessage(BaseModel):
     role: str = "branch_summary"
     summary: str = ""
@@ -91,6 +84,5 @@ type AgentMessage = (
     | UserMessage
     | AssistantMessage
     | ToolResultMessage
-    | CompactionSummaryMessage
     | BranchSummaryMessage
 )

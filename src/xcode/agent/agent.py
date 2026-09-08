@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 
 from xcode.ai.providers.base import ModelProvider
 
 from .agent_loop import run_agent_loop
 from .config import AgentContext, AgentLoopConfig
-from .results import AgentLoopResult
+from .context import ContextState
+from .context_manager import ContextManager
 from .events import (
     AgentEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
 )
 from .messages import AgentMessage, AssistantMessage, SystemMessage, UserMessage
+from .results import AgentLoopResult
 from .types import AgentTool, CancellationSignal, TextContent
 
 
@@ -146,6 +149,11 @@ class Agent:
         emit: Callable[[AgentEvent], None] | None = None,
         history: list[AgentMessage] | None = None,
         request_prefix: list[AgentMessage] | None = None,
+        context_state: ContextState | None = None,
+        context_manager: ContextManager | None = None,
+        state: dict[str, object] | None = None,
+        project_root: Path | None = None,
+        cwd: Path | None = None,
         step_input: Callable[[], list[AgentMessage]] | None = None,
         finish_step_input: Callable[[], list[AgentMessage]] | None = None,
         reopen_step_input: Callable[[], None] | None = None,
@@ -154,10 +162,28 @@ class Agent:
 
         config 和队列引用每次调用传入，不缓存。
         """
+        initial_history = (
+            list(history)
+            if history is not None
+            else (
+                context_manager.history_messages()
+                if context_manager is not None
+                else []
+            )
+        )
         context = AgentContext(
             request_prefix=list(request_prefix or []),
-            messages=list(history or []),
+            messages=initial_history,
             tools=list(self._tools),
+            context_state=(
+                context_manager.context_state
+                if context_manager is not None
+                else context_state or ContextState()
+            ),
+            context_manager=context_manager,
+            state=dict(state or {}),
+            project_root=project_root,
+            cwd=cwd,
         )
         sink = emit or (lambda _e: None)
         result = await run_agent_loop(
@@ -181,6 +207,11 @@ class Agent:
         signal: CancellationSignal | None = None,
         history: list[AgentMessage] | None = None,
         request_prefix: list[AgentMessage] | None = None,
+        context_state: ContextState | None = None,
+        context_manager: ContextManager | None = None,
+        state: dict[str, object] | None = None,
+        project_root: Path | None = None,
+        cwd: Path | None = None,
         step_input: Callable[[], list[AgentMessage]] | None = None,
         finish_step_input: Callable[[], list[AgentMessage]] | None = None,
         reopen_step_input: Callable[[], None] | None = None,
@@ -190,19 +221,36 @@ class Agent:
         事件在 run_agent_loop 执行过程中通过 asyncio.Queue 实时传递，
         消费方可边跑边 yield。run_agent_loop 抛出的异常会传播给消费方。
         """
+        initial_history = (
+            list(history)
+            if history is not None
+            else (
+                context_manager.history_messages()
+                if context_manager is not None
+                else []
+            )
+        )
         context = AgentContext(
             request_prefix=list(request_prefix or []),
-            messages=list(history or []),
+            messages=initial_history,
             tools=list(self._tools),
+            context_state=(
+                context_manager.context_state
+                if context_manager is not None
+                else context_state or ContextState()
+            ),
+            context_manager=context_manager,
+            state=dict(state or {}),
+            project_root=project_root,
+            cwd=cwd,
         )
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
-        error_slot: BaseException | None = None
+        error_slot: list[Exception] = []
 
         def _emit(event: AgentEvent) -> None:
             queue.put_nowait(event)
 
         async def _run() -> None:
-            nonlocal error_slot
             try:
                 result = await run_agent_loop(
                     messages,
@@ -215,8 +263,8 @@ class Agent:
                     reopen_steering=reopen_step_input,
                 )
                 self._last_result = result
-            except BaseException as exc:
-                error_slot = exc
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                error_slot.append(exc)
             finally:
                 queue.put_nowait(None)
 
@@ -235,5 +283,5 @@ class Agent:
                 except asyncio.CancelledError:
                     pass
             # error_slot 在此处抛出，因为 finally 是生成器退出前最后执行的代码
-            if error_slot is not None:
-                raise error_slot
+            if error_slot:
+                raise error_slot[0]

@@ -5,40 +5,45 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xcode.ai.providers.base import ModelProvider
-from xcode.agent.types import ApprovalCallback, ToolSpec
 from xcode.agent.context import (
     ActiveDiffCollector,
+    ContextBlockSource,
     ContextCollectorRegistry,
+    ContextPriority,
     DefaultContextAssembler,
     InstructionCollector,
     NotesCollector,
     RecentValidationCollector,
+    make_collector_section,
+    make_state_section,
 )
-from xcode.coding_agent.tools import ShellSpec
-from xcode.coding_agent.tools.apply_patch import extract_patch_paths
+from xcode.agent.types import ApprovalCallback, ToolSpec
+from xcode.ai.providers.base import ModelProvider
 from xcode.coding_agent.execution_modes import (
     DEFAULT_MODE_FALLBACKS,
     DEFAULT_SHELL_UNRESOLVED_POLICIES,
     build_default_mode_rulesets,
 )
-
+from xcode.coding_agent.harness import CodingAgentHarness
+from xcode.coding_agent.tools import ShellSpec
+from xcode.coding_agent.tools.apply_patch import extract_patch_paths
 from xcode.harness.agent_runtime import (
     AgentComposition,
     CancellationToken,
     ContextualRetrievalState,
 )
-from xcode.coding_agent.harness import CodingAgentHarness
 from xcode.harness.agent_runtime.config import (
     GateConfig,
     GateRuntimeConfig,
     build_request_assembler,
     resolve_permission_policy,
 )
-from xcode.harness.agent_runtime.compaction import CompactController, LayeredCompactor
+from xcode.harness.agent_runtime.context_window import (
+    ContextWindowController,
+    ContextWindowRollover,
+)
 from xcode.harness.agent_runtime.prompting import build_runtime_context_provider
 from xcode.harness.config import AgentConfig, XcodeRuntimeConfig
-from xcode.harness.session_todo import SessionTodoState
 from xcode.harness.observability import (
     ExternalHookRunner,
     HookManager,
@@ -47,17 +52,18 @@ from xcode.harness.observability import (
     SignalHookManager,
 )
 from xcode.harness.security.permission_model import PolicyEvaluator
-from xcode.harness.session.recorder import SessionRecorder
 from xcode.harness.session.inbox import SessionInbox
+from xcode.harness.session.recorder import SessionRecorder
+from xcode.harness.session_todo import SessionTodoState
 
+from ..prompting import CORE_IDENTITY
+from ..runtime import CodingAgentRuntimeConfig
 from .security import (
     external_directories_from_security,
     mode_rulesets_from_runtime_config,
     permission_policy_from_security,
     sensitive_path_overrides_from_security,
 )
-from ..runtime import CodingAgentRuntimeConfig
-from ..prompting import CORE_IDENTITY
 
 if TYPE_CHECKING:
     from xcode.harness.skills import SkillRegistry
@@ -89,7 +95,7 @@ def build_hook_manager(
         for event in (
             "post_tool",
             "on_error",
-            "on_compact",
+            "on_context_window_reset",
             "before_agent_start",
             "before_provider_request",
         ):
@@ -120,9 +126,9 @@ def build_agent(
     session_inbox: SessionInbox,
     contextual_state: ContextualRetrievalState | None = None,
     shell_spec: ShellSpec | None = None,
-    compact_controller: CompactController | None = None,
+    context_window_controller: ContextWindowController | None = None,
     cancellation_token: CancellationToken | None = None,
-    compactor: LayeredCompactor | None = None,
+    context_rollover: ContextWindowRollover | None = None,
     fallback_provider: ModelProvider | None = None,
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = (),
     skill_registry: SkillRegistry | None = None,
@@ -145,22 +151,65 @@ def build_agent(
 
     sec = runtime_config.security
     context_collectors = ContextCollectorRegistry()
-    context_collectors.register(
-        InstructionCollector(
-            sources=tuple(
-                i.model_dump(exclude_none=True)
-                for i in runtime_config.prompt.instructions
+    context_collectors.register_section(
+        make_collector_section(
+            "agents",
+            InstructionCollector(
+                sources=tuple(
+                    i.model_dump(exclude_none=True)
+                    for i in runtime_config.prompt.instructions
+                ),
+                project_root=project_root,
             ),
-            project_root=project_root,
         )
     )
-    context_collectors.register(ActiveDiffCollector(project_root))
-    context_collectors.register(RecentValidationCollector())
-    context_collectors.register(NotesCollector(project_root))
+    context_collectors.register_section(
+        make_collector_section("active_diff", ActiveDiffCollector(project_root))
+    )
+    context_collectors.register_section(
+        make_collector_section("recent_validation", RecentValidationCollector())
+    )
+    context_collectors.register_section(
+        make_collector_section("notes", NotesCollector(project_root))
+    )
     if skill_registry is not None:
         from xcode.harness.skills import SkillIndexCollector
 
-        context_collectors.register(SkillIndexCollector(skill_registry))
+        context_collectors.register_section(
+            make_collector_section("skills", SkillIndexCollector(skill_registry))
+        )
+    context_collectors.register_section(
+        make_state_section(
+            "environment",
+            "environment",
+            ContextBlockSource.ENVIRONMENT,
+            priority=ContextPriority.MEDIUM,
+        )
+    )
+    context_collectors.register_section(
+        make_state_section(
+            "tools",
+            "tools",
+            ContextBlockSource.TOOLS,
+            priority=ContextPriority.MEDIUM,
+        )
+    )
+    context_collectors.register_section(
+        make_state_section(
+            "permissions",
+            "permissions",
+            ContextBlockSource.PERMISSIONS,
+            priority=ContextPriority.HIGH,
+        )
+    )
+    context_collectors.register_section(
+        make_state_section(
+            "mode",
+            "mode",
+            ContextBlockSource.MODE,
+            priority=ContextPriority.HIGH,
+        )
+    )
 
     runtime_context_provider = build_runtime_context_provider(
         project_root,
@@ -210,6 +259,7 @@ def build_agent(
         composition=composition,
         runtime=CodingAgentRuntimeConfig(
             initial_mode=runtime_config.execution_modes.default_mode,
+            approval_router=runtime_config.security.approval_router,
             session_inbox=session_inbox,
             gate=GateRuntimeConfig(
                 auto_approval_callback=auto_approval_callback,
@@ -220,8 +270,8 @@ def build_agent(
                     JsonlAuditLogger(audit_path).write if audit_path else None
                 ),
             ),
-            compactor=compactor,
-            compact_controller=compact_controller,
+            context_rollover=context_rollover,
+            context_window_controller=context_window_controller,
             cancellation_token=cancellation_token,
             project_root=project_root,
             skill_registry=skill_registry,

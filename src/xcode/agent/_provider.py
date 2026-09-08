@@ -10,15 +10,31 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Awaitable, cast
+from typing import cast
 
+from xcode.agent.config import AgentContext, AgentLoopConfig
+from xcode.agent.events import (
+    AgentEvent,
+    MessageUpdateEvent,
+    ThinkingUpdateEvent,
+)
+from xcode.agent.messages import AssistantMessage
+from xcode.agent.results import AgentLoopMetrics
+from xcode.agent.types import (
+    CancellationSignal,
+    ContentBlock,
+    TextContent,
+    ToolCallContent,
+)
 from xcode.ai.events import (
     FinalMessage,
     Message,
     ProviderEvent,
+    ProviderFailure,
     ReasoningDelta,
     StopReason,
     TextDelta,
@@ -27,20 +43,8 @@ from xcode.ai.events import (
 )
 from xcode.ai.providers.base import StreamProvider
 from xcode.ai.types import StreamOptions, ToolDefinition
-from xcode.agent.types import (
-    CancellationSignal,
-    ContentBlock,
-    TextContent,
-    ToolCallContent,
-)
-from xcode.agent.config import AgentContext, AgentLoopConfig
-from xcode.agent.results import AgentLoopMetrics
-from xcode.agent.events import (
-    AgentEvent,
-    MessageUpdateEvent,
-    ThinkingUpdateEvent,
-)
-from xcode.agent.messages import AssistantMessage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,7 +84,10 @@ async def call_provider(
     metrics.model_latencies_ms.append(elapsed)
     if events is None:
         return None
-    return _provider_events_to_response(events, metrics, lambda _event: None)
+    response = _provider_events_to_response(events, metrics, lambda _event: None)
+    if context.context_manager is not None:
+        context.context_manager.record_provider_usage(response.message.usage)
+    return response
 
 
 def _is_cancelled(signal: CancellationSignal | None) -> bool:
@@ -94,8 +101,8 @@ def _abort_inflight_stream(provider: StreamProvider) -> None:
         return
     try:
         abort()
-    except Exception:
-        pass
+    except (OSError, RuntimeError, TypeError, ValueError):
+        logger.debug("failed to abort the active provider stream", exc_info=True)
 
 
 async def _aclose_stream(stream_iter: AsyncIterator[ProviderEvent]) -> None:
@@ -105,8 +112,8 @@ async def _aclose_stream(stream_iter: AsyncIterator[ProviderEvent]) -> None:
         return
     try:
         await cast(Awaitable[None], aclose())
-    except Exception:
-        pass
+    except (OSError, RuntimeError, TypeError, ValueError):
+        logger.debug("failed to close the provider stream", exc_info=True)
 
 
 async def _collect_provider_events(
@@ -138,11 +145,24 @@ async def _collect_provider_events(
                 emit(ThinkingUpdateEvent(reasoning_content=event.chunk))
                 await asyncio.sleep(0)
         return events
-    except Exception as e:
+    except (
+        LookupError,
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        TypeError,
+        ValueError,
+    ) as e:
         if _is_cancelled(signal):
             # 打断触发的连接关闭会使阻塞读取抛出异常，属预期路径。
             return None
-        events.append(FinalMessage(content=f"Provider error: {e}", stop_reason="error"))
+        events.append(
+            ProviderFailure(
+                message=str(e) or type(e).__name__,
+                exception_type=type(e).__name__,
+                status_code=_exception_status_code(e),
+            )
+        )
         return events
 
 
@@ -159,6 +179,7 @@ def _provider_events_to_response(
     output_tokens = 0
     has_usage = False
     final_content: str | None = None
+    provider_failure: ProviderFailure | None = None
 
     for event in events:
         if isinstance(event, TextDelta):
@@ -174,6 +195,10 @@ def _provider_events_to_response(
             input_tokens += event.input_tokens
             output_tokens += event.output_tokens
             has_usage = True
+        elif isinstance(event, ProviderFailure):
+            provider_failure = event
+            stop_reason = "error"
+            final_content = f"Provider error: {event.message}"
         if isinstance(event, FinalMessage):
             stop_reason = event.stop_reason or "end_turn"
             if event.content:
@@ -197,10 +222,20 @@ def _provider_events_to_response(
             reasoning_content="".join(reasoning_parts) if reasoning_parts else None,
             stop_reason=stop_reason,
             error_message=final_content if stop_reason == "error" else None,
+            provider_failure=provider_failure,
             usage=usage,
         ),
         stop_reason=stop_reason,
     )
+
+
+def _exception_status_code(exc: BaseException) -> int | None:
+    """从常见 SDK 异常字段提取 HTTP 状态码。"""
+    for attribute in ("status_code", "status", "code"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, int) and 100 <= value <= 599:
+            return value
+    return None
 
 
 def _append_text_delta(

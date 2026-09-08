@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import json
+import queue
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-import json
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -182,6 +185,7 @@ type ToolUpdateCallback = Callable[[AgentToolResult], None]
 
 
 ToolInput = dict[str, Any]
+ToolPathExtractor = Callable[[Mapping[str, object]], tuple[str, ...]]
 ActionHandler = Callable[[ToolInput, Callable[[str], None] | None], str]
 HITLResult = Any
 ApprovalScope = Literal["once", "session", "permanent"]
@@ -191,7 +195,7 @@ ApprovalScope = Literal["once", "session", "permanent"]
 class ApprovalRequest:
     """权限引擎传给交互层的审批请求。"""
 
-    tool: "ToolSpec"
+    tool: ToolSpec
     action_input: ToolInput
     allowed_scopes: tuple[ApprovalScope, ...]
     reason: str
@@ -227,7 +231,7 @@ class ToolOutput(str):
         metadata: Mapping[str, object] | None = None,
         is_error: bool = False,
         render_intent: ToolRenderIntent | None = None,
-    ) -> "ToolOutput":
+    ) -> Self:
         output = str.__new__(cls, content)
         output.metadata = dict(metadata) if metadata else {}
         output.is_error = is_error
@@ -246,6 +250,8 @@ class ToolSpec:
     schema: Mapping[str, Any] | None = None
     prompt_snippet: str | None = None
     prompt_guidelines: tuple[str, ...] = ()
+    action_profile: tuple[str, str] | None = None
+    path_extractor: ToolPathExtractor | None = None
 
 
 def materialize_json_mapping(value: object) -> dict[str, object]:
@@ -347,9 +353,7 @@ class ToolSpecAdapter:
             if on_update is not None:
                 on_update(AgentToolResult(content=[TextContent(text=text)]))
 
-        content = await asyncio.to_thread(
-            self._spec.handler, dict(params), _text_update
-        )
+        content = await self._execute_handler(dict(params), _text_update)
         metadata = getattr(content, "metadata", None)
         render_intent = getattr(content, "render_intent", None)
         return AgentToolResult(
@@ -358,3 +362,35 @@ class ToolSpecAdapter:
             is_error=bool(getattr(content, "is_error", False)),
             render_intent=render_intent,
         )
+
+    async def _execute_handler(
+        self,
+        params: ToolInput,
+        on_update: Callable[[str], None] | None,
+    ) -> str:
+        """在独立 daemon 线程中执行同步 handler，并轮询收取结果。"""
+        outcomes: queue.SimpleQueue[str | Exception] = queue.SimpleQueue()
+        context = contextvars.copy_context()
+
+        def run_handler() -> None:
+            try:
+                result = context.run(self._spec.handler, params, on_update)
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                outcomes.put(exc)
+            else:
+                outcomes.put(result)
+
+        threading.Thread(
+            target=run_handler,
+            name=f"xcode-tool-{self.name}",
+            daemon=True,
+        ).start()
+        while True:
+            try:
+                outcome = outcomes.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+                continue
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome

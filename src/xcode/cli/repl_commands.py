@@ -1,19 +1,35 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
 import subprocess
 import sys
 from collections.abc import Callable
-from typing import Any, cast
-from xcode.agent.messages import AgentMessage
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import cast
 
 import questionary
 
-from .app_contract import ReplApp
-from xcode.harness.session.types import SessionEntry, SessionInfoView
-from xcode.harness.session.types import JsonValue
+from xcode.agent.messages import AgentMessage
+from xcode.agent.types import ToolSpec
+from xcode.harness.memory import (
+    MemoryLayer,
+    MemoryLayerFilter,
+    MemoryManager,
+    build_memory_block,
+)
+from xcode.harness.security import (
+    FileGrantStore,
+    InMemoryGrantStore,
+    PermissionApprovalCallback,
+    PermissionEngine,
+    PermissionEngineConfig,
+    PermissionPolicy,
+)
+from xcode.harness.session import SessionStore
+from xcode.harness.session.types import JsonValue, SessionEntry, SessionInfoView
+from xcode.harness.snapshot import SnapshotStore, TurnSnapshotRecord
 
+from .app_contract import ReplApp
 from .commands import (
     COMMAND_GROUP_EXIT,
     COMMAND_GROUP_INFO,
@@ -28,6 +44,13 @@ from .commands import (
     ReplState,
     command_names,
     generate_help_text,
+)
+from .config_registry import (
+    edit_setting_interactive,
+    find_setting,
+    load_effective_config,
+    matching_settings,
+    run_config_browser,
 )
 from .markdown import MarkdownRenderer
 from .repl_rendering import clear_terminal_display, print_startup_banner
@@ -46,27 +69,8 @@ from .repl_settings import (
     handle_thinking_command,
 )
 from .repl_skills import activate_skill
-from .setup_wizard import CONFIG_FILENAME, _load_existing_config, _save_config
-from .config_cmd import _cmd_add, _cmd_edit, _cmd_delete
-from .config_cmd import BOOL_FIELDS
 from .repl_tools import run_tool_command
-from xcode.harness.security import (
-    FileGrantStore,
-    InMemoryGrantStore,
-    PermissionApprovalCallback,
-    PermissionEngine,
-    PermissionEngineConfig,
-    PermissionPolicy,
-)
-from xcode.harness.memory import (
-    MemoryLayer,
-    MemoryLayerFilter,
-    MemoryManager,
-    build_memory_block,
-)
-from xcode.agent.types import ToolSpec
-from xcode.harness.session import SessionStore
-from xcode.harness.snapshot import SnapshotStore, TurnSnapshotRecord
+from .setup_wizard import CONFIG_FILENAME
 
 
 def _queue_followup(ctx: CommandContext, text: str) -> None:
@@ -284,230 +288,28 @@ def cmd_thinking(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_config(cmd: str, ctx: CommandContext) -> bool:
-    """管理 provider 配置 profile。"""
+    """打开交互式配置浏览器，浏览并修改 xcode.config.json。"""
     config_path = ctx.project_root / CONFIG_FILENAME
-    config = _load_existing_config(config_path)
+    parts = cmd.split(maxsplit=1)
+    query = parts[1].strip() if len(parts) > 1 else ""
 
-    parts = cmd.split(maxsplit=2)
-    sub = parts[1].strip() if len(parts) >= 2 else ""
-
-    if not sub or sub == "list":
-        _config_cmd_list(config, config_path)
+    if not query:
+        run_config_browser(config_path)
         return False
 
-    if sub == "reload":
-        print("Reloading config from file...")
-        config = _load_existing_config(config_path)
-        _config_cmd_list(config, config_path)
-        print("(some changes may require restart)")
-        return False
-
-    if sub == "add":
-        parts = cmd.split(maxsplit=2)
-        name = parts[2] if len(parts) >= 3 else questionary.text("Profile name:").ask()
-        if not name:
-            return False
-        _cmd_add(config_path, name)
-        return False
-
-    if sub == "edit":
-        parts = cmd.split(maxsplit=2)
-        if len(parts) >= 3:
-            name = parts[2]
+    spec = find_setting(query)
+    if spec is None:
+        matches = matching_settings(query)
+        if matches:
+            print(f"'{query}' is ambiguous. Did you mean:")
+            for match in matches:
+                print(f"  {match.label} ({match.key})")
         else:
-            profiles = config.get("provider", {}).get("model_profiles", {})
-            if not profiles:
-                print("No profiles found. Use '/config add <name>' first.")
-                return False
-            name = questionary.select(
-                "Select profile:", choices=sorted(profiles.keys())
-            ).ask()
-        if not name:
-            return False
-        _cmd_edit(config_path, name)
+            print(f"No setting matches '{query}'. Use '/config' to browse all.")
         return False
 
-    if sub == "delete":
-        parts = cmd.split(maxsplit=2)
-        if len(parts) >= 3:
-            name = parts[2]
-        else:
-            profiles = config.get("provider", {}).get("model_profiles", {})
-            if not profiles:
-                print("No profiles found.")
-                return False
-            name = questionary.select(
-                "Select profile to delete:", choices=sorted(profiles.keys())
-            ).ask()
-        if not name:
-            return False
-        _cmd_delete(config_path, name)
-        return False
-
-    if sub == "set":
-        set_parts = cmd.split(maxsplit=4)
-        if len(set_parts) >= 5:
-            _, _, name, field, value = set_parts
-            _config_cmd_set(config, config_path, name, field, value)
-            return False
-        _config_cmd_set_interactive(config, config_path)
-        return False
-
-    print(
-        "Usage: /config [list|add <name>|edit <name>|delete <name>"
-        "|set <profile> <field> <value>|reload]"
-    )
+    edit_setting_interactive(config_path, spec, load_effective_config(config_path))
     return False
-
-
-def _mask_key(key: str) -> str:
-    if len(key) <= 8:
-        return "****"
-    return f"{'*' * max(0, len(key) - 4)}{key[-4:]}"
-
-
-BOOL_CONFIG_FIELDS = frozenset({"thinking", "clear_thinking", "tool_stream"})
-
-
-def _coerce_config_value(field: str, value: str) -> Any:
-    if field in BOOL_CONFIG_FIELDS:
-        if value.lower() in ("true", "1", "yes"):
-            return True
-        if value.lower() in ("false", "0", "no"):
-            return False
-        raise ValueError(f"Invalid bool value for '{field}': {value}")
-    if value.lower() == "null":
-        return None
-    return value
-
-
-def _config_cmd_list(config: dict[str, Any], config_path: Path) -> None:
-    profiles = config.get("provider", {}).get("model_profiles", {})
-    if not profiles:
-        print(f"No profiles found in {config_path.name}.")
-        return
-
-    print(f"Profiles in {config_path.name}:\n")
-    for name, profile in profiles.items():
-        if isinstance(profile, str):
-            print(f"  {name}: (inherits from main, model={profile})")
-            continue
-        print(f"  {name}:")
-        for fname in (
-            "transport",
-            "chat_model",
-            "base_url",
-            "api_key",
-            "thinking",
-            "reasoning_effort",
-            "clear_thinking",
-            "tool_stream",
-        ):
-            val = profile.get(fname)
-            if val is None:
-                continue
-            if fname == "api_key" and val:
-                val = _mask_key(str(val))
-            print(f"    {fname:20s}: {val}")
-        print()
-
-
-def _config_cmd_set(
-    config: dict[str, Any], config_path: Path, name: str, field: str, value: str
-) -> None:
-    profiles = config.setdefault("provider", {}).setdefault("model_profiles", {})
-
-    if name not in profiles:
-        available = ", ".join(sorted(profiles.keys()))
-        print(f"Profile '{name}' not found. Available: {available}")
-        return
-
-    profile = profiles[name]
-    if isinstance(profile, str):
-        print(f"Profile '{name}' is a string alias. Edit main first.")
-        return
-
-    try:
-        coerced = _coerce_config_value(field, value)
-    except ValueError as exc:
-        print(str(exc))
-        return
-
-    if coerced is None:
-        profile.pop(field, None)
-    else:
-        profile[field] = coerced
-
-    _save_config(config, config_path)
-    print(f"  {name}.{field} = {value} (saved to {config_path.name})")
-
-
-def _config_cmd_set_interactive(config: dict[str, Any], config_path: Path) -> None:
-    profiles = config.setdefault("provider", {}).setdefault("model_profiles", {})
-    if not profiles:
-        print("No profiles found. Use '/config add <name>' first.")
-        return
-
-    name = questionary.select("Select profile:", choices=sorted(profiles.keys())).ask()
-    if name is None:
-        return
-
-    profile = profiles[name]
-    if isinstance(profile, str):
-        print(f"Profile '{name}' is a string alias. Edit main first.")
-        return
-
-    SET_FIELDS = (
-        ("transport", "Transport"),
-        ("chat_model", "Chat Model"),
-        ("base_url", "Base URL"),
-        ("api_key", "API Key"),
-        ("thinking", "Thinking"),
-        ("reasoning_effort", "Reasoning Effort"),
-        ("clear_thinking", "Clear Thinking"),
-        ("tool_stream", "Tool Stream"),
-    )
-    field_choices = [
-        questionary.Choice(title=f"{label} ({profile.get(key, 'not set')})", value=key)
-        for key, label in SET_FIELDS
-    ]
-    field = questionary.select("Select field to change:", choices=field_choices).ask()
-    if field is None:
-        return
-
-    current = profile.get(field, "")
-    current_str = str(current) if current is not None else "(not set)"
-    if field == "api_key":
-        value = questionary.password(
-            f"API Key (current: {_mask_key(current_str)}):"
-        ).ask()
-    elif field in BOOL_FIELDS:
-        default_choice = "true" if current else "false"
-        value = questionary.select(
-            f"{field}:",
-            choices=["true", "false"],
-            default=default_choice,
-        ).ask()
-    else:
-        value = questionary.text(f"{field} (current: {current_str}):").ask()
-    if value is None:
-        return
-    if not value and field != "api_key":
-        return
-
-    try:
-        coerced = _coerce_config_value(field, value)
-    except ValueError as exc:
-        print(str(exc))
-        return
-
-    if coerced is None:
-        profile.pop(field, None)
-    else:
-        profile[field] = coerced
-
-    _save_config(config, config_path)
-    print(f"  {name}.{field} = {value} (saved to {config_path.name})")
 
 
 def cmd_plan(cmd: str, ctx: CommandContext) -> bool:
@@ -567,10 +369,7 @@ def cmd_debug(cmd: str, ctx: CommandContext) -> bool:
     if len(parts) == 2 and parts[1] == "on":
         ctx.state.verbosity = "debug"
         print("Debug mode on: reasoning preview and expanded tool results shown.")
-    elif len(parts) == 2 and parts[1] == "off":
-        ctx.state.verbosity = "normal"
-        print("Debug mode off.")
-    elif ctx.state.verbosity == "debug":
+    elif len(parts) == 2 and parts[1] == "off" or ctx.state.verbosity == "debug":
         ctx.state.verbosity = "normal"
         print("Debug mode off.")
     else:
@@ -618,12 +417,12 @@ def cmd_queue(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
-def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
-    """手动触发上下文压缩，立即执行完整压缩管线并显示结构化摘要。"""
-    from xcode.agent._compaction import estimate_message_tokens
+def cmd_new_context(cmd: str, ctx: CommandContext) -> bool:
+    """关闭当前模型上下文并立即切换到无摘要的新窗口。"""
+    from xcode.agent._context_window import estimate_message_tokens
     from xcode.harness.agent_runtime.agent_helpers import to_dict
     from xcode.harness.agent_runtime.message_codec import (
-        messages_from_compacted_dicts,
+        messages_from_provider_dicts,
     )
 
     agent = getattr(ctx.app, "agent", None)
@@ -636,17 +435,16 @@ def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
     if not callable(history_messages):
         print("Agent does not expose history.")
         return False
-    before_msgs = cast(list[AgentMessage], history_messages())
+    before_msgs = cast(Callable[[], list[AgentMessage]], history_messages)()
     if not before_msgs:
-        print("No messages to compact.")
+        print("No active context to replace.")
         return False
 
     before_tokens = estimate_message_tokens(before_msgs)
 
-    # 2) 检查是否需要压缩
-    compactor = getattr(agent, "compactor", None)
-    if compactor is None:
-        print("No compactor configured.")
+    rollover = getattr(agent, "context_rollover", None)
+    if not callable(rollover):
+        print("Context-window rollover is not configured.")
         return False
 
     load_history = getattr(agent, "load_history", None)
@@ -654,70 +452,32 @@ def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
         print("Agent does not support history replacement.")
         return False
 
-    # 3) 立即运行压缩
-    dict_messages: list[dict[str, Any]] = [to_dict(m) for m in before_msgs]
-    compacted_dicts: list[dict[str, Any]] = cast(Callable, compactor)(dict_messages)
-    after_msgs = messages_from_compacted_dicts(compacted_dicts)
-
-    # 4) 提取结构化摘要
-    summary_text = _extract_compact_summary(compacted_dicts)
+    dict_messages = [to_dict(message) for message in before_msgs]
+    next_window = cast(
+        Callable[..., list[dict[str, object]]],
+        rollover,
+    )(dict_messages, preserve_active_turn=False)
+    after_msgs = messages_from_provider_dicts(next_window)
     after_tokens = estimate_message_tokens(after_msgs)
 
-    # 5) 替换 agent 历史
-    cast(Callable, load_history)(after_msgs)
+    cast(Callable[[list[AgentMessage]], None], load_history)(after_msgs)
 
-    # 6) 追加新的上下文 epoch，原始 transcript 保持不变
-    ctx.app.record_compaction(
-        summary=summary_text or "",
+    window_id = str(getattr(rollover, "last_window_id", "") or "")
+    if not window_id:
+        raise RuntimeError("context rollover did not produce a window id")
+    ctx.app.record_context_window_reset(
+        window_id=window_id,
         messages_before=len(before_msgs),
         messages_after=len(after_msgs),
-        tokens_before=before_tokens,
-        tokens_after=after_tokens,
         replacement=after_msgs,
     )
 
-    # 7) 打印结构化摘要
-    saved = before_tokens - after_tokens
-    print("\n [compaction]\n")
-    print(f" Compacted from {before_tokens:,} tokens")
-    print()
-    if summary_text:
-        # 去除 [Compressed] 前缀，打印清晰的摘要
-        clean = summary_text
-        if clean.startswith("[Compressed]"):
-            clean = clean[len("[Compressed]") :].strip()
-        # 按行打印，每行不超过终端宽度
-        for line in clean.splitlines():
-            stripped = line.rstrip()
-            if stripped:
-                print(f" {stripped}")
-            else:
-                print()
-    else:
-        print(" (no summary extracted)")
-    print()
     print(
-        " \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
-    )
-    print(
-        f" Context compacted: {len(list(before_msgs))} messages \u2192 {len(list(after_msgs))} messages"
-        f" ({before_tokens:,} \u2192 {after_tokens:,} tokens, saved {saved:,})"
+        f"Fresh context {window_id}: {len(before_msgs)} messages \u2192 "
+        f"{len(after_msgs)} messages ({before_tokens:,} \u2192 "
+        f"{after_tokens:,} estimated tokens). No summary was generated."
     )
     return False
-
-
-def _extract_compact_summary(messages: list[dict[str, Any]]) -> str | None:
-    """从压缩后的消息列表中提取结构化摘要文本。"""
-    for msg in messages:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if (
-            role == "user"
-            and isinstance(content, str)
-            and content.startswith("[Compressed]")
-        ):
-            return content
-    return None
 
 
 def cmd_goal(cmd: str, ctx: CommandContext) -> bool:
@@ -897,7 +657,7 @@ def cmd_skill(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_memory(cmd: str, ctx: CommandContext) -> bool:
-    """检索、列出或显式添加项目级与用户级记忆。"""
+    """检索、列出或显式维护项目级与用户级记忆。"""
     manager = MemoryManager(ctx.project_root)
     parts = cmd.split(maxsplit=2)
     action = parts[1].lower() if len(parts) >= 2 else "list"
@@ -909,10 +669,16 @@ def cmd_memory(cmd: str, ctx: CommandContext) -> bool:
         return _search_memory(manager, payload)
     if action == "add":
         return _add_memory(manager, payload)
+    if action == "update":
+        return _update_memory(manager, payload)
+    if action == "delete":
+        return _delete_memory(manager, payload)
 
     print("Usage: /memory list [all|project|user]")
     print("       /memory search <query>")
     print("       /memory add [project|user] <title> | <durable note>")
+    print("       /memory update [project|user] <title> | <durable note>")
+    print("       /memory delete [project|user] <title>")
     print("Example: /memory add project Retry policy | Retry providers at most twice.")
     return False
 
@@ -955,12 +721,7 @@ def _search_memory(manager: MemoryManager, query: str) -> bool:
 
 def _add_memory(manager: MemoryManager, payload: str) -> bool:
     """解析单行 Markdown 记忆并写入指定层级。"""
-    layer = "project"
-    value = payload
-    first, separator, remainder = payload.partition(" ")
-    if separator and first.lower() in {"project", "user"}:
-        layer = first.lower()
-        value = remainder.strip()
+    layer, value = _parse_memory_layer(payload)
 
     title, separator, body = value.partition("|")
     if not separator:
@@ -986,6 +747,44 @@ def _add_memory(manager: MemoryManager, payload: str) -> bool:
     print(f"Added {layer} memory: {title}")
     print(f"Path: {memory_file}")
     return False
+
+
+def _update_memory(manager: MemoryManager, payload: str) -> bool:
+    """按标题更新一条持久记忆。"""
+    layer, value = _parse_memory_layer(payload)
+    title, separator, body = value.partition("|")
+    if not separator or not title.strip() or not body.strip():
+        print("Usage: /memory update [project|user] <title> | <durable note>")
+        return False
+
+    memory_layer = cast(MemoryLayer, layer)
+    block = build_memory_block(title, body)
+    if not manager.update_memory_block(title, block, layer=memory_layer):
+        print("Memory was not updated because it was missing, empty, or duplicate.")
+        return False
+    print(f"Updated {layer} memory: {title.strip()}")
+    return False
+
+
+def _delete_memory(manager: MemoryManager, payload: str) -> bool:
+    """按标题删除一条持久记忆。"""
+    layer, title = _parse_memory_layer(payload)
+    if not title.strip():
+        print("Usage: /memory delete [project|user] <title>")
+        return False
+    if not manager.delete_memory_block(title, layer=cast(MemoryLayer, layer)):
+        print(f"Memory not found: {title.strip()}")
+        return False
+    print(f"Deleted {layer} memory: {title.strip()}")
+    return False
+
+
+def _parse_memory_layer(payload: str) -> tuple[str, str]:
+    """解析可选的 project/user 层级前缀。"""
+    first, separator, remainder = payload.partition(" ")
+    if separator and first.lower() in {"project", "user"}:
+        return first.lower(), remainder.strip()
+    return "project", payload
 
 
 def _split_memory_shorthand(text: str) -> tuple[str, str]:
@@ -1043,7 +842,7 @@ def _count_output_tokens(messages: list[object]) -> int:
 
 def _count_tokens_by_message_role(messages: list[object]) -> dict[str, int]:
     """按角色拆解消息 token 用量（user / agent / tool_calls）。"""
-    from xcode.agent._compaction import estimate_tokens
+    from xcode.agent._context_window import estimate_tokens
     from xcode.agent.messages import (
         AssistantMessage,
         ToolResultMessage,
@@ -1095,7 +894,7 @@ def _get_context_window(
     """返回模型上下文窗口；优先使用 provider profile 的覆盖值。"""
     if context_window_override is not None and context_window_override > 0:
         return context_window_override
-    from xcode.ai.models import get_providers, get_models
+    from xcode.ai.models import get_models, get_providers
 
     for provider in get_providers():
         for model in get_models(provider):
@@ -1126,7 +925,7 @@ def _compute_context_summary(
     agent: object, project_root: Path, state: ReplState
 ) -> _ContextSummary:
     """计算分类 token 用量，并更新 state 供底栏使用。"""
-    from xcode.agent._compaction import estimate_tokens
+    from xcode.agent._context_window import estimate_tokens
     from xcode.coding_agent.prompting.identity import (
         CORE_IDENTITY,
     )
@@ -1144,8 +943,8 @@ def _compute_context_summary(
     if registry is not None:
         snap = registry
         from xcode.harness.agent_runtime.prompting import (
-            build_tool_prompt,
             build_tool_guidelines,
+            build_tool_prompt,
         )
 
         parts = ["Available tools:\n" + build_tool_prompt(snap)]
@@ -1178,11 +977,13 @@ def _compute_context_summary(
         if summaries:
             skill_count = len(summaries)
             lines = [
-                "<skill-activation>\n"
-                "When the user task clearly matches a skill description below, "
-                "call load_skill with that exact name before performing the task. "
-                "Do not load a skill when no description clearly matches.\n"
-                "</skill-activation>",
+                (
+                    "<skill-activation>\n"
+                    "When the user task clearly matches a skill description below, "
+                    "call load_skill with that exact name before performing the task. "
+                    "Do not load a skill when no description clearly matches.\n"
+                    "</skill-activation>"
+                ),
                 "<available-skills>",
             ]
             for s in summaries:
@@ -1238,7 +1039,7 @@ def _compute_context_summary(
     cost_output_rate = getattr(cost, "output", 0) if cost else 0
 
     input_cost = (total / 1_000_000) * cost_input_rate if cost_input_rate else 0
-    history = getattr(agent, "history_messages", lambda: [])()
+    history = getattr(agent, "history_messages", list)()
     output_tokens = _count_output_tokens(history)
     output_cost = (
         (output_tokens / 1_000_000) * cost_output_rate if cost_output_rate else 0
@@ -1638,10 +1439,10 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/config": CommandEntry(
         handler=cmd_config,
-        desc="Manage provider profiles interactively.",
-        args_desc="[list|add <name>|edit <name>|delete <name>|set <profile> <field> <value>|reload]",
+        desc="Open the interactive settings browser for xcode.config.json.",
+        args_desc="[setting]",
         accepts_args=True,
-        group=COMMAND_GROUP_MODEL,
+        group=COMMAND_GROUP_INFO,
     ),
     "/plan": CommandEntry(
         handler=cmd_plan,
@@ -1692,9 +1493,9 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         accepts_args=True,
         group=COMMAND_GROUP_MODE,
     ),
-    "/compact": CommandEntry(
-        handler=cmd_compact,
-        desc="Manually request context compaction and shrink the session log.",
+    "/new-context": CommandEntry(
+        handler=cmd_new_context,
+        desc="Close the current model context and start a fresh window.",
         group=COMMAND_GROUP_SESSION_ROLLBACK,
     ),
     "/goal": CommandEntry(

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
 import questionary
 
-from .setup_wizard import CONFIG_FILENAME, _load_existing_config, _save_config
 from xcode.ai.models import parse_model_mode
 from xcode.coding_agent.assembly.security import permission_policy_from_security
 from xcode.harness.config import SecurityRuntimeConfig
@@ -16,9 +15,11 @@ from xcode.harness.security import (
     PermissionDecision,
     PermissionPolicy,
 )
+
 from .reasoning_effort import (
     reasoning_effort_levels_for_transport,
 )
+from .setup_wizard import CONFIG_FILENAME, _load_existing_config, _save_config
 
 
 class ModelControlApp(Protocol):
@@ -150,8 +151,10 @@ def list_permissions(
     lines = [
         "Permission Status",
         "",
-        "Decision order: hard boundaries -> mode/static rules -> saved grants -> "
-        "approval policy -> reviewer.",
+        (
+            "Decision order: hard boundaries -> mode/static rules -> saved grants -> "
+            "approval policy -> reviewer."
+        ),
         f"Approval policy: {approval_policy}",
         f"Approval reviewer: {approvals_reviewer}",
         "",
@@ -358,8 +361,8 @@ def _handle_workspace_tab(
     project_root: Path,
     restricted_dirs: tuple[str, ...],
 ) -> bool:
-    del config, config_path
-    _render_workspace_tab(project_root, restricted_dirs)
+    del config_path
+    _render_workspace_tab(config, project_root, restricted_dirs)
     questionary.select(
         "Select action:",
         choices=["Back"],
@@ -369,13 +372,21 @@ def _handle_workspace_tab(
 
 
 def _render_workspace_tab(
+    config: dict[str, Any],
     project_root: Path,
     restricted_dirs: tuple[str, ...],
 ) -> None:
     print(_permission_header("Workspace"))
     print()
     print("   Structured file tools stay inside the project.")
-    print("   Shell commands run with the current user's host permissions.")
+    security = config.get("security", {})
+    sandbox = security.get("sandbox", {}) if isinstance(security, dict) else {}
+    mode = sandbox.get("mode", "workspace-write")
+    network = sandbox.get("network_access", "deny")
+    if sys.platform == "linux":
+        print(f"   Shell sandbox: {mode}; network: {network}.")
+    else:
+        print("   Shell OS sandbox is currently available on Linux only.")
     print()
     print(f"     -  {project_root} (Original working directory)")
     for directory in restricted_dirs:
@@ -646,7 +657,14 @@ def handle_model_command(command: str, app: object) -> None:
             reasoning_effort=reasoning_effort,
         )
         print(f"Switched to model: {new_model}")
-    except Exception as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         print(f"Failed to switch model: {exc}")
 
 
@@ -674,7 +692,14 @@ def handle_effort_command(command: str, app: object) -> None:
         try:
             app.set_model(model=current_model, thinking=False, reasoning_effort=None)
             print("Reasoning effort disabled.")
-        except Exception as exc:
+        except (
+            AttributeError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             print(f"Failed to set reasoning effort: {exc}")
         return
 
@@ -698,7 +723,14 @@ def handle_effort_command(command: str, app: object) -> None:
     try:
         app.set_model(model=current_model, thinking=True, reasoning_effort=level)
         print(f"Reasoning effort set to: {level}")
-    except Exception as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         print(f"Failed to set reasoning effort: {exc}")
 
 
@@ -735,5 +767,12 @@ def handle_thinking_command(command: str, app: object) -> None:
                 print(f"Thinking enabled (effort: {effort}).")
             else:
                 print("Thinking enabled.")
-    except Exception as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         print(f"Failed to set thinking: {exc}")
