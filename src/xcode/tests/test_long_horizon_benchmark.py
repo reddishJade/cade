@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 import argparse
 import json
-from pathlib import Path
 import subprocess
+from collections.abc import Iterator
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import pytest
 
-from benchmarks.runners import _cli as benchmark_cli
 from benchmarks.evaluators.state_retention import (
     capture_initial_state,
     evaluate_state_retention,
@@ -20,6 +19,7 @@ from benchmarks.evaluators.state_retention import (
 )
 from benchmarks.models import CommandSpec, StateCheckSpec, load_task
 from benchmarks.reports.generate_report import render_markdown, summarize_records
+from benchmarks.runners import _cli as benchmark_cli
 from benchmarks.runners._cli import _retryable_attempt
 from benchmarks.runners._long_horizon import (
     _benchmark_runtime_config,
@@ -28,19 +28,19 @@ from benchmarks.runners._long_horizon import (
     _repeated_read_calls,
     _run_turn,
 )
-from xcode.harness.config import XcodeRuntimeConfig
 from xcode.harness.agent_runtime.events import FinalStructuredEvent
 from xcode.harness.agent_runtime.result import AgentHarnessResult
+from xcode.harness.config import XcodeRuntimeConfig
 
 
-def test_example_task_has_compaction_restart_and_ten_turns() -> None:
+def test_example_task_has_rollover_restart_and_ten_turns() -> None:
     root = Path(__file__).resolve().parents[3]
     task = load_task(
         root / "benchmarks" / "tasks" / "long_horizon" / "parser_recovery" / "task.json"
     )
 
     assert len(task.turns) == 10
-    assert any(turn.compact_before for turn in task.turns)
+    assert any(turn.rollover_before for turn in task.turns)
     assert any(turn.restart_after for turn in task.turns)
     assert task.success_command.argv[:3] == ("python", "-m", "unittest")
 
@@ -168,24 +168,24 @@ def test_report_selects_first_complete_pair_attempt() -> None:
     assert summary["variants"]["xcode"]["input_tokens_mean"] == 450
 
 
-def test_report_keeps_post_compaction_pair_when_total_usage_is_incomplete() -> None:
+def test_report_keeps_post_rollover_pair_when_total_usage_is_incomplete() -> None:
     baseline = {
         **_record("baseline", 1000, True, True),
-        "post_compaction_input_tokens": 600,
-        "post_compaction_usage_complete": True,
+        "post_rollover_input_tokens": 600,
+        "post_rollover_usage_complete": True,
     }
     xcode = {
         **_record("xcode", 0, True, False),
-        "post_compaction_input_tokens": 300,
-        "post_compaction_usage_complete": True,
+        "post_rollover_input_tokens": 300,
+        "post_rollover_usage_complete": True,
     }
 
     summary = summarize_records([baseline, xcode])
 
     assert summary["cohorts"]["complete_usage_pairs"] == 0
-    assert summary["cohorts"]["post_compaction_usage_pairs"] == 1
+    assert summary["cohorts"]["post_rollover_usage_pairs"] == 1
     assert summary["paired_changes"]["input_token_reduction"] is None
-    assert summary["paired_changes"]["post_compaction_input_token_reduction"] == 0.5
+    assert summary["paired_changes"]["post_rollover_input_token_reduction"] == 0.5
 
 
 def test_phase_metrics_have_independent_usage_completeness() -> None:
@@ -196,21 +196,18 @@ def test_phase_metrics_have_independent_usage_completeness() -> None:
     turns: list[dict[str, object]] = []
     for turn in range(1, 11):
         calls = [_provider_call(10, has_usage=turn != 2)]
-        if turn == 7:
-            calls.insert(0, _provider_call(5, kind="compaction_summary"))
         turns.append({"turn": turn, "provider_calls": calls})
 
     metrics = _build_phase_metrics(task, turns)
 
-    assert metrics["compaction_turn"] == 7
+    assert metrics["rollover_turn"] == 7
     assert metrics["restart_after_turn"] == 7
-    assert metrics["pre_compaction_input_tokens"] == 60
-    assert metrics["pre_compaction_usage_complete"] is False
-    assert metrics["post_compaction_input_tokens"] == 45
-    assert metrics["post_compaction_usage_complete"] is True
+    assert metrics["pre_rollover_input_tokens"] == 60
+    assert metrics["pre_rollover_usage_complete"] is False
+    assert metrics["post_rollover_input_tokens"] == 40
+    assert metrics["post_rollover_usage_complete"] is True
     assert metrics["post_resume_input_tokens"] == 30
     assert metrics["post_resume_usage_complete"] is True
-    assert metrics["compaction_summary_input_tokens"] == 5
 
 
 def test_transient_incomplete_usage_retries_but_missing_usage_does_not() -> None:
@@ -254,7 +251,7 @@ def test_cli_retries_the_whole_pair_and_preserves_attempts(
         _runtime_config: object,
         options: object,
     ) -> dict[str, object]:
-        attempt = int(getattr(options, "attempt"))
+        attempt = int(options.attempt)
         incomplete = variant == "xcode" and attempt == 1
         return {
             **_record(variant, 100, True, not incomplete, attempt=attempt),
@@ -273,7 +270,6 @@ def test_cli_retries_the_whole_pair_and_preserves_attempts(
         no_progress=False,
         output_dir=tmp_path / "results",
         temperature=0,
-        summary_mode="model",
         keep_workspaces=False,
     )
 
@@ -356,10 +352,10 @@ def test_benchmark_turn_forces_non_interactive_build_mode() -> None:
 
     app = cast(Any, _App())
 
-    actual, compactions = _run_turn(app, "fix it")
+    actual, resets = _run_turn(app, "fix it")
 
     assert actual is result
-    assert compactions == 0
+    assert resets == 0
     assert modes == ["build"]
 
 
@@ -411,6 +407,7 @@ def test_benchmark_runtime_state_is_kept_outside_workspace(tmp_path: Path) -> No
     )
 
     assert configured.paths.sessions_dir == sessions_dir
+    assert configured.agent.automatic_rollover is False
     instructions = configured.prompt.instructions
     assert instructions[-1].content is not None
     assert "git diff HEAD" in instructions[-1].content
@@ -434,7 +431,6 @@ def _record(
         "model": "test-model",
         "temperature": 0,
         "execution_mode": "build",
-        "summary_mode": "model",
         "baseline_commit": "fixture-commit",
         "usage_complete": usage_complete,
         "usage_incomplete_calls": [],
@@ -471,7 +467,7 @@ class _Reporter:
     def __init__(self) -> None:
         self.added_runs = 0
 
-    def __enter__(self) -> _Reporter:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:

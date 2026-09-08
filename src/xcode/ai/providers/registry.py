@@ -19,12 +19,11 @@ from dotenv import dotenv_values
 from xcode.ai.providers.base import ModelProvider
 from xcode.ai.types import ProviderConfig
 
-from ._runtime import ProviderRuntime, RetryPolicy, RateLimitPolicy
+from ._runtime import ProviderRuntime, RateLimitPolicy, RetryPolicy
 from .chatglm import ChatGLMProvider
 from .deepseek import DeepSeekProvider
 from .mimo import MiMoProvider
 from .openai import OpenAIChatProvider
-
 
 # ── 注册表 ──
 
@@ -33,6 +32,8 @@ PROVIDER_REGISTRY: dict[str, type] = {
     "chatglm_chat": ChatGLMProvider,
     "deepseek_chat": DeepSeekProvider,
     "mimo_chat": MiMoProvider,
+    # custom：任意 OpenAI 协议网关（自定义 base_url + api_key）
+    "custom": OpenAIChatProvider,
 }
 
 
@@ -111,11 +112,7 @@ def get_config_value(name: str, env_files: tuple[Path, ...] = ()) -> str | None:
 
 
 def build_provider_bundle(settings: ProviderSettings) -> ProviderBundle:
-    runtime = ProviderRuntime(
-        retry=settings.retry,
-        rate_limit=settings.rate_limit,
-    )
-    llms = _build_llm_profiles(settings, runtime)
+    llms = _build_llm_profiles(settings)
     return ProviderBundle(
         llm=llms["main"],
         llms=llms,
@@ -124,7 +121,6 @@ def build_provider_bundle(settings: ProviderSettings) -> ProviderBundle:
 
 def _build_llm_profiles(
     settings: ProviderSettings,
-    runtime: ProviderRuntime,
 ) -> dict[str, ModelProvider]:
     """构造所有 model profile 的 provider 实例。"""
     profile_settings = dict(settings.model_profiles)
@@ -134,7 +130,15 @@ def _build_llm_profiles(
     profile_settings.setdefault("judge", profile_settings["main"])
     profile_settings.setdefault("refiner", profile_settings["main"])
     return {
-        name: _build_llm_profile(profile, name, settings.env_files)
+        name: _build_llm_profile(
+            profile,
+            name,
+            settings.env_files,
+            ProviderRuntime(
+                retry=settings.retry,
+                rate_limit=settings.rate_limit,
+            ),
+        )
         for name, profile in profile_settings.items()
     }
 
@@ -177,6 +181,7 @@ def _build_llm_profile(
     profile: ModelProfileProto,
     profile_name: str,
     env_files: tuple[Path, ...],
+    runtime: ProviderRuntime,
 ) -> ModelProvider:
     """构造单个 provider 实例。"""
     transport = profile.transport
@@ -202,4 +207,4 @@ def _build_llm_profile(
             "tool_stream": profile.tool_stream,
         },
     )
-    return provider_cls(config)
+    return provider_cls(config, runtime=runtime)

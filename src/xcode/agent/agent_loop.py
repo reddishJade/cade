@@ -4,12 +4,12 @@ Xcode 的类型化 Agent 循环。模块本身不持有运行状态。
 
 **循环设计原因**：
 - 外层循环（步骤限制）：防止单次 run 无限执行
-- 内层循环（compact → 模型调用 → 错误重试 → max_tokens 续写）：应对上下文溢出和部分生成
+- 内层循环（换窗 → 模型调用 → 错误重试 → max_tokens 续写）：应对上下文溢出和部分生成
 - 可注入设计：所有外部依赖（provider、工具、hooks）通过参数注入，便于测试和替换
 
 流程：
   外层循环：步骤限制 + follow-up 队列驱动
-  内层循环：compact → 模型调用 → 错误重试 → max_tokens 续写
+  内层循环：换窗 → 模型调用 → 错误重试 → max_tokens 续写
     → stream_assistant_response()
     → execute_tool_calls()（按 execution_mode 串行/并行）
     → watchdog 检查 → prepare_next_turn / should_stop_after_turn
@@ -19,47 +19,61 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable
 
-from xcode.ai.providers.base import StreamProvider
 from xcode.agent.types import CancellationSignal, TextContent, ToolCallContent
+from xcode.ai.providers.base import StreamProvider
+
+from ._context_window import estimate_tokens
+from ._execution import (
+    ExecutedToolBatch,
+    cancel_reason,
+    execute_tool_calls,
+    is_cancelled,
+    update_idle_tool_watchdog,
+    update_repeated_tool_watchdog,
+)
+from ._provider import call_provider
 from .config import (
     AgentContext,
     AgentLoopConfig,
     ShouldStopAfterTurnContext,
     _LoopRunState,
 )
-from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 from .events import (
     AgentEndEvent,
     AgentEvent,
     AgentStartEvent,
-    CompactionArchive,
-    CompactionEvent,
+    ContextWindowResetEvent,
     MessageEndEvent,
     MessageStartEvent,
     TurnEndEvent,
     TurnStartEvent,
 )
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
-from ._compaction import estimate_tokens
-from ._execution import (
-    ExecutedToolBatch,
-    execute_tool_calls,
-    is_cancelled,
-    cancel_reason,
-    update_repeated_tool_watchdog,
-    update_idle_tool_watchdog,
-)
-from ._provider import call_provider
+from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 
+_WINDOW_ID_PATTERN = re.compile(r'<context-window-reset id="([^"]+)">')
 
 # ── 事件辅助构造 ──
 
 
 def _agent_start_event() -> AgentStartEvent:
     return AgentStartEvent()
+
+
+def _context_window_id(messages: list[AgentMessage]) -> str:
+    """从换窗协议消息中读取窗口 ID。"""
+    for message in messages:
+        content = getattr(message, "content", "")
+        if not isinstance(content, str):
+            continue
+        match = _WINDOW_ID_PATTERN.search(content)
+        if match is not None:
+            return match.group(1)
+    return ""
 
 
 def _agent_end_event(
@@ -112,13 +126,27 @@ async def run_agent_loop(
         request_prefix=list(context.request_prefix),
         messages=list(context.messages) + list(prompts),
         tools=list(context.tools) if context.tools else [],
+        context_state=context.context_state,
+        context_manager=context.context_manager,
+        state=dict(context.state),
+        project_root=context.project_root,
+        cwd=context.cwd,
+        request_token_budget=(
+            config.request_token_budget
+            if config.request_token_budget > 0
+            else context.request_token_budget
+        ),
     )
+    if current_context.context_manager is not None:
+        current_context.context_manager.token_usage.context_budget = (
+            current_context.request_token_budget
+        )
     emit(_agent_start_event())
     emit(_turn_start_event())
     for prompt in prompts:
         emit(_message_start_event(prompt))
         emit(_message_end_event(prompt))
-    return await _run_loop(
+    result = await _run_loop(
         current_context,
         new_messages,
         config,
@@ -128,6 +156,9 @@ async def run_agent_loop(
         finish_steering=finish_steering,
         reopen_steering=reopen_steering,
     )
+    if current_context.context_manager is not None:
+        current_context.context_manager.replace_history(result.surface)
+    return result
 
 
 # ── 外层循环 ──
@@ -146,7 +177,7 @@ async def _run_loop(
     """核心 agent 循环。
 
     外层：持续运行（可选步骤限制）
-    内层：compact → 模型调用 → 重试 → max_tokens → 工具执行 → watchdog
+    内层：换窗 → 模型调用 → 重试 → max_tokens → 工具执行 → watchdog
     """
     metrics = AgentLoopMetrics()
     current_context = initial_context
@@ -179,25 +210,32 @@ async def _run_loop(
         else:
             state.first_turn = False
 
-        # ── 压缩检查 ──
-        if config.should_compact and config.compact:
-            if config.should_compact(current_context.messages):
-                messages_before = list(current_context.messages)
-                before = len(messages_before)
-                current_context.messages = config.compact(current_context.messages)
+        # ── 上下文窗口切换检查 ──
+        if config.rollover_decision and config.rollover_context:
+            reset_reason = config.rollover_decision(current_context.messages)
+            if reset_reason is not None:
+                before = len(current_context.messages)
+                next_window = config.rollover_context(current_context.messages)
+                if current_context.context_manager is not None:
+                    current_context.messages = (
+                        current_context.context_manager.complete_rollover(
+                            next_window,
+                            reason=reset_reason,
+                            before_messages=before,
+                        )
+                    )
+                else:
+                    current_context.messages = next_window
+                    current_context.context_state.reset()
+                _reset_provider_conversation_state(state.active_provider)
+                metrics.context_window_resets += 1
                 after = len(current_context.messages)
-                archive: CompactionArchive | None = None
-                if config.archive_writer:
-                    archive_path = config.archive_writer(messages_before)
-                    if archive_path:
-                        archive = CompactionArchive(path=archive_path, status="summary")
                 emit(
-                    CompactionEvent(
-                        messages_removed=before - after,
+                    ContextWindowResetEvent(
+                        window_id=_context_window_id(current_context.messages),
+                        messages_removed=max(before - after, 0),
                         messages_after=after,
-                        summary_token_estimate=0,
-                        trigger="token_limit",
-                        archive=archive,
+                        trigger=reset_reason,
                         replacement=list(current_context.messages),
                     )
                 )
@@ -228,8 +266,7 @@ async def _run_loop(
         message, stop_reason, new_provider = inner_result
         state.active_provider = new_provider
 
-        for msg in current_context.messages[ctx_len_before:-1]:
-            new_messages.append(msg)
+        new_messages.extend(current_context.messages[ctx_len_before:-1])
 
         new_messages.append(message)
         metrics.llm_calls += 1
@@ -247,6 +284,7 @@ async def _run_loop(
                     else TerminationReason.CANCELLED
                 ),
                 error_detail=_assistant_error_detail(message),
+                provider_failure=message.provider_failure,
                 metrics=metrics,
                 active_provider=state.active_provider,
             )
@@ -401,6 +439,13 @@ def _finish_loop(
     return result
 
 
+def _reset_provider_conversation_state(provider: StreamProvider | None) -> None:
+    """换窗后立即断开 provider 侧的连续会话链。"""
+    reset = getattr(provider, "reset_conversation_state", None)
+    if callable(reset):
+        reset()
+
+
 def _append_steering_messages(
     current_context: AgentContext,
     new_messages: list[AgentMessage],
@@ -536,6 +581,7 @@ async def _handle_provider_error(
             content=[TextContent(text="I encountered an error.")],
             stop_reason="error",
             error_message=_assistant_error_detail(message),
+            provider_failure=message.provider_failure,
         )
         emit(_message_start_event(msg))
         emit(_message_end_event(msg))

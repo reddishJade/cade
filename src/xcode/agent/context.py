@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Literal, Protocol
 
-from xcode.agent._compaction import estimate_tokens
+from xcode.agent._context_window import estimate_tokens
 from xcode.agent.messages import (
     AgentMessage,
     BranchSummaryMessage,
-    CompactionSummaryMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
 )
-from xcode.agent.types import AgentTool
+from xcode.agent.types import AgentTool, materialize_json_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,10 @@ class ContextBlockSource(StrEnum):
     ACTIVE_DIFF = "active_diff"
     NOTES = "notes"
     RECENT_VALIDATION = "recent_validation"
+    ENVIRONMENT = "environment"
+    TOOLS = "tools"
+    PERMISSIONS = "permissions"
+    MODE = "mode"
 
 
 # ── 注入目标枚举 ──
@@ -81,6 +86,10 @@ class ContextBlock:
     created_step: int = 0
     metadata: dict[str, object] = field(default_factory=dict)
     block_id: str = ""
+    provenance: str = ""
+    truncated: bool = False
+    truncation_reason: str | None = None
+    scope: Literal["user", "project", "runtime"] = "project"
 
     def get_token_count(self) -> int:
         if self.token_count is not None:
@@ -99,6 +108,7 @@ class ContextCollectionInput:
     current_turn: int = 0
     current_step: int = 0
     project_root: Path | None = None
+    cwd: Path | None = None
     state: dict[str, object] = field(default_factory=dict)
 
 
@@ -125,6 +135,153 @@ class ContextAssemblyResult:
     total_tokens: int = 0
     token_budget: int = 0
     budget_remaining: int = 0
+    base_tokens: int = 0
+
+
+# ── 会话级上下文 section ──
+
+
+@dataclass(frozen=True)
+class ContextSection:
+    """可快照、可增量渲染的动态上下文 section。"""
+
+    section_id: str
+    snapshot: Callable[[ContextCollectionInput], object]
+    render_full: Callable[[object], list[ContextBlock]]
+    render_diff: Callable[[object, object], list[ContextBlock]]
+
+
+@dataclass
+class WorldState:
+    """维护各 section 的上一次快照，避免每个 step 重复注入未变化内容。"""
+
+    _snapshots: dict[str, tuple[object, object]] = field(default_factory=dict)
+
+    def render(
+        self,
+        sections: tuple[ContextSection, ...],
+        input: ContextCollectionInput,
+    ) -> list[ContextBlock]:
+        rendered: list[ContextBlock] = []
+        active_ids: set[str] = set()
+        for section in sections:
+            active_ids.add(section.section_id)
+            try:
+                current = section.snapshot(input)
+                fingerprint = _snapshot_fingerprint(current)
+                previous = self._snapshots.get(section.section_id)
+                if previous is None:
+                    blocks = section.render_full(current)
+                elif previous[0] == fingerprint:
+                    blocks = []
+                else:
+                    blocks = section.render_diff(current, previous[1])
+                self._snapshots[section.section_id] = (fingerprint, current)
+                rendered.extend(blocks)
+            except Exception:
+                logger.exception(
+                    "ContextSection %s raised; skipping",
+                    section.section_id,
+                )
+
+        for section_id in set(self._snapshots) - active_ids:
+            del self._snapshots[section_id]
+        return rendered
+
+    def reset(self) -> None:
+        """清除 section baseline，使下一次请求重新注入完整状态。"""
+        self._snapshots.clear()
+
+
+@dataclass
+class ContextState:
+    """一次会话共享的 world state 与已确认上下文消息。"""
+
+    world_state: WorldState = field(default_factory=WorldState)
+    persistent_messages: list[AgentMessage] = field(default_factory=list)
+    _prefix_fingerprint: tuple[str, ...] | None = None
+
+    def sync_request_prefix(self, messages: list[AgentMessage]) -> None:
+        current = tuple(_message_fingerprint(message) for message in messages)
+        if self._prefix_fingerprint is None:
+            self.persistent_messages.extend(messages)
+        elif current != self._prefix_fingerprint:
+            content = _render_prefix_replacement(messages)
+            self.persistent_messages.append(SystemMessage(content=content))
+        self._prefix_fingerprint = current
+
+    def append_blocks(self, blocks: list[ContextBlock]) -> None:
+        for block in blocks:
+            if block.target == ContextBlockTarget.SYSTEM:
+                self.persistent_messages.append(SystemMessage(content=block.content))
+            else:
+                self.persistent_messages.append(
+                    UserMessage(content=_block_to_text(block))
+                )
+
+    def reset(self) -> None:
+        """清除压缩后需要重新建立的动态上下文投影。"""
+        self.world_state.reset()
+        self.persistent_messages.clear()
+        self._prefix_fingerprint = None
+
+
+def _snapshot_fingerprint(value: object) -> object:
+    if isinstance(value, ContextBlock):
+        return (
+            value.source.value,
+            value.priority,
+            value.target.value,
+            value.content,
+            value.block_id,
+            value.provenance,
+            value.truncated,
+            value.truncation_reason,
+            value.scope,
+            _snapshot_fingerprint(value.metadata),
+        )
+    if isinstance(value, dict):
+        items = [
+            (
+                str(key),
+                _snapshot_fingerprint(item),
+            )
+            for key, item in value.items()
+        ]
+        return tuple(sorted(items, key=lambda item: item[0]))
+    if isinstance(value, list | tuple):
+        return tuple(_snapshot_fingerprint(item) for item in value)
+    if isinstance(value, set | frozenset):
+        items = [_snapshot_fingerprint(item) for item in value]
+        return tuple(sorted(items, key=repr))
+    try:
+        json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(value)
+    return value
+
+
+def _message_fingerprint(message: AgentMessage) -> str:
+    return json.dumps(
+        message.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _render_prefix_replacement(messages: list[AgentMessage]) -> str:
+    if not messages:
+        return '<context-section id="request_prefix" status="removed" />'
+    body = "\n\n".join(
+        str(getattr(message, "content", getattr(message, "summary", "")))
+        for message in messages
+    )
+    return (
+        '<context-section id="request_prefix" status="replaced">\n'
+        + body
+        + "\n</context-section>"
+    )
 
 
 # ── 收集器协议 ──
@@ -144,9 +301,14 @@ class ContextCollectorSource(Protocol):
 class ContextCollectorRegistry:
     def __init__(self) -> None:
         self._collectors: list[ContextCollector] = []
+        self._sections: list[ContextSection] = []
 
     def register(self, collector: ContextCollector) -> None:
         self._collectors.append(collector)
+
+    def register_section(self, section: ContextSection) -> None:
+        """注册会话级动态 section。"""
+        self._sections.append(section)
 
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
         all_blocks: list[ContextBlock] = []
@@ -161,15 +323,25 @@ class ContextCollectorRegistry:
                 )
         return all_blocks
 
+    def collect_sections(
+        self,
+        input: ContextCollectionInput,
+        world_state: WorldState,
+    ) -> list[ContextBlock]:
+        return world_state.render(tuple(self._sections), input)
+
     def __len__(self) -> int:
         return len(self._collectors)
 
     def __bool__(self) -> bool:
-        return len(self._collectors) > 0
+        return bool(self._collectors or self._sections)
 
     def freeze(self) -> FrozenContextCollectorRegistry:
         """发布不可再注册 collector 的组合快照。"""
-        return FrozenContextCollectorRegistry(tuple(self._collectors))
+        return FrozenContextCollectorRegistry(
+            tuple(self._collectors),
+            tuple(self._sections),
+        )
 
 
 @dataclass(frozen=True)
@@ -177,6 +349,7 @@ class FrozenContextCollectorRegistry:
     """请求组装使用的不可变 collector generation。"""
 
     collectors: tuple[ContextCollector, ...] = ()
+    sections: tuple[ContextSection, ...] = ()
 
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
         all_blocks: list[ContextBlock] = []
@@ -190,11 +363,136 @@ class FrozenContextCollectorRegistry:
                 )
         return all_blocks
 
+    def collect_sections(
+        self,
+        input: ContextCollectionInput,
+        world_state: WorldState,
+    ) -> list[ContextBlock]:
+        return world_state.render(self.sections, input)
+
     def __len__(self) -> int:
         return len(self.collectors)
 
     def __bool__(self) -> bool:
-        return bool(self.collectors)
+        return bool(self.collectors or self.sections)
+
+
+def make_collector_section(
+    section_id: str,
+    collector: ContextCollector,
+) -> ContextSection:
+    """把旧式 collector 包装为会话级 snapshot/diff section。"""
+
+    def snapshot(input: ContextCollectionInput) -> object:
+        return tuple(collector.collect(input))
+
+    def render_full(snapshot_value: object) -> list[ContextBlock]:
+        return _snapshot_blocks(snapshot_value)
+
+    def render_diff(current: object, _previous: object) -> list[ContextBlock]:
+        blocks = _snapshot_blocks(current)
+        if not blocks:
+            return [
+                _section_notice(
+                    section_id,
+                    "removed",
+                    _snapshot_blocks(_previous),
+                )
+            ]
+        return [_section_replacement(section_id, blocks)]
+
+    return ContextSection(section_id, snapshot, render_full, render_diff)
+
+
+def make_state_section(
+    section_id: str,
+    state_key: str,
+    source: ContextBlockSource,
+    *,
+    priority: ContextPriority = ContextPriority.HIGH,
+) -> ContextSection:
+    """把 ContextCollectionInput.state 中的运行时快照包装为 section。"""
+
+    def snapshot(input: ContextCollectionInput) -> object:
+        return input.state.get(state_key)
+
+    def render_full(snapshot_value: object) -> list[ContextBlock]:
+        if snapshot_value is None:
+            return []
+        return [_state_block(section_id, source, priority, snapshot_value)]
+
+    def render_diff(current: object, previous: object) -> list[ContextBlock]:
+        if current is None:
+            return [_section_notice(section_id, "removed", previous, source, priority)]
+        return [
+            _section_replacement(
+                section_id,
+                [_state_block(section_id, source, priority, current)],
+            )
+        ]
+
+    return ContextSection(section_id, snapshot, render_full, render_diff)
+
+
+def _snapshot_blocks(value: object) -> list[ContextBlock]:
+    if not isinstance(value, tuple | list):
+        return []
+    return [block for block in value if isinstance(block, ContextBlock)]
+
+
+def _section_replacement(section_id: str, blocks: list[ContextBlock]) -> ContextBlock:
+    first = blocks[0]
+    content = "\n\n".join(block.content for block in blocks)
+    return replace(
+        first,
+        content=(
+            f'<context-section id="{section_id}" status="updated">\n'
+            f"{content}\n"
+            "</context-section>"
+        ),
+        block_id=first.block_id or section_id,
+    )
+
+
+def _section_notice(
+    section_id: str,
+    status: str,
+    previous: object,
+    source: ContextBlockSource = ContextBlockSource.INSTRUCTION,
+    priority: ContextPriority = ContextPriority.MEDIUM,
+) -> ContextBlock:
+    previous_blocks = _snapshot_blocks(previous)
+    template = previous_blocks[0] if previous_blocks else None
+    return ContextBlock(
+        source=template.source if template else source,
+        target=template.target if template else ContextBlockTarget.SYSTEM,
+        priority=template.priority if template else priority,
+        content=f'<context-section id="{section_id}" status="{status}" />',
+        block_id=section_id,
+        provenance=template.provenance if template else section_id,
+        scope=template.scope if template else "runtime",
+    )
+
+
+def _state_block(
+    section_id: str,
+    source: ContextBlockSource,
+    priority: ContextPriority,
+    value: object,
+) -> ContextBlock:
+    return ContextBlock(
+        source=source,
+        target=ContextBlockTarget.SYSTEM,
+        priority=priority,
+        content=(
+            f'<context-section id="{section_id}" status="full">\n'
+            f"{json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)}\n"
+            "</context-section>"
+        ),
+        block_id=section_id,
+        provenance=section_id,
+        scope="runtime",
+    )
 
 
 # ── 组装器协议 ──
@@ -212,7 +510,8 @@ def trim_to_budget(
     budget: int,
     base_tokens: int,
 ) -> tuple[list[ContextBlock], list[ContextBlock]]:
-    sorted_blocks = sorted(blocks, key=lambda b: (b.priority, b.get_token_count()))
+    # Python 的 sorted 是稳定排序；只按优先级排序可以保留 collector 的原始顺序。
+    sorted_blocks = sorted(blocks, key=lambda b: b.priority)
 
     if budget <= 0:
         return sorted_blocks, []
@@ -241,15 +540,16 @@ def trim_to_budget(
 class DefaultContextAssembler:
     def assemble(self, input: ContextAssemblyInput) -> ContextAssemblyResult:
         messages = list(input.messages)
-        total_tokens = _estimate_messages_tokens(messages)
+        base_tokens = _estimate_base_tokens(input, messages)
         budget = input.token_budget
 
         if not input.context_blocks:
             return ContextAssemblyResult(
                 messages=messages,
-                total_tokens=total_tokens,
+                total_tokens=base_tokens,
                 token_budget=budget,
-                budget_remaining=budget - total_tokens if budget > 0 else 0,
+                budget_remaining=budget - base_tokens if budget > 0 else 0,
+                base_tokens=base_tokens,
             )
 
         valid_blocks: list[ContextBlock] = []
@@ -262,7 +562,7 @@ class DefaultContextAssembler:
 
         used_blocks: list[ContextBlock]
         budget_dropped: list[ContextBlock]
-        used_blocks, budget_dropped = trim_to_budget(valid_blocks, budget, total_tokens)
+        used_blocks, budget_dropped = trim_to_budget(valid_blocks, budget, base_tokens)
         dropped.extend(budget_dropped)
 
         if used_blocks:
@@ -294,7 +594,7 @@ class DefaultContextAssembler:
                 ]
                 messages[insert_idx:insert_idx] = user_messages
 
-        final_total = _estimate_messages_tokens(messages)
+        final_total = _estimate_base_tokens(input, messages)
 
         return ContextAssemblyResult(
             messages=messages,
@@ -303,6 +603,7 @@ class DefaultContextAssembler:
             total_tokens=final_total,
             token_budget=budget,
             budget_remaining=max(0, budget - final_total) if budget > 0 else 0,
+            base_tokens=base_tokens,
         )
 
 
@@ -319,12 +620,10 @@ def _is_expired(block: ContextBlock, turn: int, step: int) -> bool:
         and turn - block.created_turn >= block.expiry.max_turns
     ):
         return True
-    if (
+    return bool(
         block.expiry.max_steps > 0
         and step - block.created_step >= block.expiry.max_steps
-    ):
-        return True
-    return False
+    )
 
 
 def _block_to_text(block: ContextBlock) -> str:
@@ -338,11 +637,51 @@ def _block_to_text(block: ContextBlock) -> str:
 def _estimate_messages_tokens(messages: list[AgentMessage]) -> int:
     total = 0
     for msg in messages:
-        if isinstance(msg, (CompactionSummaryMessage, BranchSummaryMessage)):
+        if isinstance(msg, BranchSummaryMessage):
             total += estimate_tokens(msg.summary)
         else:
             raw = msg.content if isinstance(msg.content, str) else str(msg.content)
             total += estimate_tokens(raw)
+    return total
+
+
+def _estimate_base_tokens(
+    input: ContextAssemblyInput,
+    messages: list[AgentMessage],
+) -> int:
+    """估算不含结构化上下文块的完整请求基线。"""
+    total = _estimate_messages_tokens(messages)
+    if input.system_prompt:
+        total += estimate_tokens(input.system_prompt)
+    total += _estimate_tools_tokens(input.tools)
+    return total
+
+
+def _estimate_tools_tokens(tools: list[AgentTool]) -> int:
+    total = 0
+    for tool in tools:
+        description = str(getattr(tool, "description", ""))
+        examples = getattr(tool, "examples", [])
+        if examples:
+            example_lines = ["\n", "Examples:"]
+            for example in examples:
+                example_lines.append(
+                    f"  - {example.get('name', '')}: "
+                    f"input={json.dumps(example.get('input', {}), ensure_ascii=False)}, "
+                    f'output="{example.get("output", "")}"'
+                )
+            description += "\n".join(example_lines)
+        payload = {
+            "name": str(getattr(tool, "name", "")),
+            "description": description,
+            "parameters": materialize_json_mapping(getattr(tool, "parameters", {})),
+        }
+        builtin = getattr(tool, "builtin", None)
+        if isinstance(builtin, dict):
+            payload["builtin"] = builtin
+        total += estimate_tokens(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        )
     return total
 
 
@@ -385,33 +724,10 @@ class InstructionSource:
     path: str | None = None
     content: str | None = None
     priority: ContextPriority = ContextPriority.CRITICAL
+    scope: Literal["user", "project"] = "user"
 
 
 MANIFEST_MAX_BYTES: int = 32 * 1024
-MANIFEST_OPENING_BYTES: int = 6 * 1024
-
-MANIFEST_KEY_SECTIONS: frozenset[str] = frozenset(
-    {
-        "priority",
-        "conversation style",
-        "python coding principles",
-        "checklist",
-        "project rules",
-        "comments and docstrings",
-        "git safety",
-        "commit rules",
-        "validation",
-        "working rules",
-        "debugging approach",
-    }
-)
-
-_MANIFEST_TRUNCATED_MARKER = (
-    "<manifest-truncated>Content was truncated because it exceeded the "
-    "maximum allowed size. Opening context and key sections are preserved. "
-    "Use read_file to see the full file before acting on omitted details."
-    "</manifest-truncated>"
-)
 
 
 class InstructionCollector:
@@ -419,19 +735,29 @@ class InstructionCollector:
         self,
         sources: tuple[dict, ...] = (),
         project_root: Path | None = None,
+        cwd: Path | None = None,
     ) -> None:
         self._project_root = project_root
+        self._cwd = cwd
         self._sources: list[InstructionSource] = []
+        self._file_cache: dict[Path, tuple[tuple[int, int], bytes]] = {}
+        self._discovery_cache: dict[
+            tuple[Path, Path], tuple[tuple[tuple[Path, int], ...], tuple[Path, ...]]
+        ] = {}
         for entry in sources:
             typ = entry["type"]
             priority_str = entry.get("priority", "critical")
             priority = _INSTRUCTION_PRIORITY_MAP[priority_str.lower()]
+            scope = entry.get("scope", "user")
+            if scope not in {"user", "project"}:
+                scope = "user"
             if typ == "file":
                 self._sources.append(
                     InstructionSource(
                         type="file",
                         path=entry["path"],
                         priority=priority,
+                        scope=scope,
                     )
                 )
             else:
@@ -440,18 +766,24 @@ class InstructionCollector:
                         type="inline",
                         content=entry["content"],
                         priority=priority,
+                        scope=scope,
                     )
                 )
 
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        root = input.project_root or self._project_root
+        root_value = input.project_root or self._project_root
+        root = root_value.resolve() if root_value is not None else None
         if root is None:
             return []
+        cwd = self._normalise_cwd(input.cwd or self._cwd or root, root)
 
         blocks: list[ContextBlock] = []
         configured_paths: set[Path] = set()
+        remaining_bytes = MANIFEST_MAX_BYTES
 
         for source in self._sources:
+            if remaining_bytes <= 0:
+                break
             if source.type == "file":
                 assert source.path is not None
                 path = root / source.path
@@ -459,142 +791,175 @@ class InstructionCollector:
                 if resolved in configured_paths:
                     continue
                 configured_paths.add(resolved)
-                blocks.extend(self._collect_file(path, source.priority))
+                source_blocks, consumed_bytes = self._collect_file(
+                    path, source.priority, remaining_bytes, source.scope
+                )
             else:
                 assert source.content is not None
-                blocks.extend(self._collect_inline(source.content, source.priority))
-
-        agents_path = root / "AGENTS.md"
-        if agents_path.is_file() and agents_path.resolve() not in configured_paths:
-            content = agents_path.read_text(encoding="utf-8", errors="replace").strip()
-            if content:
-                blocks.append(
-                    ContextBlock(
-                        source=ContextBlockSource.INSTRUCTION,
-                        target=ContextBlockTarget.SYSTEM,
-                        priority=ContextPriority.CRITICAL,
-                        content=_prepare_manifest(content),
-                    )
+                source_blocks, consumed_bytes = self._collect_inline(
+                    source.content, source.priority, remaining_bytes, source.scope
                 )
+            blocks.extend(source_blocks)
+            remaining_bytes -= consumed_bytes
+
+        for agents_path in self._discover_instruction_paths(root, cwd):
+            if remaining_bytes <= 0:
+                break
+            resolved = agents_path.resolve()
+            if resolved in configured_paths:
+                continue
+            source_blocks, consumed_bytes = self._collect_file(
+                agents_path,
+                ContextPriority.CRITICAL,
+                remaining_bytes,
+                "project",
+            )
+            blocks.extend(source_blocks)
+            remaining_bytes -= consumed_bytes
 
         return blocks
 
+    def _normalise_cwd(self, cwd: Path, root: Path) -> Path:
+        resolved = cwd.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            return root
+        return resolved
+
+    def _discover_instruction_paths(self, root: Path, cwd: Path) -> tuple[Path, ...]:
+        directories = self._hierarchy_directories(root, cwd)
+        signatures: list[tuple[Path, int]] = []
+        for directory in directories:
+            try:
+                signatures.append((directory, directory.stat().st_mtime_ns))
+            except OSError:
+                signatures.append((directory, -1))
+        cache_key = (root, cwd)
+        cached = self._discovery_cache.get(cache_key)
+        signature_tuple = tuple(signatures)
+        if cached is not None and cached[0] == signature_tuple:
+            return cached[1]
+
+        paths: list[Path] = []
+        for directory in directories:
+            override = directory / "AGENTS.override.md"
+            if override.is_file():
+                paths.append(override)
+                continue
+            for filename in ("AGENTS.md", "agents.md", "AGENTS.txt"):
+                candidate = directory / filename
+                if candidate.is_file():
+                    paths.append(candidate)
+                    break
+        result = tuple(paths)
+        self._discovery_cache[cache_key] = (signature_tuple, result)
+        return result
+
     @staticmethod
-    def _collect_file(path: Path, priority: ContextPriority) -> list[ContextBlock]:
-        if not path.is_file():
-            return []
-        content = path.read_text(encoding="utf-8", errors="replace").strip()
+    def _hierarchy_directories(root: Path, cwd: Path) -> tuple[Path, ...]:
+        try:
+            relative = cwd.relative_to(root)
+        except ValueError:
+            relative = Path()
+        directories = [root]
+        current = root
+        for part in relative.parts:
+            current = current / part
+            directories.append(current)
+        return tuple(directories)
+
+    def _read_cached(self, path: Path) -> bytes | None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = self._file_cache.get(path)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return None
+        self._file_cache[path] = (signature, data)
+        return data
+
+    def _collect_file(
+        self,
+        path: Path,
+        priority: ContextPriority,
+        max_bytes: int,
+        scope: Literal["user", "project"],
+    ) -> tuple[list[ContextBlock], int]:
+        data = self._read_cached(path)
+        if data is None:
+            return [], 0
+        content, consumed_bytes = _prepare_manifest_bytes(data, max_bytes, path)
         if not content:
-            return []
+            return [], consumed_bytes
         return [
             ContextBlock(
                 source=ContextBlockSource.INSTRUCTION,
                 target=ContextBlockTarget.SYSTEM,
                 priority=priority,
-                content=_prepare_manifest(content),
+                content=content,
+                provenance=str(path),
+                truncated=len(data) > max_bytes,
+                truncation_reason="byte_budget" if len(data) > max_bytes else None,
+                scope=scope,
             )
-        ]
+        ], consumed_bytes
 
     @staticmethod
-    def _collect_inline(content: str, priority: ContextPriority) -> list[ContextBlock]:
+    def _collect_inline(
+        content: str,
+        priority: ContextPriority,
+        max_bytes: int,
+        scope: Literal["user", "project"],
+    ) -> tuple[list[ContextBlock], int]:
+        data = content.encode("utf-8")
+        prepared = _prepare_manifest(content, max_bytes, "inline instruction")
+        consumed_bytes = min(len(data), max_bytes) if max_bytes > 0 else 0
+        if not prepared:
+            return [], consumed_bytes
         return [
             ContextBlock(
                 source=ContextBlockSource.INSTRUCTION,
                 target=ContextBlockTarget.SYSTEM,
                 priority=priority,
-                content=_prepare_manifest(content),
+                content=prepared,
+                provenance="inline instruction",
+                truncated=len(data) > max_bytes,
+                truncation_reason="byte_budget" if len(data) > max_bytes else None,
+                scope=scope,
             )
-        ]
+        ], consumed_bytes
 
 
-def _condense_manifest(text: str) -> str:
-    marker = _MANIFEST_TRUNCATED_MARKER
-    marker_bytes = _utf8_size(marker)
-
-    max_separator_bytes = _utf8_size("\n\n") * 2
-    reserved = marker_bytes + max_separator_bytes
-    content_budget = MANIFEST_MAX_BYTES - reserved
-
-    if content_budget <= 0:
-        return _utf8_prefix(marker, MANIFEST_MAX_BYTES)
-
-    parts: list[str] = []
-
-    opening_budget = min(MANIFEST_OPENING_BYTES, content_budget)
-    opening = _utf8_prefix(text, opening_budget).strip()
-    if opening:
-        parts.append(opening)
-        content_budget -= _utf8_size(opening)
-
-    sections = _extract_key_sections(text)
-    if sections and content_budget > 0:
-        section_header = "## Preserved Key Sections\n\n"
-        header_bytes = _utf8_size(section_header)
-        if content_budget > header_bytes:
-            chosen: list[str] = []
-            used = 0
-            for i, section in enumerate(sections):
-                prefix = "\n\n" if i > 0 else ""
-                item = prefix + section
-                item_bytes = _utf8_size(item)
-                if used + item_bytes + header_bytes <= content_budget:
-                    chosen.append(section)
-                    used += item_bytes
-            if chosen:
-                section_text = section_header + "\n\n".join(chosen)
-                parts.append(section_text)
-                content_budget -= _utf8_size(section_text)
-
-    parts.append(marker)
-
-    return "\n\n".join(parts)
+def _prepare_manifest_bytes(
+    data: bytes, max_bytes: int, source: Path | str
+) -> tuple[str, int]:
+    if max_bytes <= 0 or not data:
+        return "", 0
+    consumed_bytes = min(len(data), max_bytes)
+    if len(data) > max_bytes:
+        logger.warning(
+            "project instruction exceeds remaining byte budget; truncating: %s",
+            source,
+        )
+    return data[:consumed_bytes].decode("utf-8", errors="replace"), consumed_bytes
 
 
-def _extract_key_sections(text: str) -> list[str]:
-    sections: list[str] = []
-    current_heading = ""
-    current_lines: list[str] = []
-
-    def flush() -> None:
-        nonlocal current_heading, current_lines
-        if not current_heading or not current_lines:
-            return
-        heading_key = current_heading.strip("# ").strip().lower()
-        if heading_key not in MANIFEST_KEY_SECTIONS:
-            return
-        section = "\n".join(_drop_fenced_blocks(current_lines)).strip()
-        if section:
-            sections.append(section)
-
-    for line in text.splitlines():
-        if line.startswith("## ") or line.startswith("### "):
-            flush()
-            current_heading = line
-            current_lines = [line]
-        elif current_heading:
-            current_lines.append(line)
-    flush()
-    return sections
-
-
-def _drop_fenced_blocks(lines: list[str]) -> list[str]:
-    result: list[str] = []
-    in_fence = False
-    for line in lines:
-        if line.strip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        result.append(line)
-    return result
-
-
-def _prepare_manifest(text: str) -> str:
-    source_bytes = _utf8_size(text)
-    if source_bytes <= MANIFEST_MAX_BYTES:
-        return text
-    return _condense_manifest(text)
+def _prepare_manifest(
+    text: str,
+    max_bytes: int = MANIFEST_MAX_BYTES,
+    source: Path | str = "project instruction",
+) -> str:
+    prepared, _consumed_bytes = _prepare_manifest_bytes(
+        text.encode("utf-8"), max_bytes, source
+    )
+    return prepared
 
 
 # ── 内置收集器：活动 diff ──
@@ -615,11 +980,12 @@ def _run_git(root: Path, *args: str) -> str | None:
             ["git", *args],
             cwd=root,
             capture_output=True,
+            check=False,
             text=True,
             errors="replace",
             timeout=_DIFF_CMD_TIMEOUT,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError):
         return None
     if completed.returncode != 0:
         return None
@@ -683,6 +1049,12 @@ class ActiveDiffCollector:
                 target=ContextBlockTarget.USER_CONTEXT,
                 priority=ContextPriority.HIGH,
                 content=body,
+                provenance=f"git diff: {root}",
+                truncated=ideal_bytes > ACTIVE_DIFF_MAX_BYTES,
+                truncation_reason=(
+                    "byte_budget" if ideal_bytes > ACTIVE_DIFF_MAX_BYTES else None
+                ),
+                scope="runtime",
             )
         ]
 
@@ -771,6 +1143,12 @@ class RecentValidationCollector:
             target=ContextBlockTarget.USER_CONTEXT,
             priority=ContextPriority.HIGH,
             content=body,
+            provenance=f"{command}:{msg.tool_call_id}",
+            truncated=_utf8_size(raw) > self._max_bytes,
+            truncation_reason=(
+                "byte_budget" if _utf8_size(raw) > self._max_bytes else None
+            ),
+            scope="runtime",
         )
 
 
@@ -780,11 +1158,9 @@ class RecentValidationCollector:
 NOTES_MAX_BYTES: int = 4 * 1024
 NOTES_MAX_FILE_BYTES: int = 64 * 1024
 _NOTES_TRUNCATED_MARKER = (
-    "<notes-truncated>Notes truncated. "
-    "Read individual files for full content.</notes-truncated>"
+    "<notes-truncated>NOTE.md truncated. Read the file for full content."
+    "</notes-truncated>"
 )
-
-_NOTES_ALLOWED_SUFFIXES: frozenset[str] = frozenset({".md", ".txt"})
 
 
 class NotesCollector:
@@ -800,52 +1176,31 @@ class NotesCollector:
         root = input.project_root or self._project_root
         if root is None:
             return []
-        notes_dir = root / ".xcode" / "notes"
-        if not notes_dir.is_dir():
+        note_path = root / "NOTE.md"
+        if not note_path.is_file():
             return []
         try:
-            files = sorted(
-                p
-                for p in notes_dir.iterdir()
-                if p.is_file()
-                and p.suffix.lower() in _NOTES_ALLOWED_SUFFIXES
-                and p.stat().st_size <= NOTES_MAX_FILE_BYTES
-            )
-        except Exception:
-            logger.exception("NotesCollector: failed to list notes dir")
+            if note_path.stat().st_size > NOTES_MAX_FILE_BYTES:
+                return []
+            text = note_path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            logger.debug("NotesCollector: failed to read %s", note_path, exc_info=True)
             return []
-
-        parts: list[str] = []
-        total_bytes = 0
-        marker = _NOTES_TRUNCATED_MARKER
-
-        for f in files:
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace").strip()
-            except Exception:
-                continue
-            if not text:
-                continue
-            header = f"--- {f.name} ---"
-            item = f"{header}\n{text}"
-            item_bytes = _utf8_size(item) + 1
-            if total_bytes + item_bytes > self._max_bytes:
-                remaining = self._max_bytes - total_bytes
-                if _utf8_size(marker) <= remaining:
-                    parts.append(marker)
-                break
-            parts.append(item)
-            total_bytes += item_bytes
-
-        if not parts:
+        if not text:
             return []
-        body = "\n".join(parts)
+        body = _apply_size_budget(text, self._max_bytes, _NOTES_TRUNCATED_MARKER)
 
         return [
             ContextBlock(
                 source=ContextBlockSource.NOTES,
                 target=ContextBlockTarget.USER_CONTEXT,
-                priority=ContextPriority.MEDIUM,
+                priority=ContextPriority.HIGH,
                 content=body,
+                provenance=str(note_path),
+                truncated=_NOTES_TRUNCATED_MARKER in body,
+                truncation_reason=(
+                    "byte_budget" if _NOTES_TRUNCATED_MARKER in body else None
+                ),
+                scope="runtime",
             )
         ]
