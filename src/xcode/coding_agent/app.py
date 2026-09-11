@@ -61,26 +61,102 @@ class XcodeApp:
         *,
         model: str,
         profile: str = "main",
+        transport: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
+        account_id: str | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
     ) -> str:
+        import os
+
         from xcode.ai.providers import ProviderSettings, build_provider_bundle
-        from xcode.ai.providers.registry import ModelProfileConfig, ModelProfileProto
+        from xcode.ai.providers.registry import (
+            ModelProfileConfig,
+            ModelProfileProto,
+        )
+        from xcode.harness.auth.manager import AuthManager
 
         if profile not in {"main", "subagent"}:
             raise ValueError("profile must be main or subagent")
-        if not self._model_profiles:
-            return self.agent.provider.model
-        profile_config = self._model_profiles.get(profile)
-        if not profile_config:
-            return self.agent.provider.model
+        if self._model_profiles is None:
+            self._model_profiles = {}
+        profile_config = self._model_profiles.get(profile) or ModelProfileConfig()
+
+        resolved_model = model
+        m_lower = model.lower()
+        if m_lower in ("codex", "openai-codex"):
+            resolved_model = "gpt-5.3-codex"
+        elif m_lower == "gpt-5.6":
+            resolved_model = "gpt-5.6-sol"
+
+        resolved_transport = transport
+        resolved_base_url = base_url
+        resolved_api_key = api_key
+        resolved_account_id = account_id
+
+        # 智能推断 transport 与凭据
+        if not resolved_transport:
+            rm_lower = resolved_model.lower()
+            if rm_lower in ("codex", "openai-codex") or rm_lower.startswith(
+                ("gpt-", "o1", "o3", "o4", "chat-", "codex-")
+            ):
+                codex_cred = AuthManager().get_valid_credential("openai-codex")
+                if codex_cred and codex_cred.access:
+                    resolved_transport = "openai_codex"
+                    resolved_api_key = resolved_api_key or codex_cred.access
+                    resolved_account_id = resolved_account_id or codex_cred.account_id
+                    resolved_base_url = (
+                        resolved_base_url or "https://chatgpt.com/backend-api"
+                    )
+                elif os.environ.get("OPENAI_API_KEY"):
+                    resolved_transport = "openai_chat"
+                    resolved_base_url = resolved_base_url or "https://api.openai.com/v1"
+            elif rm_lower.startswith("deepseek"):
+                resolved_transport = "deepseek_chat"
+                resolved_base_url = resolved_base_url or os.environ.get(
+                    "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+                )
+            elif rm_lower.startswith("glm-"):
+                resolved_transport = "chatglm_chat"
+                resolved_base_url = resolved_base_url or os.environ.get(
+                    "CHATGLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/"
+                )
+            elif rm_lower.startswith("mimo-"):
+                resolved_transport = "mimo_chat"
+                resolved_base_url = resolved_base_url or os.environ.get(
+                    "MIMO_BASE_URL", "https://api.xiaomimimo.com/v1"
+                )
+            else:
+                resolved_transport = profile_config.transport
+
+        if resolved_transport == "openai_codex":
+            codex_cred = AuthManager().get_valid_credential("openai-codex")
+            if codex_cred and codex_cred.access:
+                resolved_api_key = resolved_api_key or codex_cred.access
+                resolved_account_id = resolved_account_id or codex_cred.account_id
+                resolved_base_url = (
+                    resolved_base_url or "https://chatgpt.com/backend-api"
+                )
+            else:
+                raise ValueError(
+                    "未检测到有效的 openai-codex 登录凭据，请先执行 /login 登录 ChatGPT"
+                )
+
+        final_transport = resolved_transport or profile_config.transport
+        same_transport = final_transport == profile_config.transport
+
         new_cfg: ModelProfileProto = ModelProfileConfig(
-            transport=profile_config.transport,
-            chat_model=model,
-            base_url=base_url or profile_config.base_url,
-            api_key=api_key or profile_config.api_key,
+            transport=final_transport,
+            chat_model=resolved_model,
+            base_url=resolved_base_url
+            or (profile_config.base_url if same_transport else ""),
+            api_key=resolved_api_key
+            or (profile_config.api_key if same_transport else ""),
+            account_id=resolved_account_id
+            or (
+                getattr(profile_config, "account_id", None) if same_transport else None
+            ),
             context_window=getattr(profile_config, "context_window", None),
             thinking=thinking if thinking is not None else profile_config.thinking,
             reasoning_effort=reasoning_effort
@@ -104,7 +180,7 @@ class XcodeApp:
         else:
             self.subagents.replace_provider(new_provider)
         self._model_profiles[profile] = new_cfg
-        return model
+        return resolved_model
 
     def get_model_info(self) -> dict[str, str]:
         provider = self.agent.provider
