@@ -24,6 +24,8 @@ DirAccess = Literal["read", "write", "read_write"]
 
 ProviderTransport = Literal[
     "openai_chat",
+    "openai_responses",
+    "openai_codex",
     "chatglm_chat",
     "deepseek_chat",
     "mimo_chat",
@@ -93,6 +95,7 @@ class ModelProfileRuntimeConfig(BaseModel):
     clear_thinking: StrictBool = False
     tool_stream: StrictBool = True
     response_format: dict[str, Any] | None = None
+    account_id: str | None = None
 
 
 class ProviderRuntimeConfig(BaseModel):
@@ -462,6 +465,25 @@ def _resolve_model_profiles(
     if isinstance(main_transport_raw, str):
         main_transport = _load_provider_transport(main_transport_raw, main_transport)
         main_raw["transport"] = main_transport
+
+    if not main_raw.get("api_key") and main_transport in (
+        "openai_responses",
+        "openai_codex",
+    ):
+        from .auth.manager import AuthManager
+
+        cred = AuthManager().get_valid_credential("openai-codex")
+        if cred and cred.access:
+            main_raw["api_key"] = cred.access
+            if cred.account_id:
+                main_raw["account_id"] = cred.account_id
+            if not main_raw.get("base_url"):
+                main_raw["base_url"] = (
+                    "https://chatgpt.com/backend-api"
+                    if cred.account_id
+                    else "https://api.openai.com/v1"
+                )
+
     for name, raw in raw_profiles.items():
         if name == PROFILE_MAIN:
             continue
@@ -522,6 +544,10 @@ def _load_provider_transport(
     match value:
         case "openai_chat":
             return "openai_chat"
+        case "openai_responses":
+            return "openai_responses"
+        case "openai_codex":
+            return "openai_codex"
         case "chatglm_chat":
             return "chatglm_chat"
         case "deepseek_chat":
@@ -533,8 +559,8 @@ def _load_provider_transport(
         case _:
             raise ValueError(
                 f"Unsupported provider transport: {value!r}. "
-                "Supported transports: openai_chat, chatglm_chat, "
-                "deepseek_chat, mimo_chat, custom"
+                "Supported transports: openai_chat, openai_responses, "
+                "openai_codex, chatglm_chat, deepseek_chat, mimo_chat, custom"
             )
 
 
