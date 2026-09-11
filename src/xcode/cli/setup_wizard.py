@@ -84,10 +84,15 @@ def _check_config_has_api_key(path: Path) -> bool:
 
 
 def has_valid_config(project_root: Path) -> bool:
-    """检查是否已有可用配置（config 文件或 .env）。"""
+    """检查是否已有可用配置（config 文件、.env 或 OAuth 凭据）。"""
     if _check_config_has_api_key(project_root / CONFIG_FILENAME):
         return True
     if _check_config_has_api_key(Path.home() / ".xcode" / "settings.json"):
+        return True
+
+    from xcode.harness.auth.store import AuthStore
+
+    if bool(AuthStore().load_all()):
         return True
 
     env_paths = [

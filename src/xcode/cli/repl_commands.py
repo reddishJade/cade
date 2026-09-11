@@ -31,6 +31,7 @@ from xcode.harness.snapshot import SnapshotStore, TurnSnapshotRecord
 
 from .app_contract import ReplApp
 from .commands import (
+    COMMAND_GROUP_AUTH,
     COMMAND_GROUP_EXIT,
     COMMAND_GROUP_INFO,
     COMMAND_GROUP_MODE,
@@ -266,6 +267,49 @@ def cmd_rename(cmd: str, ctx: CommandContext) -> bool:
         print("No active session to rename.")
         return False
     print(f'Session renamed to: "{meta.title}"')
+    return False
+
+
+def cmd_login(cmd: str, ctx: CommandContext) -> bool:
+    """登录 AI 提供方账号（如 OpenAI Codex / ChatGPT 订阅）。"""
+    from .auth_cmd import handle_login_command
+
+    parts = cmd.split()
+    method = "browser"
+    provider = "openai-codex"
+    for part in parts[1:]:
+        if part in ("device", "device_code", "--device", "-d"):
+            method = "device_code"
+        elif not part.startswith("-"):
+            provider = part
+
+    handle_login_command(provider=provider, method=method)
+    return False
+
+
+def cmd_logout(cmd: str, ctx: CommandContext) -> bool:
+    """登出 AI 提供方账号并清除本地凭据。"""
+    from .auth_cmd import handle_logout_command
+
+    parts = cmd.split()
+    provider = (
+        parts[1] if len(parts) > 1 and not parts[1].startswith("-") else "openai-codex"
+    )
+    handle_logout_command(provider=provider)
+    return False
+
+
+def cmd_auth(cmd: str, ctx: CommandContext) -> bool:
+    """显示认证状态或执行登录/登出。"""
+    from .auth_cmd import handle_status_command
+
+    parts = cmd.split()
+    subcmd = parts[1].lower() if len(parts) > 1 else "status"
+    if subcmd == "login":
+        return cmd_login(" ".join(parts[1:]), ctx)
+    if subcmd == "logout":
+        return cmd_logout(" ".join(parts[1:]), ctx)
+    handle_status_command()
     return False
 
 
@@ -1436,6 +1480,27 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         args_desc="on|off",
         accepts_args=True,
         group=COMMAND_GROUP_MODEL,
+    ),
+    "/login": CommandEntry(
+        handler=cmd_login,
+        desc="Log in to an AI provider account (e.g. OpenAI Codex / ChatGPT).",
+        args_desc="[provider] [--device]",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
+    ),
+    "/logout": CommandEntry(
+        handler=cmd_logout,
+        desc="Log out from an AI provider account and clear credentials.",
+        args_desc="[provider]",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
+    ),
+    "/auth": CommandEntry(
+        handler=cmd_auth,
+        desc="Show authentication status or manage accounts.",
+        args_desc="status|login|logout",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
     ),
     "/config": CommandEntry(
         handler=cmd_config,
