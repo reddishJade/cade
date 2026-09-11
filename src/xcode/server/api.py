@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import subprocess
 import time
@@ -100,9 +101,7 @@ def create_app(
         if not name:
             return JSONResponse({"error": "分支名不能为空"}, status_code=400)
         if hub.is_running:
-            return JSONResponse(
-                {"error": "回合运行中，无法切换分支"}, status_code=409
-            )
+            return JSONResponse({"error": "回合运行中，无法切换分支"}, status_code=409)
 
         def _switch() -> tuple[bool, str]:
             return _git_switch(server.state.project_root, name)
@@ -130,9 +129,7 @@ def create_app(
     async def switch_workspace_endpoint(payload: dict) -> JSONResponse:
         factory = app_factory
         if factory is None:
-            return JSONResponse(
-                {"error": "服务未启用工作区切换"}, status_code=400
-            )
+            return JSONResponse({"error": "服务未启用工作区切换"}, status_code=400)
         raw = str(payload.get("path", "") or "").strip()
         if not raw:
             return JSONResponse({"error": "路径不能为空"}, status_code=400)
@@ -146,10 +143,8 @@ def create_app(
         loop = asyncio.get_running_loop()
         try:
             new_app = await loop.run_in_executor(None, lambda: factory(target))
-        except Exception as exc:  # noqa: BLE001 - 返回给前端展示
-            return JSONResponse(
-                {"error": f"工作区装配失败: {exc}"}, status_code=400
-            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return JSONResponse({"error": f"工作区装配失败: {exc}"}, status_code=400)
         old_app = hub.app
         hub.set_app(new_app)
         old_app.close()
@@ -170,7 +165,7 @@ def create_app(
         store = hub.app.session_store
         try:
             infos = store.list_infos(limit=50)
-        except Exception as exc:  # noqa: BLE001 - 会话目录可能损坏
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
             return JSONResponse({"error": f"无法读取会话索引: {exc}", "sessions": []})
         return JSONResponse(
             {
@@ -225,7 +220,7 @@ def create_app(
         store = hub.app.session_store
         try:
             view = store.find_by_id(session_id)
-        except Exception:  # noqa: BLE001
+        except (KeyError, OSError, ValueError):
             view = None
         if view is None:
             return JSONResponse({"error": "session not found"}, status_code=404)
@@ -280,26 +275,26 @@ def _stats_payload(app: XcodeApp, project_root: Path) -> dict[str, object]:
         "effort": "",
         "provider": "",
     }
-    try:
+    with contextlib.suppress(
+        AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError
+    ):
         info = dict(app.get_model_info())
         payload["effort"] = str(info.get("reasoning_effort") or "")
         payload["provider"] = str(info.get("transport") or "").removesuffix("_chat")
-    except Exception:  # noqa: BLE001
-        pass
-    try:
+
+    with contextlib.suppress(
+        AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError
+    ):
         from xcode.cli.commands import ReplState
         from xcode.cli.repl_commands import _compute_context_summary
 
         agent = getattr(app, "agent", None)
-        if agent is None:
-            return payload
-        state = ReplState()
-        summary = _compute_context_summary(agent, project_root, state)
-        payload["usage"] = state.usage_stats
-        payload["context"] = state.context_usage
-        payload["model"] = summary.model_name
-    except Exception:  # noqa: BLE001 - 统计失败不影响主流程
-        pass
+        if agent is not None:
+            state = ReplState()
+            summary = _compute_context_summary(agent, project_root, state)
+            payload["usage"] = state.usage_stats
+            payload["context"] = state.context_usage
+            payload["model"] = summary.model_name
     return payload
 
 
@@ -312,7 +307,15 @@ def _model_payload(app: XcodeApp) -> dict[str, object]:
         from xcode.cli.reasoning_effort import reasoning_effort_levels_for_transport
 
         info["effort_options"] = list(reasoning_effort_levels_for_transport(transport))
-    except Exception:  # noqa: BLE001
+    except (
+        ImportError,
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ):
         info["effort_options"] = []
     if transport == "custom":
         # custom 网关不枚举模型：只提供当前模型 + 前端自定义输入
@@ -333,7 +336,15 @@ def _model_payload(app: XcodeApp) -> dict[str, object]:
         from xcode.cli.repl import current_model_options
 
         info["available"] = list(current_model_options(app))
-    except Exception:  # noqa: BLE001
+    except (
+        ImportError,
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ):
         info["available"] = [str(info.get("model", ""))]
     return info
 
@@ -341,12 +352,18 @@ def _model_payload(app: XcodeApp) -> dict[str, object]:
 def _git_branches_payload(project_root: Path) -> dict[str, object]:
     """当前分支 + 本地/远端分支列表。"""
     payload: dict[str, object] = {"current": "", "local": [], "remote": []}
-    try:
+    with contextlib.suppress(
+        ImportError,
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ):
         from xcode.cli.git import git_branch_name
 
         payload["current"] = git_branch_name(project_root) or ""
-    except Exception:  # noqa: BLE001
-        pass
 
     def _refs(refspec: str) -> list[str]:
         try:
@@ -370,7 +387,9 @@ def _git_branches_payload(project_root: Path) -> dict[str, object]:
             return []
         lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         # 排除符号引用 refs/remotes/origin/HEAD（展开后显示为 origin）
-        return [line for line in lines if line != "origin" and not line.endswith("/HEAD")]
+        return [
+            line for line in lines if line != "origin" and not line.endswith("/HEAD")
+        ]
 
     payload["local"] = _refs("refs/heads")
     payload["remote"] = _refs("refs/remotes/origin/")
@@ -422,7 +441,10 @@ def _discover_models(app: XcodeApp) -> list[str]:
         if not base_url:
             return []
         cached = _model_cache.get(base_url)
-        if cached is not None and time.monotonic() - cached[0] < _MODEL_CACHE_TTL_SECONDS:
+        if (
+            cached is not None
+            and time.monotonic() - cached[0] < _MODEL_CACHE_TTL_SECONDS
+        ):
             return cached[1]
         profiles = getattr(app, "_model_profiles", None) or {}
         main = profiles.get("main")
