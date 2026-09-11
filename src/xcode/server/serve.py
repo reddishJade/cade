@@ -39,9 +39,8 @@ def run_web_server(
     def build_for(target: Path) -> XcodeApp:
         """为指定工作区重新装配运行时（工作区切换用）。"""
         rc = discover_runtime_config(target, None)
-        sessions = (
-            resolve_config_path(target, rc.paths.sessions_dir)
-            or (target / ".xcode" / "sessions")
+        sessions = resolve_config_path(target, rc.paths.sessions_dir) or (
+            target / ".xcode" / "sessions"
         )
         return build_app(
             project_root=target,

@@ -17,8 +17,8 @@ from xcode.harness.agent_runtime.events import (
     ToolUpdateStructuredEvent,
 )
 from xcode.harness.agent_runtime.result import AgentHarnessResult
-from xcode.server.serialize import event_to_dict, to_jsonable
 from xcode.server.runner import WebRunHub
+from xcode.server.serialize import event_to_dict, to_jsonable
 
 
 class _Color(StrEnum):

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import uuid
 from collections.abc import Callable
@@ -27,6 +28,9 @@ from .serialize import event_to_dict
 _APPROVAL_TIMEOUT_SECONDS = 300.0
 
 Sink = Callable[[dict[str, Any]], None]
+
+
+_logger = logging.getLogger(__name__)
 
 
 class _PendingApproval:
@@ -76,8 +80,8 @@ class WebRunHub:
         for sink in list(self._sinks):
             try:
                 sink(payload)
-            except Exception:
-                # 单一连接失败不影响其他客户端
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                _logger.debug("广播单一连接推送失败: %s", exc)
                 continue
 
     def server_info(self) -> dict[str, Any]:
@@ -85,7 +89,7 @@ class WebRunHub:
         info: dict[str, Any] = {"session_id": app.session_store.session_id}
         try:
             info["model"] = app.get_model_info()
-        except Exception:
+        except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError):
             info["model"] = {}
         try:
             info["mcp"] = [
@@ -96,7 +100,7 @@ class WebRunHub:
                 }
                 for st in app.mcp_status()
             ]
-        except Exception:
+        except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError):
             info["mcp"] = []
         info["busy"] = self.is_running
         return info
