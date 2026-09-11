@@ -24,11 +24,14 @@ from .chatglm import ChatGLMProvider
 from .deepseek import DeepSeekProvider
 from .mimo import MiMoProvider
 from .openai import OpenAIChatProvider
+from .responses import OpenAIResponsesProvider
 
 # ── 注册表 ──
 
 PROVIDER_REGISTRY: dict[str, type] = {
     "openai_chat": OpenAIChatProvider,
+    "openai_responses": OpenAIResponsesProvider,
+    "openai_codex": OpenAIResponsesProvider,
     "chatglm_chat": ChatGLMProvider,
     "deepseek_chat": DeepSeekProvider,
     "mimo_chat": MiMoProvider,
@@ -61,6 +64,8 @@ class ModelProfileProto(Protocol):
     def tool_stream(self) -> bool: ...
     @property
     def response_format(self) -> dict[str, Any] | None: ...
+    @property
+    def account_id(self) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,7 @@ class ModelProfileConfig:
     clear_thinking: bool = False
     tool_stream: bool = True
     response_format: dict[str, Any] | None = None
+    account_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +166,7 @@ def _resolve_api_key(
     """按回退优先级解析 API key。"""
     if configured:
         return configured
+
     candidates = [
         f"{profile_name.upper()}_API_KEY",
         *_PROVIDER_ENV_VARS.get(transport, ()),
@@ -170,6 +177,7 @@ def _resolve_api_key(
         value = get_config_value(name, env_files)
         if value:
             return value
+
     raise RuntimeError(
         f"Missing API key for '{profile_name}'. "
         f"Set via 'api_key' in profile config, or env var: "
@@ -194,17 +202,29 @@ def _build_llm_profile(
             f"Available: {', '.join(PROVIDER_REGISTRY)}"
         )
 
+    base_url = profile.base_url
+    if not base_url and transport in ("openai_responses", "openai_codex"):
+        if transport == "openai_codex":
+            base_url = "https://chatgpt.com/backend-api"
+        else:
+            base_url = "https://api.openai.com/v1"
+
+    extra: dict[str, Any] = {
+        "clear_thinking": profile.clear_thinking,
+        "tool_stream": profile.tool_stream,
+    }
+    account_id = getattr(profile, "account_id", None)
+    if account_id:
+        extra["account_id"] = account_id
+
     config = ProviderConfig(
         api_key=api_key,
         model=profile.chat_model,
-        base_url=profile.base_url,
+        base_url=base_url,
         context_window=profile.context_window,
         thinking=profile.thinking,
         reasoning_effort=profile.reasoning_effort,
         response_format=profile.response_format,
-        extra={
-            "clear_thinking": profile.clear_thinking,
-            "tool_stream": profile.tool_stream,
-        },
+        extra=extra,
     )
     return provider_cls(config, runtime=runtime)

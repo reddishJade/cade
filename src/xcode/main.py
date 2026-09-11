@@ -35,6 +35,65 @@ def _build_setup_parser(subparsers) -> None:
     subparsers.add_parser("setup", help="Run the provider setup wizard")
 
 
+def _build_login_parser(subparsers) -> None:
+    login_parser = subparsers.add_parser(
+        "login", help="Log in to an AI provider (e.g. OpenAI Codex / ChatGPT)"
+    )
+    login_parser.add_argument(
+        "--provider",
+        default="openai-codex",
+        help="Provider to authenticate with (default: openai-codex).",
+    )
+    login_parser.add_argument(
+        "--method",
+        choices=["browser", "device_code"],
+        default="browser",
+        help="Authentication method: browser or device_code (default: browser).",
+    )
+
+
+def _build_logout_parser(subparsers) -> None:
+    logout_parser = subparsers.add_parser(
+        "logout", help="Log out from an AI provider and remove credentials"
+    )
+    logout_parser.add_argument(
+        "--provider",
+        default="openai-codex",
+        help="Provider to log out from (default: openai-codex).",
+    )
+
+
+def _build_auth_parser(subparsers) -> None:
+    auth_parser = subparsers.add_parser(
+        "auth", help="Manage authentication credentials"
+    )
+    auth_subparsers = auth_parser.add_subparsers(dest="auth_action")
+
+    login_p = auth_subparsers.add_parser("login", help="Log in to a provider account")
+    login_p.add_argument(
+        "--provider",
+        default="openai-codex",
+        help="Provider to authenticate with (default: openai-codex).",
+    )
+    login_p.add_argument(
+        "--method",
+        choices=["browser", "device_code"],
+        default="browser",
+        help="Authentication method: browser or device_code (default: browser).",
+    )
+
+    logout_p = auth_subparsers.add_parser(
+        "logout", help="Log out from a provider account"
+    )
+    logout_p.add_argument(
+        "--provider",
+        default="openai-codex",
+        help="Provider to log out from (default: openai-codex).",
+    )
+
+    auth_subparsers.add_parser("status", help="Show current authentication status")
+
+
 def _build_tui_parser(subparsers) -> None:
     subparsers.add_parser("tui", help="Run the full-screen terminal UI")
 
@@ -104,6 +163,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command")
     _build_config_parser(subparsers)
     _build_setup_parser(subparsers)
+    _build_login_parser(subparsers)
+    _build_logout_parser(subparsers)
+    _build_auth_parser(subparsers)
     _build_tui_parser(subparsers)
     _build_cli_parser(subparsers)
     _build_web_parser(subparsers)
@@ -111,6 +173,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main() -> int:
+    from .cli.ptk_patch import suppress_windows_ptk_shutdown_noise
+
+    suppress_windows_ptk_shutdown_noise()
     args = parse_args()
     project_root = args.project_root
 
@@ -124,6 +189,40 @@ def main() -> int:
         except KeyboardInterrupt:
             pass
         return 0
+
+    if args.command == "login":
+        from .cli.auth_cmd import handle_login_command
+
+        return handle_login_command(
+            provider=getattr(args, "provider", "openai-codex"),
+            method=getattr(args, "method", "browser"),
+        )
+
+    if args.command == "logout":
+        from .cli.auth_cmd import handle_logout_command
+
+        return handle_logout_command(
+            provider=getattr(args, "provider", "openai-codex"),
+        )
+
+    if args.command == "auth":
+        from .cli.auth_cmd import (
+            handle_login_command,
+            handle_logout_command,
+            handle_status_command,
+        )
+
+        action = getattr(args, "auth_action", None)
+        if action == "login":
+            return handle_login_command(
+                provider=getattr(args, "provider", "openai-codex"),
+                method=getattr(args, "method", "browser"),
+            )
+        if action == "logout":
+            return handle_logout_command(
+                provider=getattr(args, "provider", "openai-codex"),
+            )
+        return handle_status_command()
 
     temp_config: Path | None = None
 
