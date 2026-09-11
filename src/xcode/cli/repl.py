@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import sys
 import time
 from collections.abc import Callable, Iterator
@@ -10,7 +9,6 @@ from typing import cast
 
 from rich.console import Console
 
-from xcode.ai.models import get_models, get_providers
 from xcode.harness.agent_runtime.events import (
     AgentHarnessEvent,
     AssistantEventBlock,
@@ -37,31 +35,6 @@ from .app_contract import ReplApp
 from .commands import PromptLike, PromptText, ReplState
 from .file_refs import expand_file_references
 from .markdown import MarkdownRenderer, TerminalMarkdownRenderer
-from .reasoning_effort import reasoning_effort_levels_for_transport
-from .repl_commands import COMMAND_NAMES, COMMAND_REGISTRY_EXPORT, handle_command
-from .repl_hitl import ReplHITLHandler
-from .repl_rendering import (
-    LiveMarkdownStream,
-    clear_terminal_display,
-    create_prompt_session,
-    input_prompt,
-    print_startup_banner,
-)
-from .repl_sessions import (
-    print_saved_conversation,
-    resume_interactively,
-)
-from .repl_skills import (
-    activate_skill,
-    available_skill_names,
-    parse_skill_invocation,
-)
-from .repl_tools import (
-    file_reference_event,
-    final_stop_reason,
-    run_shell_shortcut,
-)
-from .repl_turn_handler import ReasoningHandler, ToolCallHandler
 
 # ---------------------------------------------------------------------------
 # Windows prompt_toolkit shutdown noise suppression
@@ -76,39 +49,37 @@ from .repl_turn_handler import ReasoningHandler, ToolCallHandler
 #   RuntimeError("Executor shutdown has been called").  The default asyncio
 #   exception handler prints the full traceback to stderr — ugly but harmless.
 # ---------------------------------------------------------------------------
+from .ptk_patch import suppress_windows_ptk_shutdown_noise
+from .reasoning_effort import reasoning_effort_levels_for_transport
+from .repl_commands import COMMAND_NAMES, COMMAND_REGISTRY_EXPORT, handle_command
+from .repl_hitl import ReplHITLHandler
+from .repl_rendering import (
+    LiveMarkdownStream,
+    clear_terminal_display,
+    create_prompt_session,
+    input_prompt,
+    print_startup_banner,
+)
+from .repl_sessions import (
+    print_saved_conversation,
+    resume_interactively,
+)
+from .repl_settings import get_available_model_entries
+from .repl_skills import (
+    activate_skill,
+    available_skill_names,
+    parse_skill_invocation,
+)
+from .repl_tools import (
+    file_reference_event,
+    final_stop_reason,
+    run_shell_shortcut,
+)
+from .repl_turn_handler import ReasoningHandler, ToolCallHandler
 
 
 def _suppress_windows_ptk_shutdown_noise() -> None:
-    """Patch asyncio.new_event_loop on Windows to suppress the harmless
-    RuntimeError that prompt_toolkit's Win32 input handler triggers during
-    REPL exit."""
-    if sys.platform != "win32":
-        return
-
-    _original_new_event_loop = asyncio.new_event_loop
-
-    if getattr(_original_new_event_loop, "_xcode_patched", False):
-        return
-
-    def _handler(
-        loop: asyncio.AbstractEventLoop,
-        context: dict[str, object],
-    ) -> None:
-        exc = context.get("exception")
-        if isinstance(exc, RuntimeError):
-            msg = str(exc)
-            if "Executor shutdown has been called" in msg:
-                return  # suppress — expected during prompt_toolkit exit
-        # Fall through to the default handler
-        loop.default_exception_handler(context)
-
-    def _patched_new_event_loop() -> asyncio.AbstractEventLoop:
-        loop = _original_new_event_loop()
-        loop.set_exception_handler(_handler)
-        return loop
-
-    _patched_new_event_loop._xcode_patched = True  # type: ignore[attr-defined]
-    asyncio.new_event_loop = _patched_new_event_loop
+    suppress_windows_ptk_shutdown_noise()
 
 
 def current_effort_options(app: object) -> tuple[str, ...]:
@@ -121,32 +92,15 @@ def current_effort_options(app: object) -> tuple[str, ...]:
 
 
 def current_model_options(app: object) -> tuple[str, ...]:
-    """返回所有注册的模型 ID 列表（含当前模型，即便非预设）。
-
-    只返回已配置 provider 对应的模型。
-    """
-    model_profiles = getattr(app, "_model_profiles", None)
-    configured_providers: set[str] | None = None
-    if model_profiles:
-        configured_providers = set()
-        for profile in model_profiles.values():
-            transport = getattr(profile, "transport", None)
-            if isinstance(transport, str):
-                configured_providers.add(transport.removesuffix("_chat"))
-
-    all_models: list[str] = []
-    for provider_name in get_providers():
-        if configured_providers and provider_name not in configured_providers:
-            continue
-        all_models.extend(m.id for m in get_models(provider_name))
-    agent = getattr(app, "agent", None)
-    provider = getattr(agent, "provider", None) if agent else None
-    if provider is not None:
-        provider = getattr(provider, "active_provider", provider)
-        current_model = getattr(provider, "model", "") if provider else ""
-        if current_model and current_model not in all_models:
-            all_models.append(current_model)
-    return tuple(all_models)
+    """返回所有当前具备认证凭据或 API Key 的可用模型 ID 列表。"""
+    entries = get_available_model_entries(app)
+    seen: set[str] = set()
+    result: list[str] = []
+    for entry in entries:
+        if entry.model not in seen:
+            seen.add(entry.model)
+            result.append(entry.model)
+    return tuple(result)
 
 
 def _sync_mode_from_agent(app: ReplApp, state: ReplState) -> None:
@@ -341,13 +295,13 @@ def _read_repl_text(
     try:
         prompt_text: PromptText = (
             ""
-            if state.exit_pending and time.time() - state.exit_pending < 1.5
+            if state.exit_pending and time.time() - state.exit_pending < 3.0
             else input_prompt(session)
         )
         return session.prompt(prompt_text).strip() or None, False
     except (EOFError, KeyboardInterrupt):
         now = time.time()
-        if state.exit_pending and now - state.exit_pending < 1.5:
+        if state.exit_pending and now - state.exit_pending < 3.0:
             print()
             try:
                 print_saved_conversation(store)
@@ -356,7 +310,7 @@ def _read_repl_text(
             return None, True
         state.exit_pending = now
         print()
-        sys.stdout.write("\033[90m(press Ctrl+C again to exit)\033[0m\n")
+        sys.stdout.write("\033[90m(press Ctrl+C / Ctrl+D again to exit)\033[0m\n")
         sys.stdout.flush()
         return None, False
 

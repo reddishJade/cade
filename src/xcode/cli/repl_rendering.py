@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, cast
@@ -315,12 +316,37 @@ def create_prompt_session(
 
     def handle_ctrl_c(event) -> None:
         buf = event.current_buffer
+        now = time.time()
+        pending = getattr(state, "exit_pending", 0.0) if state is not None else 0.0
+        if pending > 0 and (now - pending) < 3.0:
+            event.app.exit(exception=KeyboardInterrupt())
+            return
         if buf.text:
             buf.reset()
+            if state is not None:
+                state.exit_pending = now
+            sys.stdout.write("\n\033[90m(再次按 Ctrl+C / Ctrl+D 退出)\033[0m\n")
+            sys.stdout.flush()
         else:
+            if state is not None:
+                state.exit_pending = now
             event.app.exit(exception=KeyboardInterrupt())
 
     bindings.add("c-c")(handle_ctrl_c)
+
+    def handle_ctrl_d(event) -> None:
+        buf = event.current_buffer
+        now = time.time()
+        pending = getattr(state, "exit_pending", 0.0) if state is not None else 0.0
+        if pending > 0 and (now - pending) < 3.0:
+            event.app.exit(exception=EOFError())
+            return
+        if not buf.text:
+            if state is not None:
+                state.exit_pending = now
+            event.app.exit(exception=EOFError())
+
+    bindings.add("c-d")(handle_ctrl_d)
 
     completer = ReplCompleter(
         project_root or Path.cwd(),

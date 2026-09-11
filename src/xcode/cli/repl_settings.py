@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
@@ -30,8 +32,10 @@ class ModelControlApp(Protocol):
         *,
         model: str,
         profile: str = "main",
+        transport: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
+        account_id: str | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
     ) -> str: ...
@@ -592,15 +596,232 @@ def _format_grant(record: object) -> str:
     )
 
 
+@dataclass(frozen=True)
+class AvailableModelEntry:
+    model: str
+    transport: str
+    provider: str
+    source_label: str
+
+
+def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
+    """返回当前环境中所有具备已认证凭据或有效 API Key 的可用模型。
+
+    注意：严格只返回已配置/已登录模型，未配置 API Key 或凭据的不予包含。
+    """
+    from xcode.ai.models import get_models
+    from xcode.ai.providers.registry import get_config_value
+    from xcode.harness.auth.manager import AuthManager
+
+    entries: list[AvailableModelEntry] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_entry(model: str, transport: str, provider: str, label: str) -> None:
+        key = (model, transport)
+        if key not in seen:
+            seen.add(key)
+            entries.append(
+                AvailableModelEntry(
+                    model=model,
+                    transport=transport,
+                    provider=provider,
+                    source_label=label,
+                )
+            )
+
+    env_files: tuple[Path, ...] = getattr(app, "_env_files", ())
+    model_profiles: dict[str, Any] | None = getattr(app, "_model_profiles", None)
+
+    # 1. 检查已认证的 OAuth 凭据 (如 openai-codex / ChatGPT OAuth)
+    codex_cred = AuthManager().get_valid_credential("openai-codex")
+    if codex_cred and codex_cred.access:
+        for m in get_models("openai"):
+            add_entry(m.id, "openai_codex", "openai-codex", "[codex]")
+
+    # 2. 检查环境变量及 .env 中的各 Provider API Key
+    # DeepSeek
+    if get_config_value("DEEPSEEK_API_KEY", env_files):
+        for m in get_models("deepseek"):
+            add_entry(m.id, "deepseek_chat", "deepseek", "[deepseek]")
+
+    # OpenAI API Key
+    if get_config_value("OPENAI_API_KEY", env_files):
+        for m in get_models("openai"):
+            add_entry(m.id, "openai_chat", "openai", "[openai]")
+
+    # ChatGLM (智谱)
+    if any(
+        get_config_value(k, env_files)
+        for k in ("CHATGLM_API_KEY", "ZHIPUAI_API_KEY", "BIGMODEL_API_KEY")
+    ):
+        for m in get_models("chatglm"):
+            add_entry(m.id, "chatglm_chat", "chatglm", "[chatglm]")
+
+    # Xiaomi MiMo
+    if get_config_value("MIMO_API_KEY", env_files):
+        for m in get_models("mimo"):
+            add_entry(m.id, "mimo_chat", "mimo", "[mimo]")
+
+    # 3. 检查应用当前配置的 model_profiles
+    if model_profiles:
+        for pname, pconfig in model_profiles.items():
+            t = getattr(pconfig, "transport", None)
+            m = getattr(pconfig, "chat_model", None)
+            k = getattr(pconfig, "api_key", None)
+            if m and t and (k or (m, t) in seen):
+                add_entry(m, t, t.removesuffix("_chat"), f"[{pname}]")
+
+    # 4. 当前运行中的主模型
+    info = _model_info(app)
+    cur_model = info.get("model", "")
+    cur_transport = info.get("transport", "")
+    if cur_model and (cur_model, cur_transport) not in seen:
+        add_entry(
+            cur_model,
+            cur_transport,
+            cur_transport.removesuffix("_chat"),
+            "[current]",
+        )
+
+    return entries
+
+
+def _interactive_model_select(app: object) -> None:
+    if not _is_model_control_app(app):
+        print("Model switching is not supported in this app.")
+        return
+
+    from .ptk_patch import (
+        install_force_exit_signal_handler,
+        restore_console_mode,
+        suppress_windows_ptk_shutdown_noise,
+    )
+
+    suppress_windows_ptk_shutdown_noise()
+    install_force_exit_signal_handler()
+
+    info = _model_info(app)
+    current_model = info.get("model", "")
+    current_transport = info.get("transport", "")
+
+    available = get_available_model_entries(app)
+    if not available:
+        print("未检测到任何已登录或已配置 API Key 的可用模型。")
+        print(
+            "提示: 可执行 /login 登录 ChatGPT，或在环境变量/.env 中配置相关 API Key。"
+        )
+        return
+
+    choices: list[questionary.Choice] = []
+    for entry in available:
+        is_cur = entry.model == current_model and (
+            not current_transport or entry.transport == current_transport
+        )
+        marker = " [当前]" if is_cur else ""
+        title = f"{entry.model:20} {entry.source_label}{marker}"
+        choices.append(
+            questionary.Choice(
+                title=title,
+                value=(entry.model, entry.transport),
+            )
+        )
+
+    # 自定义输入
+    choices.append(
+        questionary.Choice(
+            title="输入自定义模型名称...",
+            value=("__custom__", None),
+        )
+    )
+    # 取消
+    choices.append(
+        questionary.Choice(
+            title="取消",
+            value=("__cancel__", None),
+        )
+    )
+
+    try:
+        selected = questionary.select("选择要切换的目标模型:", choices=choices).ask()
+    except (KeyboardInterrupt, EOFError):
+        return
+    finally:
+        restore_console_mode()
+
+    if not selected or selected[0] == "__cancel__":
+        return
+
+    target_model, target_transport = selected
+    if target_model == "__custom__":
+        try:
+            text = questionary.text(
+                "请输入模型名称 (例如: gpt-5.3-codex, gpt-6-astra, deepseek-v4-pro):"
+            ).ask()
+        except (KeyboardInterrupt, EOFError):
+            return
+        finally:
+            restore_console_mode()
+
+        if not text or not text.strip():
+            return
+        target_model = text.strip()
+        target_transport = None
+
+    try:
+        new_model = app.set_model(
+            model=target_model,
+            transport=target_transport,
+            profile="main",
+        )
+        info = _model_info(app)
+        t_name = info.get("transport", target_transport or "")
+        t_info = f" (transport: {t_name})" if t_name else ""
+        print(f"✓ 已成功切换至模型: {new_model}{t_info}")
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        print(f"切换模型失败: {exc}")
+
+
 def handle_model_command(command: str, app: object) -> None:
+    from .ptk_patch import (
+        install_force_exit_signal_handler,
+        restore_console_mode,
+        suppress_windows_ptk_shutdown_noise,
+    )
+
+    suppress_windows_ptk_shutdown_noise()
+    install_force_exit_signal_handler()
+
     parts = command.split(maxsplit=3)
     if len(parts) == 1:
-        info = _model_info(app)
-        if info:
-            print(f"  Model    : {info.get('model', 'unknown')}")
-            print(f"  Base URL : {info.get('base_url', '')}")
-        else:
-            print("Model info not available.")
+        if not sys.stdin.isatty():
+            info = _model_info(app)
+            if info:
+                print(f"  Model    : {info.get('model', 'unknown')}")
+                print(f"  Transport: {info.get('transport', 'unknown')}")
+                print(f"  Base URL : {info.get('base_url', '')}")
+            else:
+                print("Model info not available.")
+            available = get_available_model_entries(app)
+            if available:
+                print("\n可用模型 (已认证/已配置):")
+                for entry in available:
+                    print(f"  - {entry.model:20} {entry.source_label}")
+            print(
+                "\n用法: /model <model_name> "
+                "(例如: /model gpt-5.3-codex, /model gpt-6-astra, /model codex)"
+            )
+            return
+        try:
+            _interactive_model_select(app)
+        finally:
+            restore_console_mode()
         return
 
     try:
@@ -608,8 +829,35 @@ def handle_model_command(command: str, app: object) -> None:
     except ValueError as exc:
         print(str(exc))
         return
+
     model_name = parsed.model
-    profile = parsed.provider or "main"
+    transport: str | None = None
+
+    m_lower = model_name.lower()
+    if m_lower in ("codex", "openai-codex"):
+        model_name = "gpt-5.3-codex"
+        transport = "openai_codex"
+    elif m_lower == "gpt-5.6":
+        model_name = "gpt-5.6-sol"
+    elif parsed.provider in ("codex", "openai-codex"):
+        transport = "openai_codex"
+    elif parsed.provider == "openai":
+        from xcode.harness.auth.manager import AuthManager
+
+        if AuthManager().get_valid_credential("openai-codex") and not os.environ.get(
+            "OPENAI_API_KEY"
+        ):
+            transport = "openai_codex"
+        else:
+            transport = "openai_chat"
+    elif parsed.provider == "deepseek":
+        transport = "deepseek_chat"
+    elif parsed.provider in ("chatglm", "glm"):
+        transport = "chatglm_chat"
+    elif parsed.provider == "mimo":
+        transport = "mimo_chat"
+
+    profile = "main"
     thinking: bool | None = None
     reasoning_effort: str | None = None
     if parsed.thinking_level is not None:
@@ -635,7 +883,8 @@ def handle_model_command(command: str, app: object) -> None:
             "max",
         ):
             print(
-                f"Invalid thinking level: {level}. Use off/none/minimal/low/medium/high/xhigh/max."
+                f"Invalid thinking level: {level}. "
+                "Use off/none/minimal/low/medium/high/xhigh/max."
             )
             return
         if level == "off":
@@ -652,11 +901,15 @@ def handle_model_command(command: str, app: object) -> None:
     try:
         new_model = app.set_model(
             model=model_name,
+            transport=transport,
             profile=profile,
             thinking=thinking,
             reasoning_effort=reasoning_effort,
         )
-        print(f"Switched to model: {new_model}")
+        info = _model_info(app)
+        t_name = info.get("transport", transport or "")
+        t_info = f" (transport: {t_name})" if t_name else ""
+        print(f"Switched to model: {new_model}{t_info}")
     except (
         AttributeError,
         KeyError,
