@@ -153,7 +153,7 @@ class TestResolveModel:
     def test_fallback_to_first(self) -> None:
         model = resolve_model("openai", "nonexistent-model")
         assert model is not None
-        assert model.id == "gpt-5.5"  # first in openai dict
+        assert model.id == "gpt-6-astra"  # first in openai dict
 
     def test_unknown_provider_returns_generic(self) -> None:
         model = resolve_model("unknown_provider", "some-model")
@@ -176,6 +176,9 @@ class TestRegistryAccess:
     def test_get_models_openai(self) -> None:
         models = get_models("openai")
         ids = [m.id for m in models]
+        assert "gpt-6-astra" in ids
+        assert "gpt-5.6-sol" in ids
+        assert "gpt-5.3-codex" in ids
         assert "gpt-5.5" in ids
         assert "gpt-5.4" in ids
         assert "gpt-5.4-mini" in ids
