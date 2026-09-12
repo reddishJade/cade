@@ -4,7 +4,7 @@ import json
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -19,6 +19,9 @@ from pydantic import (
 
 from .execution_env.sandbox import NetworkAccess, SandboxMode
 from .security.approval import ApprovalPolicy
+
+if TYPE_CHECKING:
+    from .auth.types import AuthCredential
 
 DirAccess = Literal["read", "write", "read_write"]
 
@@ -384,6 +387,14 @@ def discover_runtime_config(
     env_raw, env_sources = _build_env_override_raw()
     merged = _deep_merge_raw(merged, env_raw)
 
+    merged_provider = merged.setdefault("provider", {})
+    if isinstance(merged_provider, dict):
+        merged_profiles = merged_provider.setdefault("model_profiles", {})
+        if isinstance(merged_profiles, dict):
+            merged_provider["model_profiles"] = _resolve_model_profiles(
+                merged_profiles, inject_credentials=True
+            )
+
     return _config_from_dict(
         merged,
         source_hint=lambda loc: _resolve_config_source_hint(
@@ -435,7 +446,9 @@ def _annotate_hook_sources(
     return result
 
 
-def _resolve_profiles_in_raw(data: dict[str, Any]) -> dict[str, Any]:
+def _resolve_profiles_in_raw(
+    data: dict[str, Any], *, inject_credentials: bool = False
+) -> dict[str, Any]:
     """在原始 dict 中展开 model_profiles 继承。"""
     if not data:
         return data
@@ -447,14 +460,62 @@ def _resolve_profiles_in_raw(data: dict[str, Any]) -> dict[str, Any]:
         return data
     result = dict(data)
     result["provider"] = dict(provider)
-    result["provider"]["model_profiles"] = _resolve_model_profiles(raw_profiles)
+    result["provider"]["model_profiles"] = _resolve_model_profiles(
+        raw_profiles, inject_credentials=inject_credentials
+    )
     return result
 
 
+def _is_openai_endpoint(base_url: str) -> bool:
+    """判断 base_url 是否指向 OpenAI 官方端点。"""
+    return any(host in base_url for host in ("api.openai.com", "chatgpt.com"))
+
+
+def _auth_preferred_over_api(main_raw: dict[str, object]) -> bool:
+    """判断 OAuth 凭据是否优先于 API key（auth > api）。
+
+    显式配置为第三方 transport、自定义 base_url 或非 Codex 模型的 profile
+    视为用户主动选择的 API 配置，此时保留 API key。
+    """
+    transport = main_raw.get("transport")
+    if transport in ("chatglm_chat", "deepseek_chat", "mimo_chat", "custom"):
+        return False
+
+    base_url = main_raw.get("base_url")
+    if isinstance(base_url, str) and base_url and not _is_openai_endpoint(base_url):
+        return False
+
+    model = main_raw.get("chat_model")
+    if isinstance(model, str) and model.strip() and model != "deepseek-v4-flash":
+        from xcode.ai.resolver import ModelResolver
+
+        return ModelResolver.is_codex_supported(model)
+    return True
+
+
+def _apply_oauth_credential(main_raw: dict[str, object], cred: AuthCredential) -> None:
+    """用 OAuth 凭据覆盖 main profile 的 API key 配置（auth > api）。"""
+    main_raw["api_key"] = cred.access
+    if cred.account_id:
+        main_raw["account_id"] = cred.account_id
+    if main_raw.get("transport") not in ("openai_responses", "openai_codex"):
+        main_raw["transport"] = "openai_codex"
+    main_raw["base_url"] = (
+        "https://chatgpt.com/backend-api"
+        if cred.account_id
+        else "https://api.openai.com/v1"
+    )
+    model = main_raw.get("chat_model")
+    if not isinstance(model, str) or not model.strip() or model == "deepseek-v4-flash":
+        from xcode.ai.resolver import ModelResolver
+
+        main_raw["chat_model"] = ModelResolver.resolve_alias("codex")
+
+
 def _resolve_model_profiles(
-    raw_profiles: dict[str, object],
+    raw_profiles: dict[str, object], *, inject_credentials: bool = False
 ) -> dict[str, object]:
-    """在原始 dict 中展开 model_profiles 继承。"""
+    """在原始 dict 中展开 model_profiles 继承与凭据回退。"""
     main_raw: dict[str, object] = {}
     main_entry = raw_profiles.get(PROFILE_MAIN)
     if isinstance(main_entry, dict):
@@ -466,23 +527,12 @@ def _resolve_model_profiles(
         main_transport = _load_provider_transport(main_transport_raw, main_transport)
         main_raw["transport"] = main_transport
 
-    if not main_raw.get("api_key") and main_transport in (
-        "openai_responses",
-        "openai_codex",
-    ):
+    if inject_credentials:
         from .auth.manager import AuthManager
 
         cred = AuthManager().get_valid_credential("openai-codex")
-        if cred and cred.access:
-            main_raw["api_key"] = cred.access
-            if cred.account_id:
-                main_raw["account_id"] = cred.account_id
-            if not main_raw.get("base_url"):
-                main_raw["base_url"] = (
-                    "https://chatgpt.com/backend-api"
-                    if cred.account_id
-                    else "https://api.openai.com/v1"
-                )
+        if cred and cred.access and _auth_preferred_over_api(main_raw):
+            _apply_oauth_credential(main_raw, cred)
 
     for name, raw in raw_profiles.items():
         if name == PROFILE_MAIN:
@@ -566,7 +616,7 @@ def _load_provider_transport(
 
 def load_runtime_config(path: Path | None) -> XcodeRuntimeConfig:
     raw = _load_raw_config(path)
-    raw = _resolve_profiles_in_raw(raw)
+    raw = _resolve_profiles_in_raw(raw, inject_credentials=True)
     if path is not None:
         raw = _annotate_hook_sources(raw, path)
     env_raw, env_sources = _build_env_override_raw()
