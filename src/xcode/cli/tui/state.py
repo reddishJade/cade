@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, cast
 
-from prompt_toolkit.formatted_text import StyleAndTextTuples
+from prompt_toolkit.formatted_text import AnyFormattedText, StyleAndTextTuples
 from prompt_toolkit.utils import get_cwidth
 
 from xcode.agent.types import ToolInput, ToolRenderIntent, parse_tool_render_intent
@@ -56,7 +56,7 @@ class _HitlRequest:
 class _CommandChoiceRequest:
     """TUI 内命令选择菜单的状态。"""
 
-    choices: list[tuple[str, object]]
+    choices: Sequence[tuple[AnyFormattedText, object]]
     on_select: Callable[[object], None]
     on_cancel: Callable[[], None] | None = None
     describe: Callable[[object], str] | None = None

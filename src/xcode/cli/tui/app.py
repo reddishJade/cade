@@ -8,7 +8,7 @@ import re
 import sys
 import threading
 from asyncio import TimerHandle
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, cast
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText
 from prompt_toolkit.formatted_text.utils import fragment_list_width
 from prompt_toolkit.input.base import Input
 from prompt_toolkit.key_binding import KeyBindings
@@ -375,6 +375,7 @@ class _XcodeTui:
                         "bg:default fg:default bold underline"
                     ),
                     "radio-selected": "ansicyan bold",
+                    "model-current": "ansicyan bold",
                     "choice-desc": "#808080",
                     "status": "ansibrightblack",
                     "input-border": "ansibrightblack",
@@ -933,6 +934,7 @@ class _XcodeTui:
             AvailableModelEntry,
             _format_model_entry,
             get_available_model_entries,
+            is_current_model_entry,
         )
 
         get_model_info = getattr(self._agent_app, "get_model_info", None)
@@ -961,13 +963,12 @@ class _XcodeTui:
             return
 
         def open_selector() -> None:
-            choices: list[tuple[str, object]] = [
-                (
-                    _format_model_entry(entry, current_model, current_transport),
-                    entry,
-                )
-                for entry in available
-            ]
+            choices: list[tuple[AnyFormattedText, object]] = []
+            for entry in available:
+                title = _format_model_entry(entry)
+                if is_current_model_entry(entry, current_model, current_transport):
+                    title = FormattedText([("class:model-current", title)])
+                choices.append((title, entry))
             choices.append(("输入自定义模型名称...", "__custom__"))
             self._open_command_choices(choices, choose)
 
@@ -1030,7 +1031,7 @@ class _XcodeTui:
 
     def _open_command_choices(
         self,
-        choices: list[tuple[str, object]],
+        choices: Sequence[tuple[AnyFormattedText, object]],
         on_select: Callable[[object], None],
         on_cancel: Callable[[], None] | None = None,
         describe: Callable[[object], str] | None = None,
@@ -1040,12 +1041,15 @@ class _XcodeTui:
         on_cancel 提供时，esc 触发它而不是直接关闭（用于二级菜单返回上级）；
         describe 提供时，底部灰色说明跟随高亮项。
         """
+        stored_choices = list(choices)
         self._state.pending_command_choice = _CommandChoiceRequest(
-            choices, on_select, on_cancel, describe
+            stored_choices, on_select, on_cancel, describe
         )
-        self._command_choices.values = [(value, label) for label, value in choices]
+        self._command_choices.values = [
+            (value, label) for label, value in stored_choices
+        ]
         self._command_choices._selected_index = 0
-        self._command_choices.current_value = choices[0][1]
+        self._command_choices.current_value = stored_choices[0][1]
         self._application.layout.focus(self._command_choices)
         self._refresh()
 
