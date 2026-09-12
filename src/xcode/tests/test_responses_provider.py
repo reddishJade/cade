@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import httpx
+import pytest
+from openai import PermissionDeniedError
 
 from xcode.ai.events import (
     FinalMessage,
@@ -19,7 +23,11 @@ from xcode.ai.providers.registry import (
     build_provider_bundle,
 )
 from xcode.ai.providers.responses import (
+    OpenAICodexResponsesProvider,
     OpenAIResponsesProvider,
+    ProviderRequestError,
+    _codex_sdk_base_url,
+    _safe_openai_error_detail,
     extract_responses_instructions,
     to_responses_input,
     to_responses_text_config,
@@ -262,3 +270,141 @@ async def test_responses_provider_stream_events() -> None:
 
     # 验证 stateful session response id 跟踪
     assert provider._last_response_id == "resp_xyz123"
+
+
+def test_codex_sdk_base_url_targets_codex_responses_route() -> None:
+    assert (
+        _codex_sdk_base_url("https://chatgpt.com/backend-api")
+        == "https://chatgpt.com/backend-api/codex"
+    )
+
+
+def test_safe_error_detail_accepts_json_but_rejects_html() -> None:
+    assert (
+        _safe_openai_error_detail(
+            {"error": {"message": "Unsupported parameter: example"}}
+        )
+        == "Unsupported parameter: example"
+    )
+    assert (
+        _safe_openai_error_detail({"error": {"message": "<html>blocked</html>"}})
+        is None
+    )
+    assert _safe_openai_error_detail("<html>blocked</html>") is None
+    assert (
+        _codex_sdk_base_url("https://chatgpt.com/backend-api/codex/responses")
+        == "https://chatgpt.com/backend-api/codex"
+    )
+
+
+async def test_codex_provider_uses_login_transport_contract() -> None:
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_codex", usage=None),
+            )
+        ]
+    )
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(
+            api_key="access-token",
+            model="gpt-5.6-sol",
+            base_url="https://chatgpt.com/backend-api",
+            reasoning_effort="high",
+            extra={"account_id": "account-123"},
+        ),
+        client=mock_client,
+    )
+
+    events = [
+        event
+        async for event in provider.stream(
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[
+                ToolDefinition(
+                    name="dispatch",
+                    description="Dispatch one or more tasks",
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string"},
+                            "tasks": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "oneOf": [
+                            {"required": ["prompt"]},
+                            {"required": ["tasks"]},
+                        ],
+                    },
+                )
+            ],
+        )
+    ]
+
+    assert isinstance(events[-1], FinalMessage)
+    params = mock_client.responses.create.call_args.kwargs
+    assert params["store"] is False
+    assert params["include"] == ["reasoning.encrypted_content"]
+    assert params["parallel_tool_calls"] is True
+    assert params["tool_choice"] == "auto"
+    assert params["reasoning"] == {"effort": "high", "summary": "auto"}
+    assert "stream_options" not in params
+    assert "strict" not in params["tools"][0]
+    assert "oneOf" in params["tools"][0]["parameters"]
+    assert params["extra_headers"]["OpenAI-Beta"] == "responses=experimental"
+    assert params["extra_headers"]["Accept"] == "text/event-stream"
+    assert params["extra_headers"]["chatgpt-account-id"] == "account-123"
+
+
+def test_codex_provider_configures_async_sdk_route_without_retries() -> None:
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(
+            api_key="access-token",
+            model="gpt-5.6-sol",
+            base_url="https://chatgpt.com/backend-api",
+        )
+    )
+
+    with patch("openai.AsyncOpenAI") as client_class:
+        provider._get_client_and_headers()
+
+    kwargs = client_class.call_args.kwargs
+    assert kwargs["base_url"] == "https://chatgpt.com/backend-api/codex"
+    assert kwargs["max_retries"] == 0
+    assert kwargs["default_headers"]["originator"] == "xcode"
+
+
+async def test_cloudflare_error_is_short_and_actionable() -> None:
+    request = httpx.Request("POST", "https://chatgpt.com/backend-api/codex/responses")
+    response = httpx.Response(
+        403,
+        request=request,
+        headers={"cf-mitigated": "challenge"},
+    )
+    error = PermissionDeniedError(
+        "<html><body>challenge-error-text</body></html>",
+        response=response,
+        body="<html>cloudflare challenge</html>",
+    )
+    mock_client = MagicMock()
+    mock_client.responses.create.side_effect = error
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(
+            api_key="access-token",
+            model="gpt-5.6-sol",
+            base_url="https://chatgpt.com/backend-api",
+        ),
+        client=mock_client,
+    )
+
+    with pytest.raises(ProviderRequestError) as exc_info:
+        async for _event in provider.stream(
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+        ):
+            pass
+
+    assert exc_info.value.status_code == 403
+    assert "Cloudflare challenge" in str(exc_info.value)
+    assert "<html>" not in str(exc_info.value)
