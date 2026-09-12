@@ -16,7 +16,9 @@ import sys
 import time
 import warnings
 from collections.abc import Generator
-from typing import Any
+from typing import Any, cast
+
+from prompt_toolkit.key_binding import KeyBindings
 
 _console_ctrl_handler_installed = False
 _last_ctrl_c_time: float = 0.0
@@ -193,9 +195,17 @@ def safe_select(
         try:
             import questionary
 
-            return questionary.select(
+            question = questionary.select(
                 message, choices=choices, use_shortcuts=use_shortcuts
-            ).ask()
+            )
+            bindings = cast(KeyBindings, question.application.key_bindings)
+
+            @bindings.add("escape", eager=True)
+            def _cancel_with_escape(event: Any) -> None:
+                """使用 Xcode 统一的 Esc 语义关闭选择器。"""
+                event.app.exit(result=default, style="class:aborting")
+
+            return question.ask()
         except (KeyboardInterrupt, EOFError):
             return default
         except (RuntimeError, OSError, ValueError):

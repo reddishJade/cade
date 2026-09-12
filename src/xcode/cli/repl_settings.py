@@ -763,19 +763,12 @@ def _interactive_model_select(app: object) -> None:
             value=("__custom__", None),
         )
     )
-    # 取消
-    choices.append(
-        questionary.Choice(
-            title="取消",
-            value=("__cancel__", None),
-        )
-    )
 
     from .ptk_patch import safe_select, safe_text
 
     selected = safe_select("选择要切换的目标模型:", choices=choices)
 
-    if not selected or selected[0] == "__cancel__":
+    if not selected:
         return
 
     target_model, target_transport = selected

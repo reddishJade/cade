@@ -238,16 +238,17 @@ def test_get_available_model_entries_deduplicates_current_transport() -> None:
     assert current_entries[0].transport == "openai_responses"
 
 
-def test_handle_model_command_cancel() -> None:
+def test_handle_model_command_escape_cancel_has_no_choice() -> None:
     app = DummyApp()
     with (
         patch("sys.stdin.isatty", return_value=True),
         patch("questionary.select") as mock_select,
     ):
-        mock_select.return_value.ask.return_value = ("__cancel__", None)
+        mock_select.return_value.ask.return_value = None
         handle_model_command("/model", app)
 
-    # 取消时不应调用 set_model
+    choices = mock_select.call_args.kwargs["choices"]
+    assert all(choice.value != ("__cancel__", None) for choice in choices)
     assert len(app.calls) == 0
 
 
@@ -319,6 +320,18 @@ def test_safe_select_catches_interrupt() -> None:
         mock_select.return_value.ask.side_effect = KeyboardInterrupt()
         res = safe_select("test", ["a", "b"], default="fallback")
         assert res == "fallback"
+
+
+def test_safe_select_binds_escape_to_cancel() -> None:
+    from xcode.cli.ptk_patch import safe_select
+
+    with patch("questionary.select") as mock_select:
+        question = mock_select.return_value
+        question.ask.return_value = None
+
+        assert safe_select("test", ["a", "b"]) is None
+
+    question.application.key_bindings.add.assert_called_once_with("escape", eager=True)
 
 
 def test_safe_text_catches_eof() -> None:
