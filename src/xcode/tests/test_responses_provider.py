@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -270,6 +273,62 @@ async def test_responses_provider_stream_events() -> None:
 
     # 验证 stateful session response id 跟踪
     assert provider._last_response_id == "resp_xyz123"
+
+
+async def test_sync_response_stream_does_not_block_incremental_delivery() -> None:
+    release = threading.Event()
+
+    class _BlockingResponseStream:
+        def __init__(self) -> None:
+            self._index = 0
+
+        def __iter__(self) -> _BlockingResponseStream:
+            return self
+
+        def __next__(self) -> SimpleNamespace:
+            self._index += 1
+            if self._index == 1:
+                return SimpleNamespace(
+                    type="response.output_text.delta",
+                    delta="first",
+                )
+            if self._index == 2:
+                release.wait(timeout=1)
+                return SimpleNamespace(
+                    type="response.output_text.delta",
+                    delta=" second",
+                )
+            if self._index == 3:
+                return SimpleNamespace(
+                    type="response.completed",
+                    response=SimpleNamespace(id="resp_stream", usage=None),
+                )
+            raise StopIteration
+
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = _BlockingResponseStream()
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5"),
+        client=mock_client,
+    )
+    events = provider.stream([{"role": "user", "content": "Hi"}], [])
+
+    first = await anext(events)
+    assert isinstance(first, TextDelta)
+    assert first.chunk == "first"
+
+    second_task = asyncio.create_task(anext(events))
+    started = time.perf_counter()
+    await asyncio.sleep(0.02)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.1
+    assert not second_task.done()
+
+    release.set()
+    second = await asyncio.wait_for(second_task, timeout=1)
+    assert isinstance(second, TextDelta)
+    assert second.chunk == " second"
+    await events.aclose()
 
 
 def test_codex_sdk_base_url_targets_codex_responses_route() -> None:
