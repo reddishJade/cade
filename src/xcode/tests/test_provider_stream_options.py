@@ -8,6 +8,11 @@ from typing import Any
 import pytest
 
 from xcode.ai.providers.openai import OpenAIChatProvider
+from xcode.cli.reasoning_effort import (
+    EFFORT_COMMAND_LEVELS,
+    reasoning_effort_levels_for_transport,
+    supports_reasoning_effort,
+)
 from xcode.ai.types import ProviderConfig, StreamOptions
 
 
@@ -90,6 +95,12 @@ def test_build_provider_bundle_carries_context_window() -> None:
         )
     )
     assert bundle.llm.context_window == 262_144
+
+
+@pytest.mark.parametrize("transport", ["openai_responses", "openai_codex"])
+def test_responses_transports_support_reasoning_effort(transport: str) -> None:
+    assert supports_reasoning_effort(transport) is True
+    assert reasoning_effort_levels_for_transport(transport) == EFFORT_COMMAND_LEVELS
 
 
 def _chunk(text: str) -> Any:
