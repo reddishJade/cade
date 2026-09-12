@@ -25,14 +25,14 @@ from .chatglm import ChatGLMProvider
 from .deepseek import DeepSeekProvider
 from .mimo import MiMoProvider
 from .openai import OpenAIChatProvider
-from .responses import OpenAIResponsesProvider
+from .responses import OpenAICodexResponsesProvider, OpenAIResponsesProvider
 
 # ── 注册表 ──
 
 PROVIDER_REGISTRY: dict[str, type] = {
     "openai_chat": OpenAIChatProvider,
     "openai_responses": OpenAIResponsesProvider,
-    "openai_codex": OpenAIResponsesProvider,
+    "openai_codex": OpenAICodexResponsesProvider,
     "chatglm_chat": ChatGLMProvider,
     "deepseek_chat": DeepSeekProvider,
     "mimo_chat": MiMoProvider,
