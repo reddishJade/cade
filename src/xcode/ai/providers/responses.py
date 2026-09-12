@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
+import platform
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
+from inspect import isawaitable
 from typing import Any
 
 from xcode.ai.cache import CacheUsage
@@ -37,6 +39,88 @@ _LOGGER = logging.getLogger(__name__)
 
 OPENAI_RESPONSES_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 CHATGPT_BACKEND_BASE_URL = "https://chatgpt.com/backend-api"
+
+
+class ProviderRequestError(RuntimeError):
+    """将 SDK 请求异常转换为 agent 可识别且不会泄漏响应正文的错误。"""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _codex_sdk_base_url(base_url: str) -> str:
+    """把用户配置的 ChatGPT 后端地址转换为 SDK 所需的 Codex 根地址。"""
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/codex/responses"):
+        return normalized.removesuffix("/responses")
+    if normalized.endswith("/codex"):
+        return normalized
+    return f"{normalized}/codex"
+
+
+def _codex_user_agent() -> str:
+    """生成稳定且可辨识的 ChatGPT Codex 客户端标识。"""
+    system = platform.system() or "unknown"
+    release = platform.release() or "unknown"
+    machine = platform.machine() or "unknown"
+    return f"xcode-agent ({system} {release}; {machine})"
+
+
+def _format_openai_error(exc: BaseException) -> ProviderRequestError:
+    """压缩 OpenAI SDK 异常，避免把 Cloudflare HTML 整页输出到终端。"""
+    status_code = getattr(exc, "status_code", None)
+    if not isinstance(status_code, int):
+        status_code = None
+
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", {})
+    mitigated = str(headers.get("cf-mitigated", "")).lower() == "challenge"
+    raw_message = str(exc)
+    body = getattr(exc, "body", None)
+    detail = _safe_openai_error_detail(body)
+    looks_like_challenge = mitigated or any(
+        marker in raw_message.lower()
+        for marker in ("<html", "challenge-error-text", "_cf_chl_opt")
+    )
+
+    if status_code == 403 and looks_like_challenge:
+        message = (
+            "ChatGPT backend returned a Cloudflare challenge (HTTP 403). "
+            "The request was stopped cleanly; retry after changing the proxy route "
+            "or sign in again."
+        )
+    elif status_code == 401:
+        message = (
+            "ChatGPT authentication expired or was rejected (HTTP 401); sign in again."
+        )
+    elif status_code is not None:
+        message = f"OpenAI request failed with HTTP {status_code}."
+        if detail:
+            message = f"{message} {detail}"
+    else:
+        message = f"OpenAI request failed: {type(exc).__name__}."
+
+    request_id = getattr(exc, "request_id", None)
+    if request_id:
+        message = f"{message} Request ID: {request_id}."
+    return ProviderRequestError(message, status_code=status_code)
+
+
+def _safe_openai_error_detail(body: object) -> str | None:
+    """只从结构化错误体提取短消息，拒绝回显 HTML 或任意长正文。"""
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error", body)
+    if not isinstance(error, dict):
+        return None
+    detail = error.get("message")
+    if not isinstance(detail, str):
+        return None
+    normalized = " ".join(detail.split())
+    if not normalized or "<html" in normalized.lower():
+        return None
+    return normalized[:500]
 
 
 # ── 消息转换工具 ──
@@ -265,7 +349,7 @@ class OpenAIResponsesProvider:
         if self._client is not None:
             return self._client, {}
 
-        from openai import OpenAI as _OpenAIClient
+        from openai import AsyncOpenAI as _OpenAIClient
 
         api_key = self.config.api_key
         base_url = self.config.base_url or OPENAI_RESPONSES_DEFAULT_BASE_URL
@@ -299,18 +383,23 @@ class OpenAIResponsesProvider:
         **kwargs: Any,
     ) -> AsyncIterator[ProviderEvent]:
         self._current_options = options
-        for event in self._stream_sync(messages, tuple(tools)):
-            yield event
+        from openai import APIError
 
-    def _stream_sync(
+        try:
+            async for event in self._stream(messages, tuple(tools)):
+                yield event
+        except APIError as exc:
+            raise _format_openai_error(exc) from exc
+
+    async def _stream(
         self,
         messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
-    ) -> Iterator[ProviderEvent]:
+    ) -> AsyncIterator[ProviderEvent]:
         client, extra_headers = self._get_client_and_headers()
         instructions, input_messages = extract_responses_instructions(messages)
         responses_input = to_responses_input(input_messages)
-        responses_tools = to_responses_tools(tools)
+        responses_tools = to_responses_tools(tools, strict=self._strict_tools())
 
         params: dict[str, Any] = {
             "model": self.config.model,
@@ -351,17 +440,29 @@ class OpenAIResponsesProvider:
         if request_headers:
             params["extra_headers"] = request_headers
 
+        self._finalize_request_params(params)
+
         self._metrics["sent_messages"] = len(input_messages)
 
-        yield from self._decode_responses_stream(client, params)
+        async for event in self._decode_responses_stream(client, params):
+            yield event
 
-    def _decode_responses_stream(
+    def _finalize_request_params(self, params: dict[str, Any]) -> None:
+        """允许专用 transport 在发送前补充 Responses 请求参数。"""
+
+    def _strict_tools(self) -> bool:
+        """普通 OpenAI Responses 默认使用 strict function schema。"""
+        return True
+
+    async def _decode_responses_stream(
         self,
         client: Any,
         params: dict[str, Any],
-    ) -> Iterator[ProviderEvent]:
+    ) -> AsyncIterator[ProviderEvent]:
         """调用 client.responses.create 并流式解码事件。"""
         response_stream = client.responses.create(**params)
+        if isawaitable(response_stream):
+            response_stream = await response_stream
 
         function_calls: dict[str, dict[str, str]] = defaultdict(
             lambda: {"id": "", "name": "", "arguments": ""}
@@ -371,7 +472,17 @@ class OpenAIResponsesProvider:
         accumulated_text = ""
         last_response_id: str | None = None
 
-        for event in response_stream:
+        if hasattr(response_stream, "__aiter__"):
+            event_iterator = response_stream
+        else:
+
+            async def _sync_events() -> AsyncIterator[Any]:
+                for item in response_stream:
+                    yield item
+
+            event_iterator = _sync_events()
+
+        async for event in event_iterator:
             event_type = getattr(event, "type", "")
 
             if event_type == "response.output_text.delta":
@@ -479,3 +590,65 @@ class OpenAIResponsesProvider:
             yield FinalMessage(content=accumulated_text, stop_reason="tool_use")
         else:
             yield FinalMessage(content=accumulated_text, stop_reason="end_turn")
+
+
+class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
+    """使用 ChatGPT 登录态调用 Codex Responses 后端。"""
+
+    def __init__(
+        self,
+        config: ProviderConfig,
+        *,
+        client: Any | None = None,
+        runtime: ProviderRuntime | None = None,
+    ) -> None:
+        super().__init__(config, client=client, runtime=runtime)
+        self.transport = "openai_codex"
+        self._metrics["transport"] = self.transport
+
+    def _get_client_and_headers(self) -> tuple[Any, dict[str, str]]:
+        """构建与 pi 行为一致的 ChatGPT Codex SDK 客户端。"""
+        if self._client is not None:
+            return self._client, self._codex_headers()
+
+        import os
+
+        from openai import AsyncOpenAI as _OpenAIClient
+
+        api_key = self.config.api_key or os.environ.get("OPENAI_API_KEY", "")
+        configured_url = self.config.base_url or CHATGPT_BACKEND_BASE_URL
+        headers = self._codex_headers()
+        client = _OpenAIClient(
+            api_key=api_key or "sk-dummy-no-key",
+            base_url=_codex_sdk_base_url(configured_url),
+            default_headers=headers,
+            max_retries=0,
+        )
+        return client, headers
+
+    def _codex_headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+            "OpenAI-Beta": "responses=experimental",
+            "User-Agent": _codex_user_agent(),
+            "originator": str(self.config.extra.get("originator") or "xcode"),
+        }
+        account_id = self.config.extra.get("account_id")
+        if account_id:
+            headers["chatgpt-account-id"] = str(account_id)
+        return headers
+
+    def _finalize_request_params(self, params: dict[str, Any]) -> None:
+        params.pop("stream_options", None)
+        params["store"] = False
+        params["include"] = ["reasoning.encrypted_content"]
+        params["parallel_tool_calls"] = True
+        params.setdefault("tool_choice", "auto")
+        if self.config.thinking:
+            reasoning = params.setdefault("reasoning", {})
+            reasoning["summary"] = "auto"
+
+    def _strict_tools(self) -> bool:
+        """ChatGPT Codex 与 pi 一样省略 strict，允许现有联合工具 schema。"""
+        return False

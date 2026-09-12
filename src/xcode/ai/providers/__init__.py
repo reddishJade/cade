@@ -12,7 +12,7 @@ from .registry import (
     ProviderSettings,
     build_provider_bundle,
 )
-from .responses import OpenAIResponsesProvider
+from .responses import OpenAICodexResponsesProvider, OpenAIResponsesProvider
 
 __all__ = [
     "PROVIDER_REGISTRY",
@@ -22,6 +22,7 @@ __all__ = [
     "ModelProfileConfig",
     "ModelProfileProto",
     "OpenAIChatProvider",
+    "OpenAICodexResponsesProvider",
     "OpenAIResponsesProvider",
     "ProviderBundle",
     "ProviderSettings",
