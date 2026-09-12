@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import platform
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from inspect import isawaitable
 from typing import Any
 
@@ -39,6 +40,29 @@ _LOGGER = logging.getLogger(__name__)
 
 OPENAI_RESPONSES_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 CHATGPT_BACKEND_BASE_URL = "https://chatgpt.com/backend-api"
+
+
+def _next_response_event(iterator: Iterator[Any]) -> tuple[bool, Any | None]:
+    """在线程中读取同步事件流，避免阻塞 agent 的异步事件循环。"""
+    try:
+        return True, next(iterator)
+    except StopIteration:
+        return False, None
+
+
+async def _iterate_response_events(response_stream: Any) -> AsyncIterator[Any]:
+    """统一迭代 SDK 的异步流与兼容客户端提供的同步流。"""
+    if hasattr(response_stream, "__aiter__"):
+        async for event in response_stream:
+            yield event
+        return
+
+    iterator = iter(response_stream)
+    while True:
+        has_event, event = await asyncio.to_thread(_next_response_event, iterator)
+        if not has_event:
+            return
+        yield event
 
 
 class ProviderRequestError(RuntimeError):
@@ -472,17 +496,7 @@ class OpenAIResponsesProvider:
         accumulated_text = ""
         last_response_id: str | None = None
 
-        if hasattr(response_stream, "__aiter__"):
-            event_iterator = response_stream
-        else:
-
-            async def _sync_events() -> AsyncIterator[Any]:
-                for item in response_stream:
-                    yield item
-
-            event_iterator = _sync_events()
-
-        async for event in event_iterator:
+        async for event in _iterate_response_events(response_stream):
             event_type = getattr(event, "type", "")
 
             if event_type == "response.output_text.delta":
