@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -94,6 +95,30 @@ def test_bind_agent_uses_real_session_identity(tmp_path: Path) -> None:
 
     assert agent.session_id == recorder.store.session_id
     assert agent.history_session_id == recorder.store.session_id
+
+
+def test_session_store_normalizes_surrogates_before_json_serialization(
+    tmp_path: Path,
+) -> None:
+    recorder = _recorder(tmp_path)
+    recorder.store.ensure_metadata("emoji: \ud83d\ude00; invalid: \ud83d")
+
+    recorder.store.append(
+        "event",
+        {
+            "paired": "emoji: \ud83d\ude00",
+            "nested": ["invalid: \ud83d"],
+        },
+    )
+
+    raw_entry = json.loads(recorder.store.current_path.read_text(encoding="utf-8"))
+    assert raw_entry["content"] == {
+        "paired": "emoji: \U0001f600",
+        "nested": ["invalid: \ufffd"],
+    }
+    assert recorder.store.read_entries()[0].content == raw_entry["content"]
+    metadata = json.loads(recorder.store.index_path.read_text(encoding="utf-8"))
+    assert metadata["sessions"][0]["title"] == "emoji: \U0001f600; invalid: \ufffd"
 
 
 def test_app_records_programmatic_turn_without_stream_fragments(tmp_path: Path) -> None:
