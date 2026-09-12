@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,11 @@ from xcode.harness.execution_env import (
     SubprocessShell,
 )
 
+LINUX_ONLY = pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="bubblewrap sandbox 仅支持 Linux",
+)
+
 
 class _RecordingSandbox:
     def __init__(self) -> None:
@@ -26,7 +32,7 @@ class _RecordingSandbox:
     def wrap(self, argv: list[str], cwd: Path) -> SandboxedCommand:
         self.received = (tuple(argv), cwd)
         return SandboxedCommand(
-            argv=("sh", "-c", "printf sandboxed"),
+            argv=(sys.executable, "-c", "print('sandboxed', end='')"),
             cwd=cwd,
         )
 
@@ -35,7 +41,7 @@ class _ViolatingSandbox:
     def wrap(self, argv: list[str], cwd: Path) -> SandboxedCommand:
         del argv
         return SandboxedCommand(
-            argv=("true",),
+            argv=(sys.executable, "-c", "pass"),
             cwd=cwd,
             finalize=lambda: "sandbox policy violation",
         )
@@ -52,18 +58,19 @@ def test_subprocess_shell_applies_sandbox_wrapper(tmp_path: Path) -> None:
     sandbox = _RecordingSandbox()
     shell = SubprocessShell(sandbox=sandbox)
 
-    result = shell.run(["sh", "-c", "printf original"], tmp_path)
+    original = [sys.executable, "-c", "print('original', end='')"]
+    result = shell.run(original, tmp_path)
 
     assert result.returncode == 0
     assert result.stdout == "sandboxed"
-    assert sandbox.received == (("sh", "-c", "printf original"), tmp_path)
+    assert sandbox.received == (tuple(original), tmp_path)
 
 
 def test_subprocess_shell_reports_finalize_violation(tmp_path: Path) -> None:
     updates: list[str] = []
 
     result = SubprocessShell(sandbox=_ViolatingSandbox()).run(
-        ["true"],
+        [sys.executable, "-c", "pass"],
         tmp_path,
         on_progress=updates.append,
     )
@@ -80,6 +87,7 @@ def _fake_bwrap(tmp_path: Path) -> Path:
     return executable
 
 
+@LINUX_ONLY
 def test_linux_workspace_write_wraps_command_and_protects_metadata(
     tmp_path: Path,
 ) -> None:
@@ -125,6 +133,7 @@ def test_linux_workspace_write_wraps_command_and_protects_metadata(
     }
 
 
+@LINUX_ONLY
 def test_linux_network_allow_keeps_host_network(tmp_path: Path) -> None:
     bwrap = _fake_bwrap(tmp_path)
     sandbox = LinuxBubblewrapSandbox(
@@ -140,6 +149,7 @@ def test_linux_network_allow_keeps_host_network(tmp_path: Path) -> None:
     assert "--unshare-net" not in command.argv
 
 
+@LINUX_ONLY
 def test_linux_masks_unreadable_files_and_directories(tmp_path: Path) -> None:
     secret_file = tmp_path / ".env"
     secret_file.write_text("TOKEN=secret", encoding="utf-8")
@@ -161,6 +171,7 @@ def test_linux_masks_unreadable_files_and_directories(tmp_path: Path) -> None:
     )
 
 
+@LINUX_ONLY
 def test_linux_read_only_does_not_bind_project_writable(tmp_path: Path) -> None:
     bwrap = _fake_bwrap(tmp_path)
     sandbox = LinuxBubblewrapSandbox(
@@ -173,6 +184,7 @@ def test_linux_read_only_does_not_bind_project_writable(tmp_path: Path) -> None:
     assert _mounts(command.argv, "--bind") == set()
 
 
+@LINUX_ONLY
 def test_linux_rejects_command_cwd_outside_project(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -187,6 +199,7 @@ def test_linux_rejects_command_cwd_outside_project(tmp_path: Path) -> None:
         sandbox.wrap(["true"], outside)
 
 
+@LINUX_ONLY
 def test_linux_missing_bwrap_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -199,6 +212,7 @@ def test_linux_missing_bwrap_fails_closed(
         LinuxBubblewrapSandbox(SandboxPolicy(project_root=tmp_path))
 
 
+@LINUX_ONLY
 def test_linux_protects_missing_xcode_metadata_with_placeholder(
     tmp_path: Path,
 ) -> None:
@@ -218,6 +232,7 @@ def test_linux_protects_missing_xcode_metadata_with_placeholder(
     assert not metadata.exists()
 
 
+@LINUX_ONLY
 def test_linux_placeholder_cleanup_preserves_replacement(tmp_path: Path) -> None:
     sandbox = LinuxBubblewrapSandbox(
         SandboxPolicy(project_root=tmp_path),
@@ -238,6 +253,7 @@ def test_linux_placeholder_cleanup_preserves_replacement(tmp_path: Path) -> None
     assert settings.read_text(encoding="utf-8") == "user data"
 
 
+@LINUX_ONLY
 def test_linux_rejects_protected_metadata_symlink(tmp_path: Path) -> None:
     target = tmp_path / "target"
     target.mkdir()
