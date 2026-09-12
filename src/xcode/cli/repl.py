@@ -33,6 +33,12 @@ from xcode.harness.snapshot import (
 
 from .app_contract import ReplApp
 from .commands import PromptLike, PromptText, ReplState
+from .exit_keys import (
+    ExitKeyKind,
+    exit_confirm_hint,
+    exit_confirmed,
+    exit_window_active,
+)
 from .file_refs import expand_file_references
 from .markdown import MarkdownRenderer, TerminalMarkdownRenderer
 
@@ -230,6 +236,7 @@ def run_repl(
         if text is None:
             continue
         state.exit_pending = 0.0
+        state.exit_pending_key = ""
         skill_invocation = parse_skill_invocation(text)
         if skill_invocation is not None:
             skill_name, remaining_text = skill_invocation
@@ -291,17 +298,22 @@ def _read_repl_text(
     session: PromptLike,
     store: SessionStore,
 ) -> tuple[str | None, bool]:
-    """读取下一条输入，并统一处理双击 Ctrl+C 退出。"""
+    """读取下一条输入，并统一处理双击 Ctrl+C / Ctrl+D 退出。
+
+    提示符内的按键绑定只负责把中断/EOF 抛出来，待确认状态一律在这里记录，
+    避免同一次按键既被打上标记又被当成二次确认。
+    """
     try:
         prompt_text: PromptText = (
             ""
-            if state.exit_pending and time.time() - state.exit_pending < 3.0
+            if exit_window_active(state.exit_pending, time.time())
             else input_prompt(session)
         )
         return session.prompt(prompt_text).strip() or None, False
-    except (EOFError, KeyboardInterrupt):
+    except (EOFError, KeyboardInterrupt) as exc:
         now = time.time()
-        if state.exit_pending and now - state.exit_pending < 3.0:
+        key = ExitKeyKind.EOF if isinstance(exc, EOFError) else ExitKeyKind.INTERRUPT
+        if exit_confirmed(state.exit_pending, state.exit_pending_key, now, key):
             print()
             try:
                 print_saved_conversation(store)
@@ -309,8 +321,9 @@ def _read_repl_text(
                 pass
             return None, True
         state.exit_pending = now
+        state.exit_pending_key = key.value
         print()
-        sys.stdout.write("\033[90m(press Ctrl+C / Ctrl+D again to exit)\033[0m\n")
+        sys.stdout.write(f"\033[90m{exit_confirm_hint(key)}\033[0m\n")
         sys.stdout.flush()
         return None, False
 

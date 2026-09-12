@@ -53,6 +53,7 @@ from ..app_contract import ReplApp
 from ..commands import ReplState
 from ..completion import CommandArgsSuggester, ReplCompleter
 from ..config_registry import SettingSpec
+from ..exit_keys import ExitKeyKind, exit_confirm_hint, exit_confirmed
 from ..file_refs import expand_file_references
 from ..git import git_branch_name
 from ..markdown import TerminalMarkdownRenderer
@@ -93,7 +94,8 @@ logger = logging.getLogger(__name__)
 
 _SHORTCUT_HELP = """Shortcuts
   ?              show this help
-  Ctrl+C         clear input; interrupt; press twice to exit when idle
+  Ctrl+C         clear input; interrupt; press Ctrl+C twice to exit when idle
+  Ctrl+D         press Ctrl+D twice to exit when idle (empty input)
   Ctrl+Q         exit
   Ctrl+T         expand or collapse thinking
   Ctrl+O         expand or collapse tool details
@@ -177,6 +179,7 @@ class _XcodeTui:
         self._prompt_session = TuiPromptSession()
         self._awaiting_denial_suggestion = False
         self._exit_pending = 0.0
+        self._exit_pending_key = ""
         self._last_stream_refresh = 0.0
         self._stream_refresh_handle: TimerHandle | None = None
         self._agent_event_queue: Queue[AgentHarnessEvent] = Queue()
@@ -204,9 +207,7 @@ class _XcodeTui:
             history=_tui_history(project_root),
             scrollbar=True,
         )
-        self._input.buffer.on_text_insert += lambda _buf: setattr(
-            self._input.buffer, "complete_state", None
-        )
+        self._input.buffer.on_text_insert += self._on_input_text_inserted
         self._approval_choices = RadioList(
             [(choice, choice) for choice in HITL_CHOICES],
             default=HITL_CHOICES[0],
@@ -493,6 +494,7 @@ class _XcodeTui:
         bindings.add("c-o", eager=True)(self._toggle_tools_key)
         bindings.add("c-q")(self._quit_key)
         bindings.add("c-c")(self._cancel_key)
+        bindings.add("c-d")(self._eof_key)
         # 应用级只挂"文本表单激活时"的 Esc（eager + filter）：空闲输入不消费
         # escape，方向键的 esc 序列解析和 esc,enter 换行都不受影响。
         bindings.add(
@@ -514,6 +516,8 @@ class _XcodeTui:
             return
         if not text:
             return
+        self._exit_pending = 0.0
+        self._exit_pending_key = ""
         self._input.text = ""
         self._scrollback = 0
         if self._state.running or self._committing:
@@ -624,8 +628,13 @@ class _XcodeTui:
                 request.on_cancel()
         if self._state.pending_hitl is not None:
             self._finish_denial("")
-        print_saved_conversation(self._store)
-        self._application.exit()
+        self._finish_exit()
+
+    def _on_input_text_inserted(self, _buffer: object) -> None:
+        """输入新内容即取消待确认的退出状态。"""
+        self._input.buffer.complete_state = None
+        self._exit_pending = 0.0
+        self._exit_pending_key = ""
 
     def _cancel_key(self, _event: object) -> None:
         if self._state.pending_question_choice is not None:
@@ -645,10 +654,15 @@ class _XcodeTui:
             return
         if self._state.pending_hitl is not None:
             self._finish_denial("")
+        now = perf_counter()
+        if exit_confirmed(
+            self._exit_pending, self._exit_pending_key, now, ExitKeyKind.INTERRUPT
+        ):
+            self._finish_exit()
+            return
         if self._input.text:
             self._input.text = ""
-            self._exit_pending = 0.0
-            self._refresh()
+            self._arm_exit(now, ExitKeyKind.INTERRUPT)
             return
         if self._state.running:
             accepted = self._agent_app.agent.interrupt("interrupted by user")
@@ -659,14 +673,43 @@ class _XcodeTui:
                 self._state.log.append(_LogEntry("stop", "[interrupt] stopping run"))
             self._refresh()
             return
+        self._arm_exit(now, ExitKeyKind.INTERRUPT)
+
+    def _eof_key(self, _event: object) -> None:
+        """Ctrl+D：空闲且输入为空时参与双击退出，其余场景保持无操作。"""
         now = perf_counter()
-        if self._exit_pending and now - self._exit_pending < 1.5:
-            print_saved_conversation(self._store)
-            self._application.exit()
+        if exit_confirmed(
+            self._exit_pending, self._exit_pending_key, now, ExitKeyKind.EOF
+        ):
+            self._finish_exit()
             return
+        if self._state.running or self._input.text:
+            return
+        if self._has_pending_interaction():
+            return
+        self._arm_exit(now, ExitKeyKind.EOF)
+
+    def _has_pending_interaction(self) -> bool:
+        """是否存在需要用户先处理的菜单、表单或授权请求。"""
+        return (
+            self._awaiting_denial_suggestion
+            or self._state.pending_hitl is not None
+            or self._state.pending_command_choice is not None
+            or self._state.pending_command_text is not None
+            or self._state.pending_question_choice is not None
+        )
+
+    def _arm_exit(self, now: float, key: ExitKeyKind) -> None:
+        """进入双击退出确认窗口，并提示再次按同一个键。"""
         self._exit_pending = now
-        self._state.log.append(_LogEntry("system", "(press Ctrl+C again to exit)"))
+        self._exit_pending_key = key.value
+        self._state.log.append(_LogEntry("system", exit_confirm_hint(key)))
         self._refresh()
+
+    def _finish_exit(self) -> None:
+        """保存当前会话并退出 TUI。"""
+        print_saved_conversation(self._store)
+        self._application.exit()
 
     # ── 提交 ──
 
