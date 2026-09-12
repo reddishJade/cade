@@ -6,7 +6,11 @@ from pathlib import Path
 
 from .cli.config_cmd import handle_config_command
 from .cli.repl import run_repl
-from .cli.setup_wizard import has_valid_config, run_setup_wizard
+from .cli.setup_wizard import (
+    has_valid_config,
+    prompt_login_method,
+    run_setup_wizard,
+)
 from .cli.tui import run_tui
 from .coding_agent.app import build_app
 from .harness.config import discover_runtime_config, resolve_config_path
@@ -227,7 +231,31 @@ def main() -> int:
     temp_config: Path | None = None
 
     if not has_valid_config(project_root):
-        if sys.stdin.isatty():
+        if not sys.stdin.isatty():
+            print(
+                "No credentials configured. Run 'xcode login' to sign in with "
+                "ChatGPT, or set an API key (e.g. OPENAI_API_KEY, "
+                "DEEPSEEK_API_KEY) in .env or the environment.",
+                file=sys.stderr,
+            )
+            return 1
+
+        try:
+            login_method = prompt_login_method()
+        except KeyboardInterrupt:
+            return 0
+        if login_method is None:
+            return 0
+
+        if login_method == "auth":
+            from .cli.auth_cmd import handle_login_command
+
+            login_status = handle_login_command()
+            if login_status == 130:
+                return 0
+            if login_status != 0:
+                return login_status
+        else:
             try:
                 status, config_path = run_setup_wizard(project_root)
             except KeyboardInterrupt:
@@ -237,13 +265,6 @@ def main() -> int:
             if status == "no_save" and config_path is not None:
                 temp_config = config_path
                 args.config = config_path
-        else:
-            if not has_valid_config(project_root):
-                print(
-                    "No API key configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, "
-                    "or DEEPSEEK_API_KEY in .env or environment.",
-                    file=sys.stderr,
-                )
 
     try:
         runtime_config = discover_runtime_config(project_root, args.config)
@@ -259,6 +280,9 @@ def main() -> int:
                 open_browser=args.open,
             )
         return _run(args, runtime_config)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     finally:
         if temp_config is not None and temp_config.exists():
             temp_config.unlink()
