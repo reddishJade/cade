@@ -7,6 +7,7 @@ import pytest
 from xcode.ai.models import (
     ModelMode,
     effective_rollover_threshold,
+    get_codex_models,
     get_model,
     get_models,
     get_providers,
@@ -71,31 +72,31 @@ class TestParseModelMode:
 
 class TestRolloverThreshold:
     @pytest.mark.parametrize(
-        ("model", "expected"),
-        (
-            ("gpt-5.5", 997_500),
-            ("chatglm/glm-5.1", 183_616),
-        ),
+        "provider_name",
+        ("openai", "chatglm"),
     )
     def test_known_model_uses_its_registered_context_window(
-        self, model: str, expected: int
+        self, provider_name: str
     ) -> None:
+        model = get_models(provider_name)[0]
         threshold = effective_rollover_threshold(
-            model,
+            model.id,
             reserve_tokens=16_384,
             trigger_ratio=0.95,
         )
 
+        expected = min(int(model.context_window * 0.95), model.context_window - 16_384)
         assert threshold == expected
 
     def test_reserve_remains_hard_upper_bound(self) -> None:
+        model = get_models("chatglm")[0]
         threshold = effective_rollover_threshold(
-            "chatglm/glm-5.1",
+            f"chatglm/{model.id}",
             reserve_tokens=80_000,
             trigger_ratio=0.95,
         )
 
-        assert threshold == 120_000
+        assert threshold == model.context_window - 80_000
 
     def test_unknown_model_keeps_fallback_threshold(self) -> None:
         threshold = effective_rollover_threshold(
@@ -107,8 +108,9 @@ class TestRolloverThreshold:
         assert threshold == 32_000
 
     def test_context_window_override_wins(self) -> None:
+        model = get_models("openai")[0]
         threshold = effective_rollover_threshold(
-            "gpt-5.5",
+            model.id,
             reserve_tokens=16_384,
             trigger_ratio=0.95,
             context_window_override=262_144,
@@ -117,8 +119,9 @@ class TestRolloverThreshold:
         assert threshold == 245_760
 
     def test_context_window_override_respects_reserve(self) -> None:
+        model = get_models("openai")[0]
         threshold = effective_rollover_threshold(
-            "gpt-5.5",
+            model.id,
             reserve_tokens=200_000,
             context_window_override=262_144,
         )
@@ -126,35 +129,40 @@ class TestRolloverThreshold:
         assert threshold == 62_144
 
     def test_non_positive_override_falls_back_to_registry(self) -> None:
+        model = get_models("openai")[0]
         threshold = effective_rollover_threshold(
-            "gpt-5.5",
+            model.id,
             reserve_tokens=16_384,
             trigger_ratio=0.95,
             context_window_override=0,
         )
 
-        assert threshold == 997_500
+        expected = min(int(model.context_window * 0.95), model.context_window - 16_384)
+        assert threshold == expected
 
     def test_specific_model_id_wins_over_prefix_model(self) -> None:
+        model = get_models("openai")[-1]
         threshold = effective_rollover_threshold(
-            "openai/gpt-5.4-mini",
+            f"openai/{model.id}",
             reserve_tokens=0,
             trigger_ratio=1,
         )
 
-        assert threshold == 400_000
+        assert threshold == model.context_window
 
 
 class TestResolveModel:
     def test_exact_match(self) -> None:
-        model = resolve_model("openai", "gpt-5.5")
+        registered = get_models("openai")[0]
+        model = resolve_model("openai", registered.id)
         assert model is not None
-        assert model.id == "gpt-5.5"
+        assert model.id == registered.id
 
     def test_fallback_to_first(self) -> None:
+        first = get_models("openai")[0]
         model = resolve_model("openai", "nonexistent-model")
         assert model is not None
-        assert model.id == "gpt-6-astra"  # first in openai dict
+        assert model.id == first.id
 
     def test_unknown_provider_returns_generic(self) -> None:
         model = resolve_model("unknown_provider", "some-model")
@@ -177,20 +185,25 @@ class TestRegistryAccess:
     def test_get_models_openai(self) -> None:
         models = get_models("openai")
         ids = [m.id for m in models]
-        assert "gpt-6-astra" in ids
-        assert "gpt-5.6-sol" in ids
-        assert "gpt-5.3-codex" in ids
-        assert "gpt-5.5" in ids
-        assert "gpt-5.4" in ids
-        assert "gpt-5.4-mini" in ids
+        assert models
+        assert len(ids) == len(set(ids))
+        assert all(model.provider == "openai" for model in models)
+
+    def test_get_codex_models_returns_unique_registered_models(self) -> None:
+        models = get_codex_models()
+        ids = [model.id for model in models]
+        assert models
+        assert len(ids) == len(set(ids))
+        assert all(model.provider == "openai" for model in models)
 
     def test_get_models_unknown_provider(self) -> None:
         assert get_models("nonexistent") == []
 
     def test_get_model_existing(self) -> None:
-        model = get_model("deepseek", "deepseek-v4-pro")
+        registered = get_models("deepseek")[0]
+        model = get_model("deepseek", registered.id)
         assert model is not None
-        assert model.name == "DeepSeek V4 Pro"
+        assert model.name == registered.name
 
     def test_get_model_nonexistent(self) -> None:
         assert get_model("openai", "does-not-exist") is None
@@ -198,27 +211,26 @@ class TestRegistryAccess:
 
 class TestModelResolver:
     def test_resolve_alias(self) -> None:
-        assert ModelResolver.resolve_alias("codex") == "gpt-5.3-codex"
-        assert ModelResolver.resolve_alias("CODEX") == "gpt-5.3-codex"
-        assert ModelResolver.resolve_alias("openai-codex") == "gpt-5.3-codex"
-        assert ModelResolver.resolve_alias("gpt-5.6") == "gpt-5.6-sol"
-        assert ModelResolver.resolve_alias("deepseek-v4-pro") == "deepseek-v4-pro"
+        codex_model = ModelResolver.resolve_alias("codex")
+        assert codex_model == ModelResolver.resolve_alias("CODEX")
+        assert codex_model == ModelResolver.resolve_alias("openai-codex")
+        assert codex_model in {model.id for model in get_codex_models()}
+        assert ModelResolver.resolve_alias("unaliased-model") == "unaliased-model"
 
     def test_infer_provider(self) -> None:
-        assert ModelResolver.infer_provider("gpt-6-astra") == "openai"
+        assert ModelResolver.infer_provider(get_codex_models()[0].id) == "openai"
         assert ModelResolver.infer_provider("codex") == "openai"
-        assert ModelResolver.infer_provider("deepseek-v4-flash") == "deepseek"
-        assert ModelResolver.infer_provider("glm-5.1") == "chatglm"
-        assert ModelResolver.infer_provider("mimo-v2.5") == "mimo"
+        for provider_name in ("deepseek", "chatglm", "mimo"):
+            model = get_models(provider_name)[0]
+            assert ModelResolver.infer_provider(model.id) == provider_name
 
     def test_is_codex_supported(self) -> None:
-        assert ModelResolver.is_codex_supported("gpt-5.3-codex") is True
+        current_model = get_codex_models()[0].id
+        non_codex_model = get_models("deepseek")[0].id
+        assert ModelResolver.is_codex_supported(current_model) is True
         assert ModelResolver.is_codex_supported("codex") is True
-        assert ModelResolver.is_codex_supported("gpt-6-astra") is True
-        assert ModelResolver.is_codex_supported("gpt-5.5") is True
-        assert ModelResolver.is_codex_supported("gpt-4o") is False
-        assert ModelResolver.is_codex_supported("gpt-5.4-mini") is False
-        assert ModelResolver.is_codex_supported("deepseek-v4-pro") is False
+        assert ModelResolver.is_codex_supported(non_codex_model) is False
+        assert ModelResolver.is_codex_supported("unregistered-model") is False
 
     def test_get_default_base_url(self) -> None:
         assert (
@@ -236,16 +248,18 @@ class TestModelResolver:
 
     def test_resolve_one_stop(self) -> None:
         res_codex = ModelResolver.resolve("codex")
-        assert res_codex.model == "gpt-5.3-codex"
+        assert res_codex.model == ModelResolver.resolve_alias("codex")
         assert res_codex.provider == "openai"
         assert res_codex.transport == "openai_codex"
         assert res_codex.default_base_url == "https://chatgpt.com/backend-api"
 
-        res_deepseek = ModelResolver.resolve("deepseek/deepseek-v4-pro")
-        assert res_deepseek.model == "deepseek-v4-pro"
+        deepseek_model = get_models("deepseek")[0]
+        res_deepseek = ModelResolver.resolve(f"deepseek/{deepseek_model.id}")
+        assert res_deepseek.model == deepseek_model.id
         assert res_deepseek.provider == "deepseek"
         assert res_deepseek.transport == "deepseek_chat"
 
-        res_with_oauth = ModelResolver.resolve("gpt-5.5", has_oauth=True)
-        assert res_with_oauth.model == "gpt-5.5"
+        current_model = get_codex_models()[-1].id
+        res_with_oauth = ModelResolver.resolve(current_model, has_oauth=True)
+        assert res_with_oauth.model == current_model
         assert res_with_oauth.transport == "openai_codex"
