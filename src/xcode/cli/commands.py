@@ -31,6 +31,7 @@ class ReplState:
     mode: ExecutionMode = "act"
     verbosity: VerbosityLevel = "normal"
     exit_pending: float = 0.0
+    exit_pending_key: str = ""
     pending_partial: tuple[str, str] | None = None
     context_usage: str = ""
     context_cost: str = ""

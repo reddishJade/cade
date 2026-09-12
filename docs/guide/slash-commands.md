@@ -80,4 +80,4 @@ REPL 和 TUI 使用统一命令注册表。输入 `/` 后按 Tab 可以补全命
 | `/quit` | `/quit` | `/exit` 的隐藏 alias |
 | `/revert` | `/revert [N\|--list]` | `/undo` 的隐藏 alias |
 
-终端 Ctrl+C：输入栏有内容时先清空；活动 run 中请求取消；空闲状态连续触发后退出。
+终端 Ctrl+C / Ctrl+D：输入栏有内容时 Ctrl+C 先清空；活动 run 中请求取消；空闲状态 3 秒内连续两次按同一个键退出（Ctrl+C 两次或 Ctrl+D 两次，CLI 与 TUI 一致，不可混用）。
