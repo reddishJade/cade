@@ -224,7 +224,10 @@ def _prompt_model(preset: dict[str, Any]) -> str | None:
     return model
 
 
-def _prompt_thinking_config(transport: str) -> tuple[bool, str | None] | None:
+def _prompt_thinking_config(
+    transport: str,
+    model: str,
+) -> tuple[bool, str | None] | None:
     """交互式配置 thinking 开关和 effort 级别。返回 (thinking, effort) 或 None（取消）。"""
     thinking_choice = questionary.select(
         "Thinking:", choices=["enabled", "disabled"], default="enabled"
@@ -236,7 +239,7 @@ def _prompt_thinking_config(transport: str) -> tuple[bool, str | None] | None:
     if thinking and supports_reasoning_effort(transport):
         effort = questionary.select(
             "Reasoning effort:",
-            choices=list(reasoning_effort_levels_for_transport(transport)),
+            choices=list(reasoning_effort_levels_for_transport(transport, model)),
             default="high",
         ).ask()
         if effort is None:
@@ -347,7 +350,7 @@ def run_setup_wizard(project_root: Path) -> tuple[str, Path | None]:
 
     transport = _resolve_transport(provider_key)
 
-    thinking_result = _prompt_thinking_config(transport)
+    thinking_result = _prompt_thinking_config(transport, model)
     if thinking_result is None:
         return ("cancelled", None)
     thinking, reasoning_effort = thinking_result

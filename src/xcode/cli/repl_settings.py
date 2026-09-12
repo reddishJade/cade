@@ -900,6 +900,18 @@ def handle_model_command(command: str, app: object) -> None:
         print("Model switching is not supported in this app.")
         return
 
+    if reasoning_effort is not None:
+        supported_levels = reasoning_effort_levels_for_transport(
+            transport or "",
+            model_name,
+        )
+        if supported_levels and reasoning_effort not in supported_levels:
+            print(
+                f"Invalid effort level for {model_name}. "
+                f"Use: {'/'.join(supported_levels)}"
+            )
+            return
+
     try:
         new_model = app.set_model(
             model=model_name,
@@ -927,7 +939,8 @@ def handle_effort_command(command: str, app: object) -> None:
     parts = command.split(maxsplit=1)
     info = _model_info(app)
     transport = info.get("transport", "") if info else ""
-    supported_levels = reasoning_effort_levels_for_transport(transport)
+    model = info.get("model", "") if info else ""
+    supported_levels = reasoning_effort_levels_for_transport(transport, model)
     if len(parts) == 1:
         current = info.get("reasoning_effort", "not set") if info else "unknown"
         print(f"  Reasoning effort: {current}")

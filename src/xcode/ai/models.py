@@ -13,6 +13,9 @@ from xcode.ai.types import Cost, Model
 THINKING_LEVELS = frozenset(
     ("off", "none", "minimal", "low", "medium", "high", "xhigh", "max")
 )
+GPT_56_REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+GPT_55_REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
+GPT_6_ASTRA_REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,7 @@ _MODELS: dict[str, dict[str, Model]] = {
             context_window=1_050_000,
             max_tokens=128_000,
             cost=Cost(input=10, output=50, cache_read=1.00),
+            reasoning_efforts=GPT_6_ASTRA_REASONING_EFFORTS,
         ),
         "gpt-5.6-sol": Model(
             id="gpt-5.6-sol",
@@ -47,6 +51,7 @@ _MODELS: dict[str, dict[str, Model]] = {
             context_window=1_050_000,
             max_tokens=128_000,
             cost=Cost(input=4, output=20, cache_read=0.40),
+            reasoning_efforts=GPT_56_REASONING_EFFORTS,
         ),
         "gpt-5.6-terra": Model(
             id="gpt-5.6-terra",
@@ -57,6 +62,7 @@ _MODELS: dict[str, dict[str, Model]] = {
             context_window=1_050_000,
             max_tokens=128_000,
             cost=Cost(input=2, output=12, cache_read=0.20),
+            reasoning_efforts=GPT_56_REASONING_EFFORTS,
         ),
         "gpt-5.6-luna": Model(
             id="gpt-5.6-luna",
@@ -67,6 +73,7 @@ _MODELS: dict[str, dict[str, Model]] = {
             context_window=1_050_000,
             max_tokens=128_000,
             cost=Cost(input=0.20, output=1.20, cache_read=0.02),
+            reasoning_efforts=GPT_56_REASONING_EFFORTS,
         ),
         "gpt-5.5": Model(
             id="gpt-5.5",
@@ -77,6 +84,7 @@ _MODELS: dict[str, dict[str, Model]] = {
             context_window=1_050_000,
             max_tokens=128_000,
             cost=Cost(input=5, output=30, cache_read=0.50),
+            reasoning_efforts=GPT_55_REASONING_EFFORTS,
         ),
     },
     "deepseek": {
@@ -205,6 +213,16 @@ def get_codex_models() -> list[Model]:
 
 def get_model(provider_name: str, model_id: str) -> Model | None:
     return _MODELS.get(provider_name, {}).get(model_id)
+
+
+def get_model_reasoning_efforts(model_id: str) -> tuple[str, ...]:
+    """返回已注册模型明确声明的 reasoning effort 能力。"""
+    normalized = model_id.strip().lower()
+    for provider_models in _MODELS.values():
+        for registered_id, model in provider_models.items():
+            if registered_id.lower() == normalized:
+                return model.reasoning_efforts
+    return ()
 
 
 def get_model_cost(model_name: str, now: datetime | None = None) -> Cost | None:

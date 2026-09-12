@@ -9,6 +9,7 @@ from xcode.ai.models import (
     effective_rollover_threshold,
     get_codex_models,
     get_model,
+    get_model_reasoning_efforts,
     get_models,
     get_providers,
     parse_model_mode,
@@ -207,6 +208,19 @@ class TestRegistryAccess:
 
     def test_get_model_nonexistent(self) -> None:
         assert get_model("openai", "does-not-exist") is None
+
+    def test_openai_models_declare_supported_reasoning_efforts(self) -> None:
+        assert get_model_reasoning_efforts("gpt-5.6-luna") == (
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        )
+        assert "minimal" not in get_model_reasoning_efforts("gpt-5.5")
+        assert "none" not in get_model_reasoning_efforts("gpt-6-astra")
+        assert get_model_reasoning_efforts("unknown-model") == ()
 
 
 class TestModelResolver:
