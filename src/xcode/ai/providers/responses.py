@@ -443,11 +443,20 @@ class OpenAIResponsesProvider:
             if text_conf:
                 params["text"] = text_conf
 
-        if self.config.reasoning_effort:
-            params["reasoning"] = {"effort": self.config.reasoning_effort}
-
         # 应用上下文参数
         opts = self._current_options
+        reasoning: dict[str, str] = {}
+        if self.config.reasoning_effort:
+            reasoning["effort"] = self.config.reasoning_effort
+        if self.config.thinking:
+            reasoning["summary"] = (
+                opts.reasoning_summary
+                if opts and opts.reasoning_summary is not None
+                else "auto"
+            )
+        if reasoning:
+            params["reasoning"] = reasoning
+
         if opts:
             if opts.temperature is not None:
                 params["temperature"] = opts.temperature
@@ -661,7 +670,7 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
         params.setdefault("tool_choice", "auto")
         if self.config.thinking:
             reasoning = params.setdefault("reasoning", {})
-            reasoning["summary"] = "auto"
+            reasoning.setdefault("summary", "auto")
 
     def _strict_tools(self) -> bool:
         """ChatGPT Codex 与 pi 一样省略 strict，允许现有联合工具 schema。"""

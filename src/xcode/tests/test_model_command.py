@@ -8,7 +8,11 @@ from unittest.mock import patch
 
 import pytest
 
-from xcode.cli.repl_settings import handle_effort_command, handle_model_command
+from xcode.cli.repl_settings import (
+    handle_effort_command,
+    handle_model_command,
+    handle_thinking_command,
+)
 
 
 class DummyApp:
@@ -22,6 +26,8 @@ class DummyApp:
             "model": self.current_model,
             "transport": self.current_transport,
             "base_url": "https://api.deepseek.com",
+            "thinking": "on",
+            "reasoning_effort": "low",
         }
 
     def set_model(
@@ -138,6 +144,22 @@ def test_handle_effort_command_uses_current_model_capabilities(capsys: Any) -> N
 
     handle_effort_command("/effort max", app)
     assert app.calls[-1]["reasoning_effort"] == "max"
+
+
+def test_thinking_command_explains_responses_summary_semantics(capsys: Any) -> None:
+    app = DummyApp()
+    app.current_model = "gpt-5.6-luna"
+    app.current_transport = "openai_codex"
+
+    handle_thinking_command("/thinking", app)
+    output = capsys.readouterr().out
+    assert "Reasoning summary: on" in output
+    assert "Reasoning effort : low" in output
+
+    handle_thinking_command("/thinking off", app)
+    assert app.calls[-1]["thinking"] is False
+    assert app.calls[-1]["reasoning_effort"] is None
+    assert "effort unchanged" in capsys.readouterr().out
 
 
 def test_handle_model_command_interactive_select() -> None:

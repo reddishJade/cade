@@ -51,7 +51,7 @@ REPL 和 TUI 使用统一命令注册表。输入 `/` 后按 Tab 可以补全命
 | `/model` | `/model MODEL` | 切换 main profile 模型 |
 | `/model` | `/model PROFILE/MODEL:LEVEL` | 切换 main/subagent 与 thinking level |
 | `/effort` | `/effort LEVEL` | 设置当前 provider 的 reasoning effort |
-| `/thinking` | `/thinking on\|off` | 切换 thinking |
+| `/thinking` | `/thinking on\|off` | 切换可见的推理摘要；不改变 effort |
 | `/config` | `/config [setting]` | 打开或定位交互式设置浏览器 |
 
 `PROFILE` 当前使用 `main` 或 `subagent`。具体 effort 选项由 active transport 决定。

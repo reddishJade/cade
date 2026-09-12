@@ -75,10 +75,11 @@ BIGMODEL_API_KEY=...
 
 ## 4. Thinking 与 reasoning effort
 
-`thinking` 控制推理能力开关，`reasoning_effort` 控制 provider 支持的推理档位。两者分别保存：
+`thinking` 在 Responses/Codex transport 中控制是否请求并展示可公开的推理摘要，
+`reasoning_effort` 控制模型的推理强度。两者分别保存：
 
-- `/thinking off` 关闭 thinking，并清除本次模型切换中的 effort 覆盖。
-- `/thinking on` 开启 thinking，并沿用 profile 当前 effort。
+- `/thinking off` 关闭推理摘要显示，并沿用 profile 当前 effort。
+- `/thinking on` 请求推理摘要，并沿用 profile 当前 effort；简单请求可能不返回摘要。
 - `/effort off` 关闭 reasoning effort。
 - `/effort LEVEL` 开启 thinking 并设置 effort。
 
