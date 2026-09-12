@@ -416,6 +416,35 @@ async def test_codex_provider_uses_login_transport_contract() -> None:
     assert params["extra_headers"]["chatgpt-account-id"] == "account-123"
 
 
+@pytest.mark.parametrize(
+    "effort", ["none", "minimal", "low", "medium", "high", "xhigh"]
+)
+async def test_responses_provider_sends_selected_reasoning_effort(effort: str) -> None:
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_effort", usage=None),
+            )
+        ]
+    )
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(
+            api_key="sk-test",
+            model="gpt-5.5",
+            reasoning_effort=effort,
+        ),
+        client=mock_client,
+    )
+
+    events = provider.stream([{"role": "user", "content": "hello"}], [])
+    assert [event async for event in events]
+    assert mock_client.responses.create.call_args.kwargs["reasoning"] == {
+        "effort": effort
+    }
+
+
 def test_codex_provider_configures_async_sdk_route_without_retries() -> None:
     provider = OpenAICodexResponsesProvider(
         ProviderConfig(
