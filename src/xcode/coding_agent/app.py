@@ -83,80 +83,50 @@ class XcodeApp:
             self._model_profiles = {}
         profile_config = self._model_profiles.get(profile) or ModelProfileConfig()
 
-        resolved_model = model
-        m_lower = model.lower()
-        if m_lower in ("codex", "openai-codex"):
-            resolved_model = "gpt-5.3-codex"
-        elif m_lower == "gpt-5.6":
-            resolved_model = "gpt-5.6-sol"
+        from xcode.ai.resolver import ModelResolver
 
-        resolved_transport = transport
-        resolved_base_url = base_url
-        resolved_api_key = api_key
-        resolved_account_id = account_id
+        codex_cred = AuthManager().get_valid_credential("openai-codex")
+        has_oauth = bool(codex_cred and codex_cred.access)
+        has_api_key = bool(os.environ.get("OPENAI_API_KEY"))
 
-        # 智能推断 transport 与凭据
-        if not resolved_transport:
-            rm_lower = resolved_model.lower()
-            if rm_lower in ("codex", "openai-codex") or rm_lower.startswith(
-                ("gpt-", "o1", "o3", "o4", "chat-", "codex-")
-            ):
-                codex_cred = AuthManager().get_valid_credential("openai-codex")
-                if codex_cred and codex_cred.access:
-                    resolved_transport = "openai_codex"
-                    resolved_api_key = resolved_api_key or codex_cred.access
-                    resolved_account_id = resolved_account_id or codex_cred.account_id
-                    resolved_base_url = (
-                        resolved_base_url or "https://chatgpt.com/backend-api"
-                    )
-                elif os.environ.get("OPENAI_API_KEY"):
-                    resolved_transport = "openai_chat"
-                    resolved_base_url = resolved_base_url or "https://api.openai.com/v1"
-            elif rm_lower.startswith("deepseek"):
-                resolved_transport = "deepseek_chat"
-                resolved_base_url = resolved_base_url or os.environ.get(
-                    "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
-                )
-            elif rm_lower.startswith("glm-"):
-                resolved_transport = "chatglm_chat"
-                resolved_base_url = resolved_base_url or os.environ.get(
-                    "CHATGLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/"
-                )
-            elif rm_lower.startswith("mimo-"):
-                resolved_transport = "mimo_chat"
-                resolved_base_url = resolved_base_url or os.environ.get(
-                    "MIMO_BASE_URL", "https://api.xiaomimimo.com/v1"
-                )
-            else:
-                resolved_transport = profile_config.transport
+        resolution = ModelResolver.resolve(
+            model_or_alias=model,
+            transport=transport,
+            has_oauth=has_oauth,
+            has_api_key=has_api_key,
+            fallback_transport=profile_config.transport,
+        )
+        resolved_model = resolution.model
+        resolved_transport = resolution.transport
+        final_transport = resolved_transport or profile_config.transport
+        same_transport = final_transport == profile_config.transport
 
-        if resolved_transport == "openai_codex":
-            codex_cred = AuthManager().get_valid_credential("openai-codex")
+        resolved_base_url = (
+            base_url
+            or (profile_config.base_url if same_transport else "")
+            or resolution.default_base_url
+        )
+        resolved_api_key = api_key or (profile_config.api_key if same_transport else "")
+        resolved_account_id = account_id or (
+            getattr(profile_config, "account_id", None) if same_transport else None
+        )
+
+        if final_transport == "openai_codex":
             if codex_cred and codex_cred.access:
                 resolved_api_key = resolved_api_key or codex_cred.access
                 resolved_account_id = resolved_account_id or codex_cred.account_id
-                resolved_base_url = (
-                    resolved_base_url or "https://chatgpt.com/backend-api"
-                )
+                resolved_base_url = resolved_base_url or resolution.default_base_url
             else:
                 raise ValueError(
                     "未检测到有效的 openai-codex 登录凭据，请先执行 /login 登录 ChatGPT"
                 )
 
-        final_transport = resolved_transport or profile_config.transport
-        same_transport = final_transport == profile_config.transport
-
         new_cfg: ModelProfileProto = ModelProfileConfig(
             transport=final_transport,
             chat_model=resolved_model,
-            base_url=resolved_base_url
-            or (profile_config.base_url if same_transport else ""),
-            api_key=resolved_api_key
-            or (profile_config.api_key if same_transport else ""),
-            account_id=resolved_account_id
-            or (
-                getattr(profile_config, "account_id", None) if same_transport else None
-            ),
+            base_url=resolved_base_url,
+            api_key=resolved_api_key,
+            account_id=resolved_account_id,
             context_window=getattr(profile_config, "context_window", None),
             thinking=thinking if thinking is not None else profile_config.thinking,
             reasoning_effort=reasoning_effort

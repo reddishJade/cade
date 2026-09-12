@@ -7,9 +7,15 @@ from .models import (
     parse_model_mode,
     resolve_model,
 )
+from .resolver import (
+    ModelResolution,
+    ModelResolver,
+)
 from .types import dump_context, load_context
 
 __all__ = [
+    "ModelResolution",
+    "ModelResolver",
     "dump_context",
     "get_model",
     "get_models",

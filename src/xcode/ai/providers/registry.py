@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from dotenv import dotenv_values
 
 from xcode.ai.providers.base import ModelProvider
+from xcode.ai.resolver import ModelResolver
 from xcode.ai.types import ProviderConfig
 
 from ._runtime import ProviderRuntime, RateLimitPolicy, RetryPolicy
@@ -202,12 +203,7 @@ def _build_llm_profile(
             f"Available: {', '.join(PROVIDER_REGISTRY)}"
         )
 
-    base_url = profile.base_url
-    if not base_url and transport in ("openai_responses", "openai_codex"):
-        if transport == "openai_codex":
-            base_url = "https://chatgpt.com/backend-api"
-        else:
-            base_url = "https://api.openai.com/v1"
+    base_url = profile.base_url or ModelResolver.get_default_base_url(transport)
 
     extra: dict[str, Any] = {
         "clear_thinking": profile.clear_thinking,
