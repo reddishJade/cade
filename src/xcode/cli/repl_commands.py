@@ -1476,7 +1476,7 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/thinking": CommandEntry(
         handler=cmd_thinking,
-        desc="Show current thinking state (on/off).",
+        desc="Toggle visible reasoning summaries (on/off).",
         args_desc="on|off",
         accepts_args=True,
         group=COMMAND_GROUP_MODEL,

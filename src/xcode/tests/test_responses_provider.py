@@ -38,6 +38,7 @@ from xcode.ai.providers.responses import (
 )
 from xcode.ai.types import (
     ProviderConfig,
+    StreamOptions,
     ToolDefinition,
 )
 
@@ -173,7 +174,7 @@ async def test_responses_provider_stream_events() -> None:
     mock_events = [
         # 推理输出事件
         SimpleNamespace(
-            type="response.reasoning.delta",
+            type="response.reasoning_summary_text.delta",
             delta="Thinking about it...",
         ),
         # 文本输出事件
@@ -441,8 +442,120 @@ async def test_responses_provider_sends_selected_reasoning_effort(effort: str) -
     events = provider.stream([{"role": "user", "content": "hello"}], [])
     assert [event async for event in events]
     assert mock_client.responses.create.call_args.kwargs["reasoning"] == {
-        "effort": effort
+        "effort": effort,
+        "summary": "auto",
     }
+
+
+async def test_responses_provider_respects_reasoning_summary_controls() -> None:
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_summary", usage=None),
+            )
+        ]
+    )
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(
+            api_key="sk-test",
+            model="gpt-5.5",
+            thinking=True,
+            reasoning_effort="high",
+        ),
+        client=mock_client,
+    )
+
+    events = provider.stream(
+        [{"role": "user", "content": "hello"}],
+        [],
+        options=StreamOptions(reasoning_summary="detailed"),
+    )
+    assert [event async for event in events]
+    assert mock_client.responses.create.call_args.kwargs["reasoning"] == {
+        "effort": "high",
+        "summary": "detailed",
+    }
+
+    provider.config = ProviderConfig(
+        api_key="sk-test",
+        model="gpt-5.5",
+        thinking=False,
+        reasoning_effort="high",
+    )
+    mock_client.responses.create.reset_mock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_no_summary", usage=None),
+            )
+        ]
+    )
+    assert [
+        event
+        async for event in provider.stream([{"role": "user", "content": "hello"}], [])
+    ]
+    assert mock_client.responses.create.call_args.kwargs["reasoning"] == {
+        "effort": "high"
+    }
+
+
+async def test_sync_reasoning_stream_does_not_block_incremental_delivery() -> None:
+    release = threading.Event()
+
+    class _BlockingReasoningStream:
+        def __init__(self) -> None:
+            self._index = 0
+
+        def __iter__(self) -> _BlockingReasoningStream:
+            return self
+
+        def __next__(self) -> SimpleNamespace:
+            self._index += 1
+            if self._index == 1:
+                return SimpleNamespace(
+                    type="response.reasoning_summary_text.delta",
+                    delta="first thought",
+                )
+            if self._index == 2:
+                release.wait(timeout=1)
+                return SimpleNamespace(
+                    type="response.output_text.delta",
+                    delta="answer",
+                )
+            if self._index == 3:
+                return SimpleNamespace(
+                    type="response.completed",
+                    response=SimpleNamespace(id="resp_reasoning_stream", usage=None),
+                )
+            raise StopIteration
+
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = _BlockingReasoningStream()
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5"),
+        client=mock_client,
+    )
+    events = provider.stream([{"role": "user", "content": "Hi"}], [])
+
+    first = await anext(events)
+    assert isinstance(first, ReasoningDelta)
+    assert first.chunk == "first thought"
+
+    second_task = asyncio.create_task(anext(events))
+    started = time.perf_counter()
+    await asyncio.sleep(0.02)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.1
+    assert not second_task.done()
+
+    release.set()
+    second = await asyncio.wait_for(second_task, timeout=1)
+    assert isinstance(second, TextDelta)
+    assert second.chunk == "answer"
+    await events.aclose()
 
 
 def test_codex_provider_configures_async_sdk_route_without_retries() -> None:

@@ -990,7 +990,13 @@ def handle_thinking_command(command: str, app: object) -> None:
     if len(parts) == 1:
         info = _model_info(app)
         thinking = info.get("thinking", "unknown") if info else "unknown"
-        print(f"  Thinking: {thinking}")
+        transport = info.get("transport", "") if info else ""
+        if transport in {"openai_responses", "openai_codex"}:
+            effort = info.get("reasoning_effort", "not set") if info else "unknown"
+            print(f"  Reasoning summary: {thinking}")
+            print(f"  Reasoning effort : {effort}")
+        else:
+            print(f"  Thinking: {thinking}")
         return
 
     state = parts[1].lower()
@@ -1005,16 +1011,22 @@ def handle_thinking_command(command: str, app: object) -> None:
     info = app.get_model_info()
     current_model = info.get("model", "unknown") if info else "unknown"
 
-    # thinking 与 reasoning_effort 是两个正交状态轴：/thinking 只翻转 thinking，
-    # 不传 reasoning_effort 让 set_model 沿用 profile 现值。
+    # 对 Responses，thinking 控制可见的推理摘要，effort 独立控制推理强度。
+    # 其他 provider 沿用各自的 thinking 开关语义。
     try:
         if state == "off":
             app.set_model(model=current_model, thinking=False)
-            print("Thinking disabled.")
+            if info.get("transport") in {"openai_responses", "openai_codex"}:
+                print("Reasoning summary disabled; effort unchanged.")
+            else:
+                print("Thinking disabled.")
         else:
             app.set_model(model=current_model, thinking=True)
             effort = app.get_model_info().get("reasoning_effort")
-            if effort:
+            if info.get("transport") in {"openai_responses", "openai_codex"}:
+                suffix = f" (effort: {effort})" if effort else ""
+                print(f"Reasoning summary enabled{suffix}.")
+            elif effort:
                 print(f"Thinking enabled (effort: {effort}).")
             else:
                 print("Thinking enabled.")

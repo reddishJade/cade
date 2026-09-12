@@ -140,7 +140,7 @@ xcode --resume
 | `/tree` | 会话分支 | 查看会话分叉树 |
 | `/model` | 模型配置 | 显示/切换当前模型 |
 | `/effort <level>` | 模型配置 | 设置推理 effort |
-| `/thinking on/off` | 模型配置 | 切换 thinking 显示 |
+| `/thinking on/off` | 模型配置 | 切换可见的推理摘要；不改变 effort |
 | `/config` | 模型配置 | 管理 provider profile |
 | `/tool [list\|NAME INPUT]` | 信息工具 | 查看/调用工具 |
 | `/skill NAME` | 信息工具 | 显式激活技能 |
