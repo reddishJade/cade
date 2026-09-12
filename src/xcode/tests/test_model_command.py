@@ -10,7 +10,7 @@ from xcode.cli.repl_settings import handle_model_command
 
 class DummyApp:
     def __init__(self) -> None:
-        self.current_model = "deepseek-v4-flash"
+        self.current_model = "current-model"
         self.current_transport = "deepseek_chat"
         self.calls: list[dict[str, Any]] = []
 
@@ -56,60 +56,67 @@ def test_handle_model_command_no_args_non_tty(capsys: Any) -> None:
     with patch("sys.stdin.isatty", return_value=False):
         handle_model_command("/model", app)
     captured = capsys.readouterr().out
-    assert "Model    : deepseek-v4-flash" in captured
+    assert "Model    : current-model" in captured
     assert "用法: /model" in captured
 
 
 def test_handle_model_command_codex_alias() -> None:
+    from xcode.ai.resolver import ModelResolver
+
     app = DummyApp()
     handle_model_command("/model codex", app)
     assert len(app.calls) == 1
     call = app.calls[0]
-    assert call["model"] == "gpt-5.3-codex"
+    assert call["model"] == ModelResolver.resolve_alias("codex")
     assert call["transport"] == "openai_codex"
     assert call["profile"] == "main"
 
 
 def test_handle_model_command_openai_codex_alias() -> None:
+    from xcode.ai.resolver import ModelResolver
+
     app = DummyApp()
     handle_model_command("/model openai-codex", app)
     assert len(app.calls) == 1
     call = app.calls[0]
-    assert call["model"] == "gpt-5.3-codex"
+    assert call["model"] == ModelResolver.resolve_alias("openai-codex")
     assert call["transport"] == "openai_codex"
 
 
 def test_handle_model_command_provider_prefix() -> None:
     app = DummyApp()
-    handle_model_command("/model deepseek/deepseek-v4-pro", app)
+    handle_model_command("/model deepseek/model-under-test", app)
     assert len(app.calls) == 1
     call = app.calls[0]
-    assert call["model"] == "deepseek-v4-pro"
+    assert call["model"] == "model-under-test"
     assert call["transport"] == "deepseek_chat"
 
 
 def test_handle_model_command_thinking_level() -> None:
     app = DummyApp()
-    handle_model_command("/model gpt-5.5:high", app)
+    handle_model_command("/model model-under-test:high", app)
     assert len(app.calls) == 1
     call = app.calls[0]
-    assert call["model"] == "gpt-5.5"
+    assert call["model"] == "model-under-test"
     assert call["thinking"] is True
     assert call["reasoning_effort"] == "high"
 
 
 def test_handle_model_command_thinking_flag() -> None:
     app = DummyApp()
-    handle_model_command("/model deepseek-v4-pro --thinking off", app)
+    handle_model_command("/model model-under-test --thinking off", app)
     assert len(app.calls) == 1
     call = app.calls[0]
-    assert call["model"] == "deepseek-v4-pro"
+    assert call["model"] == "model-under-test"
     assert call["thinking"] is False
     assert call["reasoning_effort"] is None
 
 
 def test_handle_model_command_interactive_select() -> None:
+    from xcode.ai.models import get_codex_models
+
     app = DummyApp()
+    selected_model = get_codex_models()[0].id
     with (
         patch("sys.stdin.isatty", return_value=True),
         patch(
@@ -122,12 +129,12 @@ def test_handle_model_command_interactive_select() -> None:
         ),
         patch("questionary.select") as mock_select,
     ):
-        mock_select.return_value.ask.return_value = ("gpt-5.5", "openai_codex")
+        mock_select.return_value.ask.return_value = (selected_model, "openai_codex")
         handle_model_command("/model", app)
 
     assert len(app.calls) == 1
     call = app.calls[0]
-    assert call["model"] == "gpt-5.5"
+    assert call["model"] == selected_model
     assert call["transport"] == "openai_codex"
 
 
@@ -135,6 +142,7 @@ def test_xcode_app_set_model_smart_inference() -> None:
     from unittest.mock import MagicMock
 
     from xcode.ai.providers.registry import ModelProfileConfig
+    from xcode.ai.resolver import ModelResolver
     from xcode.coding_agent.app import XcodeApp
 
     mock_agent = MagicMock()
@@ -152,14 +160,15 @@ def test_xcode_app_set_model_smart_inference() -> None:
         )(),
     ):
         model = app.set_model(model="openai-codex")
-        assert model == "gpt-5.3-codex"
+        assert model == ModelResolver.resolve_alias("openai-codex")
         assert mock_agent.replace_primary_provider.called
         provider = mock_agent.replace_primary_provider.call_args[0][0]
-        assert provider.model == "gpt-5.3-codex"
+        assert provider.model == ModelResolver.resolve_alias("openai-codex")
         assert provider.base_url == "https://chatgpt.com/backend-api"
 
 
 def test_get_available_model_entries_filters_unconfigured() -> None:
+    from xcode.ai.models import get_codex_models
     from xcode.cli.repl_settings import get_available_model_entries
 
     app = DummyApp()
@@ -176,19 +185,57 @@ def test_get_available_model_entries_filters_unconfigured() -> None:
         ),
     ):
         entries = get_available_model_entries(app)
-        model_names = [e.model for e in entries]
-        # 应该包含 openai-codex 的模型和当前模型
-        assert "gpt-6-astra" in model_names
-        assert "gpt-5.3-codex" in model_names
-        assert "gpt-5.5" in model_names
-        assert "gpt-5.4" in model_names
-        assert "deepseek-v4-flash" in model_names  # 当前运行模型
-        # 验证简化的标签格式为 [codex]
-        codex_entry = next(e for e in entries if e.model == "gpt-5.3-codex")
-        assert codex_entry.source_label == "[codex]"
-        # 不应包含未配置的 glm 或 mimo 模型
-        assert "glm-5.1" not in model_names
-        assert "mimo-v2.5-pro" not in model_names
+        codex_entries = [entry for entry in entries if entry.provider == "openai-codex"]
+        assert [entry.model for entry in codex_entries] == [
+            model.id for model in get_codex_models()
+        ]
+        assert all(entry.source_label == "[codex]" for entry in codex_entries)
+        assert all(entry.provider not in {"chatglm", "mimo"} for entry in entries)
+
+
+def test_current_model_uses_one_english_label() -> None:
+    from xcode.ai.models import get_codex_models
+    from xcode.cli.repl_settings import AvailableModelEntry, _format_model_entry
+
+    current_model = get_codex_models()[0].id
+    rendered = _format_model_entry(
+        AvailableModelEntry(
+            model=current_model,
+            transport="openai_codex",
+            provider="openai-codex",
+            source_label="[codex]",
+        ),
+        current_model,
+        "openai_codex",
+    )
+
+    assert rendered.count("[current]") == 1
+    assert "[当前]" not in rendered
+
+
+def test_get_available_model_entries_deduplicates_current_transport() -> None:
+    from xcode.ai.models import get_codex_models
+    from xcode.cli.repl_settings import get_available_model_entries
+
+    app = DummyApp()
+    app.current_model = get_codex_models()[0].id
+    app.current_transport = "openai_responses"
+    with (
+        patch("os.environ.get", return_value=None),
+        patch(
+            "xcode.harness.auth.manager.AuthManager.get_valid_credential",
+            return_value=type(
+                "Cred",
+                (),
+                {"access": "tok-123", "account_id": "acc-123", "expires": None},
+            )(),
+        ),
+    ):
+        entries = get_available_model_entries(app)
+
+    current_entries = [entry for entry in entries if entry.model == app.current_model]
+    assert len(current_entries) == 1
+    assert current_entries[0].transport == "openai_responses"
 
 
 def test_handle_model_command_cancel() -> None:

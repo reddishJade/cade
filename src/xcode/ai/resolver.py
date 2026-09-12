@@ -9,10 +9,12 @@ import os
 from dataclasses import dataclass
 from typing import Final
 
+from xcode.ai.models import get_codex_models
+
 # 别名映射：不区分大小写，映射到规范 model ID
 MODEL_ALIASES: Final[dict[str, str]] = {
-    "codex": "gpt-5.3-codex",
-    "openai-codex": "gpt-5.3-codex",
+    "codex": "gpt-5.6-sol",
+    "openai-codex": "gpt-5.6-sol",
     "gpt-5.6": "gpt-5.6-sol",
 }
 
@@ -42,24 +44,10 @@ BASE_URL_ENV_VARS: Final[dict[str, str]] = {
     "openai_responses": "OPENAI_BASE_URL",
 }
 
-# 支持 Codex (ChatGPT Plus/Pro OAuth) 认证的模型集合与过滤规则
+# ChatGPT 登录的 Codex 只接受当前模型清单，不再按名称前缀猜测可用性。
 CODEX_EXPLICIT_MODELS: Final[frozenset[str]] = frozenset(
-    {
-        "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-5.1-codex",
-        "gpt-5-codex",
-        "codex-mini-latest",
-        "gpt-6-astra",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.5",
-        "gpt-5.4",
-        "chat-latest",
-    }
+    model.id for model in get_codex_models()
 )
-
-CODEX_EXCLUDED_SUBSTRINGS: Final[tuple[str, ...]] = ("mini", "nano", "4o")
 
 
 @dataclass(frozen=True)
@@ -117,11 +105,7 @@ class ModelResolver:
     def is_codex_supported(cls, model: str) -> bool:
         """判定指定模型是否支持通过 ChatGPT Plus/Pro OAuth (openai-codex) 访问。"""
         resolved = cls.resolve_alias(model).lower()
-        if resolved in CODEX_EXPLICIT_MODELS:
-            return True
-        if resolved.startswith(("gpt-", "codex-", "chat-", "o1", "o3", "o4")):
-            return not any(sub in resolved for sub in CODEX_EXCLUDED_SUBSTRINGS)
-        return False
+        return resolved in CODEX_EXPLICIT_MODELS
 
     @staticmethod
     def get_default_base_url(transport: str) -> str:
