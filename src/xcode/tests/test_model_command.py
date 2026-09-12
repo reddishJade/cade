@@ -268,7 +268,7 @@ def test_get_available_model_entries_filters_unconfigured() -> None:
         assert all(entry.provider not in {"chatglm", "mimo"} for entry in entries)
 
 
-def test_current_model_uses_one_english_label() -> None:
+def test_current_model_keeps_provider_label() -> None:
     from xcode.ai.models import get_codex_models
     from xcode.cli.repl_settings import AvailableModelEntry, _format_model_entry
 
@@ -279,13 +279,36 @@ def test_current_model_uses_one_english_label() -> None:
             transport="openai_codex",
             provider="openai-codex",
             source_label="[codex]",
-        ),
-        current_model,
-        "openai_codex",
+        )
     )
 
-    assert rendered.count("[current]") == 1
-    assert "[当前]" not in rendered
+    assert "[codex]" in rendered
+    assert "[current]" not in rendered
+
+
+def test_get_available_model_entries_excludes_subagent_only_profile() -> None:
+    from xcode.cli.repl_settings import get_available_model_entries
+
+    app = DummyApp()
+    app.current_model = "main-model"
+    app.current_transport = "custom"
+    app._model_profiles = {
+        "subagent": SimpleNamespace(
+            transport="deepseek_chat",
+            chat_model="deepseek-v4-flash",
+            api_key="subagent-secret",
+        )
+    }
+    with (
+        patch("os.environ.get", return_value=None),
+        patch(
+            "xcode.harness.auth.manager.AuthManager.get_valid_credential",
+            return_value=None,
+        ),
+    ):
+        entries = get_available_model_entries(app)
+
+    assert all(entry.model != "deepseek-v4-flash" for entry in entries)
 
 
 def test_get_available_model_entries_deduplicates_current_transport() -> None:

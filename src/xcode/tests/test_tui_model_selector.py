@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from prompt_toolkit.input.base import DummyInput
+from prompt_toolkit.formatted_text import fragment_list_to_text, to_formatted_text
 from prompt_toolkit.output import DummyOutput
 
 from xcode.cli.repl_settings import AvailableModelEntry
@@ -78,6 +79,26 @@ def test_tui_model_command_uses_native_escape_menu(tmp_path: Path) -> None:
 
     assert tui._state.pending_command_choice is None
     assert app.model_calls == []
+
+
+def test_tui_model_command_highlights_current_model(tmp_path: Path) -> None:
+    tui, app = _build_tui(tmp_path)
+    entry = _model_entry()
+    app.model = entry.model
+    app.transport = entry.transport
+
+    with patch(
+        "xcode.cli.repl_settings.get_available_model_entries",
+        return_value=[entry],
+    ):
+        tui._show_native_command_choice("/model")
+
+    request = tui._state.pending_command_choice
+    assert request is not None
+    title = request.choices[0][0]
+    fragments = to_formatted_text(title)
+    assert fragment_list_to_text(fragments) == "new-model            [new]"
+    assert fragments[0][0] == "class:model-current"
 
 
 def test_tui_model_command_switches_selected_model(tmp_path: Path) -> None:
