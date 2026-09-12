@@ -826,6 +826,9 @@ class _XcodeTui:
     def _show_native_command_choice(self, text: str) -> bool:
         """为需要选择的会话命令打开 TUI 原生菜单。"""
         command = text.split(maxsplit=1)[0]
+        if command == "/model" and len(text.split()) == 1:
+            self._open_model_selector()
+            return True
         if command == "/permissions":
             self._open_command_choices(
                 [
@@ -923,6 +926,96 @@ class _XcodeTui:
             )
             return True
         return False
+
+    def _open_model_selector(self) -> None:
+        """在主 TUI 内选择模型，避免嵌套终端事件循环。"""
+        from ..repl_settings import (
+            AvailableModelEntry,
+            _format_model_entry,
+            get_available_model_entries,
+        )
+
+        get_model_info = getattr(self._agent_app, "get_model_info", None)
+        set_model = getattr(self._agent_app, "set_model", None)
+        if not callable(get_model_info) or not callable(set_model):
+            self._state.log.append(
+                _LogEntry("system", "Model switching is not supported in this app.")
+            )
+            self._refresh()
+            return
+
+        raw_info = get_model_info()
+        info = cast("dict[str, str]", raw_info) if isinstance(raw_info, dict) else {}
+        current_model = str(info.get("model", ""))
+        current_transport = str(info.get("transport", ""))
+        available = get_available_model_entries(self._agent_app)
+        if not available:
+            self._state.log.append(
+                _LogEntry(
+                    "system",
+                    "未检测到任何已登录或已配置 API Key 的可用模型。\n"
+                    "提示: 可执行 /login 登录 ChatGPT，或在环境变量/.env 中配置相关 API Key。",
+                )
+            )
+            self._refresh()
+            return
+
+        def open_selector() -> None:
+            choices: list[tuple[str, object]] = [
+                (
+                    _format_model_entry(entry, current_model, current_transport),
+                    entry,
+                )
+                for entry in available
+            ]
+            choices.append(("输入自定义模型名称...", "__custom__"))
+            self._open_command_choices(choices, choose)
+
+        def switch(entry: AvailableModelEntry | None, model: str) -> None:
+            try:
+                new_model = set_model(
+                    model=model,
+                    transport=entry.transport if entry is not None else None,
+                    profile="main",
+                )
+                raw_updated_info = get_model_info()
+                updated_info = (
+                    cast("dict[str, str]", raw_updated_info)
+                    if isinstance(raw_updated_info, dict)
+                    else {}
+                )
+                transport = str(
+                    updated_info.get("transport")
+                    or (entry.transport if entry is not None else "")
+                )
+                suffix = f" (transport: {transport})" if transport else ""
+                self._state.log.append(
+                    _LogEntry("system", f"✓ 已成功切换至模型: {new_model}{suffix}")
+                )
+            except (
+                AttributeError,
+                KeyError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                self._state.log.append(_LogEntry("error", f"切换模型失败: {exc}"))
+
+        def choose(selection: object) -> None:
+            if selection == "__custom__":
+                self._open_command_text(
+                    "请输入模型名称 (esc 返回)",
+                    lambda value: (
+                        switch(None, value.strip()) if value.strip() else None
+                    ),
+                    on_cancel=open_selector,
+                )
+                return
+            entry = cast("AvailableModelEntry", selection)
+            switch(entry, entry.model)
+
+        open_selector()
 
     def _command_choice_hint_text(self) -> str:
         """选择菜单底部的灰色说明：跟随高亮项，否则显示操作提示。"""
