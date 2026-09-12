@@ -245,7 +245,6 @@ class Agent:
             cwd=cwd,
         )
         queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
-        error_slot: list[Exception] = []
 
         def _emit(event: AgentEvent) -> None:
             queue.put_nowait(event)
@@ -263,8 +262,6 @@ class Agent:
                     reopen_steering=reopen_step_input,
                 )
                 self._last_result = result
-            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
-                error_slot.append(exc)
             finally:
                 queue.put_nowait(None)
 
@@ -278,10 +275,7 @@ class Agent:
         finally:
             if not task.done():
                 task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            # error_slot 在此处抛出，因为 finally 是生成器退出前最后执行的代码
-            if error_slot:
-                raise error_slot[0]
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass

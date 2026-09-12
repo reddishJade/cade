@@ -572,6 +572,8 @@ async def _handle_provider_error(
     config: AgentLoopConfig,
     emit: Callable[[AgentEvent], None],
 ) -> tuple[bool, AssistantMessage | None]:
+    if _is_non_retryable_provider_failure(message):
+        return False, None
     if step_retries <= config.max_step_retries:
         delay = config.retry_backoff_base * (2 ** (step_retries - 1))
         await asyncio.sleep(delay)
@@ -587,6 +589,20 @@ async def _handle_provider_error(
         emit(_message_end_event(msg))
         return False, msg
     return False, None
+
+
+def _is_non_retryable_provider_failure(message: AssistantMessage) -> bool:
+    """鉴权、权限和请求格式错误不会因立即重试而恢复。"""
+    failure = message.provider_failure
+    return failure is not None and failure.status_code in {
+        400,
+        401,
+        403,
+        404,
+        405,
+        413,
+        422,
+    }
 
 
 def _has_empty_text_response(message: AssistantMessage) -> bool:
