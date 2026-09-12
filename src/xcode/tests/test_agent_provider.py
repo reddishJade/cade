@@ -146,6 +146,10 @@ class _ServiceUnavailable(RuntimeError):
     status_code = 503
 
 
+class _Forbidden(RuntimeError):
+    status_code = 403
+
+
 class _FailingProvider:
     @property
     def model(self) -> str:
@@ -200,3 +204,41 @@ async def test_provider_failure_reaches_loop_and_harness_results() -> None:
 
     harness_result = _build_structured_result(result)
     assert harness_result.provider_failure == result.provider_failure
+
+
+async def test_non_retryable_provider_failure_stops_after_first_request() -> None:
+    class _ForbiddenProvider:
+        calls = 0
+
+        @property
+        def model(self) -> str:
+            return "forbidden-model"
+
+        async def stream(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **_kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            del messages, tools, options
+            self.calls += 1
+            raise _Forbidden("request forbidden")
+            yield FinalMessage(content="", stop_reason="end_turn")
+
+    provider = _ForbiddenProvider()
+    result = await run_agent_loop(
+        [UserMessage(content="continue")],
+        AgentContext(),
+        AgentLoopConfig(
+            provider=provider,
+            max_step_retries=3,
+            retry_backoff_base=0,
+        ),
+        lambda _event: None,
+    )
+
+    assert provider.calls == 1
+    assert result.termination_reason is TerminationReason.PROVIDER_ERROR
+    assert result.provider_failure is not None
+    assert result.provider_failure.status_code == 403

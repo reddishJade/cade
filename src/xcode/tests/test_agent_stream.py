@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
+import pytest
+
 from xcode.agent.agent import Agent
 from xcode.agent.config import AgentLoopConfig
 from xcode.agent.messages import UserMessage
@@ -40,3 +42,25 @@ async def test_closing_stream_does_not_leak_internal_cancellation() -> None:
 
     await anext(stream)
     await asyncio.wait_for(stream.aclose(), timeout=1)
+
+
+class _UnexpectedStreamError(Exception):
+    pass
+
+
+async def test_run_stream_retrieves_and_propagates_background_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fail_loop(*_args: object, **_kwargs: object) -> None:
+        raise _UnexpectedStreamError("background failure")
+
+    monkeypatch.setattr("xcode.agent.agent.run_agent_loop", _fail_loop)
+    provider = _BlockingProvider()
+    agent = Agent(tools=[], model=provider)
+
+    with pytest.raises(_UnexpectedStreamError, match="background failure"):
+        async for _event in agent.run_stream(
+            [UserMessage(content="continue")],
+            AgentLoopConfig(provider=provider),
+        ):
+            pass
