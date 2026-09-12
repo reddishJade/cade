@@ -9,6 +9,7 @@ from typing import Any, Protocol, TypeGuard
 import questionary
 
 from xcode.ai.models import parse_model_mode
+from xcode.ai.resolver import ModelResolver
 from xcode.coding_agent.assembly.security import permission_policy_from_security
 from xcode.harness.config import SecurityRuntimeConfig
 from xcode.harness.security import (
@@ -636,7 +637,8 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
     codex_cred = AuthManager().get_valid_credential("openai-codex")
     if codex_cred and codex_cred.access:
         for m in get_models("openai"):
-            add_entry(m.id, "openai_codex", "openai-codex", "[codex]")
+            if ModelResolver.is_codex_supported(m.id):
+                add_entry(m.id, "openai_codex", "openai-codex", "[codex]")
 
     # 2. 检查环境变量及 .env 中的各 Provider API Key
     # DeepSeek
@@ -830,32 +832,20 @@ def handle_model_command(command: str, app: object) -> None:
         print(str(exc))
         return
 
-    model_name = parsed.model
-    transport: str | None = None
+    from xcode.harness.auth.manager import AuthManager
 
-    m_lower = model_name.lower()
-    if m_lower in ("codex", "openai-codex"):
-        model_name = "gpt-5.3-codex"
-        transport = "openai_codex"
-    elif m_lower == "gpt-5.6":
-        model_name = "gpt-5.6-sol"
-    elif parsed.provider in ("codex", "openai-codex"):
-        transport = "openai_codex"
-    elif parsed.provider == "openai":
-        from xcode.harness.auth.manager import AuthManager
+    codex_cred = AuthManager().get_valid_credential("openai-codex")
+    has_oauth = bool(codex_cred and codex_cred.access)
+    has_api_key = bool(os.environ.get("OPENAI_API_KEY"))
 
-        if AuthManager().get_valid_credential("openai-codex") and not os.environ.get(
-            "OPENAI_API_KEY"
-        ):
-            transport = "openai_codex"
-        else:
-            transport = "openai_chat"
-    elif parsed.provider == "deepseek":
-        transport = "deepseek_chat"
-    elif parsed.provider in ("chatglm", "glm"):
-        transport = "chatglm_chat"
-    elif parsed.provider == "mimo":
-        transport = "mimo_chat"
+    resolution = ModelResolver.resolve(
+        model_or_alias=parsed.model,
+        provider=parsed.provider,
+        has_oauth=has_oauth,
+        has_api_key=has_api_key,
+    )
+    model_name = resolution.model
+    transport: str | None = resolution.transport
 
     profile = "main"
     thinking: bool | None = None

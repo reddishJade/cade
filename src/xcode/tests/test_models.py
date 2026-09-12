@@ -13,6 +13,7 @@ from xcode.ai.models import (
     parse_model_mode,
     resolve_model,
 )
+from xcode.ai.resolver import ModelResolver
 
 
 class TestParseModelMode:
@@ -193,3 +194,58 @@ class TestRegistryAccess:
 
     def test_get_model_nonexistent(self) -> None:
         assert get_model("openai", "does-not-exist") is None
+
+
+class TestModelResolver:
+    def test_resolve_alias(self) -> None:
+        assert ModelResolver.resolve_alias("codex") == "gpt-5.3-codex"
+        assert ModelResolver.resolve_alias("CODEX") == "gpt-5.3-codex"
+        assert ModelResolver.resolve_alias("openai-codex") == "gpt-5.3-codex"
+        assert ModelResolver.resolve_alias("gpt-5.6") == "gpt-5.6-sol"
+        assert ModelResolver.resolve_alias("deepseek-v4-pro") == "deepseek-v4-pro"
+
+    def test_infer_provider(self) -> None:
+        assert ModelResolver.infer_provider("gpt-6-astra") == "openai"
+        assert ModelResolver.infer_provider("codex") == "openai"
+        assert ModelResolver.infer_provider("deepseek-v4-flash") == "deepseek"
+        assert ModelResolver.infer_provider("glm-5.1") == "chatglm"
+        assert ModelResolver.infer_provider("mimo-v2.5") == "mimo"
+
+    def test_is_codex_supported(self) -> None:
+        assert ModelResolver.is_codex_supported("gpt-5.3-codex") is True
+        assert ModelResolver.is_codex_supported("codex") is True
+        assert ModelResolver.is_codex_supported("gpt-6-astra") is True
+        assert ModelResolver.is_codex_supported("gpt-5.5") is True
+        assert ModelResolver.is_codex_supported("gpt-4o") is False
+        assert ModelResolver.is_codex_supported("gpt-5.4-mini") is False
+        assert ModelResolver.is_codex_supported("deepseek-v4-pro") is False
+
+    def test_get_default_base_url(self) -> None:
+        assert (
+            ModelResolver.get_default_base_url("openai_codex")
+            == "https://chatgpt.com/backend-api"
+        )
+        assert (
+            ModelResolver.get_default_base_url("openai_chat")
+            == "https://api.openai.com/v1"
+        )
+        assert (
+            ModelResolver.get_default_base_url("deepseek_chat")
+            == "https://api.deepseek.com"
+        )
+
+    def test_resolve_one_stop(self) -> None:
+        res_codex = ModelResolver.resolve("codex")
+        assert res_codex.model == "gpt-5.3-codex"
+        assert res_codex.provider == "openai"
+        assert res_codex.transport == "openai_codex"
+        assert res_codex.default_base_url == "https://chatgpt.com/backend-api"
+
+        res_deepseek = ModelResolver.resolve("deepseek/deepseek-v4-pro")
+        assert res_deepseek.model == "deepseek-v4-pro"
+        assert res_deepseek.provider == "deepseek"
+        assert res_deepseek.transport == "deepseek_chat"
+
+        res_with_oauth = ModelResolver.resolve("gpt-5.5", has_oauth=True)
+        assert res_with_oauth.model == "gpt-5.5"
+        assert res_with_oauth.transport == "openai_codex"
