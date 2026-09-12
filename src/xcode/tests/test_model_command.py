@@ -248,3 +248,51 @@ def test_read_repl_text_double_ctrl_d_exits() -> None:
     text, should_exit = _read_repl_text(state, mock_session, mock_store)
     assert text is None
     assert should_exit is True
+
+
+def test_terminal_isolated_guard() -> None:
+    from xcode.cli.ptk_patch import terminal_isolated
+
+    with (
+        patch("xcode.cli.ptk_patch.get_console_mode", return_value=0x1234),
+        patch("xcode.cli.ptk_patch.set_console_mode") as mock_set,
+        patch("xcode.cli.ptk_patch.flush_console_input_buffer") as mock_flush,
+    ):
+        with terminal_isolated():
+            pass
+
+        assert mock_flush.called
+        mock_set.assert_called_once_with(0x1234)
+
+
+def test_safe_select_catches_interrupt() -> None:
+    from xcode.cli.ptk_patch import safe_select
+
+    with patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.side_effect = KeyboardInterrupt()
+        res = safe_select("test", ["a", "b"], default="fallback")
+        assert res == "fallback"
+
+
+def test_safe_text_catches_eof() -> None:
+    from xcode.cli.ptk_patch import safe_text
+
+    with patch("questionary.text") as mock_text:
+        mock_text.return_value.ask.side_effect = EOFError()
+        res = safe_text("test")
+        assert res is None
+
+
+def test_prompt_session_adapter_flushes_buffer() -> None:
+    from unittest.mock import MagicMock
+
+    from xcode.cli.repl_rendering import PromptSessionAdapter
+
+    mock_raw_session = MagicMock()
+    mock_raw_session.prompt.return_value = "hello"
+
+    adapter = PromptSessionAdapter(mock_raw_session)
+    with patch("xcode.cli.ptk_patch.flush_console_input_buffer") as mock_flush:
+        val = adapter.prompt("> ")
+        assert val == "hello"
+        assert mock_flush.called
