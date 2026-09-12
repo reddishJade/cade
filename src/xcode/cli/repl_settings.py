@@ -8,7 +8,7 @@ from typing import Any, Protocol, TypeGuard
 
 import questionary
 
-from xcode.ai.models import parse_model_mode
+from xcode.ai.models import get_codex_models, get_models, parse_model_mode
 from xcode.ai.resolver import ModelResolver
 from xcode.coding_agent.assembly.security import permission_policy_from_security
 from xcode.harness.config import SecurityRuntimeConfig
@@ -605,12 +605,36 @@ class AvailableModelEntry:
     source_label: str
 
 
+def _is_current_model_entry(
+    entry: AvailableModelEntry,
+    current_model: str,
+    current_transport: str,
+) -> bool:
+    """判断模型条目是否对应当前运行中的主模型。"""
+    return entry.model == current_model and (
+        not current_transport or entry.transport == current_transport
+    )
+
+
+def _format_model_entry(
+    entry: AvailableModelEntry,
+    current_model: str,
+    current_transport: str,
+) -> str:
+    """统一模型条目显示，当前状态只使用一个英文标签。"""
+    label = (
+        "[current]"
+        if _is_current_model_entry(entry, current_model, current_transport)
+        else entry.source_label
+    )
+    return f"{entry.model:20} {label}"
+
+
 def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
     """返回当前环境中所有具备已认证凭据或有效 API Key 的可用模型。
 
     注意：严格只返回已配置/已登录模型，未配置 API Key 或凭据的不予包含。
     """
-    from xcode.ai.models import get_models
     from xcode.ai.providers.registry import get_config_value
     from xcode.harness.auth.manager import AuthManager
 
@@ -636,9 +660,8 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
     # 1. 检查已认证的 OAuth 凭据 (如 openai-codex / ChatGPT OAuth)
     codex_cred = AuthManager().get_valid_credential("openai-codex")
     if codex_cred and codex_cred.access:
-        for m in get_models("openai"):
-            if ModelResolver.is_codex_supported(m.id):
-                add_entry(m.id, "openai_codex", "openai-codex", "[codex]")
+        for m in get_codex_models():
+            add_entry(m.id, "openai_codex", "openai-codex", "[codex]")
 
     # 2. 检查环境变量及 .env 中的各 Provider API Key
     # DeepSeek
@@ -677,13 +700,23 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
     info = _model_info(app)
     cur_model = info.get("model", "")
     cur_transport = info.get("transport", "")
-    if cur_model and (cur_model, cur_transport) not in seen:
-        add_entry(
-            cur_model,
-            cur_transport,
-            cur_transport.removesuffix("_chat"),
-            "[current]",
+    if cur_model:
+        current_key = (cur_model, cur_transport)
+        current_is_codex = cur_transport == "openai_codex"
+        current_is_supported = not current_is_codex or ModelResolver.is_codex_supported(
+            cur_model
         )
+        if current_key not in seen or not current_is_supported:
+            entries[:] = [entry for entry in entries if entry.model != cur_model]
+            seen.clear()
+            seen.update((entry.model, entry.transport) for entry in entries)
+            if current_is_supported:
+                add_entry(
+                    cur_model,
+                    cur_transport,
+                    cur_transport.removesuffix("_chat"),
+                    "[configured]",
+                )
 
     return entries
 
@@ -715,11 +748,7 @@ def _interactive_model_select(app: object) -> None:
 
     choices: list[questionary.Choice] = []
     for entry in available:
-        is_cur = entry.model == current_model and (
-            not current_transport or entry.transport == current_transport
-        )
-        marker = " [当前]" if is_cur else ""
-        title = f"{entry.model:20} {entry.source_label}{marker}"
+        title = _format_model_entry(entry, current_model, current_transport)
         choices.append(
             questionary.Choice(
                 title=title,
@@ -751,9 +780,7 @@ def _interactive_model_select(app: object) -> None:
 
     target_model, target_transport = selected
     if target_model == "__custom__":
-        text = safe_text(
-            "请输入模型名称 (例如: gpt-5.3-codex, gpt-6-astra, deepseek-v4-pro):"
-        )
+        text = safe_text("请输入模型名称:")
         if not text or not text.strip():
             return
         target_model = text.strip()
@@ -804,11 +831,15 @@ def handle_model_command(command: str, app: object) -> None:
             if available:
                 print("\n可用模型 (已认证/已配置):")
                 for entry in available:
-                    print(f"  - {entry.model:20} {entry.source_label}")
-            print(
-                "\n用法: /model <model_name> "
-                "(例如: /model gpt-5.3-codex, /model gpt-6-astra, /model codex)"
-            )
+                    print(
+                        "  - "
+                        + _format_model_entry(
+                            entry,
+                            info.get("model", "") if info else "",
+                            info.get("transport", "") if info else "",
+                        )
+                    )
+            print("\n用法: /model <model_name>")
             return
         with terminal_isolated():
             _interactive_model_select(app)

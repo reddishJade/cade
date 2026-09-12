@@ -11,6 +11,9 @@ from typing import Any
 import questionary
 from dotenv import dotenv_values
 
+from xcode.ai.models import get_codex_models
+from xcode.ai.resolver import ModelResolver
+
 from .reasoning_effort import (
     reasoning_effort_levels_for_transport,
     supports_reasoning_effort,
@@ -18,13 +21,14 @@ from .reasoning_effort import (
 
 JsonObject = dict[str, object]
 CONFIG_FILENAME = "xcode.config.json"
+OPENAI_MODELS = [model.id for model in get_codex_models()]
 
 PROVIDER_PRESETS: dict[str, Any] = {
     "openai": {
         "label": "OpenAI",
         "base_url": "",
-        "models": ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
-        "default_model": "gpt-5.5",
+        "models": OPENAI_MODELS,
+        "default_model": ModelResolver.resolve_alias("codex"),
         "env_key": "OPENAI_API_KEY",
         "env_base_url": "OPENAI_BASE_URL",
     },
