@@ -18,6 +18,12 @@ from xcode.agent.types import ToolSpec
 
 from .commands import CommandEntry, PromptLike, PromptText, ReplState
 from .completion import CommandArgsSuggester, ReplCompleter
+from .exit_keys import (
+    ExitKeyAction,
+    ExitKeyKind,
+    exit_confirm_hint,
+    resolve_exit_key_action,
+)
 from .git import git_branch_name
 from .shared.thinking import (  # noqa: F401 — re-exported for back-compat
     format_elapsed,
@@ -318,36 +324,40 @@ def create_prompt_session(
     bindings.add("escape", "enter")(insert_newline)
 
     def handle_ctrl_c(event) -> None:
-        buf = event.current_buffer
         now = time.time()
-        pending = getattr(state, "exit_pending", 0.0) if state is not None else 0.0
-        if pending > 0 and (now - pending) < 3.0:
-            event.app.exit(exception=KeyboardInterrupt())
-            return
-        if buf.text:
-            buf.reset()
+        action = resolve_exit_key_action(
+            state.exit_pending if state is not None else 0.0,
+            state.exit_pending_key if state is not None else "",
+            now,
+            buffer_text=event.current_buffer.text,
+            key=ExitKeyKind.INTERRUPT,
+        )
+        if action is ExitKeyAction.CLEAR_AND_ARM:
+            event.current_buffer.reset()
             if state is not None:
                 state.exit_pending = now
-            sys.stdout.write("\n\033[90m(再次按 Ctrl+C / Ctrl+D 退出)\033[0m\n")
+                state.exit_pending_key = ExitKeyKind.INTERRUPT.value
+            hint = exit_confirm_hint(ExitKeyKind.INTERRUPT)
+            sys.stdout.write(f"\n\033[90m{hint}\033[0m\n")
             sys.stdout.flush()
-        else:
-            if state is not None:
-                state.exit_pending = now
-            event.app.exit(exception=KeyboardInterrupt())
+            return
+        if action is ExitKeyAction.IGNORE:
+            return
+        event.app.exit(exception=KeyboardInterrupt())
 
     bindings.add("c-c")(handle_ctrl_c)
 
     def handle_ctrl_d(event) -> None:
-        buf = event.current_buffer
-        now = time.time()
-        pending = getattr(state, "exit_pending", 0.0) if state is not None else 0.0
-        if pending > 0 and (now - pending) < 3.0:
-            event.app.exit(exception=EOFError())
+        action = resolve_exit_key_action(
+            state.exit_pending if state is not None else 0.0,
+            state.exit_pending_key if state is not None else "",
+            time.time(),
+            buffer_text=event.current_buffer.text,
+            key=ExitKeyKind.EOF,
+        )
+        if action is ExitKeyAction.IGNORE:
             return
-        if not buf.text:
-            if state is not None:
-                state.exit_pending = now
-            event.app.exit(exception=EOFError())
+        event.app.exit(exception=EOFError())
 
     bindings.add("c-d")(handle_ctrl_d)
 
@@ -389,4 +399,14 @@ def create_prompt_session(
         auto_suggest=suggester,
         bottom_toolbar=bottom_toolbar,
     )
+    if state is not None:
+        state.exit_pending = 0.0
+        state.exit_pending_key = ""
+
+        def clear_exit_pending(_buffer: object) -> None:
+            """输入新内容即取消待确认的退出状态。"""
+            state.exit_pending = 0.0
+            state.exit_pending_key = ""
+
+        session.default_buffer.on_text_insert += clear_exit_pending
     return PromptSessionAdapter(session)

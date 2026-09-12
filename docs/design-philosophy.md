@@ -634,7 +634,7 @@ CLI 提供：
 
 TUI 使用 inline transcript 形式呈现运行过程：步骤轨道、思考区、assistant 内容、工具卡片、授权列表、问题选择器、滚动视口和状态栏。流式刷新采用节流与缓存；已完成消息保留 ANSI 渲染缓存，长输出按视口分页。
 
-Ctrl+C 的语义按状态分层：先清空输入，再取消活动 run，空闲状态连续触发退出；工具、provider、snapshot 和 child run 各自执行协作式收尾。
+Ctrl+C / Ctrl+D 的语义按状态分层：先清空输入，再取消活动 run，空闲状态连续两次按同一个键退出（3 秒确认窗口，CLI 与 TUI 一致）；工具、provider、snapshot 和 child run 各自执行协作式收尾。
 
 ### 10.2 Web：单一运行舞台，多浏览器观察
 
