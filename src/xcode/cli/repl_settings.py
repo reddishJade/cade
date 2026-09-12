@@ -605,7 +605,7 @@ class AvailableModelEntry:
     source_label: str
 
 
-def _is_current_model_entry(
+def is_current_model_entry(
     entry: AvailableModelEntry,
     current_model: str,
     current_transport: str,
@@ -618,16 +618,9 @@ def _is_current_model_entry(
 
 def _format_model_entry(
     entry: AvailableModelEntry,
-    current_model: str,
-    current_transport: str,
 ) -> str:
-    """统一模型条目显示，当前状态只使用一个英文标签。"""
-    label = (
-        "[current]"
-        if _is_current_model_entry(entry, current_model, current_transport)
-        else entry.source_label
-    )
-    return f"{entry.model:20} {label}"
+    """统一显示模型名称和凭据来源标签。"""
+    return f"{entry.model:20} {entry.source_label}"
 
 
 def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
@@ -687,14 +680,15 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
         for m in get_models("mimo"):
             add_entry(m.id, "mimo_chat", "mimo", "[mimo]")
 
-    # 3. 检查应用当前配置的 model_profiles
+    # 3. 只补充 main profile 自身配置的凭据；其他 profile 不能切换主模型
     if model_profiles:
-        for pname, pconfig in model_profiles.items():
-            t = getattr(pconfig, "transport", None)
-            m = getattr(pconfig, "chat_model", None)
-            k = getattr(pconfig, "api_key", None)
-            if m and t and (k or (m, t) in seen):
-                add_entry(m, t, t.removesuffix("_chat"), f"[{pname}]")
+        pconfig = model_profiles.get("main")
+        t = getattr(pconfig, "transport", None)
+        m = getattr(pconfig, "chat_model", None)
+        k = getattr(pconfig, "api_key", None)
+        if m and t and (k or (m, t) in seen):
+            provider = t.removesuffix("_chat").removeprefix("openai_")
+            add_entry(m, t, provider, f"[{provider}]")
 
     # 4. 当前运行中的主模型
     info = _model_info(app)
@@ -734,10 +728,6 @@ def _interactive_model_select(app: object) -> None:
     suppress_windows_ptk_shutdown_noise()
     install_force_exit_signal_handler()
 
-    info = _model_info(app)
-    current_model = info.get("model", "")
-    current_transport = info.get("transport", "")
-
     available = get_available_model_entries(app)
     if not available:
         print("未检测到任何已登录或已配置 API Key 的可用模型。")
@@ -748,7 +738,7 @@ def _interactive_model_select(app: object) -> None:
 
     choices: list[questionary.Choice] = []
     for entry in available:
-        title = _format_model_entry(entry, current_model, current_transport)
+        title = _format_model_entry(entry)
         choices.append(
             questionary.Choice(
                 title=title,
@@ -824,14 +814,7 @@ def handle_model_command(command: str, app: object) -> None:
             if available:
                 print("\n可用模型 (已认证/已配置):")
                 for entry in available:
-                    print(
-                        "  - "
-                        + _format_model_entry(
-                            entry,
-                            info.get("model", "") if info else "",
-                            info.get("transport", "") if info else "",
-                        )
-                    )
+                    print("  - " + _format_model_entry(entry))
             print("\n用法: /model <model_name>")
             return
         with terminal_isolated():
