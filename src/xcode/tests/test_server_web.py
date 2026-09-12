@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from pydantic import BaseModel
 
@@ -136,3 +138,32 @@ def test_hub_install_user_approval_callback() -> None:
     hub = WebRunHub(app)
     assert app.agent.user_approval_callback is not None
     assert hub._pending is None
+
+
+def test_model_payload_uses_current_model_effort_capabilities() -> None:
+    from xcode.server.api import _model_payload
+
+    app = _FakeApp()
+    app._model_profiles = {  # type: ignore[attr-defined]
+        "main": SimpleNamespace(transport="openai_codex")
+    }
+    app.get_model_info = lambda: {  # type: ignore[method-assign]
+        "model": "gpt-5.6-luna",
+        "transport": "openai_codex",
+        "reasoning_effort": "low",
+    }
+
+    with patch(
+        "xcode.server.api._discover_models",
+        return_value=["gpt-5.6-luna"],
+    ):
+        payload = _model_payload(app)  # type: ignore[arg-type]
+
+    assert payload["effort_options"] == [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    ]

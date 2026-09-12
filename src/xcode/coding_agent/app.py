@@ -83,6 +83,7 @@ class XcodeApp:
             self._model_profiles = {}
         profile_config = self._model_profiles.get(profile) or ModelProfileConfig()
 
+        from xcode.ai.models import get_model_reasoning_efforts
         from xcode.ai.resolver import ModelResolver
 
         codex_cred = AuthManager().get_valid_credential("openai-codex")
@@ -100,6 +101,24 @@ class XcodeApp:
         resolved_transport = resolution.transport
         final_transport = resolved_transport or profile_config.transport
         same_transport = final_transport == profile_config.transport
+        effective_reasoning_effort = (
+            reasoning_effort
+            if reasoning_effort is not None
+            else profile_config.reasoning_effort
+        )
+        supported_efforts = get_model_reasoning_efforts(resolved_model)
+        if (
+            effective_reasoning_effort
+            and supported_efforts
+            and effective_reasoning_effort not in supported_efforts
+        ):
+            if reasoning_effort is not None:
+                allowed = "/".join(supported_efforts)
+                raise ValueError(
+                    f"{resolved_model} does not support reasoning effort "
+                    f"'{reasoning_effort}'. Use: {allowed}."
+                )
+            effective_reasoning_effort = None
 
         resolved_base_url = (
             base_url
@@ -129,9 +148,7 @@ class XcodeApp:
             account_id=resolved_account_id,
             context_window=getattr(profile_config, "context_window", None),
             thinking=thinking if thinking is not None else profile_config.thinking,
-            reasoning_effort=reasoning_effort
-            if reasoning_effort is not None
-            else profile_config.reasoning_effort,
+            reasoning_effort=effective_reasoning_effort,
             clear_thinking=profile_config.clear_thinking,
             tool_stream=profile_config.tool_stream,
             response_format=profile_config.response_format,
@@ -162,7 +179,7 @@ class XcodeApp:
             "profile": "main",
         }
         if active.thinking:
-            info["thinking"] = str(active.thinking)
+            info["thinking"] = "on"
         else:
             info["thinking"] = "off"
         if active.reasoning_effort is not None:

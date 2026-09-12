@@ -306,7 +306,12 @@ def _model_payload(app: XcodeApp) -> dict[str, object]:
     try:
         from xcode.cli.reasoning_effort import reasoning_effort_levels_for_transport
 
-        info["effort_options"] = list(reasoning_effort_levels_for_transport(transport))
+        info["effort_options"] = list(
+            reasoning_effort_levels_for_transport(
+                transport,
+                str(info.get("model", "")),
+            )
+        )
     except (
         ImportError,
         AttributeError,

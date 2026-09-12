@@ -120,6 +120,7 @@ class Model:
     max_tokens: int = 0
     cost: Cost = field(default_factory=Cost)
     thinking_level_map: dict[str, str | None] | None = None
+    reasoning_efforts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

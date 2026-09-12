@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-from xcode.cli.repl_settings import handle_model_command
+import pytest
+
+from xcode.cli.repl_settings import handle_effort_command, handle_model_command
 
 
 class DummyApp:
@@ -112,6 +115,31 @@ def test_handle_model_command_thinking_flag() -> None:
     assert call["reasoning_effort"] is None
 
 
+def test_handle_model_command_rejects_unsupported_effort(capsys: Any) -> None:
+    app = DummyApp()
+    handle_model_command("/model gpt-5.6-luna:minimal", app)
+
+    assert app.calls == []
+    output = capsys.readouterr().out
+    assert "Invalid effort level for gpt-5.6-luna" in output
+    assert "none/low/medium/high/xhigh/max" in output
+
+
+def test_handle_effort_command_uses_current_model_capabilities(capsys: Any) -> None:
+    app = DummyApp()
+    app.current_model = "gpt-5.6-luna"
+    app.current_transport = "openai_codex"
+
+    handle_effort_command("/effort minimal", app)
+    assert app.calls == []
+    output = capsys.readouterr().out
+    assert "Invalid effort level" in output
+    assert "none/low/medium/high/xhigh/max" in output
+
+    handle_effort_command("/effort max", app)
+    assert app.calls[-1]["reasoning_effort"] == "max"
+
+
 def test_handle_model_command_interactive_select() -> None:
     from xcode.ai.models import get_codex_models
 
@@ -165,6 +193,53 @@ def test_xcode_app_set_model_smart_inference() -> None:
         provider = mock_agent.replace_primary_provider.call_args[0][0]
         assert provider.model == ModelResolver.resolve_alias("openai-codex")
         assert provider.base_url == "https://chatgpt.com/backend-api"
+
+
+def test_xcode_app_rejects_unsupported_model_effort() -> None:
+    from unittest.mock import MagicMock
+
+    from xcode.ai.providers.registry import ModelProfileConfig
+    from xcode.coding_agent.app import XcodeApp
+
+    app = XcodeApp(
+        agent=MagicMock(),
+        _model_profiles={"main": ModelProfileConfig(transport="openai_codex")},
+    )
+    credential = SimpleNamespace(
+        access="tok-chatgpt",
+        account_id="acc-chatgpt",
+        expires=None,
+    )
+
+    with (
+        patch(
+            "xcode.harness.auth.manager.AuthManager.get_valid_credential",
+            return_value=credential,
+        ),
+        pytest.raises(ValueError, match="does not support reasoning effort 'minimal'"),
+    ):
+        app.set_model(
+            model="gpt-5.6-luna",
+            transport="openai_codex",
+            reasoning_effort="minimal",
+        )
+
+
+def test_xcode_app_model_info_uses_on_off_thinking_labels() -> None:
+    from xcode.coding_agent.app import XcodeApp
+
+    provider = SimpleNamespace(
+        model="gpt-5.6-luna",
+        base_url="https://chatgpt.com/backend-api",
+        transport="openai_codex",
+        thinking=True,
+        reasoning_effort="low",
+    )
+    app = XcodeApp(agent=SimpleNamespace(provider=provider))
+
+    assert app.get_model_info()["thinking"] == "on"
+    provider.thinking = False
+    assert app.get_model_info()["thinking"] == "off"
 
 
 def test_get_available_model_entries_filters_unconfigured() -> None:

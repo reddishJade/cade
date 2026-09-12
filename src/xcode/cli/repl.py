@@ -94,7 +94,8 @@ def current_effort_options(app: object) -> tuple[str, ...]:
     provider = getattr(agent, "provider", None) if agent else None
     provider = getattr(provider, "active_provider", provider)
     transport = getattr(provider, "transport", "") if provider else ""
-    return reasoning_effort_levels_for_transport(transport)
+    model = getattr(provider, "model", "") if provider else ""
+    return reasoning_effort_levels_for_transport(transport, model)
 
 
 def current_model_options(app: object) -> tuple[str, ...]:

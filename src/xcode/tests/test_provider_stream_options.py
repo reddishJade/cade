@@ -103,6 +103,18 @@ def test_responses_transports_support_reasoning_effort(transport: str) -> None:
     assert reasoning_effort_levels_for_transport(transport) == EFFORT_COMMAND_LEVELS
 
 
+@pytest.mark.parametrize("transport", ["openai_responses", "openai_codex"])
+def test_responses_effort_options_follow_model_capabilities(transport: str) -> None:
+    assert reasoning_effort_levels_for_transport(transport, "gpt-5.6-luna") == (
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+
+
 def _chunk(text: str) -> Any:
     """构建最简流式 chunk。"""
 
