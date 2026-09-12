@@ -36,6 +36,30 @@ SUMMARY_ASSISTANT_CHARS = 180
 SUMMARY_TITLE_CHARS = 160
 
 
+def _normalize_json_unicode(value: JsonValue) -> JsonValue:
+    """合并 UTF-16 代理对，并替换无法编码的孤立代理字符。"""
+    if isinstance(value, str):
+        if not any("\ud800" <= char <= "\udfff" for char in value):
+            return value
+        return value.encode("utf-16-le", errors="surrogatepass").decode(
+            "utf-16-le", errors="replace"
+        )
+    if isinstance(value, list):
+        return [_normalize_json_unicode(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(_normalize_json_unicode(key)): _normalize_json_unicode(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _dump_tree_entry(entry: TreeEntryModel) -> str:
+    """生成可安全写入 UTF-8 JSONL 的紧凑 JSON。"""
+    payload = _normalize_json_unicode(entry.model_dump())
+    return TreeEntryModel.model_validate(payload).model_dump_json()
+
+
 class TreeEntryModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     id: str
@@ -106,7 +130,7 @@ class TreeSessionRepo:
                 created_at=datetime.now(UTC).isoformat(timespec="seconds"),
             )
             with self.current_path.open("a", encoding="utf-8") as f:
-                f.write(entry.model_dump_json() + "\n")
+                f.write(_dump_tree_entry(entry) + "\n")
             self._save_head_id(entry_id)
             return entry_id
 
@@ -412,13 +436,15 @@ class TreeSessionRepo:
                 if e.id in branch_ids:
                     pid = None if e.id == entry_id else e.parent_id
                     f.write(
-                        TreeEntryModel(
-                            id=e.id,
-                            parent_id=pid,
-                            type=e.type,
-                            content=e.content,
-                            created_at=e.created_at,
-                        ).model_dump_json()
+                        _dump_tree_entry(
+                            TreeEntryModel(
+                                id=e.id,
+                                parent_id=pid,
+                                type=e.type,
+                                content=e.content,
+                                created_at=e.created_at,
+                            )
+                        )
                         + "\n"
                     )
         now = datetime.now(UTC).isoformat(timespec="seconds")
@@ -639,11 +665,12 @@ class TreeSessionRepo:
     def _write_metadata(self, items: list[TreeMetadata]) -> None:
         with self._lock:
             self.index_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
+            payload: JsonValue = {
                 "version": 1,
                 "storage": "tree-jsonl-v1",
                 "sessions": [item.model_dump() for item in items],
             }
+            payload = _normalize_json_unicode(payload)
             self.index_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
