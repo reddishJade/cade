@@ -78,6 +78,9 @@ class PromptSessionAdapter:
         return getattr(self.session, "default_buffer", None)
 
     def prompt(self, prompt_text: PromptText) -> str:
+        from .ptk_patch import flush_console_input_buffer
+
+        flush_console_input_buffer()
         return str(self.session.prompt(prompt_text))
 
 

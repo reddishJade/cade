@@ -695,7 +695,6 @@ def _interactive_model_select(app: object) -> None:
 
     from .ptk_patch import (
         install_force_exit_signal_handler,
-        restore_console_mode,
         suppress_windows_ptk_shutdown_noise,
     )
 
@@ -743,27 +742,18 @@ def _interactive_model_select(app: object) -> None:
         )
     )
 
-    try:
-        selected = questionary.select("选择要切换的目标模型:", choices=choices).ask()
-    except (KeyboardInterrupt, EOFError):
-        return
-    finally:
-        restore_console_mode()
+    from .ptk_patch import safe_select, safe_text
+
+    selected = safe_select("选择要切换的目标模型:", choices=choices)
 
     if not selected or selected[0] == "__cancel__":
         return
 
     target_model, target_transport = selected
     if target_model == "__custom__":
-        try:
-            text = questionary.text(
-                "请输入模型名称 (例如: gpt-5.3-codex, gpt-6-astra, deepseek-v4-pro):"
-            ).ask()
-        except (KeyboardInterrupt, EOFError):
-            return
-        finally:
-            restore_console_mode()
-
+        text = safe_text(
+            "请输入模型名称 (例如: gpt-5.3-codex, gpt-6-astra, deepseek-v4-pro):"
+        )
         if not text or not text.strip():
             return
         target_model = text.strip()
@@ -793,8 +783,8 @@ def _interactive_model_select(app: object) -> None:
 def handle_model_command(command: str, app: object) -> None:
     from .ptk_patch import (
         install_force_exit_signal_handler,
-        restore_console_mode,
         suppress_windows_ptk_shutdown_noise,
+        terminal_isolated,
     )
 
     suppress_windows_ptk_shutdown_noise()
@@ -820,10 +810,8 @@ def handle_model_command(command: str, app: object) -> None:
                 "(例如: /model gpt-5.3-codex, /model gpt-6-astra, /model codex)"
             )
             return
-        try:
+        with terminal_isolated():
             _interactive_model_select(app)
-        finally:
-            restore_console_mode()
         return
 
     try:
