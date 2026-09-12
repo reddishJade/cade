@@ -22,6 +22,19 @@ from .reasoning_effort import (
 JsonObject = dict[str, object]
 CONFIG_FILENAME = "xcode.config.json"
 OPENAI_MODELS = [model.id for model in get_codex_models()]
+API_KEY_ENV_NAMES = (
+    "MAIN_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "MIMO_API_KEY",
+    "CHATGLM_API_KEY",
+    "ZHIPUAI_API_KEY",
+    "BIGMODEL_API_KEY",
+    "API_KEY",
+)
+LOGIN_CHOICE_AUTH = "Sign in with ChatGPT (OAuth, recommended)"
+LOGIN_CHOICE_API = "Configure an API key"
 
 PROVIDER_PRESETS: dict[str, Any] = {
     "openai": {
@@ -77,26 +90,35 @@ def deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def _check_config_has_api_key(path: Path) -> bool:
-    """检查单个 JSON 配置文件中是否有 main profile 的 api_key。"""
+def _read_main_profile(path: Path) -> dict[str, object]:
+    """读取配置文件中的 main profile；文件缺失或损坏时返回空字典。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        profiles = data.get("provider", {}).get("model_profiles", {})
-        return bool(profiles.get("main", {}).get("api_key"))
     except (json.JSONDecodeError, OSError):
-        return False
+        return {}
+    provider = data.get("provider")
+    profiles = provider.get("model_profiles") if isinstance(provider, dict) else None
+    main_profile = profiles.get("main") if isinstance(profiles, dict) else None
+    return main_profile if isinstance(main_profile, dict) else {}
 
 
-def has_valid_config(project_root: Path) -> bool:
-    """检查是否已有可用配置（config 文件、.env 或 OAuth 凭据）。"""
+def _check_config_has_api_key(path: Path) -> bool:
+    """检查单个 JSON 配置文件中是否有 main profile 的 api_key。"""
+    return bool(_read_main_profile(path).get("api_key"))
+
+
+def has_auth_credential() -> bool:
+    """检查是否已有有效 OAuth 凭据（auth 优先于 api）。"""
+    from xcode.harness.auth.manager import AuthManager
+
+    return AuthManager().get_valid_credential("openai-codex") is not None
+
+
+def has_api_key(project_root: Path) -> bool:
+    """检查配置文件、.env 或环境变量中是否已配置 API key。"""
     if _check_config_has_api_key(project_root / CONFIG_FILENAME):
         return True
     if _check_config_has_api_key(Path.home() / ".xcode" / "settings.json"):
-        return True
-
-    from xcode.harness.auth.store import AuthStore
-
-    if bool(AuthStore().load_all()):
         return True
 
     env_paths = [
@@ -105,35 +127,27 @@ def has_valid_config(project_root: Path) -> bool:
     ]
     for env_path in env_paths:
         env = dotenv_values(env_path)
-        to_check = (
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "DEEPSEEK_API_KEY",
-            "MIMO_API_KEY",
-            "CHATGLM_API_KEY",
-            "ZHIPUAI_API_KEY",
-            "BIGMODEL_API_KEY",
-            "API_KEY",
-        )
-        for key in to_check:
-            if env.get(key):
-                return True
-
-    to_check = (
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "MIMO_API_KEY",
-        "CHATGLM_API_KEY",
-        "ZHIPUAI_API_KEY",
-        "BIGMODEL_API_KEY",
-        "API_KEY",
-    )
-    for key in to_check:
-        if os.environ.get(key):
+        if any(env.get(key) for key in API_KEY_ENV_NAMES):
             return True
 
-    return False
+    return any(os.environ.get(key) for key in API_KEY_ENV_NAMES)
+
+
+def has_valid_config(project_root: Path) -> bool:
+    """检查是否已有可用凭据：auth 优先，auth/api 任一存在即放行。"""
+    return has_auth_credential() or has_api_key(project_root)
+
+
+def prompt_login_method() -> str | None:
+    """询问初始登录方式，返回 'auth'、'api' 或 None（用户取消）。"""
+    choice = questionary.select(
+        "No credentials found. Choose how to sign in:",
+        choices=[LOGIN_CHOICE_AUTH, LOGIN_CHOICE_API],
+        default=LOGIN_CHOICE_AUTH,
+    ).ask()
+    if choice is None:
+        return None
+    return "auth" if choice == LOGIN_CHOICE_AUTH else "api"
 
 
 def _resolve_transport(provider_key: str) -> str:
@@ -342,8 +356,16 @@ def run_setup_wizard(project_root: Path) -> tuple[str, Path | None]:
         preset["label"], model, base_url, thinking, reasoning_effort, api_key
     )
 
-    confirm = questionary.confirm("Save this configuration?", default=True).ask()
-    if confirm is None:
+    save_choice = questionary.select(
+        "Save this configuration?",
+        choices=[
+            "Global default (~/.xcode/settings.json, recommended)",
+            f"Current project only ({CONFIG_FILENAME})",
+            "Don't save (temporary configuration)",
+        ],
+        default="Global default (~/.xcode/settings.json, recommended)",
+    ).ask()
+    if save_choice is None:
         return ("cancelled", None)
 
     config_data = _build_config_data(
@@ -355,19 +377,27 @@ def run_setup_wizard(project_root: Path) -> tuple[str, Path | None]:
         reasoning_effort,
     )
 
-    config_path = project_root / CONFIG_FILENAME
-    existing = _load_existing_config(config_path)
-    merged = deep_merge(existing, config_data)
-
-    if confirm:
+    if "Global default" in save_choice:
+        global_path = Path.home() / ".xcode" / "settings.json"
+        global_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = _load_existing_config(global_path)
+        merged = deep_merge(existing, config_data)
+        _save_config(merged, global_path)
+        print(f"  Configuration saved globally to {global_path}")
+        print()
+        return ("saved", None)
+    elif "Current project" in save_choice:
+        config_path = project_root / CONFIG_FILENAME
+        existing = _load_existing_config(config_path)
+        merged = deep_merge(existing, config_data)
         _save_config(merged, config_path)
         print(f"  Configuration saved to {CONFIG_FILENAME}")
         print()
         return ("saved", None)
-
-    fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="xcode_config_")
-    os.close(fd)
-    _save_config(merged, Path(tmp_path))
-    print("  Running with temporary configuration (not saved).")
-    print()
-    return ("no_save", Path(tmp_path))
+    else:
+        fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="xcode_config_")
+        os.close(fd)
+        _save_config(config_data, Path(tmp_path))
+        print("  Running with temporary configuration (not saved).")
+        print()
+        return ("no_save", Path(tmp_path))
