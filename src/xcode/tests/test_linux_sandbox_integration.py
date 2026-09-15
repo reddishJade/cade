@@ -18,9 +18,14 @@ from xcode.harness.execution_env import (
     SubprocessShell,
 )
 
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="bubblewrap sandbox 仅支持 Linux",
+)
+
 
 def _usable_shell(project: Path, policy: SandboxPolicy) -> SubprocessShell:
-    if sys.platform != "linux" or shutil.which("bwrap") is None:
+    if shutil.which("bwrap") is None:
         pytest.skip("Linux bubblewrap is not installed")
     try:
         shell = SubprocessShell(LinuxBubblewrapSandbox(policy))
