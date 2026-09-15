@@ -1,10 +1,10 @@
-# Xcode 配置参考
+# Cade 配置参考
 
-`xcode.config.json` 位于项目根目录。`python -m xcode.main` 和 `build_app()` 自动读取它；`--config` 用于显式指定其他路径。相对路径按 `--project-root` 解析。
+`cade.config.json` 位于项目根目录。`python -m cade.main` 和 `build_app()` 自动读取它；`--config` 用于显式指定其他路径。相对路径按 `--project-root` 解析。
 
-配置发现栈（优先级从低到高）：全局 `~/.xcode/settings.json` → 项目
-`xcode.config.json` → 本地 `.xcode/settings.json` → 环境变量
-`XCODE_APPROVAL_POLICY`。
+配置发现栈（优先级从低到高）：全局 `~/.cade/settings.json` → 项目
+`cade.config.json` → 本地 `.cade/settings.json` → 环境变量
+`CADE_APPROVAL_POLICY`。
 
 **没有配置文件时**启用正式内置能力（`core`、`subagent`、`memory`，以及存在
 可见 skill 时的 `skills`）。配置分层覆盖。
@@ -77,10 +77,10 @@ REPL 中可通过 `/model` 命令动态切换模型而无需重启：
 
 ### 交互式配置
 
-`/config`（REPL/TUI）与 `xcode config`（CLI）打开同一个交互式设置浏览器，
+`/config`（REPL/TUI）与 `cade config`（CLI）打开同一个交互式设置浏览器，
 只收录适合运行时调整的行为开关：执行模式、审批策略、shell。其余字段
 （agent 调参、request hygiene、路径、安全细则、hooks、prompt 等）直接编辑
-`xcode.config.json`；provider profile 由首次启动的 setup 向导管理。
+`cade.config.json`；provider profile 由首次启动的 setup 向导管理。
 
 ```
 > Default Mode           act
@@ -96,7 +96,7 @@ REPL 中可通过 `/model` 命令动态切换模型而无需重启：
   asks for review → `on-request` + `approval_router=user`。
 - 高亮行底部显示灰色说明，枚举项逐值解释（含权衡说明）。
 - 回车进入编辑：菜单选值，当前值标注 `(current)`，esc 返回列表。
-- 写入前用 `XcodeRuntimeConfig` 校验，非法值不落盘。
+- 写入前用 `CadeRuntimeConfig` 校验，非法值不落盘。
 - REPL 支持跳转：`/config shell` 直接进入匹配的设置项。
 
 示例：
@@ -104,7 +104,7 @@ REPL 中可通过 `/model` 命令动态切换模型而无需重启：
 ```
 /config                                     # 打开设置浏览器
 /config default mode                        # 跳转到 Default Mode
-xcode config                                # CLI 启动同一浏览器
+cade config                                # CLI 启动同一浏览器
 ```
 
 ---
@@ -139,7 +139,7 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 
 | mode | 工具可见性 | 内置规则与 fallback |
 |---|---|---|
-| `plan` | 只读工具，以及 `write_file` / `edit_file` | 只读允许；仅允许写入或编辑 `.xcode/plans/*.md`；fallback=`deny`，不进入 HITL |
+| `plan` | 只读工具，以及 `write_file` / `edit_file` | 只读允许；仅允许写入或编辑 `.cade/plans/*.md`；fallback=`deny`，不进入 HITL |
 | `build` | 全部工具 | 项目内结构化读写允许；shell 和未匹配动作自动 review；fallback=`ask`（内部 review，不是人工询问） |
 | `act` | 全部工具 | 只读允许，写和 shell 询问；fallback=`ask` |
 
@@ -196,7 +196,7 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 | `keep_head_lines` | int | `50` | 压缩 tool_result 保留头部行数 |
 | `keep_tail_lines` | int | `50` | 压缩 tool_result 保留尾部行数 |
 
-实现位置：`src/xcode/agent/history.py`、`src/xcode/harness/config.py`。
+实现位置：`src/cade/agent/history.py`、`src/cade/harness/config.py`。
 
 ---
 
@@ -204,9 +204,9 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `sessions_dir` | string/null | `null` | REPL 会话目录；未配置时 CLI 使用 `.xcode/sessions` |
+| `sessions_dir` | string/null | `null` | REPL 会话目录；未配置时 CLI 使用 `.cade/sessions` |
 | `skills_dir` | string/null | `null` | 最高优先级 Skill 扫描目录；相对路径按项目根目录解析 |
-固定本地路径：`.xcode/session_index.json`、`.xcode/session_artifacts/`、`.xcode/mcp_cache.json`、`.xcode/mcp_config.json`。
+固定本地路径：`.cade/session_index.json`、`.cade/session_artifacts/`、`.cade/mcp_cache.json`、`.cade/mcp_config.json`。
 
 ---
 
@@ -295,7 +295,7 @@ deny。使用 `/hooks` 查看每项来源、启用状态、运行次数和最近
 
 `workspace-write` 将宿主根挂为只读，并允许写项目根、`/tmp`，以及
 `external_directories` 中现有的 `write`/`read_write` 目录。项目内已有的
-`.git`、`.agents`、`.xcode` 会重新挂为只读；缺失的名称通过仅在命令期间存在的
+`.git`、`.agents`、`.cade` 会重新挂为只读；缺失的名称通过仅在命令期间存在的
 只读空占位目录阻止首次创建。已知凭据目录、密钥文件和未获
 `sensitive_path_overrides` 读取授权的 `.env*` 文件会被遮蔽。
 
@@ -396,20 +396,20 @@ subagent 才会共享该会话清单。
 
 `todowrite` 输入使用 `todos` 数组。每个 todo 需要 `id`、`content`、`status`，
 可选 `priority`（`high` / `medium` / `low`）。`status` 支持 `pending`、
-`in_progress`、`completed`、`cancelled`。`id` 是 xcode 会话恢复和事件关联所需，
+`in_progress`、`completed`、`cancelled`。`id` 是 cade 会话恢复和事件关联所需，
 因此不同于顶层 TypeScript 参考实现，不能省略。
 
 ## skills
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `trust_project_skills` | bool | `false` | 是否信任并披露项目内 `.xcode/skills/` 与 `.agents/skills/`；默认仅发现用户级技能 |
+| `trust_project_skills` | bool | `false` | 是否信任并披露项目内 `.cade/skills/` 与 `.agents/skills/`；默认仅发现用户级技能 |
 
 无可见 skill 时不注册 `load_skill`，也不向上下文注入空 catalog。
 
 Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 显式 `paths.skills_dir` / `build_app(skills_dir=...)` → 项目
-`.xcode/skills/` → 项目 `.agents/skills/` → 用户 `~/.xcode/skills/` → 用户
+`.cade/skills/` → 项目 `.agents/skills/` → 用户 `~/.cade/skills/` → 用户
 `~/.agents/skills/`。项目固定目录仍受 `trust_project_skills` 控制；显式目录表示
 调用方已信任。显式目录不存在时记录 warning。
 
@@ -423,7 +423,7 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 `glob_files`、`find_files`、`list_dir`、`grep_search`、`websearch`、
 `webfetch`、`question`、`bash`、`search_tools`、`subagent`、`todowrite`、
 `history`、`search_memory`。发现 skill 时注册 `load_skill`；存在
-`.xcode/mcp_config.json` 时注册 `mcp__{server}__{tool}` 动态工具。
+`.cade/mcp_config.json` 时注册 `mcp__{server}__{tool}` 动态工具。
 
 `search_tools` 工具按关键字搜索当前已注册工具。
 `websearch` 通过 Exa / Parallel MCP provider 搜索网络，默认 Exa；支持 `query`、
@@ -432,7 +432,7 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 `OPENCODE_EXPERIMENTAL_PARALLEL` 切换/鉴权。`webfetch` 支持 `markdown`、`text`、
 `html` 输出格式，自动解压 gzip/deflate，最多读取 5MB，并在截断时标记结果。
 运行时不会按每轮用户问题自动检索 Memory。Agent 通过 `search_memory` 按需合并
-检索项目根 `MEMORY.md` 与 `~/.xcode/memory/MEMORY.md`；resume/rebuild 才会在
+检索项目根 `MEMORY.md` 与 `~/.cade/memory/MEMORY.md`；resume/rebuild 才会在
 独立预算内注入相关记忆。
 `search_memory` 的 schema 接受必填 `query`，以及可选 `limit`（1-10）、
 `scope` 和 `layer`（`all` / `project` / `user`）；工具标记为只读。
@@ -493,13 +493,13 @@ MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺
 2. Schema 键递归排序（`sort_keys=True`）
 3. SHA256 前 16 字符指纹
 
-实现位置：`src/xcode/ai/cache.py`。
+实现位置：`src/cade/ai/cache.py`。
 
 ### Token ROI 原则
 
 优化策略：稳定可缓存前缀、使用可丢弃的当前工作窗口、控制工具输出、渐进发现工具、按模型窗口换窗、智能重复抑制。
 
-`ContextWindowRollover`（`src/xcode/harness/agent_runtime/context_window.py`）：
+`ContextWindowRollover`（`src/cade/harness/agent_runtime/context_window.py`）：
 - 关闭旧工作窗口，不生成摘要
 - 保留启动上下文、已激活 skill 和当前回合
 - 对当前 surface 的过期读取和大工具输出做预算裁剪
@@ -510,4 +510,4 @@ MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺
 `/rollover` 开启不携带普通对话的干净窗口，默认要求非空 `NOTE.md`，
 必要时可用 `/rollover --force` 跳过交接检查。
 
-`RepeatDetector`（`src/xcode/agent/watchdog.py`）：文件变更感知的重复检测，变更后自动清除只读调用历史。
+`RepeatDetector`（`src/cade/agent/watchdog.py`）：文件变更感知的重复检测，变更后自动清除只读调用历史。

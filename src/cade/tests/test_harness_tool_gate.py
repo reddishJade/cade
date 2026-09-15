@@ -1,0 +1,213 @@
+"""ToolGate 纯函数单元测试。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, cast
+
+from cade.agent.config import AgentContext, BeforeToolCallContext
+from cade.agent.messages import AssistantMessage, ToolResultMessage, UserMessage
+from cade.agent.request import DefaultRequestAssembler
+from cade.agent.types import ToolCallContent
+from cade.ai.events import ToolCall
+from cade.harness.agent_runtime.composition import AgentComposition
+from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
+from cade.harness.agent_runtime.harness import AgentHarness
+from cade.harness.agent_runtime.tool_gate import (
+    _approval_transcript,
+    _permission_notice,
+    _stricter_decision,
+    _tool_results_count_as_progress,
+)
+from cade.harness.config import AgentConfig
+from cade.harness.security import PermissionEngineResult
+from cade.harness.security.permission_model import (
+    ApprovalResult,
+    ExternalDirectory,
+    SensitivePathOverride,
+)
+from cade.harness.session import SessionInbox, SessionStore
+
+
+def _runtime(tmp_path: Path) -> AgentRuntimeConfig:
+    store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    return AgentRuntimeConfig(
+        session_inbox=SessionInbox(store),
+        project_root=tmp_path,
+    )
+
+
+def _composition(
+    gate: GateConfig,
+    provider: Any | None = None,
+) -> AgentComposition:
+    return AgentComposition.create(
+        primary_provider=cast(Any, provider or object()),
+        fallback_provider=None,
+        registry=(),
+        config=AgentConfig(),
+        gate=gate,
+        request_assembler=DefaultRequestAssembler(),
+        runtime_context_provider=None,
+    )
+
+
+class TestStricterDecision:
+    def test_stricter_wins(self) -> None:
+        assert _stricter_decision("allow", "deny") == "deny"
+        assert _stricter_decision("ask", "deny") == "deny"
+
+    def test_current_is_stricter(self) -> None:
+        assert _stricter_decision("deny", "allow") == "deny"
+        assert _stricter_decision("deny", "ask") == "deny"
+
+    def test_same_level(self) -> None:
+        assert _stricter_decision("allow", "allow") == "allow"
+        assert _stricter_decision("ask", "ask") == "ask"
+
+
+def test_failed_tool_results_do_not_count_as_progress() -> None:
+    calls = [ToolCall(id="call-1", name="read_file", input={})]
+    results = [
+        ToolResultMessage(
+            tool_call_id="call-1",
+            tool_name="read_file",
+            content="failed",
+            is_error=True,
+        )
+    ]
+
+    assert not _tool_results_count_as_progress(calls, results, {})
+
+
+def test_any_successful_tool_result_counts_as_progress() -> None:
+    calls = [
+        ToolCall(id="call-1", name="read_file", input={}),
+        ToolCall(id="call-2", name="read_file", input={}),
+    ]
+    results = [
+        ToolResultMessage(
+            tool_call_id="call-1",
+            tool_name="read_file",
+            content="failed",
+            is_error=True,
+        ),
+        ToolResultMessage(
+            tool_call_id="call-2",
+            tool_name="read_file",
+            content="ok",
+        ),
+    ]
+
+    assert _tool_results_count_as_progress(calls, results, {})
+
+
+def test_empty_tool_batch_does_not_count_as_progress() -> None:
+    assert not _tool_results_count_as_progress([], [], {})
+
+
+def test_permission_notice_describes_automatic_session_grant() -> None:
+    result = PermissionEngineResult(
+        decision="allow",
+        blocked=False,
+        matched_rule="session_grant",
+        approval_result=ApprovalResult(
+            decision="allow",
+            scope="session",
+            grant_id="grant-1",
+        ),
+    )
+
+    assert _permission_notice(result) == "Allowed by session grant"
+
+
+def test_permission_notice_describes_auto_review() -> None:
+    result = PermissionEngineResult(
+        decision="allow",
+        blocked=False,
+        source="auto_review",
+        metadata={
+            "approval_reviewer": "auto_review",
+            "approval_rationale": "运行指定的本地聚焦测试是用户授权的常规验证。",
+            "approval_risk": "low",
+            "approval_authorization": "high",
+        },
+        approval_result=ApprovalResult(decision="allow", scope="once"),
+    )
+
+    assert (
+        _permission_notice(result) == "Automatic approval review approved "
+        "(risk: low, authorization: high): "
+        "运行指定的本地聚焦测试是用户授权的常规验证。"
+    )
+
+
+def test_auto_review_transcript_preserves_roles_and_skips_internal_continue() -> None:
+    ctx = BeforeToolCallContext(
+        assistant_message=AssistantMessage(
+            content=[
+                ToolCallContent(
+                    id="call-1",
+                    name="bash",
+                    arguments={"command": "pytest -q"},
+                )
+            ]
+        ),
+        tool_call=ToolCallContent(id="call-1", name="bash", arguments={}),
+        args={},
+        context=AgentContext(
+            messages=[
+                UserMessage(content="实现并验证这次权限重构"),
+                UserMessage(content="continue"),
+            ]
+        ),
+    )
+
+    transcript = _approval_transcript(ctx)
+
+    assert "<user trust=trusted>" in transcript
+    assert "实现并验证这次权限重构" in transcript
+    assert "continue" not in transcript
+    assert "<assistant trust=untrusted>" in transcript
+    assert "pytest -q" in transcript
+
+
+def test_agent_harness_propagates_external_directories(tmp_path: Path) -> None:
+    external = ExternalDirectory(path=tmp_path / "shared", access="read")
+
+    harness = AgentHarness(
+        composition=_composition(GateConfig(external_directories=(external,))),
+        runtime=_runtime(tmp_path),
+    )
+
+    assert harness.external_directories == (external,)
+    assert harness._gate.snapshot().external_directories == (external,)
+
+
+def test_agent_harness_propagates_sensitive_path_overrides(tmp_path: Path) -> None:
+    override = SensitivePathOverride(path=tmp_path / ".env", access="read")
+
+    harness = AgentHarness(
+        composition=_composition(GateConfig(sensitive_path_overrides=(override,))),
+        runtime=_runtime(tmp_path),
+    )
+
+    assert harness.sensitive_path_overrides == (override,)
+    assert harness._gate.snapshot().sensitive_path_overrides == (override,)
+
+
+def test_agent_harness_replaces_the_whole_provider_generation(tmp_path: Path) -> None:
+    first_provider = object()
+    second_provider = object()
+    harness = AgentHarness(
+        composition=_composition(GateConfig(), first_provider),
+        runtime=_runtime(tmp_path),
+    )
+    first_generation = harness.composition.generation_id
+
+    second_generation = harness.replace_primary_provider(cast(Any, second_provider))
+
+    assert second_generation != first_generation
+    assert harness.composition.generation_id == second_generation
+    assert harness.composition.primary_provider is second_provider
+    assert harness.provider is second_provider

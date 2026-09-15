@@ -1,4 +1,4 @@
-# Xcode Review Standards
+# Cade Review Standards
 
 This document defines how coding agents should review this repository. It is separate from implementation standards: `AGENTS.md` and code standards guide how to write code; this file guides how to judge code.
 
@@ -80,7 +80,7 @@ Use direct language. If something exists only for compatibility, test convenienc
 Prefer this format:
 
 ```text
-[medium] src/xcode/example.py::ExampleRunner
+[medium] src/cade/example.py::ExampleRunner
 
 Problem:
 ...

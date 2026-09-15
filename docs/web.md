@@ -2,15 +2,15 @@
 
 ## 定位
 
-`xcode web` 是 Xcode 的浏览器工作台：单进程 FastAPI 服务 + 零构建的
+`cade web` 是 Cade 的浏览器工作台：单进程 FastAPI 服务 + 零构建的
 vanilla JS 单页应用。它与 CLI/TUI 共享同一套装配、会话账本和运行语义，
 差异只在于交互投影层——把 harness 的类型化事件流实时渲染成浏览器里的
 步骤脊柱、thinking、工具卡片与审批弹窗。
 
 ```sh
-xcode web              # 默认 http://127.0.0.1:8787
-xcode web --open       # 启动后自动打开浏览器
-xcode web --port 9000
+cade web              # 默认 http://127.0.0.1:8787
+cade web --open       # 启动后自动打开浏览器
+cade web --port 9000
 ```
 
 ## 进程模型
@@ -20,13 +20,13 @@ uvicorn (asyncio 事件循环)
 ├── REST API       /api/*（会话、工作区、模型、effort、git 分支、统计）
 ├── WebSocket /ws  唯一的实时通道：事件流 + 控制 + 审批桥接
 ├── StaticFiles    static/ 三件套（index.html / styles.css / app.js），no-store
-└── WebRunHub      持有唯一 XcodeApp
+└── WebRunHub      持有唯一 CadeApp
         └── 回合在 run_in_executor 工作线程中消费（ask_stream 同步迭代）
 ```
 
 关键点：
 
-- **单实例广播**：进程内只有一个 `XcodeApp`（与 TUI 单进程模型一致），
+- **单实例广播**：进程内只有一个 `CadeApp`（与 TUI 单进程模型一致），
   多个浏览器标签页共享同一事件流。不存在多会话并发。
 - **回合不阻塞事件循环**：agent 的 `ask_stream` 是同步迭代器，放到
   `run_in_executor` 中消费，避免预热模型等阻塞 WebSocket 心跳。
@@ -38,13 +38,13 @@ uvicorn (asyncio 事件循环)
 
 | 模块 | 职责 |
 |---|---|
-| `server/serve.py` | `xcode web` 子命令入口：解析 `--port/--open`，装配 `create_app`，启动 uvicorn |
+| `server/serve.py` | `cade web` 子命令入口：解析 `--port/--open`，装配 `create_app`，启动 uvicorn |
 | `server/api.py` | `create_app()` 装配 REST + WebSocket 路由与静态资源；模型发现缓存（10s 超时 / 5min TTL） |
 | `server/runner.py` | `WebRunHub`：提交流程、事件广播、会话/工作区切换、审批桥接、`broadcast()` |
 | `server/serialize.py` | 事件编码：递归处理 pydantic / dataclass / enum / UUID → JSON-safe dict，超长文本截断 |
 
 `app_factory`（`build_app`）可在服务器运行中重建，用于工作区切换
-（`hub.set_app` 替换整个 `XcodeApp`）。
+（`hub.set_app` 替换整个 `CadeApp`）。
 
 ### 复用而非新造
 
@@ -92,7 +92,7 @@ workspace_switched | pong
 | `/api/sessions` | GET/POST | 列历史会话 / 新建会话 |
 | `/api/sessions/resume` | POST | 恢复历史会话并继续（`{id}`） |
 | `/api/sessions/{id}` | GET | 单会话回放（`_SESSION_TRANSCRIPT_LIMIT` 截断） |
-| `/api/workspaces` | GET/POST | 列工作区 / 切换 `{path}`（近期列表持久化到 `~/.xcode/web_workspaces.json`） |
+| `/api/workspaces` | GET/POST | 列工作区 / 切换 `{path}`（近期列表持久化到 `~/.cade/web_workspaces.json`） |
 | `/api/git/branches` | GET/POST | 列本地 + 远端分支 / 切换 `{name}` |
 | `/ws` | WS | 实时通道 |
 
@@ -117,11 +117,11 @@ workspace_switched | pong
 ## 开发与验证
 
 ```sh
-uv run xcode web --port 8791                    # 本地起服务
-uv run pytest src/xcode/tests/test_server_web.py -q   # 序列化/API 契约测试
+uv run cade web --port 8791                    # 本地起服务
+uv run pytest src/cade/tests/test_server_web.py -q   # 序列化/API 契约测试
 uv run ruff check src/                          # lint
-uv run pyright src/xcode/server/                # 类型检查（路由未引用告警可忽略）
-node --check src/xcode/server/static/app.js     # JS 语法检查
+uv run pyright src/cade/server/                # 类型检查（路由未引用告警可忽略）
+node --check src/cade/server/static/app.js     # JS 语法检查
 ```
 
 静态前端改动不需要构建步骤：修改 `static/` 后刷新浏览器即可。服务端改动
@@ -129,8 +129,8 @@ node --check src/xcode/server/static/app.js     # JS 语法检查
 
 ## 已知边界
 
-- 单会话单工作区：服务器持有唯一 `XcodeApp`，不能同时跑两个工作区。
-- 工作区切换以目标目录自己的 `xcode.config.json` 为准（CLI `--config`
+- 单会话单工作区：服务器持有唯一 `CadeApp`，不能同时跑两个工作区。
+- 工作区切换以目标目录自己的 `cade.config.json` 为准（CLI `--config`
   不继承）。
 - custom transport 下切换模型后旧模型从列表消失，只能通过"＋"入口回来。
 - 审批弹窗依赖真实 Act 模式工具调用的 `approval_request` 事件，端到端

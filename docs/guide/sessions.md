@@ -1,13 +1,13 @@
 # 会话、恢复与上下文换窗
 
-Xcode 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch 投影出模型历史、界面历史和运行状态。
+Cade 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch 投影出模型历史、界面历史和运行状态。
 
 ## 1. Session 文件
 
 默认目录：
 
 ```text
-.xcode/
+.cade/
 ├── sessions/
 │   └── session-<timestamp>.jsonl
 ├── session_index.json
@@ -96,7 +96,7 @@ Xcode 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch
 
 ## 8. 文件快照与 `/undo`
 
-Git 工程的每个用户 turn 可以建立 pre/post snapshot。快照使用 `.xcode/snapshots/<session-id>` 下的隐藏 Git tree，记录修改、创建和删除文件，并排除环境密钥、生成目录和大型文件。
+Git 工程的每个用户 turn 可以建立 pre/post snapshot。快照使用 `.cade/snapshots/<session-id>` 下的隐藏 Git tree，记录修改、创建和删除文件，并排除环境密钥、生成目录和大型文件。
 
 ```text
 /undo --list   查看快照记录

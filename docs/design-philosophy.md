@@ -1,8 +1,8 @@
-# Xcode 设计与实现的哲学与理念
+# Cade 设计与实现的哲学与理念
 
-Xcode 是一个运行在本地工作区中的编码 Agent harness。用户给出目标，Agent 通过模型、工具、权限、会话、上下文和验证完成一轮或多轮工作。系统把模型输出转换为可执行的工具调用，把工具结果转换为下一次推理的证据，把运行事实转换为可恢复的会话账本。
+Cade 是一个运行在本地工作区中的编码 Agent harness。用户给出目标，Agent 通过模型、工具、权限、会话、上下文和验证完成一轮或多轮工作。系统把模型输出转换为可执行的工具调用，把工具结果转换为下一次推理的证据，把运行事实转换为可恢复的会话账本。
 
-Xcode 的核心判断可以概括为：
+Cade 的核心判断可以概括为：
 
 > **让模型负责推理，让运行时负责边界，让会话负责连续性，让证据负责结论。**
 
@@ -14,7 +14,7 @@ Xcode 的核心判断可以概括为：
 
 ### 1.1 能力与所有权同步清晰
 
-Xcode 把每项能力放入明确的拥有者：
+Cade 把每项能力放入明确的拥有者：
 
 1. Agent 核心循环拥有模型调用、工具调度、重试、续写和终止编排。
 2. AI 层拥有 provider 协议、服务适配、模型元数据、费用和流事件。
@@ -43,7 +43,7 @@ Pydantic 模型负责外部输入、事件、消息和配置的结构校验；�
 
 ### 1.3 用收敛维护架构
 
-Xcode 通过删除重复路径、回收兼容层、移除未使用功能、拆出单一职责模块来控制维护面。当前架构质量体现在持续收敛：
+Cade 通过删除重复路径、回收兼容层、移除未使用功能、拆出单一职责模块来控制维护面。当前架构质量体现在持续收敛：
 
 - 一个行为拥有一个主要入口。
 - 一个策略拥有一个决策点。
@@ -61,7 +61,7 @@ Xcode 通过删除重复路径、回收兼容层、移除未使用功能、拆�
 CLI / TUI / Web
        │
        ▼
-    XcodeApp
+    CadeApp
        │
        ▼
  coding_agent 装配与 CodingAgentHarness
@@ -157,7 +157,7 @@ Agent 层拥有：
 
 ## 3. Agent 循环：模型推理与运行时纪律的分工
 
-Xcode 的一次 Agent run 由外层 step 循环和内层模型循环组成。
+Cade 的一次 Agent run 由外层 step 循环和内层模型循环组成。
 
 ### 3.1 外层 step 循环
 
@@ -272,7 +272,7 @@ provider 层自身使用 `ProviderRuntime` 处理临时 HTTP、连接和超时�
 - 项目与用户指令：按 root 到 cwd 的层级发现 `AGENTS.override.md`、`AGENTS.md`、`agents.md`、`AGENTS.txt`，共享累计 32 KB 字节预算。
 - 活动 Git diff：提供 staged/unstaged 状态、统计和有限 diff excerpt，预算 8 KB。
 - 最近验证错误：保留最近一次相关 shell 错误，预算 4 KB。
-- `.xcode/notes`：读取 Markdown 与文本笔记，预算 4 KB。
+- `.cade/notes`：读取 Markdown 与文本笔记，预算 4 KB。
 - 技能目录：注入轻量 skill catalog，正文按激活加载。
 - 运行快照：环境、工具、权限和执行模式按状态 section 注入。
 - Git preflight：提供状态、最近提交、脏 diff 统计和用户已有修改提示，并使用短 TTL 缓存。
@@ -357,7 +357,7 @@ surface 使用带显式 `kind` 与 `payload` 的类型标签编码。解码时�
 
 ### 5.5 文件变更快照与撤销
 
-Git 工程中的每个用户 turn 可以建立 pre/post tree snapshot。快照仓库存放在 `.xcode/snapshots/<session>` 下，使用隐藏 Git tree 保存文件状态；用户工作区的 `.git`、index、stash、HEAD 和 refs 保持独立。
+Git 工程中的每个用户 turn 可以建立 pre/post tree snapshot。快照仓库存放在 `.cade/snapshots/<session>` 下，使用隐藏 Git tree 保存文件状态；用户工作区的 `.git`、index、stash、HEAD 和 refs 保持独立。
 
 撤销流程依次检查：路径边界、turn changed_files 归属、post snapshot 冲突、PermissionEngine 权限和实际恢复。已被用户继续修改的文件进入 skipped 状态，原始快照保持可追踪。
 
@@ -474,7 +474,7 @@ ToolGate 在每个 turn 创建冻结 snapshot，把当前模式、规则、审�
 
 三种执行模式分别表达各自的自主性边界：
 
-- **Plan**：模型可见只读探索、搜索、问答和 Web 能力；技能可以通过显式激活进入会话；`write_file`、`edit_file` 的允许范围限定为 `.xcode/plans/*.md`；模式 fallback 为 deny。
+- **Plan**：模型可见只读探索、搜索、问答和 Web 能力；技能可以通过显式激活进入会话；`write_file`、`edit_file` 的允许范围限定为 `.cade/plans/*.md`；模式 fallback 为 deny。
 - **Build**：全部工具可见；项目内结构化写入直接执行；规则覆盖范围外的 shell 与动作进入自动 reviewer；模式 fallback 为 ask。
 - **Act**：全部工具可见；只读工具直接执行；写入与 shell 默认进入用户审批；模式 fallback 为 ask。
 
@@ -490,7 +490,7 @@ Plan 具有最大 investigation turn 计数，达到上限后自动进入 Build 
 - `.venv` 与 `__pycache__` 属于内置 blocked workspace path。
 - 项目外路径需要 `external_directories` 中配置目录的 access 覆盖读、写或读写权限。
 - `sensitive_path_overrides` 只接受精确路径，并且只允许受限环境文件的明确访问例外。
-- `non_workspace_access` 关闭后，用户配置的外部目录白名单停止生效；Xcode 自身的 `~/.xcode` 与 `~/.agents` 保留只读基础设施访问。
+- `non_workspace_access` 关闭后，用户配置的外部目录白名单停止生效；Cade 自身的 `~/.cade` 与 `~/.agents` 保留只读基础设施访问。
 
 ### 7.5 Shell 分析器保持保守语义
 
@@ -508,7 +508,7 @@ POSIX、PowerShell 和 cmd 拥有对应分析器。分析器识别只读命令�
 - 多 target 动作只提供 once。
 - auto reviewer 只允许 once，自动决策永远获得单次授权。
 
-session grant 使用进程内 session store；permanent grant 使用 `.xcode/approval_grants.json`，通过 file lock、临时文件、fsync 和 replace 写入。用户界面负责展示与选择，PermissionEngine 负责 grant 查询和写入。
+session grant 使用进程内 session store；permanent grant 使用 `.cade/approval_grants.json`，通过 file lock、临时文件、fsync 和 replace 写入。用户界面负责展示与选择，PermissionEngine 负责 grant 查询和写入。
 
 Build 的自动 reviewer 在独立 provider 会话中工作，接收有界 transcript、精确 action、工作目录和 turn id。reviewer 的证据规则把 system/user 内容视作授权证据，把 assistant、tool call、tool result、approval reason 和 planned arguments 视作需要审查的证据；高风险动作需要足够授权，critical 风险拒绝，超时和 provider failure 进入 failed-closed 路径。
 
@@ -522,7 +522,7 @@ Build 的自动 reviewer 在独立 provider 会话中工作，接收有界 trans
 - `danger-full-access` 提供完整访问模式。
 - 用户、PID、IPC、UTS namespace 被隔离；网络 deny 时创建独立网络 namespace。
 - 进程能力全部 drop。
-- `.git`、`.agents`、`.xcode` 等 protected workspace paths 以只读方式挂载。
+- `.git`、`.agents`、`.cade` 等 protected workspace paths 以只读方式挂载。
 - 凭据与环境文件通过 `/dev/null` 或 tmpfs 遮蔽。
 - 缺失的 protected path 使用临时 placeholder，并在结束时校验 inode/device 后清理。
 - cwd 必须位于项目 root 内。
@@ -583,7 +583,7 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 
 ### 9.2 记忆承担跨 session 的可复用事实
 
-当前记忆实现使用两个 Markdown 事实文件：项目 `MEMORY.md` 与用户 `~/.xcode/memory/MEMORY.md`。每个 H2 section 形成 `MemoryRecord`，记录 layer、title、body 和稳定 memory id。
+当前记忆实现使用两个 Markdown 事实文件：项目 `MEMORY.md` 与用户 `~/.cade/memory/MEMORY.md`。每个 H2 section 形成 `MemoryRecord`，记录 layer、title、body 和稳定 memory id。
 
 检索使用确定性的 BM25：
 
@@ -640,7 +640,7 @@ Ctrl+C / Ctrl+D 的语义按状态分层：先清空输入，再取消活动 run
 
 Web server 通过 REST 提供 info、stats、model、git branches、workspaces、sessions 和 transcript；WebSocket `/ws` 推送 hello、user message、run lifecycle、structured agent event、approval request、workspace/session switching 和错误。
 
-`WebRunHub` 持有单一 `XcodeApp`、单一活动回合和多个 sink：
+`WebRunHub` 持有单一 `CadeApp`、单一活动回合和多个 sink：
 
 - 一个浏览器提交的事件广播给所有连接。
 - 工具线程产生的审批请求通过线程安全队列进入 asyncio loop。
@@ -670,7 +670,7 @@ Web 前端直接消费结构化 event type，把 text_delta、reasoning_delta、
 - plan/build/act rulesets、fallback 和 shell unresolved policy。
 - external hooks。
 
-交互式设置浏览器与首次启动向导共享同一份 `XcodeRuntimeConfig` 校验。用户通过语义选项编辑 approval policy，写入时展开为 `approval_policy` 与 `approval_router`；枚举、布尔、整数、浮点、路径和字符串列表拥有对应解析器。
+交互式设置浏览器与首次启动向导共享同一份 `CadeRuntimeConfig` 校验。用户通过语义选项编辑 approval policy，写入时展开为 `approval_policy` 与 `approval_router`；枚举、布尔、整数、浮点、路径和字符串列表拥有对应解析器。
 
 配置的核心理念是把“用户想要的运行方式”转换为“可以逐字段验证、逐层覆盖、逐 generation 发布的运行事实”。
 
@@ -696,7 +696,7 @@ Web 前端直接消费结构化 event type，把 text_delta、reasoning_delta、
 
 ### 12.5 前端只改变观察方式
 
-CLI、TUI、Web 和单次 prompt 使用同一个 XcodeApp、同一个 AgentHarness、同一个 ToolGate、同一个事件模型和同一个 session recorder。前端负责输入、审批、展示和交互节奏；执行语义保持一致。
+CLI、TUI、Web 和单次 prompt 使用同一个 CadeApp、同一个 AgentHarness、同一个 ToolGate、同一个事件模型和同一个 session recorder。前端负责输入、审批、展示和交互节奏；执行语义保持一致。
 
 ### 12.6 复杂度通过生命周期治理
 
@@ -710,7 +710,7 @@ provider 可以替换，shell 可以替换，filesystem 可以替换，sandbox �
 
 ## 13. 结语
 
-Xcode 的设计重心是一条完整的本地执行链：
+Cade 的设计重心是一条完整的本地执行链：
 
 ```text
 用户目标

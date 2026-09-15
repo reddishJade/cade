@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://xcode.local/benchmarks/long-horizon-task.schema.json",
-  "title": "Xcode long-horizon benchmark task",
+  "$id": "https://cade.local/benchmarks/long-horizon-task.schema.json",
+  "title": "Cade long-horizon benchmark task",
   "type": "object",
   "additionalProperties": false,
   "required": [

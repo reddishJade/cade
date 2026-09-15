@@ -11,8 +11,8 @@ from benchmarks.models import discover_task_files, load_task
 from benchmarks.reports.generate_report import write_report
 from benchmarks.runners._long_horizon import RunOptions, Variant, run_task
 from benchmarks.runners.progress import create_progress_reporter
-from xcode.harness.config import (
-    XcodeRuntimeConfig,
+from cade.harness.config import (
+    CadeRuntimeConfig,
     discover_runtime_config,
     load_runtime_config,
 )
@@ -27,11 +27,11 @@ def run_variant_main(variant: Variant) -> None:
 
 
 def run_ablation_main() -> None:
-    """交替顺序运行 baseline 与 Xcode，并立即生成配对报告。"""
-    parser = _parser("Run paired baseline/Xcode long-horizon ablations.")
+    """交替顺序运行 baseline 与 Cade，并立即生成配对报告。"""
+    parser = _parser("Run paired baseline/Cade long-horizon ablations.")
     args = parser.parse_args()
-    records = _run_variants(args, ("baseline", "xcode"))
-    _write_and_validate_report(records, args, ("baseline", "xcode"))
+    records = _run_variants(args, ("baseline", "cade"))
+    _write_and_validate_report(records, args, ("baseline", "cade"))
 
 
 def _parser(description: str) -> argparse.ArgumentParser:
@@ -46,7 +46,7 @@ def _parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         type=Path,
-        help="explicit Xcode runtime config; otherwise discover config from cwd",
+        help="explicit Cade runtime config; otherwise discover config from cwd",
     )
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument(
@@ -54,7 +54,7 @@ def _parser(description: str) -> argparse.ArgumentParser:
         type=int,
         default=1,
         help=(
-            "rerun a baseline/Xcode pair after transient incomplete usage; "
+            "rerun a baseline/Cade pair after transient incomplete usage; "
             "original attempts are retained"
         ),
     )
@@ -201,7 +201,7 @@ def _write_and_validate_report(
         raise SystemExit(2)
 
 
-def _runtime_config(path: Path | None) -> XcodeRuntimeConfig:
+def _runtime_config(path: Path | None) -> CadeRuntimeConfig:
     if path is not None:
         return load_runtime_config(path.resolve())
     return discover_runtime_config(Path.cwd())

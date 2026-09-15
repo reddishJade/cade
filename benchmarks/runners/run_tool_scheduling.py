@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import AbstractContextManager
-from dataclasses import replace
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import shutil
 import sys
+from contextlib import AbstractContextManager
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import IO
 from uuid import uuid4
 
@@ -61,7 +61,7 @@ def main() -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run paired serial/Xcode tool scheduling benchmarks."
+        description="Run paired serial/Cade tool scheduling benchmarks."
     )
     parser.add_argument(
         "tasks",
@@ -75,7 +75,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--workers",
         type=int,
-        help="override every task's Xcode worker limit",
+        help="override every task's Cade worker limit",
     )
     parser.add_argument("--keep-workspaces", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
@@ -146,7 +146,7 @@ async def _run_one(
     run_id = f"{task.id}-{variant}-r{repeat}-{uuid4().hex[:8]}"
     workspace = output_dir / "workspaces" / run_id
     progress.start(f"{task.id} {variant} · {label}")
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     try:
         measurement = await measure_scheduling(
             task,
@@ -216,8 +216,8 @@ def _error_record(
 
 def _ordered_variants(repeat: int) -> tuple[SchedulingVariant, SchedulingVariant]:
     if repeat % 2 == 0:
-        return "xcode", "serial"
-    return "serial", "xcode"
+        return "cade", "serial"
+    return "serial", "cade"
 
 
 class _SchedulingProgress(AbstractContextManager["_SchedulingProgress"]):
@@ -305,7 +305,7 @@ def _record_number(record: dict[str, object], field: str) -> float:
 
 
 def _default_output_dir() -> Path:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return Path("benchmark-results") / "tool_scheduling" / stamp
 
 
