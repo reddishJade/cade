@@ -133,6 +133,8 @@ def run_tui(
             auto_continue=auto_continue,
             session_id=session_id,
         ).run()
+    except KeyboardInterrupt:
+        return 0
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 1
