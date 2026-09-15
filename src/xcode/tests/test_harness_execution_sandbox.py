@@ -87,6 +87,15 @@ def _fake_bwrap(tmp_path: Path) -> Path:
     return executable
 
 
+@pytest.mark.skipif(sys.platform == "linux", reason="仅验证非 Linux 平台保护")
+def test_linux_sandbox_rejects_non_linux_host(tmp_path: Path) -> None:
+    with pytest.raises(
+        SandboxUnavailableError,
+        match="Linux bubblewrap sandbox requires Linux",
+    ):
+        LinuxBubblewrapSandbox(SandboxPolicy(project_root=tmp_path))
+
+
 @LINUX_ONLY
 def test_linux_workspace_write_wraps_command_and_protects_metadata(
     tmp_path: Path,
