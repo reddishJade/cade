@@ -37,17 +37,17 @@ API key 连接可以在首次运行后重复执行，配置写入 `main` profile
     "model_profiles": {
       "main": {
         "transport": "deepseek_chat",
-        "chat_model": "deepseek-v4-flash",
+        "chat_model": "deepseek-flash",
         "base_url": "https://api.deepseek.com",
         "api_key": "",
         "thinking": true,
         "reasoning_effort": "high"
       },
       "reviewer": {
-        "chat_model": "deepseek-v4-flash",
+        "chat_model": "deepseek-flash",
         "thinking": false
       },
-      "subagent": "deepseek-v4-flash"
+      "subagent": "deepseek-flash"
     }
   }
 }
@@ -73,9 +73,14 @@ BIGMODEL_API_KEY=...
 | provider | 模型 |
 | --- | --- |
 | OpenAI | `gpt-5.5`、`gpt-5.4`、`gpt-5.4-mini` |
-| DeepSeek | `deepseek-v4-pro`、`deepseek-v4-flash` |
+| DeepSeek | `deepseek-v4-pro`、`deepseek-flash` |
 | ChatGLM | `glm-5.1`、`glm-5`、`glm-5-turbo`、`glm-4.7`、`glm-4.7-flash` |
 | MiMo | `mimo-v2.5-pro`、`mimo-v2.5` |
+
+DeepSeek 的 `deepseek-flash` 对应 DeepSeek-V4.1-Flash（1M 上下文、384K 最大
+输出）；`deepseek-v4-pro` 对应 DeepSeek-V4-Pro。官方已停用的
+`deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 仍会被 API 接受，cade
+在注册表查询、上下文窗口和成本估算时把它们归一化为 `deepseek-flash`。
 
 网关可以提供自定义模型名。Web 工作台会优先请求当前 gateway 的 `/models`，失败时使用注册表和当前模型；custom transport 展示当前模型与自定义输入。
 
