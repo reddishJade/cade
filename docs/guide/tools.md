@@ -43,7 +43,7 @@ Agent 默认使用并行工具模式，`tool_workers` 默认 4。工具可以声
 ### `read_file`
 
 ```json
-{"path": "src/xcode/main.py", "offset": 1, "limit": 80}
+{"path": "src/cade/main.py", "offset": 1, "limit": 80}
 ```
 
 支持文件与目录。文本结果带 `<path>`、`<type>`、`<content>`、1-based 行号和继续读取提示；默认最多 2000 行、50 KB，单行最多 2000 字符。二进制文件返回明确错误，图片按 magic bytes 检测并缩放到最大边 2000 像素，数据保存在 metadata。
@@ -66,7 +66,7 @@ Agent 默认使用并行工具模式，`tool_workers` 默认 4。工具可以声
 
 ### `apply_patch`
 
-使用 Xcode 结构化格式：
+使用 Cade 结构化格式：
 
 ```text
 *** Begin Patch

@@ -1,0 +1,80 @@
+"""Coding product tool registry builder.
+
+The product layer owns tool composition decisions: which tools belong to each
+group, how they are constructed, and which runtime values they receive.
+"""
+
+from __future__ import annotations
+
+import threading
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from cade.agent.types import ToolSpec
+from cade.coding_agent.tools import (
+    build_apply_patch_tool,
+    build_bash_tool,
+    build_glob_tools,
+    build_grep_tool,
+    build_question_tool,
+    build_read_file_tool,
+    build_todowrite_tool,
+    build_webfetch_tool,
+    build_websearch_tool,
+    build_write_file_tools,
+)
+from cade.harness.execution_env import Shell
+from cade.harness.session_todo import SessionTodoState
+
+if TYPE_CHECKING:
+    from cade.coding_agent.tools import ShellSpec
+    from cade.harness.agent_runtime import ContextualRetrievalState
+    from cade.harness.skills import SkillRegistry
+
+
+def build_project_scoped_registry(
+    project_root: Path,
+    contextual_state: ContextualRetrievalState | None,
+    shell_spec: ShellSpec,
+    cancel_event: threading.Event | None = None,
+    shell: Shell | None = None,
+    skill_registry: SkillRegistry | None = None,
+    todo_state: SessionTodoState | None = None,
+) -> tuple[ToolSpec, ...]:
+    registry: tuple[ToolSpec, ...] = ()
+    registry += (
+        build_read_file_tool(
+            project_root,
+            context_state=contextual_state,
+            cancel_event=cancel_event,
+        ),
+    )
+    registry += build_write_file_tools(
+        project_root,
+        context_state=contextual_state,
+        cancel_event=cancel_event,
+    )
+    registry += (
+        build_apply_patch_tool(
+            project_root,
+            context_state=contextual_state,
+        ),
+    )
+    registry += build_glob_tools(project_root, cancel_event=cancel_event)
+    registry += (build_grep_tool(project_root, cancel_event=cancel_event),)
+    registry += (build_webfetch_tool(), build_websearch_tool())
+    registry += (build_question_tool(),)
+    registry += (
+        build_bash_tool(
+            project_root,
+            shell_spec=shell_spec,
+            cancel_event=cancel_event,
+            shell=shell,
+        ),
+    )
+    registry += (build_todowrite_tool(todo_state),)
+    if skill_registry is not None and skill_registry.available_names():
+        from cade.harness.skills import build_load_skill_tool
+
+        registry += (build_load_skill_tool(skill_registry),)
+    return registry

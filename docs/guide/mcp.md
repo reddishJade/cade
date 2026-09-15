@@ -1,10 +1,10 @@
 # MCP 服务与工具扩展
 
-Xcode 通过官方 Python MCP SDK 接入 stdio server。MCP 工具注册后与内置工具使用同一个 Agent、ToolGate、参数校验、事件和 session 记录流程。
+Cade 通过官方 Python MCP SDK 接入 stdio server。MCP 工具注册后与内置工具使用同一个 Agent、ToolGate、参数校验、事件和 session 记录流程。
 
 ## 1. 配置
 
-默认配置文件：项目根目录 `.xcode/mcp_config.json`。
+默认配置文件：项目根目录 `.cade/mcp_config.json`。
 
 ```json
 {
@@ -47,7 +47,7 @@ mcp__internal-api__fetch_tools
 
 ## 3. 缓存
 
-缓存文件：`.xcode/mcp_cache.json`。缓存 entry 保存：
+缓存文件：`.cade/mcp_cache.json`。缓存 entry 保存：
 
 - server 配置 hash。
 - MCP protocol version。
@@ -72,7 +72,7 @@ mcp__internal-api__fetch_tools
 
 ## 5. MCP 结果
 
-MCP result 会校验 `isError`、content、structuredContent 和 outputSchema，并转换为 Xcode ToolOutput：
+MCP result 会校验 `isError`、content、structuredContent 和 outputSchema，并转换为 Cade ToolOutput：
 
 - text → 文本。
 - image → ImageContent，保留 MIME 与数据。
@@ -97,6 +97,6 @@ server 名和 tool 名经过安全字符清理。多个 server 产生相同 host
 /tool list
 ```
 
-`/mcp status` 展示 server state、enabled、deferred、tool count、protocol version、server identity 和最近错误。`/mcp reload` 重新读取 `.xcode/mcp_config.json`，更新 runtime registry 并发布新的 MCP 工具快照；重新装配 app 可以让新的工具表完整进入后续 Agent run。
+`/mcp status` 展示 server state、enabled、deferred、tool count、protocol version、server identity 和最近错误。`/mcp reload` 重新读取 `.cade/mcp_config.json`，更新 runtime registry 并发布新的 MCP 工具快照；重新装配 app 可以让新的工具表完整进入后续 Agent run。
 
 MCP server 的工具调用仍然经过当前模式、静态规则、路径/命令边界和审批策略。涉及网络或外部数据时，同时检查 [security.md](security.md)。

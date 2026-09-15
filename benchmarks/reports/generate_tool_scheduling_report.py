@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 import json
-from pathlib import Path
 import statistics
+from collections import defaultdict
+from pathlib import Path
 
 
 def write_tool_scheduling_report(
@@ -66,12 +66,12 @@ class _Pair:
         task_id: str,
         repeat: int,
         serial: dict[str, object],
-        xcode: dict[str, object],
+        cade: dict[str, object],
     ) -> None:
         self.task_id = task_id
         self.repeat = repeat
         self.serial = serial
-        self.xcode = xcode
+        self.cade = cade
 
 
 def _select_pairs(
@@ -90,30 +90,30 @@ def _select_pairs(
     for (task_id, repeat), variants in sorted(grouped.items()):
         reasons: list[str] = []
         serial_records = variants.get("serial", [])
-        xcode_records = variants.get("xcode", [])
+        cade_records = variants.get("cade", [])
         if len(serial_records) != 1:
             reasons.append(f"serial records={len(serial_records)}")
-        if len(xcode_records) != 1:
-            reasons.append(f"xcode records={len(xcode_records)}")
+        if len(cade_records) != 1:
+            reasons.append(f"cade records={len(cade_records)}")
         if not reasons:
             serial = serial_records[0]
-            xcode = xcode_records[0]
+            cade = cade_records[0]
             if not bool(serial.get("success")):
                 reasons.append("serial failed")
-            if not bool(xcode.get("success")):
-                reasons.append("xcode failed")
-            if serial.get("output_digest") != xcode.get("output_digest"):
+            if not bool(cade.get("success")):
+                reasons.append("cade failed")
+            if serial.get("output_digest") != cade.get("output_digest"):
                 reasons.append("output digest mismatch")
             serial_workspace_digest = serial.get("workspace_digest")
-            xcode_workspace_digest = xcode.get("workspace_digest")
-            if not serial_workspace_digest or not xcode_workspace_digest:
+            cade_workspace_digest = cade.get("workspace_digest")
+            if not serial_workspace_digest or not cade_workspace_digest:
                 reasons.append("workspace digest missing")
-            elif serial_workspace_digest != xcode_workspace_digest:
+            elif serial_workspace_digest != cade_workspace_digest:
                 reasons.append("workspace digest mismatch")
-            if _integer(serial, "call_count") != _integer(xcode, "call_count"):
+            if _integer(serial, "call_count") != _integer(cade, "call_count"):
                 reasons.append("call count mismatch")
             if not reasons:
-                selected.append(_Pair(task_id, repeat, serial, xcode))
+                selected.append(_Pair(task_id, repeat, serial, cade))
         if reasons:
             excluded.append(
                 {
@@ -130,29 +130,29 @@ def _summarize_pairs(pairs: list[_Pair]) -> dict[str, object]:
         return {
             "pairs": 0,
             "serial_p50_seconds": None,
-            "xcode_p50_seconds": None,
+            "cade_p50_seconds": None,
             "p50_latency_reduction": None,
             "serial_p95_seconds": None,
-            "xcode_p95_seconds": None,
+            "cade_p95_seconds": None,
             "p95_latency_reduction": None,
             "median_paired_speedup": None,
             "median_paired_latency_reduction": None,
-            "xcode_max_concurrency": None,
+            "cade_max_concurrency": None,
         }
     serial_durations = [_number(pair.serial, "duration_seconds") for pair in pairs]
-    xcode_durations = [_number(pair.xcode, "duration_seconds") for pair in pairs]
+    cade_durations = [_number(pair.cade, "duration_seconds") for pair in pairs]
     serial_p50 = _percentile(serial_durations, 0.5)
-    xcode_p50 = _percentile(xcode_durations, 0.5)
+    cade_p50 = _percentile(cade_durations, 0.5)
     serial_p95 = _percentile(serial_durations, 0.95)
-    xcode_p95 = _percentile(xcode_durations, 0.95)
+    cade_p95 = _percentile(cade_durations, 0.95)
     speedups = [
-        serial / xcode
-        for serial, xcode in zip(serial_durations, xcode_durations, strict=True)
-        if xcode > 0
+        serial / cade
+        for serial, cade in zip(serial_durations, cade_durations, strict=True)
+        if cade > 0
     ]
     reductions = [
-        _reduction(serial, xcode)
-        for serial, xcode in zip(serial_durations, xcode_durations, strict=True)
+        _reduction(serial, cade)
+        for serial, cade in zip(serial_durations, cade_durations, strict=True)
     ]
     homogeneous_workload = len({pair.task_id for pair in pairs}) == 1
     return {
@@ -161,38 +161,38 @@ def _summarize_pairs(pairs: list[_Pair]) -> dict[str, object]:
             _integer(pairs[0].serial, "call_count") if homogeneous_workload else None
         ),
         "tool_workers": (
-            _integer(pairs[0].xcode, "tool_workers") if homogeneous_workload else None
+            _integer(pairs[0].cade, "tool_workers") if homogeneous_workload else None
         ),
         "read_calls": (
-            _integer(pairs[0].xcode, "read_calls") if homogeneous_workload else None
+            _integer(pairs[0].cade, "read_calls") if homogeneous_workload else None
         ),
         "write_calls": (
-            _integer(pairs[0].xcode, "write_calls") if homogeneous_workload else None
+            _integer(pairs[0].cade, "write_calls") if homogeneous_workload else None
         ),
         "controlled_delay_ms_total": (
-            _number(pairs[0].xcode, "controlled_delay_ms_total")
+            _number(pairs[0].cade, "controlled_delay_ms_total")
             if homogeneous_workload
             else None
         ),
         "serial_p50_seconds": serial_p50,
-        "xcode_p50_seconds": xcode_p50,
-        "p50_latency_reduction": _reduction(serial_p50, xcode_p50),
+        "cade_p50_seconds": cade_p50,
+        "p50_latency_reduction": _reduction(serial_p50, cade_p50),
         "serial_p95_seconds": serial_p95,
-        "xcode_p95_seconds": xcode_p95,
-        "p95_latency_reduction": _reduction(serial_p95, xcode_p95),
+        "cade_p95_seconds": cade_p95,
+        "p95_latency_reduction": _reduction(serial_p95, cade_p95),
         "median_paired_speedup": statistics.median(speedups),
         "median_paired_latency_reduction": statistics.median(reductions),
-        "xcode_max_concurrency": max(
-            _integer(pair.xcode, "max_concurrency") for pair in pairs
+        "cade_max_concurrency": max(
+            _integer(pair.cade, "max_concurrency") for pair in pairs
         ),
     }
 
 
 def _quality_summary(records: list[dict[str, object]]) -> dict[str, object]:
     serial_records = [record for record in records if record.get("variant") == "serial"]
-    xcode_records = [record for record in records if record.get("variant") == "xcode"]
-    xcode_write_records = [
-        record for record in xcode_records if _integer(record, "write_calls") > 0
+    cade_records = [record for record in records if record.get("variant") == "cade"]
+    cade_write_records = [
+        record for record in cade_records if _integer(record, "write_calls") > 0
     ]
     grouped: dict[tuple[str, int], dict[str, list[dict[str, object]]]] = defaultdict(
         lambda: defaultdict(list)
@@ -201,35 +201,35 @@ def _quality_summary(records: list[dict[str, object]]) -> dict[str, object]:
         key = (str(record.get("task_id", "")), _integer(record, "repeat"))
         grouped[key][str(record.get("variant", ""))].append(record)
     complete_pairs = [
-        (variants["serial"][0], variants["xcode"][0])
+        (variants["serial"][0], variants["cade"][0])
         for variants in grouped.values()
-        if len(variants.get("serial", [])) == 1 and len(variants.get("xcode", [])) == 1
+        if len(variants.get("serial", [])) == 1 and len(variants.get("cade", [])) == 1
     ]
     return {
         "serial_run_success_rate": _boolean_rate(serial_records, "success"),
-        "xcode_run_success_rate": _boolean_rate(xcode_records, "success"),
+        "cade_run_success_rate": _boolean_rate(cade_records, "success"),
         "result_order_correct_rate": _boolean_rate(
-            xcode_records, "result_order_correct"
+            cade_records, "result_order_correct"
         ),
         "write_isolation_rate": (
             statistics.mean(
                 float(_integer(record, "unsafe_overlap_events") == 0)
-                for record in xcode_write_records
+                for record in cade_write_records
             )
-            if xcode_write_records
+            if cade_write_records
             else None
         ),
         "unsafe_overlap_events_total": sum(
-            _integer(record, "unsafe_overlap_events") for record in xcode_records
+            _integer(record, "unsafe_overlap_events") for record in cade_records
         ),
         "complete_pairs": len(complete_pairs),
         "output_equivalence_rate": (
             statistics.mean(
                 float(
                     bool(serial.get("output_digest"))
-                    and serial.get("output_digest") == xcode.get("output_digest")
+                    and serial.get("output_digest") == cade.get("output_digest")
                 )
-                for serial, xcode in complete_pairs
+                for serial, cade in complete_pairs
             )
             if complete_pairs
             else None
@@ -238,9 +238,9 @@ def _quality_summary(records: list[dict[str, object]]) -> dict[str, object]:
             statistics.mean(
                 float(
                     bool(serial.get("workspace_digest"))
-                    and serial.get("workspace_digest") == xcode.get("workspace_digest")
+                    and serial.get("workspace_digest") == cade.get("workspace_digest")
                 )
-                for serial, xcode in complete_pairs
+                for serial, cade in complete_pairs
             )
             if complete_pairs
             else None
@@ -266,15 +266,15 @@ def _render_report(summary: dict[str, object]) -> str:
         (
             "This benchmark replays identical deterministic tool-call batches "
             "through the production scheduler. Serial forces every call to run "
-            "sequentially; Xcode honors each tool's parallel/sequential execution "
+            "sequentially; Cade honors each tool's parallel/sequential execution "
             "classification."
         ),
         "Controlled delay models reproducible I/O waiting and is not model latency.",
         "",
         (
-            "| Workload | Calls (R/W) | Workers | Cohort | Serial P50 | Xcode P50 "
-            "| P50 reduction | Serial P95 | Xcode P95 | P95 reduction | Median "
-            "speedup | Xcode max concurrency |"
+            "| Workload | Calls (R/W) | Workers | Cohort | Serial P50 | Cade P50 "
+            "| P50 reduction | Serial P95 | Cade P95 | P95 reduction | Median "
+            "speedup | Cade max concurrency |"
         ),
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
@@ -289,13 +289,13 @@ def _render_report(summary: dict[str, object]) -> str:
             f"{_display_int(stats.get('tool_workers'))} | "
             f"n={_display_int(stats.get('pairs'))} pairs | "
             f"{_seconds(stats.get('serial_p50_seconds'))} | "
-            f"{_seconds(stats.get('xcode_p50_seconds'))} | "
+            f"{_seconds(stats.get('cade_p50_seconds'))} | "
             f"{_percent(stats.get('p50_latency_reduction'))} | "
             f"{_seconds(stats.get('serial_p95_seconds'))} | "
-            f"{_seconds(stats.get('xcode_p95_seconds'))} | "
+            f"{_seconds(stats.get('cade_p95_seconds'))} | "
             f"{_percent(stats.get('p95_latency_reduction'))} | "
             f"{_speedup(stats.get('median_paired_speedup'))} | "
-            f"{_display_int(stats.get('xcode_max_concurrency'))} |"
+            f"{_display_int(stats.get('cade_max_concurrency'))} |"
         )
     overall_raw = summary.get("overall")
     overall = overall_raw if isinstance(overall_raw, dict) else {}
@@ -315,22 +315,22 @@ def _render_report(summary: dict[str, object]) -> str:
                 f"{_speedup(overall.get('median_paired_speedup'))}."
             ),
             (
-                "- Serial/Xcode run success: "
+                "- Serial/Cade run success: "
                 f"{_percent(quality.get('serial_run_success_rate'))} / "
-                f"{_percent(quality.get('xcode_run_success_rate'))}."
+                f"{_percent(quality.get('cade_run_success_rate'))}."
             ),
             (
-                "- Serial/Xcode output/workspace equivalence: "
+                "- Serial/Cade output/workspace equivalence: "
                 f"{_percent(quality.get('output_equivalence_rate'))} / "
                 f"{_percent(quality.get('workspace_equivalence_rate'))}."
             ),
             (
-                "- Xcode write-isolation rate: "
+                "- Cade write-isolation rate: "
                 f"{_percent(quality.get('write_isolation_rate'))} "
                 f"(unsafe overlaps: {quality.get('unsafe_overlap_events_total', 0)})."
             ),
             (
-                "- Xcode result-order correctness: "
+                "- Cade result-order correctness: "
                 f"{_percent(quality.get('result_order_correct_rate'))}."
             ),
         ]

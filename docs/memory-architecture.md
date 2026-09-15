@@ -16,7 +16,7 @@ behavioral scores to individual notes.
    confirmed decisions, verification status, unresolved issues, and next action.
 4. **Project memory** is `MEMORY.md`. It contains only durable project rules,
    architecture decisions, and verified cross-session facts.
-5. **User memory** is `~/.xcode/memory/MEMORY.md`. It contains durable
+5. **User memory** is `~/.cade/memory/MEMORY.md`. It contains durable
    cross-project preferences.
 
 The layers have different jobs. Current progress and next actions belong in
@@ -33,7 +33,7 @@ read-only `search_memory` tool when prior project knowledge may matter.
 
 ### Rollover
 
-Xcode uses the provider profile's `context_window` override when present;
+Cade uses the provider profile's `context_window` override when present;
 otherwise it reads the active model's registered context window. Automatic
 rollover begins at 95% or at the output-reserve boundary, whichever comes
 first. The old window is closed without a summary. Startup context, activated
@@ -43,7 +43,7 @@ fingerprint.
 
 ### Resume
 
-Xcode restores:
+Cade restores:
 
 ```text
 latest durable context-window replacement

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://xcode.local/benchmarks/tool-scheduling-task.schema.json",
-  "title": "Xcode tool scheduling benchmark task",
+  "$id": "https://cade.local/benchmarks/tool-scheduling-task.schema.json",
+  "title": "Cade tool scheduling benchmark task",
   "type": "object",
   "additionalProperties": false,
   "required": [

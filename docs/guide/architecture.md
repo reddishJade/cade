@@ -1,6 +1,6 @@
 # 运行时架构与一次回合
 
-Xcode 将编码 Agent 组织为分层运行时。每层拥有自己的状态、协议和失败边界，外层通过装配把能力组合成一个可运行的 app。
+Cade 将编码 Agent 组织为分层运行时。每层拥有自己的状态、协议和失败边界，外层通过装配把能力组合成一个可运行的 app。
 
 ## 1. 分层
 
@@ -8,7 +8,7 @@ Xcode 将编码 Agent 组织为分层运行时。每层拥有自己的状态、�
 CLI / TUI / Web
       │
       ▼
-   XcodeApp
+   CadeApp
       │
       ▼
 coding_agent product
@@ -54,7 +54,7 @@ coding_agent product
   → next model step or final result
 ```
 
-`XcodeApp` 负责装配共享的 provider、工具注册表、session recorder、inbox、context rollover、skills、memory、MCP 和安全配置。每个 run 捕获一个 `AgentComposition` generation；provider、工具、配置、静态 gate 策略和请求组装器保持同一代视图。
+`CadeApp` 负责装配共享的 provider、工具注册表、session recorder、inbox、context rollover、skills、memory、MCP 和安全配置。每个 run 捕获一个 `AgentComposition` generation；provider、工具、配置、静态 gate 策略和请求组装器保持同一代视图。
 
 ## 3. 三种状态表达
 

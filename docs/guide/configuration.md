@@ -1,15 +1,15 @@
 # 配置系统
 
-Xcode 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic 模型校验；运行中的 Agent 使用校验后的快照。
+Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic 模型校验；运行中的 Agent 使用校验后的快照。
 
 ## 1. 配置文件与优先级
 
 `discover_runtime_config()` 按以下顺序读取：
 
 ```text
-~/.xcode/settings.json       全局
-<project>/xcode.config.json  项目
-<project>/.xcode/settings.json 本地
+~/.cade/settings.json       全局
+<project>/cade.config.json  项目
+<project>/.cade/settings.json 本地
 环境变量                      最后覆盖
 ```
 
@@ -17,12 +17,12 @@ Xcode 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
 
 常用位置：
 
-- `xcode.config.json`：项目运行配置。
-- `.xcode/settings.json`：本地覆盖。
-- `~/.xcode/settings.json`：用户全局默认。
-- `.xcode/mcp_config.json`：项目 MCP server 配置，单独读取。
+- `cade.config.json`：项目运行配置。
+- `.cade/settings.json`：本地覆盖。
+- `~/.cade/settings.json`：用户全局默认。
+- `.cade/mcp_config.json`：项目 MCP server 配置，单独读取。
 
-当前仓库的 `.gitignore` 会忽略 `xcode.config.json` 与 `.xcode/`。团队需要共享配置时，按团队策略调整忽略规则，并单独管理 API key。
+当前仓库的 `.gitignore` 会忽略 `cade.config.json` 与 `.cade/`。团队需要共享配置时，按团队策略调整忽略规则，并单独管理 API key。
 
 ## 2. 顶层结构
 
@@ -105,16 +105,16 @@ Xcode 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
 ```json
 {
   "paths": {
-    "sessions_dir": ".xcode/sessions",
+    "sessions_dir": ".cade/sessions",
     "skills_dir": null
   },
   "observability": {
-    "audit_path": ".xcode/audit.jsonl"
+    "audit_path": ".cade/audit.jsonl"
   }
 }
 ```
 
-相对路径以项目根目录解析。会话账本、快照、MCP 缓存和永久授权默认位于 `.xcode/`。
+相对路径以项目根目录解析。会话账本、快照、MCP 缓存和永久授权默认位于 `.cade/`。
 
 ## 6. 安全与执行模式
 
@@ -147,11 +147,11 @@ Xcode 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
 ## 7. 交互式编辑
 
 ```bash
-xcode config
-xcode config --project-root ./project
-xcode config --config ./private.json
+cade config
+cade config --project-root ./project
+cade config --config ./private.json
 ```
 
 REPL 中使用 `/config`。浏览器当前展示常用模式、审批、sandbox 和 Shell 设置；文本或枚举写入前先验证，校验失败时保持原文件。
 
-环境变量 `XCODE_APPROVAL_POLICY` 可以覆盖 `security.approval_policy`。provider API key 按 profile、provider 环境变量和通用 `OPENAI_API_KEY` 等顺序解析，详见 [providers.md](providers.md)。
+环境变量 `CADE_APPROVAL_POLICY` 可以覆盖 `security.approval_policy`。provider API key 按 profile、provider 环境变量和通用 `OPENAI_API_KEY` 等顺序解析，详见 [providers.md](providers.md)。

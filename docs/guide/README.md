@@ -1,6 +1,6 @@
-# Xcode 使用指南
+# Cade 使用指南
 
-Xcode 是运行在本地工作区中的编码 Agent。它把模型推理、工具执行、权限审批、上下文管理、会话恢复和交互界面组合成一条可持续的工作流。
+Cade 是运行在本地工作区中的编码 Agent。它把模型推理、工具执行、权限审批、上下文管理、会话恢复和交互界面组合成一条可持续的工作流。
 
 ## 推荐阅读路径
 
@@ -28,22 +28,22 @@ Session 以 JSONL entry 保存事实。输入、工具调用、工具结果、�
 
 ### Tool gate
 
-模型产生工具调用后，Xcode 先解析工具意图、目标路径和未决效果，再执行权限规则、执行模式、已有授权和审批流程。工具 handler 在 gate 放行后运行。
+模型产生工具调用后，Cade 先解析工具意图、目标路径和未决效果，再执行权限规则、执行模式、已有授权和审批流程。工具 handler 在 gate 放行后运行。
 
 ## 最小工作流
 
 ```bash
 # 在项目根目录完成配置
-xcode setup
+cade setup
 
 # 默认启动终端 TUI
-xcode
+cade
 
 # 或使用传统 REPL
-xcode cli
+cade cli
 
 # 单次任务
-xcode -p "检查当前项目的 provider 配置，并给出改进建议"
+cade -p "检查当前项目的 provider 配置，并给出改进建议"
 ```
 
 常用输入入口：
@@ -55,13 +55,13 @@ xcode -p "检查当前项目的 provider 配置，并给出改进建议"
 
 ## 配置与数据位置
 
-- 项目配置：`xcode.config.json`
-- 项目本地配置：`.xcode/settings.json`
-- 会话账本：`.xcode/sessions/`
-- 永久授权：`.xcode/approval_grants.json`
-- MCP 配置与缓存：`.xcode/mcp_config.json`、`.xcode/mcp_cache.json`
+- 项目配置：`cade.config.json`
+- 项目本地配置：`.cade/settings.json`
+- 会话账本：`.cade/sessions/`
+- 永久授权：`.cade/approval_grants.json`
+- MCP 配置与缓存：`.cade/mcp_config.json`、`.cade/mcp_cache.json`
 - 项目记忆：`MEMORY.md`
-- 用户记忆：`~/.xcode/memory/MEMORY.md`
+- 用户记忆：`~/.cade/memory/MEMORY.md`
 - 审计日志：由 `observability.audit_path` 指定
 
 工具以当前 `--project-root` 作为默认工作区边界；项目外访问需要 `external_directories` 与对应 access 授权。启动时明确指定项目根目录，可以让会话、工具、配置和 Git 状态保持同一工作区语义。

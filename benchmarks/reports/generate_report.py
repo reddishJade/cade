@@ -9,7 +9,7 @@ from pathlib import Path
 from statistics import fmean, median
 from typing import Any
 
-_VARIANTS = ("baseline", "xcode")
+_VARIANTS = ("baseline", "cade")
 _PHASES = ("pre_rollover", "post_rollover", "post_resume")
 
 
@@ -161,7 +161,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
     """将聚合结果渲染为适合 README/简历取数的 Markdown。"""
     variants = summary["variants"]
     baseline = variants["baseline"]
-    xcode = variants["xcode"]
+    cade = variants["cade"]
     changes = summary["paired_changes"]
     cohorts = summary["cohorts"]
     correctness_cohort = _cohort(cohorts.get("correctness_pairs"))
@@ -179,13 +179,13 @@ def render_markdown(summary: dict[str, Any]) -> str:
         ),
         f"Retried logical pairs: {summary['retried_pairs']}.",
         "",
-        "| Metric | Cohort | Baseline | Xcode | Paired change |",
+        "| Metric | Cohort | Baseline | Cade | Paired change |",
         "|---|---:|---:|---:|---:|",
         _row(
             "Mean input tokens",
             usage_cohort,
             baseline.get("input_tokens_mean"),
-            xcode.get("input_tokens_mean"),
+            cade.get("input_tokens_mean"),
             changes.get("input_token_reduction"),
             change_kind="percent",
         ),
@@ -193,7 +193,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Peak input tokens",
             usage_cohort,
             baseline.get("peak_input_tokens_mean"),
-            xcode.get("peak_input_tokens_mean"),
+            cade.get("peak_input_tokens_mean"),
             changes.get("peak_input_token_reduction"),
             change_kind="percent",
         ),
@@ -201,7 +201,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Pre-rollover input tokens",
             pre_cohort,
             baseline.get("pre_rollover_input_tokens_mean"),
-            xcode.get("pre_rollover_input_tokens_mean"),
+            cade.get("pre_rollover_input_tokens_mean"),
             changes.get("pre_rollover_input_token_reduction"),
             change_kind="percent",
         ),
@@ -209,7 +209,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Post-rollover input tokens",
             post_cohort,
             baseline.get("post_rollover_input_tokens_mean"),
-            xcode.get("post_rollover_input_tokens_mean"),
+            cade.get("post_rollover_input_tokens_mean"),
             changes.get("post_rollover_input_token_reduction"),
             change_kind="percent",
         ),
@@ -217,7 +217,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Post-resume input tokens",
             resume_cohort,
             baseline.get("post_resume_input_tokens_mean"),
-            xcode.get("post_resume_input_tokens_mean"),
+            cade.get("post_resume_input_tokens_mean"),
             changes.get("post_resume_input_token_reduction"),
             change_kind="percent",
         ),
@@ -225,7 +225,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Input cost (USD)",
             usage_cohort,
             baseline.get("input_cost_mean"),
-            xcode.get("input_cost_mean"),
+            cade.get("input_cost_mean"),
             changes.get("input_cost_reduction"),
             value_kind="cost",
             change_kind="percent",
@@ -234,7 +234,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Duration (seconds)",
             correctness_cohort,
             baseline.get("duration_seconds_mean"),
-            xcode.get("duration_seconds_mean"),
+            cade.get("duration_seconds_mean"),
             changes.get("duration_reduction"),
             change_kind="percent",
         ),
@@ -242,7 +242,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Task success rate",
             correctness_cohort,
             baseline.get("task_success_rate"),
-            xcode.get("task_success_rate"),
+            cade.get("task_success_rate"),
             changes.get("task_success_change_pp"),
             value_kind="percent",
             change_kind="points",
@@ -251,7 +251,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Long-session completion rate",
             correctness_cohort,
             baseline.get("long_session_completion_rate"),
-            xcode.get("long_session_completion_rate"),
+            cade.get("long_session_completion_rate"),
             changes.get("long_session_completion_change_pp"),
             value_kind="percent",
             change_kind="points",
@@ -260,7 +260,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "State retention",
             correctness_cohort,
             baseline.get("state_retention_mean"),
-            xcode.get("state_retention_mean"),
+            cade.get("state_retention_mean"),
             changes.get("state_retention_change_pp"),
             value_kind="percent",
             change_kind="points",
@@ -269,7 +269,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "Context overflow rate",
             correctness_cohort,
             baseline.get("context_overflow_rate"),
-            xcode.get("context_overflow_rate"),
+            cade.get("context_overflow_rate"),
             changes.get("context_overflow_change_pp"),
             value_kind="percent",
             change_kind="points",
@@ -362,7 +362,7 @@ def _paired_changes(
                 pair
                 for pair in complete_usage_pairs
                 if pair["baseline"].get("input_cost_usd") is not None
-                and pair["xcode"].get("input_cost_usd") is not None
+                and pair["cade"].get("input_cost_usd") is not None
             ],
             "input_cost_usd",
         ),
@@ -392,17 +392,17 @@ def _paired_changes(
 
 def _validate_pair_controls(pair: dict[str, dict[str, Any]]) -> None:
     baseline = pair["baseline"]
-    xcode = pair["xcode"]
+    cade = pair["cade"]
     for field in (
         "model",
         "temperature",
         "execution_mode",
         "baseline_commit",
     ):
-        if baseline.get(field) != xcode.get(field):
+        if baseline.get(field) != cade.get(field):
             raise ValueError(
                 f"paired runs differ on control {field}: "
-                f"{baseline.get(field)!r} != {xcode.get(field)!r}"
+                f"{baseline.get(field)!r} != {cade.get(field)!r}"
             )
 
 
@@ -484,10 +484,10 @@ def _paired_reduction(
     if not pairs:
         return None
     baseline = fmean(float(pair["baseline"].get(field, 0)) for pair in pairs)
-    xcode = fmean(float(pair["xcode"].get(field, 0)) for pair in pairs)
+    cade = fmean(float(pair["cade"].get(field, 0)) for pair in pairs)
     if baseline == 0:
         return None
-    return (baseline - xcode) / baseline
+    return (baseline - cade) / baseline
 
 
 def _paired_point_change(
@@ -496,7 +496,7 @@ def _paired_point_change(
     if not pairs:
         return None
     differences = [
-        float(bool(pair["xcode"].get(field))) - float(bool(pair["baseline"].get(field)))
+        float(bool(pair["cade"].get(field))) - float(bool(pair["baseline"].get(field)))
         for pair in pairs
     ]
     return fmean(differences)
@@ -506,9 +506,9 @@ def _paired_numeric_point_change(
     pairs: list[dict[str, dict[str, Any]]], field: str
 ) -> float | None:
     differences = [
-        float(pair["xcode"][field]) - float(pair["baseline"][field])
+        float(pair["cade"][field]) - float(pair["baseline"][field])
         for pair in pairs
-        if pair["xcode"].get(field) is not None
+        if pair["cade"].get(field) is not None
         and pair["baseline"].get(field) is not None
     ]
     return fmean(differences) if differences else None
@@ -536,7 +536,7 @@ def _row(
     label: str,
     cohort: str,
     baseline: object,
-    xcode: object,
+    cade: object,
     change: object,
     *,
     value_kind: str = "number",
@@ -544,7 +544,7 @@ def _row(
 ) -> str:
     return (
         f"| {label} | {cohort} | {_format_value(baseline, value_kind)} | "
-        f"{_format_value(xcode, value_kind)} | "
+        f"{_format_value(cade, value_kind)} | "
         f"{_format_value(change, change_kind)} |"
     )
 
