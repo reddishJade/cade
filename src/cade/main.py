@@ -16,6 +16,40 @@ from .coding_agent.app import build_app
 from .harness.config import discover_runtime_config, resolve_config_path
 
 
+class _ExplicitAuthMethodAction(argparse.Action):
+    """记录用户是否显式指定了认证方式。"""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        del parser, option_string
+        setattr(namespace, self.dest, values)
+        namespace._auth_method_explicit = True
+
+
+def _add_auth_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--provider",
+        default="openai-codex",
+        help="Account provider for OAuth (default: openai-codex).",
+    )
+    parser.set_defaults(_auth_method_explicit=False)
+    parser.add_argument(
+        "--method",
+        choices=["browser", "device_code", "api_key"],
+        default="browser",
+        action=_ExplicitAuthMethodAction,
+        help=(
+            "Authentication method: browser/device_code for an account, "
+            "or api_key (default: prompt interactively)."
+        ),
+    )
+
+
 def _build_config_parser(subparsers) -> None:
     config_parser = subparsers.add_parser(
         "config",
@@ -41,19 +75,11 @@ def _build_setup_parser(subparsers) -> None:
 
 def _build_login_parser(subparsers) -> None:
     login_parser = subparsers.add_parser(
-        "login", help="Log in to an AI provider (e.g. OpenAI Codex / ChatGPT)"
+        "login",
+        aliases=["connect"],
+        help="Connect an account or API-key provider",
     )
-    login_parser.add_argument(
-        "--provider",
-        default="openai-codex",
-        help="Provider to authenticate with (default: openai-codex).",
-    )
-    login_parser.add_argument(
-        "--method",
-        choices=["browser", "device_code"],
-        default="browser",
-        help="Authentication method: browser or device_code (default: browser).",
-    )
+    _add_auth_arguments(login_parser)
 
 
 def _build_logout_parser(subparsers) -> None:
@@ -73,18 +99,12 @@ def _build_auth_parser(subparsers) -> None:
     )
     auth_subparsers = auth_parser.add_subparsers(dest="auth_action")
 
-    login_p = auth_subparsers.add_parser("login", help="Log in to a provider account")
-    login_p.add_argument(
-        "--provider",
-        default="openai-codex",
-        help="Provider to authenticate with (default: openai-codex).",
+    login_p = auth_subparsers.add_parser(
+        "login",
+        aliases=["connect"],
+        help="Connect an account or API-key provider",
     )
-    login_p.add_argument(
-        "--method",
-        choices=["browser", "device_code"],
-        default="browser",
-        help="Authentication method: browser or device_code (default: browser).",
-    )
+    _add_auth_arguments(login_p)
 
     logout_p = auth_subparsers.add_parser(
         "logout", help="Log out from a provider account"
@@ -194,12 +214,18 @@ def main() -> int:
             pass
         return 0
 
-    if args.command == "login":
+    if args.command in {"login", "connect"}:
         from .cli.auth_cmd import handle_login_command
 
+        method = (
+            getattr(args, "method", "browser")
+            if getattr(args, "_auth_method_explicit", False)
+            else None
+        )
         return handle_login_command(
             provider=getattr(args, "provider", "openai-codex"),
-            method=getattr(args, "method", "browser"),
+            method=method,
+            project_root=project_root,
         )
 
     if args.command == "logout":
@@ -217,10 +243,16 @@ def main() -> int:
         )
 
         action = getattr(args, "auth_action", None)
-        if action == "login":
+        if action in {"login", "connect"}:
+            method = (
+                getattr(args, "method", "browser")
+                if getattr(args, "_auth_method_explicit", False)
+                else None
+            )
             return handle_login_command(
                 provider=getattr(args, "provider", "openai-codex"),
-                method=getattr(args, "method", "browser"),
+                method=method,
+                project_root=project_root,
             )
         if action == "logout":
             return handle_logout_command(
@@ -250,7 +282,10 @@ def main() -> int:
         if login_method == "auth":
             from .cli.auth_cmd import handle_login_command
 
-            login_status = handle_login_command()
+            login_status = handle_login_command(
+                method="browser",
+                project_root=project_root,
+            )
             if login_status == 130:
                 return 0
             if login_status != 0:

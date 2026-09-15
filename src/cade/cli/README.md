@@ -46,7 +46,7 @@ CLI 层基于 `prompt-toolkit` 驱动，单向消费底层的 `AgentHarnessEvent
 - **人机审批交互 ([repl_hitl.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/repl_hitl.py))**：在敏感工具调用或跨边界写操作时中断，弹出选择菜单（单次允许、拒绝、会话持久记忆）。
 - **实时渲染引擎 ([repl_rendering.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/repl_rendering.py) / [tool_rendering.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tool_rendering.py))**：流式 Markdown 渲染、思考流折叠、语法高亮与执行状态指示。
 - **智能补全与辅助 ([completion.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/completion.py) / [file_refs.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/file_refs.py))**：命令自动补全、模型选项过滤与 `@path` 语法文件内容即时内联。
-- **首次配置向导 ([setup_wizard.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/setup_wizard.py))**：提供引导式 Provider 与 API Key 设置流程。
+- **连接与配置向导 ([setup_wizard.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/setup_wizard.py))**：`login`/`connect` 先选择账户 OAuth 或 API key；API key 方式进入 Provider 设置流程。
 
 ---
 

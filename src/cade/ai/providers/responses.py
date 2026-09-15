@@ -11,7 +11,7 @@ import json
 import logging
 import platform
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from inspect import isawaitable
 from typing import Any
 
@@ -309,6 +309,44 @@ def to_responses_text_config(
     return {"format": response_format}
 
 
+def _response_value(value: object, name: str, default: Any = None) -> Any:
+    """同时读取 SDK 模型和兼容 Responses 端点返回的字典事件。"""
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _reasoning_summary_text(item: object) -> str:
+    """从完整 reasoning item 中提取服务端生成的可见摘要。"""
+    summary = _response_value(item, "summary")
+    if not isinstance(summary, (list, tuple)):
+        return ""
+    parts = [str(text) for part in summary if (text := _response_value(part, "text"))]
+    return "\n\n".join(parts)
+
+
+def _reasoning_item_key(value: object, fallback: str = "reasoning") -> str:
+    """为同一 reasoning 输出项生成跨事件稳定的键。"""
+    output_index = _response_value(value, "output_index")
+    if isinstance(output_index, int):
+        return f"output:{output_index}"
+    item_id = _response_value(value, "item_id") or _response_value(value, "id")
+    return f"item:{item_id}" if item_id else fallback
+
+
+def _unseen_reasoning_suffix(previous: str, complete: str) -> str:
+    """用 done 事件补齐未流式送达的摘要，同时避免重复显示。"""
+    if not complete or complete == previous:
+        return ""
+    if not previous:
+        return complete
+    if complete.startswith(previous):
+        return complete[len(previous) :]
+    if previous.startswith(complete):
+        return ""
+    return ""
+
+
 class OpenAIResponsesProvider:
     """OpenAI Responses API provider。"""
 
@@ -503,13 +541,14 @@ class OpenAIResponsesProvider:
         item_to_call_id: dict[str, str] = {}
         ordered_call_ids: list[str] = []
         accumulated_text = ""
+        accumulated_reasoning: dict[str, str] = defaultdict(str)
         last_response_id: str | None = None
 
         async for event in _iterate_response_events(response_stream):
-            event_type = getattr(event, "type", "")
+            event_type = _response_value(event, "type", "")
 
             if event_type == "response.output_text.delta":
-                delta_text = getattr(event, "delta", "")
+                delta_text = _response_value(event, "delta", "")
                 if delta_text:
                     accumulated_text += str(delta_text)
                     yield TextDelta(chunk=str(delta_text))
@@ -519,18 +558,46 @@ class OpenAIResponsesProvider:
                 "response.reasoning_summary_text.delta",
                 "response.reasoning.delta",
             ):
-                delta_text = getattr(event, "delta", "")
+                delta_text = _response_value(event, "delta", "")
                 if delta_text:
+                    key = _reasoning_item_key(event)
+                    accumulated_reasoning[key] += str(delta_text)
                     yield ReasoningDelta(chunk=str(delta_text))
 
-            elif event_type == "response.output_item.added":
-                item = getattr(event, "item", None)
-                if item and getattr(item, "type", "") == "function_call":
-                    raw_item_id = str(getattr(item, "id", "") or "")
-                    call_id = str(getattr(item, "call_id", "") or raw_item_id)
+            elif event_type in (
+                "response.reasoning_text.done",
+                "response.reasoning_summary_text.done",
+            ):
+                complete_text = str(_response_value(event, "text", "") or "")
+                key = _reasoning_item_key(event)
+                suffix = _unseen_reasoning_suffix(
+                    accumulated_reasoning[key], complete_text
+                )
+                if suffix:
+                    accumulated_reasoning[key] += suffix
+                    yield ReasoningDelta(chunk=suffix)
+
+            elif event_type in (
+                "response.output_item.added",
+                "response.output_item.done",
+            ):
+                item = _response_value(event, "item")
+                item_type = _response_value(item, "type", "") if item else ""
+                if item_type == "reasoning":
+                    key = _reasoning_item_key(event, _reasoning_item_key(item))
+                    complete_text = _reasoning_summary_text(item)
+                    suffix = _unseen_reasoning_suffix(
+                        accumulated_reasoning[key], complete_text
+                    )
+                    if suffix:
+                        accumulated_reasoning[key] += suffix
+                        yield ReasoningDelta(chunk=suffix)
+                elif item_type == "function_call":
+                    raw_item_id = str(_response_value(item, "id", "") or "")
+                    call_id = str(_response_value(item, "call_id", "") or raw_item_id)
                     if raw_item_id:
                         item_to_call_id[raw_item_id] = call_id
-                    name = str(getattr(item, "name", "") or "")
+                    name = str(_response_value(item, "name", "") or "")
                     if call_id and call_id not in ordered_call_ids:
                         ordered_call_ids.append(call_id)
                     function_calls[call_id]["id"] = call_id
@@ -538,10 +605,11 @@ class OpenAIResponsesProvider:
 
             elif event_type == "response.function_call_arguments.delta":
                 raw_id = str(
-                    getattr(event, "call_id", "") or getattr(event, "item_id", "")
+                    _response_value(event, "call_id", "")
+                    or _response_value(event, "item_id", "")
                 )
                 call_id = item_to_call_id.get(raw_id, raw_id)
-                delta_args = getattr(event, "delta", "")
+                delta_args = _response_value(event, "delta", "")
                 if call_id and delta_args:
                     if call_id not in ordered_call_ids:
                         ordered_call_ids.append(call_id)
@@ -549,18 +617,36 @@ class OpenAIResponsesProvider:
 
             elif event_type == "response.function_call_arguments.done":
                 raw_id = str(
-                    getattr(event, "call_id", "") or getattr(event, "item_id", "")
+                    _response_value(event, "call_id", "")
+                    or _response_value(event, "item_id", "")
                 )
                 call_id = item_to_call_id.get(raw_id, raw_id)
-                full_args = getattr(event, "arguments", None)
+                full_args = _response_value(event, "arguments")
                 if call_id and full_args is not None:
                     function_calls[call_id]["arguments"] = str(full_args)
 
-            elif event_type == "response.completed":
-                resp = getattr(event, "response", None)
+            elif event_type in (
+                "response.completed",
+                "response.done",
+                "response.incomplete",
+            ):
+                resp = _response_value(event, "response")
                 if resp:
-                    last_response_id = getattr(resp, "id", None)
-                    usage = getattr(resp, "usage", None)
+                    last_response_id = _response_value(resp, "id")
+                    response_output = _response_value(resp, "output", ())
+                    if isinstance(response_output, (list, tuple)):
+                        for output_index, item in enumerate(response_output):
+                            if _response_value(item, "type", "") != "reasoning":
+                                continue
+                            key = f"output:{output_index}"
+                            complete_text = _reasoning_summary_text(item)
+                            suffix = _unseen_reasoning_suffix(
+                                accumulated_reasoning[key], complete_text
+                            )
+                            if suffix:
+                                accumulated_reasoning[key] += suffix
+                                yield ReasoningDelta(chunk=suffix)
+                    usage = _response_value(resp, "usage")
                     if usage:
                         prompt_tokens = getattr(usage, "input_tokens", 0) or 0
                         completion_tokens = getattr(usage, "output_tokens", 0) or 0

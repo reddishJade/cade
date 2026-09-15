@@ -80,7 +80,8 @@ REPL 中可通过 `/model` 命令动态切换模型而无需重启：
 `/config`（REPL/TUI）与 `cade config`（CLI）打开同一个交互式设置浏览器，
 只收录适合运行时调整的行为开关：执行模式、审批策略、shell。其余字段
 （agent 调参、request hygiene、路径、安全细则、hooks、prompt 等）直接编辑
-`cade.config.json`；provider profile 由首次启动的 setup 向导管理。
+`cade.config.json`；provider profile 由 `cade login`/`cade connect` 的 API key
+流程或可重复运行的 `cade setup` 管理。
 
 ```
 > Default Mode           act

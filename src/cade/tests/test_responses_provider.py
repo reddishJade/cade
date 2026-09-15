@@ -276,6 +276,85 @@ async def test_responses_provider_stream_events() -> None:
     assert provider._last_response_id == "resp_xyz123"
 
 
+async def test_codex_provider_backfills_reasoning_summary_from_done_item() -> None:
+    mock_client = MagicMock()
+    reasoning_item = {
+        "type": "reasoning",
+        "id": "reasoning_1",
+        "summary": [{"type": "summary_text", "text": "Inspecting the repository."}],
+    }
+    mock_client.responses.create.return_value = iter(
+        [
+            {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {"type": "reasoning", "id": "reasoning_1", "summary": []},
+            },
+            {
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": reasoning_item,
+            },
+            {
+                "type": "response.completed",
+                "response": {
+                    "id": "resp_reasoning_done",
+                    "output": [reasoning_item],
+                    "usage": None,
+                },
+            },
+        ]
+    )
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(api_key="access-token", model="gpt-5.6-sol"),
+        client=mock_client,
+    )
+
+    events = [
+        event
+        async for event in provider.stream(
+            [{"role": "user", "content": "Inspect this repository"}], []
+        )
+    ]
+
+    reasoning = [event.chunk for event in events if isinstance(event, ReasoningDelta)]
+    assert reasoning == ["Inspecting the repository."]
+
+
+async def test_responses_provider_backfills_missing_reasoning_done_suffix() -> None:
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.reasoning_summary_text.delta",
+                output_index=0,
+                delta="Think",
+            ),
+            SimpleNamespace(
+                type="response.reasoning_summary_text.done",
+                output_index=0,
+                text="Thinking",
+            ),
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_reasoning_suffix", usage=None),
+            ),
+        ]
+    )
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5"),
+        client=mock_client,
+    )
+
+    events = [
+        event
+        async for event in provider.stream([{"role": "user", "content": "Hi"}], [])
+    ]
+
+    reasoning = [event.chunk for event in events if isinstance(event, ReasoningDelta)]
+    assert reasoning == ["Think", "ing"]
+
+
 async def test_sync_response_stream_does_not_block_incremental_delivery() -> None:
     release = threading.Event()
 

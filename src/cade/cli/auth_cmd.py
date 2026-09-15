@@ -6,15 +6,40 @@
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 
 from cade.harness.auth.manager import AuthManager
+
+from .setup_wizard import prompt_auth_method, run_setup_wizard
 
 
 def handle_login_command(
     provider: str = "openai-codex",
-    method: str = "browser",
+    method: str | None = None,
+    project_root: Path | None = None,
 ) -> int:
-    """处理用户登录流程。"""
+    """处理账户 OAuth 或 API key 配置流程。"""
+    if method is None:
+        try:
+            selected = prompt_auth_method()
+        except KeyboardInterrupt:
+            print("\n认证方式选择已取消。")
+            return 130
+        if selected is None:
+            return 0
+        method = "browser" if selected == "account" else "api_key"
+
+    if method in ("api", "api_key"):
+        try:
+            run_setup_wizard(project_root or Path.cwd(), from_connect=True)
+        except KeyboardInterrupt:
+            print("\nAPI key 配置已取消。")
+            return 130
+        return 0
+
+    if method == "account":
+        method = "browser"
+
     manager = AuthManager()
     print(f"正在启动 {provider} 认证登录 (模式: {method})...")
 
@@ -44,7 +69,7 @@ def handle_login_command(
                 notify_callback=notify_browser,
             )
 
-        print(f"\n✓ 成功登录 {provider}！凭据已安全保存至 {manager.store.path}")
+        print(f"\n✓ 成功登录 {provider}！凭据已安全保存至 {manager.storage_location}")
         if cred.account_id:
             print(f"  账号 ID: {cred.account_id}")
         if cred.expires:
@@ -77,11 +102,11 @@ def handle_status_command() -> int:
     manager = AuthManager()
     accounts = manager.list_accounts()
     if not accounts:
-        print(f"当前暂无已登录账号。凭据文件: {manager.store.path}")
+        print(f"当前暂无已登录账号。凭据文件: {manager.storage_location}")
         print("您可以使用 `cade login` 进行登录。")
         return 0
 
-    print(f"已登录账号列表 (存储于 {manager.store.path}):")
+    print(f"已登录账号列表 (存储于 {manager.storage_location}):")
     for acc in accounts:
         provider = str(acc.get("provider", ""))
         account_id = str(acc.get("account_id") or "默认")
