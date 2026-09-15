@@ -36,6 +36,7 @@ Harness 层连接了底层的 `agent` 循环与上层的具体领域产品，提
 | **[mcp/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/mcp/README.md)** | 基于 Stdio 的 Model Context Protocol 协议集成与动态工具注册 |
 | **[memory/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/README.md)** | 项目级与用户级 Markdown 长期事实持久化与 BM25 检索支持 |
 | **[skills/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/README.md)** | 技能自动发现、`SKILL.md` 解析与两阶段轻量注入/按需激活机制 |
+| **`auth/`** | 宿主凭据文件存储及登录/登出编排；Provider OAuth 与刷新规则由 `cade.ai.auth` 提供 |
 
 ---
 

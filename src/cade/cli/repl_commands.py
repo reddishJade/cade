@@ -271,19 +271,27 @@ def cmd_rename(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_login(cmd: str, ctx: CommandContext) -> bool:
-    """登录 AI 提供方账号（如 OpenAI Codex / ChatGPT 订阅）。"""
+    """选择账户 OAuth 或 API key，连接一个 AI 提供方。"""
     from .auth_cmd import handle_login_command
 
     parts = cmd.split()
-    method = "browser"
+    method: str | None = None
     provider = "openai-codex"
     for part in parts[1:]:
         if part in ("device", "device_code", "--device", "-d"):
             method = "device_code"
+        elif part in ("account", "browser"):
+            method = "browser"
+        elif part in ("api", "api_key"):
+            method = "api_key"
         elif not part.startswith("-"):
             provider = part
 
-    handle_login_command(provider=provider, method=method)
+    handle_login_command(
+        provider=provider,
+        method=method,
+        project_root=ctx.project_root,
+    )
     return False
 
 
@@ -305,7 +313,7 @@ def cmd_auth(cmd: str, ctx: CommandContext) -> bool:
 
     parts = cmd.split()
     subcmd = parts[1].lower() if len(parts) > 1 else "status"
-    if subcmd == "login":
+    if subcmd in {"login", "connect"}:
         return cmd_login(" ".join(parts[1:]), ctx)
     if subcmd == "logout":
         return cmd_logout(" ".join(parts[1:]), ctx)
@@ -1529,8 +1537,15 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/login": CommandEntry(
         handler=cmd_login,
-        desc="Log in to an AI provider account (e.g. OpenAI Codex / ChatGPT).",
-        args_desc="[provider] [--device]",
+        desc="Connect an account or API-key provider.",
+        args_desc="[provider|account|api_key] [--device]",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
+    ),
+    "/connect": CommandEntry(
+        handler=cmd_login,
+        desc="Connect an account or API-key provider.",
+        args_desc="[provider|account|api_key] [--device]",
         accepts_args=True,
         group=COMMAND_GROUP_AUTH,
     ),

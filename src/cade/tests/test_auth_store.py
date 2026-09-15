@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
+from cade.ai.auth import AuthCredential
 from cade.cli.auth_cmd import (
     handle_login_command,
     handle_logout_command,
     handle_status_command,
 )
+from cade.cli.setup_wizard import prompt_auth_method
 from cade.harness.auth.manager import AuthManager
 from cade.harness.auth.store import AuthStore
-from cade.harness.auth.types import AuthCredential
 from cade.main import parse_args
 
 
@@ -104,7 +106,7 @@ def test_auth_manager_auto_refresh(tmp_path: Path) -> None:
     )
 
     with patch(
-        "cade.harness.auth.manager.refresh_openai_codex_token",
+        "cade.ai.auth.openai_codex.refresh_openai_codex_token",
         return_value=refreshed_cred,
     ) as mock_refresh:
         got = manager.get_valid_credential("openai-codex")
@@ -117,6 +119,32 @@ def test_auth_manager_auto_refresh(tmp_path: Path) -> None:
         saved = store.get("openai-codex")
         assert saved is not None
         assert saved.access == "new_token"
+
+
+def test_auth_manager_delegates_login_to_ai_auth_provider(tmp_path: Path) -> None:
+    store = AuthStore(path=tmp_path / "auth.json")
+    credential = AuthCredential(provider="example", access="provider-token")
+
+    class StubAuthProvider:
+        id = "example"
+
+        def login(
+            self,
+            *,
+            method: str,
+            notify_callback: Callable[..., None] | None = None,
+        ) -> AuthCredential:
+            assert method == "browser"
+            assert notify_callback is None
+            return credential
+
+        def refresh(self, current: AuthCredential) -> AuthCredential:
+            return current
+
+    manager = AuthManager(store=store, providers={"example": StubAuthProvider()})
+
+    assert manager.login("example") is credential
+    assert store.get("example") == credential
 
 
 def test_auth_manager_list_accounts(tmp_path: Path) -> None:
@@ -144,6 +172,15 @@ def test_cli_auth_arguments() -> None:
     assert args_login.command == "login"
     assert args_login.provider == "openai-codex"
     assert args_login.method == "browser"
+    assert args_login._auth_method_explicit is False
+
+    args_connect = parse_args(["connect"])
+    assert args_connect.command == "connect"
+    assert args_connect._auth_method_explicit is False
+
+    args_api_key = parse_args(["login", "--method", "api_key"])
+    assert args_api_key.method == "api_key"
+    assert args_api_key._auth_method_explicit is True
 
     args_device = parse_args(
         ["login", "--provider", "openai-codex", "--method", "device_code"]
@@ -156,6 +193,39 @@ def test_cli_auth_arguments() -> None:
     args_auth_status = parse_args(["auth", "status"])
     assert args_auth_status.command == "auth"
     assert args_auth_status.auth_action == "status"
+
+    args_auth_connect = parse_args(["auth", "connect"])
+    assert args_auth_connect.auth_action == "connect"
+    assert args_auth_connect._auth_method_explicit is False
+
+
+def test_prompt_auth_method_choices() -> None:
+    with patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.return_value = "Sign in with an account"
+        assert prompt_auth_method() == "account"
+        kwargs = mock_select.call_args.kwargs
+        assert kwargs["choices"] == [
+            "Sign in with an account",
+            "Sign in with an API key",
+        ]
+        assert "default" not in kwargs
+
+    with patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.return_value = "Sign in with an API key"
+        assert prompt_auth_method() == "api_key"
+
+
+def test_cli_api_key_login_runs_provider_setup(tmp_path: Path) -> None:
+    with (
+        patch("cade.cli.auth_cmd.prompt_auth_method", return_value="api_key"),
+        patch(
+            "cade.cli.auth_cmd.run_setup_wizard",
+            return_value=("saved", None),
+        ) as wizard,
+    ):
+        assert handle_login_command(project_root=tmp_path) == 0
+
+    wizard.assert_called_once_with(tmp_path, from_connect=True)
 
 
 def test_cli_auth_handlers(tmp_path: Path, monkeypatch) -> None:

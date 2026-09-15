@@ -89,3 +89,4 @@ async for event in bundle.llm.stream(messages, tools=tools):
 ## 4. 子模块分工
 
 - **[providers/](file:///C:/Users/dwei/workspace/cade/src/cade/ai/providers/README.md)**：各大厂商的具体协议适配实现（OpenAI、DeepSeek、ChatGLM、MiMo 等），基于公共基类与编解码器封装。
+- **`auth/`**：Provider 认证契约、OAuth/Token 刷新实现与请求前凭据解析。具体凭据持久化由上层宿主通过 `CredentialStore` 实现，AI 层不感知 `auth.json` 路径或 CLI 交互。

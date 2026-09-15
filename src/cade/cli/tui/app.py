@@ -75,6 +75,7 @@ from ..repl_tools import (
     file_reference_event,
     run_shell_shortcut,
 )
+from ..shared.working import working_status_text
 from .state import (
     _CommandChoiceRequest,
     _CommandTextRequest,
@@ -184,6 +185,7 @@ class _CadeTui:
         self._exit_pending_key = ""
         self._last_stream_refresh = 0.0
         self._stream_refresh_handle: TimerHandle | None = None
+        self._working_refresh_handle: TimerHandle | None = None
         self._agent_event_queue: Queue[AgentHarnessEvent] = Queue()
         self._agent_event_queue_lock = threading.Lock()
         self._agent_event_drain_lock = threading.Lock()
@@ -749,7 +751,7 @@ class _CadeTui:
         if references:
             self._store.append("event", file_reference_event(references))
         self._state.add_user(text)
-        self._state.running = True
+        self._start_working()
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
             token = getattr(agent, "cancellation_token", None)
@@ -1476,8 +1478,7 @@ class _CadeTui:
         """宿主只根据 durable inbox 的 wake 状态启动运行。"""
         if self._state.running or not self._agent_app.agent.has_pending_input():
             return
-        self._state.running = True
-        self._refresh()
+        self._start_working()
         threading.Thread(
             target=self._run_turn,
             args=(None, None),
@@ -1540,11 +1541,12 @@ class _CadeTui:
                 _LogEntry("error", f"[error] {type(exc).__name__}: {detail}")
             )
             self._state.running = False
-            self._refresh()
+            self._stop_working()
             self._schedule_turn_commit()
             return
 
         self._wait_for_agent_events()
+        self._stop_working()
 
         if not answer:
             self._save_partial_answer(turn_log_start)
@@ -1721,6 +1723,39 @@ class _CadeTui:
             - top_line,
         )
 
+    def _start_working(self) -> None:
+        """启动独立的工作状态动画，不把它当作 reasoning。"""
+        self._state.start_working()
+        self._schedule_working_refresh()
+        self._refresh()
+
+    def _stop_working(self) -> None:
+        """停止工作状态动画；reasoning 内容由输出状态单独管理。"""
+        self._state.stop_working()
+        if self._working_refresh_handle is not None:
+            self._working_refresh_handle.cancel()
+            self._working_refresh_handle = None
+        self._refresh()
+
+    def _schedule_working_refresh(self) -> None:
+        loop = self._application.loop
+        if (
+            not self._state.working
+            or loop is None
+            or not loop.is_running()
+            or self._working_refresh_handle is not None
+        ):
+            return
+        self._working_refresh_handle = loop.call_later(0.1, self._refresh_working)
+
+    def _refresh_working(self) -> None:
+        """刷新工作动画并安排下一帧。"""
+        self._working_refresh_handle = None
+        if not self._state.working:
+            return
+        self._refresh()
+        self._schedule_working_refresh()
+
     def _refresh(self) -> None:
         self._scrollback = min(self._scrollback, self._max_scrollback())
         self._output_control.text = self._fragments()
@@ -1756,6 +1791,8 @@ class _CadeTui:
 
     def _status_text(self) -> str:
         left = f"mode: {self._repl_state.mode}"
+        if self._state.working:
+            left = f"{working_status_text()}  {left}"
         parts: list[str] = []
         if self._repl_state.context_usage:
             parts.append(f"context: {self._repl_state.context_usage}")

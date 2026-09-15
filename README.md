@@ -100,7 +100,12 @@ cade web            # 默认 http://127.0.0.1:8787
 cade web --open     # 启动后自动打开浏览器
 cade web --port 9000
 
-# 首次使用引导（配置 Provider 与 API key）
+# 连接账户或 API provider（会先选择认证方式）
+cade login
+# `connect` 是同义命令
+cade connect
+
+# Provider 配置向导（可重复运行）
 cade setup
 
 # 打开交互式配置浏览器（调整执行模式、审批策略、Shell 等）
@@ -142,7 +147,8 @@ cade --resume
 | `/model` | 模型配置 | 显示/切换当前模型 |
 | `/effort <level>` | 模型配置 | 设置推理 effort |
 | `/thinking on/off` | 模型配置 | 切换可见的推理摘要；不改变 effort |
-| `/config` | 模型配置 | 管理 provider profile |
+| `/login`、`/connect` | 认证 | 选择账户 OAuth 或 API key provider |
+| `/config` | 模型配置 | 管理运行行为设置；provider 使用 `/login` 或 `cade setup` |
 | `/tool [list\|NAME INPUT]` | 信息工具 | 查看/调用工具 |
 | `/skill NAME` | 信息工具 | 显式激活技能 |
 | `/memory` | 信息工具 | 列出、检索或显式添加长期记忆 |
