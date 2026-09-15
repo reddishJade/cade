@@ -461,8 +461,13 @@ def cmd_queue(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
-def cmd_new_context(cmd: str, ctx: CommandContext) -> bool:
-    """关闭当前模型上下文并立即切换到无摘要的新窗口。"""
+def _replace_context_window(
+    ctx: CommandContext,
+    *,
+    preserve_active_turn: bool,
+    action: str,
+) -> bool:
+    """立即执行无摘要硬换窗并持久化新的 surface。"""
     from xcode.agent._context_window import estimate_message_tokens
     from xcode.harness.agent_runtime.agent_helpers import to_dict
     from xcode.harness.agent_runtime.message_codec import (
@@ -500,7 +505,7 @@ def cmd_new_context(cmd: str, ctx: CommandContext) -> bool:
     next_window = cast(
         Callable[..., list[dict[str, object]]],
         rollover,
-    )(dict_messages, preserve_active_turn=False)
+    )(dict_messages, preserve_active_turn=preserve_active_turn)
     after_msgs = messages_from_provider_dicts(next_window)
     after_tokens = estimate_message_tokens(after_msgs)
 
@@ -516,12 +521,53 @@ def cmd_new_context(cmd: str, ctx: CommandContext) -> bool:
         replacement=after_msgs,
     )
 
+    retention = (
+        "Retained the latest turn."
+        if preserve_active_turn
+        else "Previous turns remain available through history."
+    )
     print(
-        f"Fresh context {window_id}: {len(before_msgs)} messages \u2192 "
+        f"{action} {window_id}: {len(before_msgs)} messages \u2192 "
         f"{len(after_msgs)} messages ({before_tokens:,} \u2192 "
-        f"{after_tokens:,} estimated tokens). No summary was generated."
+        f"{after_tokens:,} estimated tokens). {retention} "
+        "No summary was generated."
     )
     return False
+
+
+def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
+    """通过硬换窗压缩上下文，并保留最近一个工作回合。"""
+    return _replace_context_window(
+        ctx,
+        preserve_active_turn=True,
+        action="Compacted into fresh context",
+    )
+
+
+def cmd_rollover(cmd: str, ctx: CommandContext) -> bool:
+    """丢弃普通对话投影并开启干净窗口。"""
+    parts = cmd.split()
+    force = len(parts) == 2 and parts[1] == "--force"
+    if len(parts) > 2 or (len(parts) == 2 and not force):
+        print("Usage: /rollover [--force]")
+        return False
+
+    from xcode.harness.agent_runtime.context_window import has_working_note
+
+    if not force and not has_working_note(ctx.project_root):
+        print(
+            "Context rollover not started. Write NOTE.md with the current goal, "
+            "confirmed decisions, verification status, unresolved issues, and "
+            "next action; then run /rollover again. Use /rollover --force to "
+            "continue without a working note."
+        )
+        return False
+
+    return _replace_context_window(
+        ctx,
+        preserve_active_turn=False,
+        action="Rolled over to fresh context",
+    )
 
 
 def cmd_goal(cmd: str, ctx: CommandContext) -> bool:
@@ -1558,9 +1604,16 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         accepts_args=True,
         group=COMMAND_GROUP_MODE,
     ),
-    "/new-context": CommandEntry(
-        handler=cmd_new_context,
-        desc="Close the current model context and start a fresh window.",
+    "/compact": CommandEntry(
+        handler=cmd_compact,
+        desc="Compact into a fresh window while retaining the latest turn.",
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+    ),
+    "/rollover": CommandEntry(
+        handler=cmd_rollover,
+        desc="Start a clean context window using NOTE.md as the handoff.",
+        args_desc="[--force]",
+        accepts_args=True,
         group=COMMAND_GROUP_SESSION_ROLLBACK,
     ),
     "/goal": CommandEntry(
@@ -1653,6 +1706,15 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         visible=False,
         group=COMMAND_GROUP_SESSION_ROLLBACK,
         canonical="/undo",
+    ),
+    "/new-context": CommandEntry(
+        handler=cmd_rollover,
+        desc="Deprecated alias for /rollover.",
+        args_desc="[--force]",
+        accepts_args=True,
+        visible=False,
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+        canonical="/rollover",
     ),
 }
 
