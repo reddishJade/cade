@@ -116,6 +116,15 @@ class ContextWindowRollover:
         )
 
 
+def has_working_note(project_root: Path) -> bool:
+    """检查项目根是否存在可用于干净换窗的工作交接记录。"""
+    note_path = project_root / "NOTE.md"
+    try:
+        return bool(note_path.read_text(encoding="utf-8", errors="replace").strip())
+    except OSError:
+        return False
+
+
 def build_new_context_tool(
     controller: ContextWindowController,
     project_root: Path,
@@ -127,12 +136,7 @@ def build_new_context_tool(
         _on_update: Callable[[str], None] | None = None,
     ) -> str:
         reason = str(data.get("reason", "")).strip()
-        note_path = project_root / "NOTE.md"
-        try:
-            note = note_path.read_text(encoding="utf-8", errors="replace").strip()
-        except OSError:
-            note = ""
-        if not note:
+        if not has_working_note(project_root):
             return (
                 "Context window not changed. Write NOTE.md with the current goal, "
                 "confirmed decisions, completed verification, unresolved issues, "
