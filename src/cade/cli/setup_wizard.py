@@ -53,8 +53,8 @@ PROVIDER_PRESETS: dict[str, Any] = {
     "deepseek": {
         "label": "DeepSeek",
         "base_url": "https://api.deepseek.com",
-        "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
-        "default_model": "deepseek-v4-flash",
+        "models": ["deepseek-flash", "deepseek-v4-pro"],
+        "default_model": "deepseek-flash",
         "env_key": "DEEPSEEK_API_KEY",
         "env_base_url": "DEEPSEEK_BASE_URL",
     },

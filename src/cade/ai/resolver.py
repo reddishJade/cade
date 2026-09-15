@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from typing import Final
 
-from cade.ai.models import get_codex_models
+from cade.ai.models import get_codex_models, normalize_model_id
 
 # 别名映射：不区分大小写，映射到规范 model ID
 MODEL_ALIASES: Final[dict[str, str]] = {
@@ -67,7 +67,7 @@ class ModelResolver:
     def resolve_alias(model: str) -> str:
         """规范化模型别名，若无别名则返回原名。"""
         stripped = model.strip()
-        return MODEL_ALIASES.get(stripped.lower(), stripped)
+        return MODEL_ALIASES.get(stripped.lower()) or normalize_model_id(stripped)
 
     @staticmethod
     def normalize_provider(provider: str | None) -> str | None:

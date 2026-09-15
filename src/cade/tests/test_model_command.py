@@ -317,7 +317,7 @@ def test_get_available_model_entries_excludes_subagent_only_profile() -> None:
     app._model_profiles = {
         "subagent": SimpleNamespace(
             transport="deepseek_chat",
-            chat_model="deepseek-v4-flash",
+            chat_model="deepseek-flash",
             api_key="subagent-secret",
         )
     }
@@ -330,7 +330,7 @@ def test_get_available_model_entries_excludes_subagent_only_profile() -> None:
     ):
         entries = get_available_model_entries(app)
 
-    assert all(entry.model != "deepseek-v4-flash" for entry in entries)
+    assert all(entry.model != "deepseek-flash" for entry in entries)
 
 
 def test_get_available_model_entries_deduplicates_current_transport() -> None:
