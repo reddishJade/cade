@@ -25,7 +25,7 @@ def _peak_now() -> datetime:
 
 class TestUsageAccumulator:
     def test_deepseek_style_billing_with_miss(self) -> None:
-        acc = UsageAccumulator("deepseek-v4-flash")
+        acc = UsageAccumulator("deepseek-flash")
         acc.record(
             prompt_tokens=1_000_000,
             completion_tokens=100_000,
@@ -37,24 +37,25 @@ class TestUsageAccumulator:
         assert totals.output_tokens == 100_000
         assert totals.cache_read_tokens == 900_000
         assert totals.requests == 1
-        # 峰值费率：0.44 / 1.32 / 0.014 每百万
-        expected = (100_000 * 0.44 + 100_000 * 1.32 + 900_000 * 0.014) / 1e6
+        # 峰值费率：0.3 / 1.2 / 0.006 每百万
+        expected = (100_000 * 0.3 + 100_000 * 1.2 + 900_000 * 0.006) / 1e6
         assert totals.cost_usd == round(expected, 6)
         assert acc.cache_hit_rate == 0.9
 
     def test_off_peak_half_price(self) -> None:
-        acc = UsageAccumulator("deepseek-v4-flash")
+        acc = UsageAccumulator("deepseek-flash")
         acc.record(
             prompt_tokens=1_000_000,
             completion_tokens=100_000,
             cache_usage=CacheUsage(hit_tokens=900_000, miss_tokens=100_000),
             now=_off_peak_now(),
         )
-        expected = (100_000 * 0.22 + 100_000 * 0.66 + 900_000 * 0.007) / 1e6
+        # 非高峰费率为官方价目的一半：0.15 / 0.6 / 0.003 每百万
+        expected = (100_000 * 0.15 + 100_000 * 0.6 + 900_000 * 0.003) / 1e6
         assert acc.totals.cost_usd == round(expected, 6)
 
     def test_missing_miss_falls_back_to_prompt_minus_hit(self) -> None:
-        acc = UsageAccumulator("deepseek-v4-flash")
+        acc = UsageAccumulator("deepseek-flash")
         acc.record(
             prompt_tokens=10_000,
             completion_tokens=1_000,
@@ -71,12 +72,12 @@ class TestUsageAccumulator:
         assert acc.totals.input_tokens == 1_000
 
     def test_no_usage_yields_none_hit_rate(self) -> None:
-        acc = UsageAccumulator("deepseek-v4-flash")
+        acc = UsageAccumulator("deepseek-flash")
         assert acc.cache_hit_rate is None
         assert acc.totals.requests == 0
 
     def test_accumulates_across_requests(self) -> None:
-        acc = UsageAccumulator("deepseek-v4-flash")
+        acc = UsageAccumulator("deepseek-flash")
         for _ in range(2):
             acc.record(
                 prompt_tokens=100,
@@ -188,7 +189,7 @@ async def test_provider_accumulates_usage_from_stream() -> None:
         )
     )
     provider = OpenAIChatProvider(
-        ProviderConfig(api_key="test", model="deepseek-v4-flash"),
+        ProviderConfig(api_key="test", model="deepseek-flash"),
         client=_Client([chunk]),
     )
 

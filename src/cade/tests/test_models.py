@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from cade.ai.models import (
@@ -9,13 +11,20 @@ from cade.ai.models import (
     effective_rollover_threshold,
     get_codex_models,
     get_model,
+    get_model_cost,
     get_model_reasoning_efforts,
     get_models,
     get_providers,
+    normalize_model_id,
     parse_model_mode,
     resolve_model,
 )
 from cade.ai.resolver import ModelResolver
+
+
+def _peak_now() -> datetime:
+    """deepseek 高峰时段为 UTC 1-4 与 6-10，选 3 点作为高峰样本。"""
+    return datetime(2025, 1, 1, 3, 0, tzinfo=UTC)
 
 
 class TestParseModelMode:
@@ -182,6 +191,31 @@ class TestRegistryAccess:
         assert "deepseek" in providers
         assert "chatglm" in providers
         assert "mimo" in providers
+
+    def test_deepseek_flash_registered_with_current_pricing(self) -> None:
+        model = get_model("deepseek", "deepseek-flash")
+        assert model is not None
+        assert model.name == "DeepSeek V4.1 Flash"
+        assert model.context_window == 1_000_000
+        assert model.max_tokens == 384_000
+        # 官方高峰价：0.3 / 1.2 / 0.006 美元每百万 token
+        assert model.cost.input == 0.3
+        assert model.cost.output == 1.2
+        assert model.cost.cache_read == 0.006
+
+    def test_legacy_deepseek_flash_ids_normalize(self) -> None:
+        canonical = get_model_cost("deepseek-flash", _peak_now())
+        assert canonical is not None
+        for legacy in ("deepseek-v4-flash", "deepseek-v4-flash-vision-exp"):
+            model = get_model("deepseek", legacy)
+            assert model is not None
+            assert model.id == "deepseek-flash"
+            assert get_model_cost(legacy, _peak_now()) == canonical
+
+    def test_normalize_model_id_keeps_unknown_and_case_insensitive(self) -> None:
+        assert normalize_model_id("DeepSeek-V4-Flash") == "deepseek-flash"
+        assert normalize_model_id("  deepseek-flash  ") == "deepseek-flash"
+        assert normalize_model_id("deepseek-v4-pro") == "deepseek-v4-pro"
 
     def test_get_models_openai(self) -> None:
         models = get_models("openai")

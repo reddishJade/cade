@@ -222,7 +222,7 @@ class TestRunSetupWizardSaveLocations:
         ):
             mock_select.return_value.ask.side_effect = [
                 "DeepSeek",
-                "deepseek-v4-flash",
+                "deepseek-flash",
                 "enabled",
                 "high",
                 "Global default (~/.cade/settings.json, recommended)",
@@ -241,4 +241,4 @@ class TestRunSetupWizardSaveLocations:
             content = json.loads(global_file.read_text(encoding="utf-8"))
             main = content["provider"]["model_profiles"]["main"]
             assert main["api_key"] == "sk-my-deepseek-key"
-            assert main["chat_model"] == "deepseek-v4-flash"
+            assert main["chat_model"] == "deepseek-flash"

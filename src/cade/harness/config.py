@@ -4,7 +4,7 @@ import json
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal
 
 from pydantic import (
     BaseModel,
@@ -86,10 +86,14 @@ class RequestHygieneConfig(BaseModel):
     keep_tail_lines: StrictInt = 50
 
 
+# 未显式配置 provider 时的内置默认聊天模型（DeepSeek Flash）。
+DEFAULT_CHAT_MODEL: Final[str] = "deepseek-flash"
+
+
 class ModelProfileRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     transport: ProviderTransport = "openai_chat"
-    chat_model: str = "deepseek-v4-flash"
+    chat_model: str = DEFAULT_CHAT_MODEL
     base_url: str = "https://api.deepseek.com"
     api_key: str = ""
     context_window: StrictInt | None = Field(default=None, gt=0)
@@ -486,11 +490,18 @@ def _auth_preferred_over_api(main_raw: dict[str, object]) -> bool:
         return False
 
     model = main_raw.get("chat_model")
-    if isinstance(model, str) and model.strip() and model != "deepseek-v4-flash":
+    if isinstance(model, str) and model.strip() and not _is_default_chat_model(model):
         from cade.ai.resolver import ModelResolver
 
         return ModelResolver.is_codex_supported(model)
     return True
+
+
+def _is_default_chat_model(model: str) -> bool:
+    """判断模型名是否为内置默认（含已停用的旧 ID），即用户未显式选择模型。"""
+    from cade.ai.models import normalize_model_id
+
+    return normalize_model_id(model) == DEFAULT_CHAT_MODEL
 
 
 def _apply_oauth_credential(main_raw: dict[str, object], cred: AuthCredential) -> None:
@@ -506,7 +517,7 @@ def _apply_oauth_credential(main_raw: dict[str, object], cred: AuthCredential) -
         else "https://api.openai.com/v1"
     )
     model = main_raw.get("chat_model")
-    if not isinstance(model, str) or not model.strip() or model == "deepseek-v4-flash":
+    if not isinstance(model, str) or not model.strip() or _is_default_chat_model(model):
         from cade.ai.resolver import ModelResolver
 
         main_raw["chat_model"] = ModelResolver.resolve_alias("codex")

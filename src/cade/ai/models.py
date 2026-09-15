@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Final
 
 from cade.ai.types import Cost, Model
 
@@ -28,6 +29,20 @@ class ModelMode:
 
 
 # ── 模型注册表 ──
+
+# 官方已停用但 API 仍接受的模型 ID（键统一小写）。这些请求由新的
+# DeepSeek-V4.1-Flash 承载并按 Flash 价格计费，因此归一化到现行注册表条目。
+MODEL_ID_ALIASES: Final[dict[str, str]] = {
+    "deepseek-v4-flash": "deepseek-flash",
+    "deepseek-v4-flash-vision-exp": "deepseek-flash",
+}
+
+
+def normalize_model_id(model_id: str) -> str:
+    """把已停用的旧模型 ID（或大小写变体）归一化为注册表规范 ID。"""
+    stripped = model_id.strip()
+    return MODEL_ID_ALIASES.get(stripped.lower(), stripped)
+
 
 _MODELS: dict[str, dict[str, Model]] = {
     "openai": {
@@ -104,18 +119,18 @@ _MODELS: dict[str, dict[str, Model]] = {
                 off_peak_factor=0.5,
             ),
         ),
-        "deepseek-v4-flash": Model(
-            id="deepseek-v4-flash",
-            name="DeepSeek V4 Flash",
+        "deepseek-flash": Model(
+            id="deepseek-flash",
+            name="DeepSeek V4.1 Flash",
             api="deepseek-chat",
             provider="deepseek",
             reasoning=True,
             context_window=1_000_000,
             max_tokens=384_000,
             cost=Cost(
-                input=0.44,
-                output=1.32,
-                cache_read=0.014,
+                input=0.3,
+                output=1.2,
+                cache_read=0.006,
                 peak_hours=((1, 4), (6, 10)),
                 off_peak_factor=0.5,
             ),
@@ -212,12 +227,12 @@ def get_codex_models() -> list[Model]:
 
 
 def get_model(provider_name: str, model_id: str) -> Model | None:
-    return _MODELS.get(provider_name, {}).get(model_id)
+    return _MODELS.get(provider_name, {}).get(normalize_model_id(model_id))
 
 
 def get_model_reasoning_efforts(model_id: str) -> tuple[str, ...]:
     """返回已注册模型明确声明的 reasoning effort 能力。"""
-    normalized = model_id.strip().lower()
+    normalized = normalize_model_id(model_id).lower()
     for provider_models in _MODELS.values():
         for registered_id, model in provider_models.items():
             if registered_id.lower() == normalized:
@@ -227,8 +242,9 @@ def get_model_reasoning_efforts(model_id: str) -> tuple[str, ...]:
 
 def get_model_cost(model_name: str, now: datetime | None = None) -> Cost | None:
     """解析模型单价（美元/百万 token），声明了分时计价的模型按时刻折算费率。"""
+    resolved_name = normalize_model_id(model_name)
     for provider_models in _MODELS.values():
-        model = provider_models.get(model_name)
+        model = provider_models.get(resolved_name)
         if model is not None:
             return model.cost.effective(now)
     return None
@@ -254,7 +270,7 @@ def resolve_model(provider_name: str, model_id: str) -> Model:
 def get_model_context_window(model: str | None) -> int | None:
     if not model:
         return None
-    model_lower = model.lower()
+    model_lower = normalize_model_id(model).lower()
     candidates = (
         (model_id, profile)
         for provider_models in _MODELS.values()

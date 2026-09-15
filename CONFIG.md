@@ -22,7 +22,7 @@ profile 由 `_resolve_model_profiles` 按 main 配置补齐：字符串视为 mo
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `transport` | string | `"openai_chat"` | `openai_chat`、`deepseek_chat`、`mimo_chat`、`chatglm_chat` |
-| `chat_model` | string | `"deepseek-v4-flash"` | 聊天模型名 |
+| `chat_model` | string | `"deepseek-flash"` | 聊天模型名 |
 | `base_url` | string | `"https://api.deepseek.com"` | OpenAI-compatible API 地址 |
 | `api_key` | string | `""` | 显式 API key；留空按环境变量查找 |
 | `context_window` | int/null | `null` | 上下文窗口覆盖（token 数）。覆盖模型注册表默认值，影响自动换窗触发线、请求预算与 `/context` 显示。例如可将某个大窗口模型限制为 256K：`"context_window": 262144` |
@@ -35,6 +35,8 @@ profile 由 `_resolve_model_profiles` 按 main 配置补齐：字符串视为 mo
 #### DeepSeek
 
 - **默认 base_url**: `https://api.deepseek.com`
+- **内置模型**: `deepseek-flash`（DeepSeek-V4.1-Flash）、`deepseek-v4-pro`（DeepSeek-V4-Pro）
+- **旧模型 ID**: `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 已被官方停用但 API 仍接受，cade 会归一化为 `deepseek-flash`
 - **Thinking mode**: 默认开启，`extra_body={"thinking": {"type": "enabled"}}`
 - **reasoning_effort**: 默认 `"high"`，复杂 agent 请求自动设为 `"max"`
 - **缓存统计**: 原生 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
@@ -65,13 +67,13 @@ REPL 中可通过 `/model` 命令动态切换模型而无需重启：
 |---|---|
 | `provider` | transport 名：`openai_chat`、`deepseek_chat`、`mimo_chat`、`chatglm_chat`；省略时使用当前 profile |
 | `profile` | 配置中的 profile 名：`main`、`subagent`、`fallback` |
-| `model` | 模型 ID，如 `gpt-5.4-mini`、`deepseek-v4-flash` |
+| `model` | 模型 ID，如 `gpt-5.4-mini`、`deepseek-flash` |
 | `:thinking_level` | 可选后缀，覆盖 reasoning_effort。值：`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max` |
 
 示例：
 ```
 /model openai_chat/gpt-5.4-mini:high
-/model subagent/deepseek-v4-flash
+/model subagent/deepseek-flash
 /model deepseek_chat/deepseek-v4-pro:max
 ```
 
@@ -352,7 +354,7 @@ Automatic approval review approved (risk: low, authorization: high):
 {
   "provider": {
     "model_profiles": {
-      "reviewer": "deepseek-v4-flash"
+      "reviewer": "deepseek-flash"
     }
   },
   "security": {
