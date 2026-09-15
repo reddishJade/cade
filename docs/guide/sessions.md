@@ -65,11 +65,15 @@ Xcode 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch
 - provider usage 的 prompt token 达到当前模型窗口预算。
 - provider 未返回 usage 时的本地 token 估算。
 - 配置的 message count 或绝对 token threshold。
-- 模型调用 `new_context`，或用户执行 `/new-context`。
+- 模型调用 `new_context`，或用户执行 `/compact`、`/rollover`。
 
 窗口大小优先取 provider profile 的 `context_window` 覆盖；未覆盖时读取当前模型注册值。默认触发线为窗口的 95%，并且不得高于“窗口 - `reserve_tokens`”。
 
 `ContextWindowRollover` 不生成摘要。它重新注入启动上下文，保留已激活 skill 和当前 user 回合，并仅在新工作 surface 中裁剪过期文件读取与大工具输出。项目根 `NOTE.md` 保存执行前沿；模型主动换窗前必须先写入非空 `NOTE.md`。
+
+`/compact` 复用自动换窗的保留策略：它执行硬换窗，但将最近一个 user
+回合及其后续 assistant/tool 消息带入新窗口。`/rollover` 不携带普通对话，
+默认要求非空 `NOTE.md`；`/rollover --force` 可显式跳过这项保护。
 
 ## 6. 换窗的持久化语义
 
