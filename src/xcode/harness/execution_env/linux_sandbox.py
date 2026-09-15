@@ -20,8 +20,17 @@ class SandboxUnavailableError(RuntimeError):
     """当前主机无法提供请求的 OS sandbox。"""
 
 
+def _require_linux_host() -> None:
+    """拒绝在非 Linux 主机上构造 bubblewrap sandbox。"""
+    if sys.platform != "linux":
+        raise SandboxUnavailableError("Linux bubblewrap sandbox requires Linux")
+
+
 class LinuxBubblewrapSandbox(CommandSandbox):
     """使用 bubblewrap 为 Agent 子进程构造 Linux OS sandbox。"""
+
+    _policy: SandboxPolicy
+    _bwrap_path: Path
 
     def __init__(
         self,
@@ -29,8 +38,7 @@ class LinuxBubblewrapSandbox(CommandSandbox):
         *,
         bwrap_path: Path | None = None,
     ) -> None:
-        if sys.platform != "linux":
-            raise SandboxUnavailableError("Linux bubblewrap sandbox requires Linux")
+        _require_linux_host()
         self._policy = _normalize_policy(policy)
         self._bwrap_path = _resolve_bwrap_path(bwrap_path)
 
@@ -182,10 +190,7 @@ def _prepare_protected_placeholders(
                     ) from None
                 continue
             try:
-                descriptor = os.open(
-                    path,
-                    os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
-                )
+                descriptor = os.open(path, _linux_directory_open_flags())
             except OSError:
                 path.rmdir()
                 raise
@@ -202,6 +207,17 @@ def _prepare_protected_placeholders(
         _protected_placeholder_finalizer(tuple(placeholders))()
         raise
     return tuple(placeholders)
+
+
+def _linux_directory_open_flags() -> int:
+    """读取 Linux 专属目录标志，缺失时拒绝降低保护强度。"""
+    flags = os.O_RDONLY
+    for name in ("O_DIRECTORY", "O_CLOEXEC", "O_NOFOLLOW"):
+        value = getattr(os, name, None)
+        if not isinstance(value, int):
+            raise SandboxUnavailableError(f"Linux open flag is unavailable: {name}")
+        flags |= value
+    return flags
 
 
 def _protected_placeholder_finalizer(
