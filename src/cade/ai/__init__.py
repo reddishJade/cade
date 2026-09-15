@@ -1,5 +1,11 @@
-"""AI 层：LLM provider、transport、stream 类型。"""
+"""AI 层：LLM provider、认证、transport、stream 类型。"""
 
+from .auth import (
+    AuthCredential,
+    AuthProvider,
+    CredentialResolver,
+    CredentialStore,
+)
 from .models import (
     get_model,
     get_models,
@@ -14,6 +20,10 @@ from .resolver import (
 from .types import dump_context, load_context
 
 __all__ = [
+    "AuthCredential",
+    "AuthProvider",
+    "CredentialResolver",
+    "CredentialStore",
     "ModelResolution",
     "ModelResolver",
     "dump_context",

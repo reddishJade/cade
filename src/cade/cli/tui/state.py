@@ -190,6 +190,7 @@ class _TuiState:
     thinking_collapsed: bool = False
     tool_collapsed: bool = False
     running: bool = False
+    working: bool = False
     mode: object = "act"
 
     # ── 思考快捷属性 ──
@@ -214,6 +215,15 @@ class _TuiState:
         self.thinking_core.reset()
         self.subagents.clear()
 
+    def start_working(self) -> None:
+        """标记模型回合正在进行，但不表示已经收到 reasoning。"""
+        self.running = True
+        self.working = True
+
+    def stop_working(self) -> None:
+        """停止工作提示；真实 reasoning 仍由 thinking_core 单独记录。"""
+        self.working = False
+
     def add_command(self, text: str) -> None:
         """将已执行的 TUI 命令显示为命令消息，但不打断当前回合。"""
         self.log.append(_LogEntry("command", text))
@@ -233,6 +243,7 @@ class _TuiState:
         self.subagents.clear()
         self.pending_hitl = None
         self.running = False
+        self.working = False
         for record in records:
             if record.type == "assistant":
                 text = str(record.content).strip()
@@ -795,6 +806,7 @@ class _TuiState:
             self.log.append(_LogEntry("stop", reason))
         self.thinking_core.reset()
         self.running = False
+        self.working = False
 
     def _finish_thinking(self) -> None:
         if self.thinking.strip():

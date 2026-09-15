@@ -289,3 +289,30 @@ def _build_credential_from_token_response(
         account_id=account_id,
         provider="openai-codex",
     )
+
+
+class OpenAICodexAuthProvider:
+    """OpenAI Codex 的登录、Token 交换与刷新实现。"""
+
+    id = "openai-codex"
+
+    def login(
+        self,
+        *,
+        method: str,
+        notify_callback: Callable[..., None] | None = None,
+    ) -> AuthCredential:
+        """按指定交互方式执行 Codex OAuth 登录。"""
+        if method == "device_code":
+            if notify_callback is None:
+                raise ValueError("Device code 登录需要提供 notify_callback")
+            return login_openai_codex_device_code(notify_callback=notify_callback)
+        if method == "browser":
+            return login_openai_codex_browser(notify_callback=notify_callback)
+        raise ValueError(f"不支持的 OpenAI Codex 登录方式: {method}")
+
+    def refresh(self, credential: AuthCredential) -> AuthCredential:
+        """使用已存凭据刷新 Codex Access Token。"""
+        if not credential.refresh:
+            raise ValueError("OpenAI Codex 凭据缺少 refresh token")
+        return refresh_openai_codex_token(credential.refresh)

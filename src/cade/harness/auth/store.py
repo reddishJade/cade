@@ -10,7 +10,7 @@ import os
 import stat
 from pathlib import Path
 
-from .types import AuthCredential
+from cade.ai.auth.types import AuthCredential
 
 DEFAULT_AUTH_FILE = Path.home() / ".cade" / "auth.json"
 
@@ -42,10 +42,10 @@ class AuthStore:
         """获取指定 Provider 的凭据。"""
         return self.load_all().get(provider)
 
-    def save(self, cred: AuthCredential) -> None:
+    def save(self, credential: AuthCredential) -> None:
         """保存或更新单个 Provider 的凭据。"""
         all_creds = self.load_all()
-        all_creds[cred.provider] = cred
+        all_creds[credential.provider] = credential
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         dump_data = {k: v.to_dict() for k, v in all_creds.items()}

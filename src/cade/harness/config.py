@@ -21,7 +21,7 @@ from .execution_env.sandbox import NetworkAccess, SandboxMode
 from .security.approval import ApprovalPolicy
 
 if TYPE_CHECKING:
-    from .auth.types import AuthCredential
+    from cade.ai.auth import AuthCredential
 
 DirAccess = Literal["read", "write", "read_write"]
 

@@ -33,8 +33,13 @@ API_KEY_ENV_NAMES = (
     "BIGMODEL_API_KEY",
     "API_KEY",
 )
-LOGIN_CHOICE_AUTH = "Sign in with ChatGPT (OAuth, recommended)"
-LOGIN_CHOICE_API = "Configure an API key"
+AUTH_METHOD_ACCOUNT = "Sign in with an account"
+AUTH_METHOD_API_KEY = "Sign in with an API key"
+# 兼容旧提示值，避免已有调用方升级后失效。
+_LEGACY_LOGIN_CHOICE_AUTH = "Sign in with ChatGPT (OAuth, recommended)"
+_LEGACY_LOGIN_CHOICE_API = "Configure an API key"
+LOGIN_CHOICE_AUTH = AUTH_METHOD_ACCOUNT
+LOGIN_CHOICE_API = AUTH_METHOD_API_KEY
 
 PROVIDER_PRESETS: dict[str, Any] = {
     "openai": {
@@ -138,16 +143,29 @@ def has_valid_config(project_root: Path) -> bool:
     return has_auth_credential() or has_api_key(project_root)
 
 
-def prompt_login_method() -> str | None:
-    """询问初始登录方式，返回 'auth'、'api' 或 None（用户取消）。"""
+def prompt_auth_method() -> str | None:
+    """询问认证方式，返回 account、api_key 或 None（用户取消）。"""
     choice = questionary.select(
-        "No credentials found. Choose how to sign in:",
-        choices=[LOGIN_CHOICE_AUTH, LOGIN_CHOICE_API],
-        default=LOGIN_CHOICE_AUTH,
+        "Select authentication method:",
+        choices=[AUTH_METHOD_ACCOUNT, AUTH_METHOD_API_KEY],
     ).ask()
     if choice is None:
         return None
-    return "auth" if choice == LOGIN_CHOICE_AUTH else "api"
+    if choice in (AUTH_METHOD_ACCOUNT, _LEGACY_LOGIN_CHOICE_AUTH):
+        return "account"
+    if choice in (AUTH_METHOD_API_KEY, _LEGACY_LOGIN_CHOICE_API):
+        return "api_key"
+    return None
+
+
+def prompt_login_method() -> str | None:
+    """询问初始登录方式，返回 auth、api 或 None（用户取消）。"""
+    method = prompt_auth_method()
+    if method == "account":
+        return "auth"
+    if method == "api_key":
+        return "api"
+    return None
 
 
 def _resolve_transport(provider_key: str) -> str:
@@ -318,14 +336,19 @@ def _load_existing_config(config_path: Path) -> dict[str, Any]:
         return {}
 
 
-def run_setup_wizard(project_root: Path) -> tuple[str, Path | None]:
-    """首次启动配置向导。返回状态和临时配置路径。"""
+def run_setup_wizard(
+    project_root: Path, *, from_connect: bool = False
+) -> tuple[str, Path | None]:
+    """运行 provider 配置向导，返回状态和临时配置路径。"""
     print()
     print("=" * 60)
     print("  Welcome to Cade - AI Coding Agent")
     print("=" * 60)
     print()
-    print("No API key configured. Let's set up your LLM provider.")
+    if from_connect:
+        print("Let's configure your API-key provider.")
+    else:
+        print("No API key configured. Let's set up your LLM provider.")
     print()
 
     provider_result = _select_provider()

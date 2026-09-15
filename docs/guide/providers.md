@@ -14,7 +14,13 @@ Cade 把模型调用统一为 `ModelProvider` 流式协议。provider 负责服�
 
 共享基类处理消息转换、工具 schema、thinking 参数、流式 chunk、usage 和在途请求中止；各 provider 处理自己的字段约束。
 
-## 2. Profile 配置
+## 2. 连接方式与 Profile 配置
+
+`cade login` 和 `cade connect` 会先让用户选择认证方式：账户 OAuth 或 API
+key。账户方式目前用于 Codex/ChatGPT；API key 方式进入下面的 provider 配置向导。
+API key 连接可以在首次运行后重复执行，配置写入 `main` profile。
+
+## Profile 配置
 
 运行时 profile 通常使用 `main`、`subagent`、`fallback` 和 `reviewer`：
 

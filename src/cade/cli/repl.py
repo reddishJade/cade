@@ -61,6 +61,7 @@ from .repl_commands import COMMAND_NAMES, COMMAND_REGISTRY_EXPORT, handle_comman
 from .repl_hitl import ReplHITLHandler
 from .repl_rendering import (
     LiveMarkdownStream,
+    LiveWorkingIndicator,
     clear_terminal_display,
     create_prompt_session,
     input_prompt,
@@ -486,6 +487,8 @@ class _ReplTurnRenderer:
         self.interrupted = False
         self.live_console = Console(file=sys.stdout)
         self.answer_stream = LiveMarkdownStream(self.live_console)
+        self.working_indicator = LiveWorkingIndicator(self.live_console)
+        self.working_indicator.start()
         self.streamed_text = False
         self.tool_handler = ToolCallHandler(state, self.live_console)
         self.reasoning_handler = ReasoningHandler(self.live_console, self.state)
@@ -493,10 +496,12 @@ class _ReplTurnRenderer:
 
     def handle_event(self, event: AgentHarnessEvent) -> None:
         if isinstance(event, ReasoningDeltaStructuredEvent):
+            self.working_indicator.stop()
             self.tool_handler.flush_group()
             self.reasoning_handler.handle_delta(event.data)
             return
 
+        self.working_indicator.stop()
         self.reasoning_handler.finish()
         if isinstance(event, TextDeltaStructuredEvent):
             self._handle_text_delta(event.data)
@@ -510,6 +515,7 @@ class _ReplTurnRenderer:
         elif isinstance(event, ToolResultStructuredEvent):
             self.tool_handler.record_tool_result(event.data)
             self.tool_handler.clear_progress()
+            self.working_indicator.start()
         elif isinstance(event, FinalStructuredEvent):
             self._handle_final_event(event.data)
 
@@ -520,6 +526,7 @@ class _ReplTurnRenderer:
         return self.reasoning_handler.text, partial_answer
 
     def close(self) -> None:
+        self.working_indicator.stop()
         self.reasoning_handler.finish()
         self.answer_stream.stop()
         if not self.interrupted:

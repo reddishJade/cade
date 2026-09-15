@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
@@ -136,6 +137,31 @@ class LiveMarkdownStream:
             self.live.start(refresh=True)
             return
         self.live.update(renderable, refresh=True)
+
+    def stop(self) -> None:
+        if self.live is None:
+            return
+        self.live.stop()
+        self.live = None
+
+
+class LiveWorkingIndicator:
+    """显示独立于 reasoning 的请求进行中状态。"""
+
+    def __init__(self, console: Console) -> None:
+        self.console = console
+        self.live: Live | None = None
+
+    def start(self) -> None:
+        if self.live is not None:
+            return
+        self.live = Live(
+            Spinner("dots", text=Text("Working...", style=CLI_COLOR_DIM)),
+            console=self.console,
+            refresh_per_second=10,
+            transient=True,
+        )
+        self.live.start(refresh=True)
 
     def stop(self) -> None:
         if self.live is None:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 CredentialType = Literal["oauth", "api_key"]
 
@@ -32,8 +34,6 @@ class AuthCredential:
 
     def is_expired(self) -> bool:
         """检查凭据是否已经过期。"""
-        import time
-
         if not self.expires:
             return False
         return self.expires <= int(time.time())
@@ -55,3 +55,31 @@ class AuthCredential:
             provider=data.get("provider", provider),
             extra=data.get("extra"),
         )
+
+
+class CredentialStore(Protocol):
+    """由宿主应用实现的凭据存储边界。"""
+
+    def load_all(self) -> dict[str, AuthCredential]: ...
+
+    def get(self, provider: str) -> AuthCredential | None: ...
+
+    def save(self, credential: AuthCredential) -> None: ...
+
+    def delete(self, provider: str) -> bool: ...
+
+
+class AuthProvider(Protocol):
+    """Provider 专有登录和刷新协议。"""
+
+    @property
+    def id(self) -> str: ...
+
+    def login(
+        self,
+        *,
+        method: str,
+        notify_callback: Callable[..., None] | None = None,
+    ) -> AuthCredential: ...
+
+    def refresh(self, credential: AuthCredential) -> AuthCredential: ...

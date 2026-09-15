@@ -1,6 +1,25 @@
 from pathlib import Path
 
+from cade.cli.shared.working import working_status_text
 from cade.cli.tui.state import _TuiState
+
+
+def test_working_status_is_not_thinking_content() -> None:
+    assert working_status_text(0).endswith(" Working...")
+    assert "Thinking" not in working_status_text(0)
+
+
+def test_working_state_is_separate_from_reasoning_state() -> None:
+    state = _TuiState(project_root=Path("/project"))
+
+    state.start_working()
+    assert state.running is True
+    assert state.working is True
+    assert state.thinking == ""
+
+    state.stop_working()
+    assert state.working is False
+    assert state.thinking == ""
 
 
 def test_streaming_answer_keeps_chunks_without_copying_previous_text() -> None:
