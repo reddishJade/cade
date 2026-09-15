@@ -10,7 +10,7 @@ without lowering test-defined task success or state retention.
 
 - **Baseline** sets runtime context rollover to `None`. It keeps full logical
   history and restores full history after a simulated process restart.
-- **Xcode** opens a fresh active context at the declared boundary, appends a
+- **Cade** opens a fresh active context at the declared boundary, appends a
   typed `context_window_reset` event, and restores the durable surface. No
   summary request is made.
 
@@ -40,7 +40,7 @@ runs remove them after writing the raw record.
 Provider `UsageUpdate` events are recorded for every agent request. A run is
 excluded from token and cost aggregation if any provider request omits usage.
 Known-model cost uses the price snapshot in
-`src/xcode/ai/models.py` and is stored in every raw result.
+`src/cade/ai/models.py` and is stored in every raw result.
 
 ### Run the paired example
 
@@ -49,7 +49,7 @@ Use the same explicit model configuration and temperature for every group:
 ```sh
 uv run python -m benchmarks.runners.run_ablation \
   benchmarks/tasks/long_horizon/parser_recovery/task.json \
-  --config xcode.config.json \
+  --config cade.config.json \
   --temperature 0 \
   --repeat 3 \
   --max-pair-attempts 2 \
@@ -60,7 +60,7 @@ This command makes real API calls. Raw JSON, `summary.json`, and `report.md` are
 written below `benchmark-results/long_horizon/<timestamp>/`. Add
 `--keep-workspaces` when a failed run needs manual inspection.
 
-`--max-pair-attempts` retries both baseline and Xcode in fresh workspaces when
+`--max-pair-attempts` retries both baseline and Cade in fresh workspaces when
 a transient provider error leaves usage incomplete. Every attempt remains in
 raw JSON; the report selects the first complete pair and lists excluded
 attempts with their reasons. The default is one attempt to avoid unexpected API
@@ -81,7 +81,7 @@ Run groups separately when required:
 
 ```sh
 uv run python -m benchmarks.runners.run_baseline TASK.json --repeat 3
-uv run python -m benchmarks.runners.run_xcode TASK.json --repeat 3
+uv run python -m benchmarks.runners.run_cade TASK.json --repeat 3
 ```
 
 Regenerate a report from existing raw records:
@@ -124,7 +124,7 @@ and inspect per-task pairs instead of reporting only a pooled mean.
   not a success criterion.
 
 Each metric uses its own paired cohort. Total Token and cost require complete
-usage for the whole baseline/Xcode pair, while post-rollover metrics remain
+usage for the whole baseline/Cade pair, while post-rollover metrics remain
 eligible when missing usage occurred only before that phase. Correctness and
 state-retention metrics include the selected attempt regardless of usage
 completeness. Reports show the cohort size on every row.
@@ -139,7 +139,7 @@ model request. Both groups replay identical tool-call batches against isolated
 workspace copies:
 
 - **Serial** sets `AgentLoopConfig.tool_execution` to `sequential`;
-- **Xcode** uses production parallel partitioning, the configured worker cap,
+- **Cade** uses production parallel partitioning, the configured worker cap,
   and each tool's `parallel` or `sequential` side-effect classification.
 
 The included workloads read 5, 10, and 20 distinct files. A mixed workload
@@ -157,7 +157,7 @@ uv run python -m benchmarks.runners.run_tool_scheduling \
   --warmup 1
 ```
 
-The command does not call a model or API. It alternates Serial/Xcode order,
+The command does not call a model or API. It alternates Serial/Cade order,
 shows live progress, writes every measured run immediately, and then produces
 `summary.json` and `report.md` below
 `benchmark-results/tool_scheduling/<timestamp>/`. Override the production-style
@@ -171,7 +171,7 @@ uv run python -m benchmarks.reports.generate_tool_scheduling_report \
   benchmark-results/tool_scheduling/RUN_DIR
 ```
 
-Performance cohorts require one successful Serial/Xcode pair, identical call
+Performance cohorts require one successful Serial/Cade pair, identical call
 counts and result order, zero unsafe write overlap, matching tool-output hashes,
 and matching final workspace hashes. Invalid pairs remain in raw results, are
 listed under `excluded_pairs`, and make the runner exit with status 2 after the

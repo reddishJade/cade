@@ -1,6 +1,6 @@
 # 模型与 Provider
 
-Xcode 把模型调用统一为 `ModelProvider` 流式协议。provider 负责服务差异，Agent 只接收统一的文本、推理、工具、usage、结束和失败事件。
+Cade 把模型调用统一为 `ModelProvider` 流式协议。provider 负责服务差异，Agent 只接收统一的文本、推理、工具、usage、结束和失败事件。
 
 ## 1. 支持的 transport
 

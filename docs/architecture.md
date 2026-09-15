@@ -1,8 +1,8 @@
-# Xcode 架构
+# Cade 架构
 
 ## 定位
 
-Xcode 是本地运行的 Python coding-agent harness。它不是一组工具的薄包装，
+Cade 是本地运行的 Python coding-agent harness。它不是一组工具的薄包装，
 而是负责模型输入、运行状态、工具权限、会话事实、生命周期和终端交互的
 软件运行时。
 
@@ -41,11 +41,11 @@ agent
 
 | 层 | 路径 | 所有权 |
 |---|---|---|
-| Provider | `src/xcode/ai/` | provider 协议、流式事件和厂商适配 |
-| Agent | `src/xcode/agent/` | 消息模型、loop、工具执行和 provider 请求 |
-| Harness | `src/xcode/harness/` | session、权限、观测、MCP、记忆和运行策略 |
-| Coding product | `src/xcode/coding_agent/` | coding 工具、产品 registry 和应用装配 |
-| Host | `src/xcode/cli/`、`src/xcode/server/` | REPL/TUI 输入输出、浏览器工作台（WebSocket 事件流） |
+| Provider | `src/cade/ai/` | provider 协议、流式事件和厂商适配 |
+| Agent | `src/cade/agent/` | 消息模型、loop、工具执行和 provider 请求 |
+| Harness | `src/cade/harness/` | session、权限、观测、MCP、记忆和运行策略 |
+| Coding product | `src/cade/coding_agent/` | coding 工具、产品 registry 和应用装配 |
+| Host | `src/cade/cli/`、`src/cade/server/` | REPL/TUI 输入输出、浏览器工作台（WebSocket 事件流） |
 
 依赖应朝更低层稳定协议流动。CLI/TUI 不拥有 session 语义；工具不直接拥有
 provider；provider 不感知产品工具。
@@ -114,14 +114,14 @@ context 入口。`AgentRuntimeConfig` 只保存 session inbox、取消、压缩�
 
 ## 本地执行边界
 
-Xcode 只支持本地执行，不提供容器、远程 workspace 或远程 shell 抽象。
+Cade 只支持本地执行，不提供容器、远程 workspace 或远程 shell 抽象。
 `bash` 依赖 `Shell`，文件工具依赖 `FileSystem`；生产实现分别是
 `SubprocessShell` 和 `LocalFileSystem`。这些窄协议用于测试本地行为，不代表
 可切换的远程执行世界。
 
 Linux 上，应用装配层默认为 `SubprocessShell` 注入 `LinuxBubblewrapSandbox`。
 `workspace-write` 使用只读宿主根并重新挂载项目、`/tmp` 和批准的外部写目录；
-`.git`、`.agents`、`.xcode` 保持只读，凭据与环境文件被遮蔽，网络进入独立
+`.git`、`.agents`、`.cade` 保持只读，凭据与环境文件被遮蔽，网络进入独立
 namespace。所有后代进程继承同一 mount/network/PID namespace。找不到 `bwrap`
 时启动 shell 会 fail closed，不会静默退回宿主权限。
 
@@ -154,7 +154,7 @@ continuable 模式、persona、provider model 和初始 composition ID。session
 `subagent` 创建新 child。并行 batch 只允许 one-shot；需要后续对话时显式创建
 continuable child，再用 `subagent_continue` 按 child session ID 提交 FIFO turn。
 进程中没有 activation 时，manager 从 child log 重建 surface 后冷恢复同一个
-session。`subagent_list` 只读取 descriptor，不启动模型。Xcode 当前只实现 spawn，
+session。`subagent_list` 只读取 descriptor，不启动模型。Cade 当前只实现 spawn，
 不会复制父 transcript；任务 prompt 必须自包含。
 
 durable session ID、进程内 `activation_id` 和单次 run ID 是三个不同层级。每次
@@ -188,7 +188,7 @@ intent 保存 run 关联。child 模型失败被解析为 completed/failed/cance
 4. 本地工具、MCP、memory/history 和 subagent registry；
 5. 冻结的 `AgentComposition`、会话级 runtime services 和
    `CodingAgentHarness`；
-6. `XcodeApp` 生命周期句柄。
+6. `CadeApp` 生命周期句柄。
 
 任何新能力都应进入拥有该行为的层，并在真实组合测试中证明最小应用仍可
 启动、请求、落盘和恢复。

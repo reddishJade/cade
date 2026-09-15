@@ -1,6 +1,6 @@
 # Skills 技能系统
 
-Skill 是由 `SKILL.md` 描述的可加载工作规程。Xcode 先建立技能目录索引，再按任务需要加载正文和引用资源。
+Skill 是由 `SKILL.md` 描述的可加载工作规程。Cade 先建立技能目录索引，再按任务需要加载正文和引用资源。
 
 ## 1. 目录结构
 
@@ -34,9 +34,9 @@ Read the relevant diff, inspect surrounding code, and report evidence.
 搜索目录按优先级排列：
 
 1. 显式 `paths.skills_dir`。
-2. 项目 `.xcode/skills/`，需要 `trust_project_skills=true`。
+2. 项目 `.cade/skills/`，需要 `trust_project_skills=true`。
 3. 项目 `.agents/skills/`，需要 `trust_project_skills=true`。
-4. 用户 `~/.xcode/skills/`。
+4. 用户 `~/.cade/skills/`。
 5. 用户 `~/.agents/skills/`。
 
 同名技能 first-wins。`disable-model-invocation: true` 的技能可以被索引记录，但不会出现在可激活目录。

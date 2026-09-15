@@ -1,6 +1,6 @@
 # 权限、安全与 Linux Sandbox
 
-Xcode 将语义权限、用户审批、自动 reviewer、路径边界、Shell 分析和 OS sandbox 组合为多层执行边界。工具调用在实际 handler 运行前完成决策。
+Cade 将语义权限、用户审批、自动 reviewer、路径边界、Shell 分析和 OS sandbox 组合为多层执行边界。工具调用在实际 handler 运行前完成决策。
 
 ## 1. 决策链
 
@@ -24,7 +24,7 @@ Tool call
 
 ## 2. 默认模式策略
 
-- **Plan**：规则 fallback 为 deny；写入范围限定为 `.xcode/plans/*.md`。
+- **Plan**：规则 fallback 为 deny；写入范围限定为 `.cade/plans/*.md`。
 - **Build**：项目结构化读写默认 allow；Shell 与规则覆盖范围外动作默认 ask，由 auto reviewer 处理。
 - **Act**：读取默认 allow；写入和 Shell 默认 ask，由用户处理。
 
@@ -41,7 +41,7 @@ Tool call
 - `id_rsa`、`id_ed25519`、`id_ecdsa`、`id_dsa` 等密钥文件。
 - `restricted_dirs` 中的路径，以及无法安全提取目标路径的受限动作。
 
-项目外路径需要 `external_directories` 中的目录覆盖和对应 access：`read`、`write` 或 `read_write`。`non_workspace_access=false` 时，用户外部目录配置停止生效；Xcode 自身的 `~/.xcode` 和 `~/.agents` 保留只读基础设施访问。
+项目外路径需要 `external_directories` 中的目录覆盖和对应 access：`read`、`write` 或 `read_write`。`non_workspace_access=false` 时，用户外部目录配置停止生效；Cade 自身的 `~/.cade` 和 `~/.agents` 保留只读基础设施访问。
 
 `.env.example` 可以读取，写入仍进入敏感路径策略。`sensitive_path_overrides` 只接受精确环境文件路径，凭据目录和密钥文件持续拒绝。
 
@@ -67,7 +67,7 @@ Shell analyzer 对 POSIX、PowerShell 和 cmd 提供分类器。分类对象包�
 | `session` | 当前 session 的匹配目标 |
 | `permanent` | 项目级持久授权 |
 
-多 target 动作只允许 `once`。auto reviewer 只允许 `once`，不能建立 session 或 permanent grant。session grant 存在内存 session store；permanent grant 写入 `.xcode/approval_grants.json`，使用文件锁和原子替换。
+多 target 动作只允许 `once`。auto reviewer 只允许 `once`，不能建立 session 或 permanent grant。session grant 存在内存 session store；permanent grant 写入 `.cade/approval_grants.json`，使用文件锁和原子替换。
 
 `approval_policy`：
 
@@ -103,7 +103,7 @@ reviewer 返回单个 JSON assessment：outcome、risk_level、user_authorizatio
 - `workspace-write`：项目 root、临时目录和获准可写外部目录可写。
 - `danger-full-access`：使用当前用户的完整文件访问；network allow 时使用本地 subprocess shell。
 
-bubblewrap 设置 user、PID、IPC、UTS namespace，network deny 时设置 network namespace，进程 drop 全部 capability。`.git`、`.agents`、`.xcode` 以只读路径保护；凭据和环境文件通过 `/dev/null` 或 tmpfs 遮蔽。项目 root 之外的 cwd 直接拒绝。
+bubblewrap 设置 user、PID、IPC、UTS namespace，network deny 时设置 network namespace，进程 drop 全部 capability。`.git`、`.agents`、`.cade` 以只读路径保护；凭据和环境文件通过 `/dev/null` 或 tmpfs 遮蔽。项目 root 之外的 cwd 直接拒绝。
 
 Linux 之外使用本地 SubprocessShell，语义 PermissionEngine 继续保护工具调用。
 

@@ -1,7 +1,7 @@
 <div align="center">
   <br/>
   <h1>
-    <code style="color:#141413; background:#e8e6dc; padding:0 12px; border-radius:4px;">xcode</code>
+    <code style="color:#141413; background:#e8e6dc; padding:0 12px; border-radius:4px;">cade</code>
   </h1>
   <p style="font-size:1.2em; color:#141413;">
     <strong>可扩展的 Python Coding Agent 运行时骨架</strong>
@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/status-active-%236a9bcc?style=flat-square" alt="Status Active"/>
   </p>
   <p>
-    <a href="https://reddishjade.github.io/xcode/">项目主页</a> ·
+    <a href="https://reddishjade.github.io/cade/">项目主页</a> ·
     <a href="CONFIG.md">配置参考</a> ·
     <a href="benchmarks/README.md">Benchmark</a>
   </p>
@@ -35,8 +35,8 @@
 ### 从源码安装（开发模式）
 
 ```powershell
-git clone https://github.com/reddishJade/xcode.git
-cd xcode
+git clone https://github.com/reddishJade/cade.git
+cd cade
 uv pip install -e .
 ```
 
@@ -45,13 +45,13 @@ uv pip install -e .
 ### 全局安装（uv tool）
 
 ```powershell
-uv tool install --python 3.12 <path-to-xcode>
+uv tool install --python 3.12 <path-to-cade>
 ```
 
-安装后 `xcode` 成为系统级 CLI 命令，任意目录下均可调用。升级：
+安装后 `cade` 成为系统级 CLI 命令，任意目录下均可调用。升级：
 
 ```powershell
-uv tool upgrade xcode --no-cache
+uv tool upgrade cade --no-cache
 ```
 
 ### 安装开发环境
@@ -70,7 +70,7 @@ uv pip install -e ".[dev]"
 
 ```python
 from pathlib import Path
-from xcode.coding_agent.app import build_app
+from cade.coding_agent.app import build_app
 
 app = build_app(project_root=Path.cwd())
 
@@ -84,34 +84,34 @@ print(answer)
 
 ```powershell
 # 直接提问（单轮，自动退出）
-xcode -p "列出当前目录所有 Python 文件。"
+cade -p "列出当前目录所有 Python 文件。"
 
 # TUI 全屏终端界面（默认启动方式）
-xcode
+cade
 
 # 显式启动 TUI
-xcode tui
+cade tui
 
 # CLI / REPL 模式（多轮对话，支持 /slash 命令）
-xcode cli
+cade cli
 
 # 浏览器工作台（FastAPI + WebSocket 实时事件流）
-xcode web            # 默认 http://127.0.0.1:8787
-xcode web --open     # 启动后自动打开浏览器
-xcode web --port 9000
+cade web            # 默认 http://127.0.0.1:8787
+cade web --open     # 启动后自动打开浏览器
+cade web --port 9000
 
 # 首次使用引导（配置 Provider 与 API key）
-xcode setup
+cade setup
 
 # 打开交互式配置浏览器（调整执行模式、审批策略、Shell 等）
-xcode config
-xcode config approval
+cade config
+cade config approval
 
 # 自定义配置
-xcode --config .xcode/settings.json
+cade --config .cade/settings.json
 
 # 恢复最近会话
-xcode --resume
+cade --resume
 ```
 
 ### REPL 命令概览
@@ -170,10 +170,10 @@ xcode --resume
 - **上下文换窗与恢复** — `ContextWindowRollover` 直接开启无摘要的新工作窗口；`history` 检索无损 session 账本，项目根 `NOTE.md` 保存当前执行前沿。
 - **REPL 会话管理** — `/slash` 命令支持 plan/build/act、会话分支、回退、undo（快照恢复）、模型切换、config 管理、session transcript 落盘。
 - **TUI 全屏终端** — 基于 `prompt-toolkit` 的类 VSCode 全屏交互界面。
-- **浏览器工作台** — `xcode web` 启动 FastAPI + WebSocket 服务，单页面前端实时渲染结构化事件流：步骤脊柱、thinking、工具卡片与审批弹窗；会话账本可通过 REST 回放。
+- **浏览器工作台** — `cade web` 启动 FastAPI + WebSocket 服务，单页面前端实时渲染结构化事件流：步骤脊柱、thinking、工具卡片与审批弹窗；会话账本可通过 REST 回放。
 - **Subagent 委托** — `subagent` 单入口委派子任务，持久化 batch/run 谱系与终态；子 agent 共享项目目录，并继承父 agent 的权限门控。
 - **类型化工具呈现** — terminal、diff、location 和 subagent 由工具产生结构化 intent，REPL/TUI 共享投影逻辑。
-- **MCP 协议** — 基于官方 Python SDK 连接本地 stdio server，自动发现 `.xcode/mcp_config.json` 并注册 `mcp__{server}__{tool}` 动态工具。
+- **MCP 协议** — 基于官方 Python SDK 连接本地 stdio server，自动发现 `.cade/mcp_config.json` 并注册 `mcp__{server}__{tool}` 动态工具。
 - **记忆系统** — `MEMORY.md` 与用户级 memory 保存稳定长期事实，`NOTE.md` 保存短期工作状态，无损 session history 是最终事实源。
 - **外部 Hook** — 可配置事件驱动的外部命令 hooks（git 前置检查、自定义通知等）。
 
@@ -184,20 +184,20 @@ xcode --resume
 配置发现栈（优先级从低到高）：
 
 ```
-~/.xcode/settings.json          ← 全局默认
+~/.cade/settings.json          ← 全局默认
      ↓
-xcode.config.json               ← 项目级
+cade.config.json               ← 项目级
      ↓
-.xcode/settings.json            ← 本地覆盖
+.cade/settings.json            ← 本地覆盖
      ↓
 环境变量                          ← 最高优先级
 ```
 
 **配置分层覆盖**：全局 → 项目 → 本地 → 环境变量。
 
-Xcode 只执行本地 filesystem 和本地 shell，不提供容器、远程环境或远程执行
+Cade 只执行本地 filesystem 和本地 shell，不提供容器、远程环境或远程执行
 provider。权限提示和 shell 效果分析用于帮助用户了解并确认操作，不构成 OS
-级安全隔离；需要隔离时必须由运行 Xcode 的外部环境提供。
+级安全隔离；需要隔离时必须由运行 Cade 的外部环境提供。
 
 所有字段默认值及完整参考见 [CONFIG.md](CONFIG.md)。
 
@@ -209,12 +209,12 @@ provider。权限提示和 shell 效果分析用于帮助用户了解并确认�
 
 | Layer | 路径 | 职责 |
 |---|---|---|
-| `ai/` | `src/xcode/ai/` | 多 provider LLM API：OpenAI-compatible 基类 + DeepSeek/ChatGLM/MiMo 适配器，流式传输、缓存、thinking |
-| `agent/` | `src/xcode/agent/` | Agent loop 合约：消息/事件类型、上下文换窗、工具执行分区、watchdog、provider 抽象 |
-| `harness/` | `src/xcode/harness/` | 运行时配置、session 事实账本、权限/审计、MCP、skill、记忆、hooks 和本地执行协议 |
-| `coding_agent/` | `src/xcode/coding_agent/` | 产品工具装配：文件读写编辑、glob/grep/bash/subagent/webfetch/websearch 等 |
-| `cli/` | `src/xcode/cli/` | REPL UI、TUI、slash command 系统、setup wizard、配置管理 |
-| `server/` | `src/xcode/server/` | 浏览器工作台：FastAPI + WebSocket 实时事件流 + 零构建前端 |
+| `ai/` | `src/cade/ai/` | 多 provider LLM API：OpenAI-compatible 基类 + DeepSeek/ChatGLM/MiMo 适配器，流式传输、缓存、thinking |
+| `agent/` | `src/cade/agent/` | Agent loop 合约：消息/事件类型、上下文换窗、工具执行分区、watchdog、provider 抽象 |
+| `harness/` | `src/cade/harness/` | 运行时配置、session 事实账本、权限/审计、MCP、skill、记忆、hooks 和本地执行协议 |
+| `coding_agent/` | `src/cade/coding_agent/` | 产品工具装配：文件读写编辑、glob/grep/bash/subagent/webfetch/websearch 等 |
+| `cli/` | `src/cade/cli/` | REPL UI、TUI、slash command 系统、setup wizard、配置管理 |
+| `server/` | `src/cade/server/` | 浏览器工作台：FastAPI + WebSocket 实时事件流 + 零构建前端 |
 
 运行路径：`main.py` → `build_app()` → `CodingAgentHarness` → `Agent` loop → provider stream → tool execution。
 
@@ -222,4 +222,4 @@ provider。权限提示和 shell 效果分析用于帮助用户了解并确认�
 
 ## 许可
 
-[MIT](LICENSE) © 2026 Xcode Contributors
+[MIT](LICENSE) © 2026 Cade Contributors

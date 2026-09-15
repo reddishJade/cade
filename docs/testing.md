@@ -2,7 +2,7 @@
 
 ## 质量标准
 
-测试对象是组装后的 Xcode，而不只是单个函数。每项行为至少在最接近其风险的
+测试对象是组装后的 Cade，而不只是单个函数。每项行为至少在最接近其风险的
 层级验证；跨层不变量必须有契约测试。
 
 ## 测试层级
@@ -48,7 +48,7 @@ recorder 或 replayer。该测试必须覆盖：
 ```sh
 uv run ruff check src/
 uv run pyright src/
-uv run pytest src/xcode/tests -q --tb=short
+uv run pytest src/cade/tests -q --tb=short
 ```
 
 修改局部行为时先运行聚焦测试，提交前运行完整套件。Pyright 的既有 warning

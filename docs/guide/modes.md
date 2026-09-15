@@ -17,7 +17,7 @@
 /plan 分析当前 provider 结构并给出修改方案
 ```
 
-Plan 可见 `read_file`、`glob_files`、`find_files`、`list_dir`、`grep_search`、`search_tools`、`webfetch`、`websearch` 和 `question`。`write_file`、`edit_file` 的默认允许目标是 `.xcode/plans/*.md`，`apply_patch`、bash 和其他写操作由模式 fallback 拒绝。
+Plan 可见 `read_file`、`glob_files`、`find_files`、`list_dir`、`grep_search`、`search_tools`、`webfetch`、`websearch` 和 `question`。`write_file`、`edit_file` 的默认允许目标是 `.cade/plans/*.md`，`apply_patch`、bash 和其他写操作由模式 fallback 拒绝。
 
 Plan investigation turn 默认上限为 8。达到上限后自动切换 Build，并向下一轮注入模式通知。
 

@@ -54,7 +54,7 @@ Hooks 把 Agent 运行事件转换为同步回调、结构化订阅或受信任�
 
 ## 3. 外部进程协议
 
-Xcode 使用 `shell=False` 启动 hook，把脱敏后的 JSON 写入 stdin：
+Cade 使用 `shell=False` 启动 hook，把脱敏后的 JSON 写入 stdin：
 
 ```json
 {

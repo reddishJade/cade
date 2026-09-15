@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass
 import hashlib
 import json
-from pathlib import Path
 import re
 import shutil
 import time
-from typing import Literal, Mapping, cast
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Literal, cast
 
-from xcode.agent._execution import execute_tool_calls
-from xcode.agent.config import AgentContext, AgentLoopConfig
-from xcode.agent.events import AgentEvent
-from xcode.agent.messages import AssistantMessage
-from xcode.agent.types import (
+from cade.agent._execution import execute_tool_calls
+from cade.agent.config import AgentContext, AgentLoopConfig
+from cade.agent.events import AgentEvent
+from cade.agent.messages import AssistantMessage
+from cade.agent.types import (
     AgentToolResult,
     CancellationSignal,
     TextContent,
@@ -26,7 +27,7 @@ from xcode.agent.types import (
     ToolUpdateCallback,
 )
 
-SchedulingVariant = Literal["serial", "xcode"]
+SchedulingVariant = Literal["serial", "cade"]
 OperationKind = Literal["read", "write"]
 
 _SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")

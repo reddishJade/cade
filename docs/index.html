@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>xcode — 可扩展的 Python Coding Agent 运行时骨架</title>
+  <title>cade — 可扩展的 Python Coding Agent 运行时骨架</title>
   <meta name="description" content="围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文压缩、REPL/TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。">
-  <meta property="og:title" content="xcode — 可扩展的 Python Coding Agent 运行时骨架">
+  <meta property="og:title" content="cade — 可扩展的 Python Coding Agent 运行时骨架">
   <meta property="og:description" content="围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文压缩、REPL/TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。">
-  <meta property="og:url" content="https://reddishjade.github.io/xcode/">
+  <meta property="og:url" content="https://reddishjade.github.io/cade/">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="canonical" href="https://reddishjade.github.io/xcode/">
+  <link rel="canonical" href="https://reddishjade.github.io/cade/">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23141413'/%3E%3Cpath d='M18 20 L30 32 L18 44' stroke='%23d97757' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='34' y='40' width='14' height='6' rx='3' fill='%23e8e6dc'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +18,7 @@
   <script>
     (function() {
       try {
-        var l = localStorage.getItem('xcode-lang');
+        var l = localStorage.getItem('cade-lang');
         if (!l) {
           var nav = (navigator.language || '').toLowerCase();
           if (nav.indexOf('zh') === 0) l = 'zh';
@@ -28,7 +28,7 @@
         if (l === 'zh' || l === 'en') { document.documentElement.dataset.lang = l; document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en'; }
       } catch (e) {}
       try {
-        var t = localStorage.getItem('xcode-theme');
+        var t = localStorage.getItem('cade-theme');
         if (t === 'light' || t === 'dark') { document.documentElement.dataset.theme = t; }
       } catch (e) {}
     })();
@@ -467,9 +467,9 @@
 <nav>
   <div class="wrap nav-inner">
     <div class="nav-left">
-      <a class="logo" href="#top" aria-label="xcode home">
+      <a class="logo" href="#top" aria-label="cade home">
         <span class="logo-mark">&gt;_</span>
-        <span>xcode</span>
+        <span>cade</span>
       </a>
       <div class="nav-links">
         <a href="#features"><span class="lz">特性</span><span class="le">Features</span></a>
@@ -490,7 +490,7 @@
       <button class="btn btn-small lang-toggle" id="langToggle" aria-label="Switch language">
         <span class="lz">EN</span><span class="le">中</span>
       </button>
-      <a class="btn btn-primary btn-small" href="https://github.com/reddishJade/xcode" target="_blank" rel="noopener">
+      <a class="btn btn-primary btn-small" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">
         GitHub
       </a>
     </div>
@@ -512,7 +512,7 @@
         </p>
         <div class="hero-actions reveal" style="transition-delay:.24s">
           <a class="btn btn-primary" href="#install"><span class="lz">快速开始</span><span class="le">Quick Start</span></a>
-          <a class="btn" href="https://github.com/reddishJade/xcode" target="_blank" rel="noopener"><span class="lz">GitHub</span><span class="le">GitHub</span></a>
+          <a class="btn" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener"><span class="lz">GitHub</span><span class="le">GitHub</span></a>
         </div>
         <div class="stats reveal" style="transition-delay:.32s">
           <span>Python 3.12+</span>
@@ -523,12 +523,12 @@
       </div>
 
       <div class="terminal-wrap reveal" style="transition-delay:.28s">
-        <div class="terminal" aria-label="xcode terminal demo">
+        <div class="terminal" aria-label="cade terminal demo">
           <div class="term-bar">
             <span class="term-dot r"></span>
             <span class="term-dot y"></span>
             <span class="term-dot g"></span>
-            <span class="term-title">xcode — tui</span>
+            <span class="term-title">cade — tui</span>
           </div>
           <div class="term-body" id="termBody"></div>
         </div>
@@ -611,7 +611,7 @@
             <div class="step-num">2</div>
             <div>
               <h4><span class="lz">配置 Provider</span><span class="le">Configure a provider</span></h4>
-              <p><span class="lz">运行 xcode setup 交互向导，或配置 OpenAI / DeepSeek / ChatGLM / MiMo profile。</span><span class="le">Run the interactive xcode setup wizard, or configure an OpenAI / DeepSeek / ChatGLM / MiMo profile.</span></p>
+              <p><span class="lz">运行 cade setup 交互向导，或配置 OpenAI / DeepSeek / ChatGLM / MiMo profile。</span><span class="le">Run the interactive cade setup wizard, or configure an OpenAI / DeepSeek / ChatGLM / MiMo profile.</span></p>
             </div>
           </div>
           <div class="step reveal">
@@ -633,23 +633,23 @@
               <span class="code-lang">Shell</span>
               <button class="copy-btn" data-copy="#install-code" aria-label="复制"><span class="lz">复制</span><span class="le">Copy</span></button>
             </div>
-            <pre><code id="install-code">git clone https://github.com/reddishJade/xcode.git
-cd xcode
+            <pre><code id="install-code">git clone https://github.com/reddishJade/cade.git
+cd cade
 uv pip install -e .
 
-xcode setup          <span class="code-comment"># 首次配置向导 (Provider & API Key)</span>
-xcode config         <span class="code-comment"># 交互式设置浏览器 (执行模式/审批策略/Shell)</span>
+cade setup          <span class="code-comment"># 首次配置向导 (Provider & API Key)</span>
+cade config         <span class="code-comment"># 交互式设置浏览器 (执行模式/审批策略/Shell)</span>
 
-xcode                <span class="code-comment"># 进入 TUI</span>
-xcode cli            <span class="code-comment"># REPL 模式</span>
-xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pre>
+cade                <span class="code-comment"># 进入 TUI</span>
+cade cli            <span class="code-comment"># REPL 模式</span>
+cade -p "..."       <span class="code-comment"># 单发提问</span></code></pre>
           </div>
           <div class="cli-chips">
-            <span class="chip">xcode -p "..."</span>
-            <span class="chip">xcode tui</span>
-            <span class="chip">xcode cli</span>
-            <span class="chip">xcode --resume</span>
-            <span class="chip">xcode config</span>
+            <span class="chip">cade -p "..."</span>
+            <span class="chip">cade tui</span>
+            <span class="chip">cade cli</span>
+            <span class="chip">cade --resume</span>
+            <span class="chip">cade config</span>
           </div>
         </div>
       </div>
@@ -661,8 +661,8 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
       <header class="sec-head reveal">
         <p class="sec-kicker">03 — <span class="lz">实战场景</span><span class="le">Workflows</span></p>
         <h2>
-          <span class="lz">你可以用 Xcode <em>做什么</em></span>
-          <span class="le">What you can do with <em>Xcode</em></span>
+          <span class="lz">你可以用 Cade <em>做什么</em></span>
+          <span class="le">What you can do with <em>Cade</em></span>
         </h2>
         <span class="sec-rule"></span>
       </header>
@@ -746,8 +746,8 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
         </div>
       </div>
       <p class="cmd-more reveal">
-        <span class="lz">完整 30+ 条 slash 命令见 <a href="https://github.com/reddishJade/xcode/blob/main/README.md" target="_blank" rel="noopener">README</a>。</span>
-        <span class="le">See the full 30+ slash commands in the <a href="https://github.com/reddishJade/xcode/blob/main/README.md" target="_blank" rel="noopener">README</a>.</span>
+        <span class="lz">完整 30+ 条 slash 命令见 <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>。</span>
+        <span class="le">See the full 30+ slash commands in the <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>.</span>
       </p>
     </div>
   </section>
@@ -819,7 +819,7 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
         <div class="bench-card reveal">
           <span class="bench-tag warn"><span class="lz">真实 API 调用</span><span class="le">Real API calls</span></span>
           <h3><span class="lz">长程任务换窗消融</span><span class="le">Long-horizon rollover</span></h3>
-          <p><span class="lz">同模型、同温度、同任务配对运行：不换窗 baseline vs 启用无摘要换窗的 Xcode 配置。测试进程判定任务成功，文件哈希与禁止路径判定状态保持。</span><span class="le">Paired runs with the same model, temperature, and task: a no-rollover baseline vs Xcode with summary-free context rollover. Task success is judged by tests; state retention is judged by file hashes and forbidden paths.</span></p>
+          <p><span class="lz">同模型、同温度、同任务配对运行：不换窗 baseline vs 启用无摘要换窗的 Cade 配置。测试进程判定任务成功，文件哈希与禁止路径判定状态保持。</span><span class="le">Paired runs with the same model, temperature, and task: a no-rollover baseline vs Cade with summary-free context rollover. Task success is judged by tests; state retention is judged by file hashes and forbidden paths.</span></p>
           <div class="code-card" style="box-shadow:none; margin-bottom:0">
             <div class="code-header">
               <span class="code-lang">Shell</span>
@@ -854,8 +854,8 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
       <header class="sec-head reveal">
         <p class="sec-kicker">07 — <span class="lz">开发者文档</span><span class="le">Documentation</span></p>
         <h2>
-          <span class="lz">深入了解 <em>Xcode</em></span>
-          <span class="le">Deep dive into <em>Xcode</em></span>
+          <span class="lz">深入了解 <em>Cade</em></span>
+          <span class="le">Deep dive into <em>Cade</em></span>
         </h2>
         <span class="sec-rule"></span>
       </header>
@@ -864,11 +864,11 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
         <div class="docs-hero-left">
           <div class="docs-hero-badge">
             <span class="brand-mark">&gt;_</span>
-            <span>docs.xcode</span>
+            <span>docs.cade</span>
           </div>
           <h3>
-            <span class="lz">Xcode 官方技术与开发者文档中心</span>
-            <span class="le">Xcode Official Developer Documentation Hub</span>
+            <span class="lz">Cade 官方技术与开发者文档中心</span>
+            <span class="le">Cade Official Developer Documentation Hub</span>
           </h3>
           <p>
             <span class="lz">涵盖系统设计哲学、五层架构契约、Linux Bubblewrap 命名空间沙箱、只读并发调度与写串行屏障、无摘要上下文换窗、Durable Session 子代理以及全套 Slash 命令与配置手册。</span>
@@ -876,7 +876,7 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
           </p>
           <div class="docs-hero-cta">
             <a class="btn btn-primary" style="padding:12px 28px; font-size:15px; border-radius:10px;" href="docs.html">
-              <span class="lz">进入 Xcode 开发者文档页面</span>
+              <span class="lz">进入 Cade 开发者文档页面</span>
               <span class="le">Open Full Developer Documentation</span>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </a>
@@ -901,11 +901,11 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
   <div class="wrap footer-inner">
     <div class="footer-left">
       <span class="logo-mark">&gt;_</span>
-      <span>MIT © 2026 Xcode Contributors</span>
+      <span>MIT © 2026 Cade Contributors</span>
     </div>
     <div class="footer-links">
-      <a href="https://github.com/reddishJade/xcode" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/reddishJade/xcode/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/reddishJade/cade/issues" target="_blank" rel="noopener">Issues</a>
       <a href="#top"><span class="lz">返回顶部</span><span class="le">Back to top</span></a>
     </div>
   </div>
@@ -915,20 +915,20 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
 (function() {
   const TERM_DATA = {
     zh: [
-      { type: "cmd", text: "xcode" },
-      { type: "banner", text: "xcode 0.1.2 · build 模式 · deepseek-v4-flash" },
+      { type: "cmd", text: "cade" },
+      { type: "banner", text: "cade 0.1.2 · build 模式 · deepseek-v4-flash" },
       { type: "prompt", text: "/act 给 main.py 加上 --version 选项" },
-      { type: "tool", name: "read_file", arg: "src/xcode/main.py" },
-      { type: "tool", name: "edit_file", arg: "src/xcode/main.py", diff: "+8 −2" },
+      { type: "tool", name: "read_file", arg: "src/cade/main.py" },
+      { type: "tool", name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
       { type: "tool", name: "bash", arg: "uv run pytest -q" },
       { type: "ok", text: "测试通过 · --version 已接入 argparse" }
     ],
     en: [
-      { type: "cmd", text: "xcode" },
-      { type: "banner", text: "xcode 0.1.2 · build mode · deepseek-v4-flash" },
+      { type: "cmd", text: "cade" },
+      { type: "banner", text: "cade 0.1.2 · build mode · deepseek-v4-flash" },
       { type: "prompt", text: "/act add a --version flag to main.py" },
-      { type: "tool", name: "read_file", arg: "src/xcode/main.py" },
-      { type: "tool", name: "edit_file", arg: "src/xcode/main.py", diff: "+8 −2" },
+      { type: "tool", name: "read_file", arg: "src/cade/main.py" },
+      { type: "tool", name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
       { type: "tool", name: "bash", arg: "uv run pytest -q" },
       { type: "ok", text: "Tests green · --version wired into argparse" }
     ]
@@ -1024,10 +1024,10 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
   function setLang(lang) {
     document.documentElement.dataset.lang = lang;
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-    try { localStorage.setItem('xcode-lang', lang); } catch (e) {}
+    try { localStorage.setItem('cade-lang', lang); } catch (e) {}
     document.title = lang === 'zh'
-      ? 'xcode — 可扩展的 Python Coding Agent 运行时骨架'
-      : 'xcode — An extensible Python coding-agent runtime harness';
+      ? 'cade — 可扩展的 Python Coding Agent 运行时骨架'
+      : 'cade — An extensible Python coding-agent runtime harness';
     playTerm();
   }
   langBtn.addEventListener('click', () => {
@@ -1073,7 +1073,7 @@ xcode -p "..."       <span class="code-comment"># 单发提问</span></code></pr
   function applyTheme(mode) {
     if (mode === 'auto') { delete document.documentElement.dataset.theme; }
     else { document.documentElement.dataset.theme = mode; }
-    try { localStorage.setItem('xcode-theme', mode); } catch (e) {}
+    try { localStorage.setItem('cade-theme', mode); } catch (e) {}
     themeIcons.forEach(icon => icon.classList.toggle('active', icon.dataset.mode === mode));
     themeBtn.title = mode === 'auto' ? 'Theme: auto' : 'Theme: ' + mode;
   }

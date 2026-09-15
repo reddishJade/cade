@@ -5,7 +5,7 @@
 在项目根目录完成 provider 配置后：
 
 ```bash
-xcode
+cade
 ```
 
 默认进入终端 TUI。输入任务并按 Enter 提交，Shift+Enter 插入换行；部分终端可以使用 Esc、Enter 作为换行组合键。
@@ -23,8 +23,8 @@ Agent 通常先使用读取与搜索工具建立上下文，再根据任务需�
 ### 单次 prompt
 
 ```bash
-xcode -p "解释 src/xcode/harness/agent_runtime 的运行流程"
-xcode -p "检查当前修改并给出风险摘要"
+cade -p "解释 src/cade/harness/agent_runtime 的运行流程"
+cade -p "检查当前修改并给出风险摘要"
 ```
 
 单次模式消费事件流，打印文本结果后退出。它适合快速分析和脚本化调用。
@@ -32,7 +32,7 @@ xcode -p "检查当前修改并给出风险摘要"
 ### 终端 CLI / REPL
 
 ```bash
-xcode cli
+cade cli
 ```
 
 CLI 保留多轮 session，并提供命令补全、Markdown 输出、推理摘要和工具摘要。详细命令位于 [slash-commands.md](slash-commands.md)。
@@ -40,8 +40,8 @@ CLI 保留多轮 session，并提供命令补全、Markdown 输出、推理摘�
 ### TUI
 
 ```bash
-xcode
-xcode tui
+cade
+cade tui
 ```
 
 TUI 在当前终端中显示 inline transcript，包含输入、步骤、推理、工具卡片、授权面板、滚动历史和状态栏。
@@ -50,7 +50,7 @@ TUI 在当前终端中显示 inline transcript，包含输入、步骤、推理�
 
 | 语法 | 行为 | 示例 |
 | --- | --- | --- |
-| `@path` | 读取项目内文件并附加为 `<file-reference>` | `@src/xcode/main.py 解释参数解析` |
+| `@path` | 读取项目内文件并附加为 `<file-reference>` | `@src/cade/main.py 解释参数解析` |
 | `!command` | 直接调用注册的 `bash` 工具 | `!git status --short` |
 | `$skill task` | 激活指定技能，再提交剩余任务 | `$code-review 检查这个补丁` |
 | `/command` | 执行 session、模式、模型等控制命令 | `/plan 分析实现路径` |
@@ -61,13 +61,13 @@ TUI 在当前终端中显示 inline transcript，包含输入、步骤、推理�
 
 ```bash
 # 当前项目最近会话
-xcode --continue
+cade --continue
 
 # 打开会话选择器
-xcode --resume
+cade --resume
 
 # 恢复指定 session
-xcode --session SESSION_ID
+cade --session SESSION_ID
 ```
 
 进入 CLI 后也可以使用 `/continue`、`/resume`、`/sessions`。恢复过程从 session branch 重建模型历史、运行模式、Goal、todo、技能激活和相关上下文。
@@ -87,7 +87,7 @@ xcode --session SESSION_ID
 
 ```python
 from pathlib import Path
-from xcode.coding_agent.app import build_app
+from cade.coding_agent.app import build_app
 
 app = build_app(project_root=Path.cwd())
 try:

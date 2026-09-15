@@ -23,8 +23,8 @@ from benchmarks.evaluators.state_retention import (
 from benchmarks.evaluators.test_result import run_command
 from benchmarks.models import LongHorizonTask
 from benchmarks.runners.progress import ProgressStage, ProgressUpdate
-from xcode.agent.messages import AgentMessage
-from xcode.ai.events import (
+from cade.agent.messages import AgentMessage
+from cade.ai.events import (
     Message,
     ProviderEvent,
     ReasoningDelta,
@@ -32,21 +32,21 @@ from xcode.ai.events import (
     ToolCallEvent,
     UsageUpdate,
 )
-from xcode.ai.models import get_models, get_providers
-from xcode.ai.providers.base import ModelProvider
-from xcode.ai.types import StreamOptions, ToolDefinition
-from xcode.ai.usage import UsageTotals
-from xcode.coding_agent.app import XcodeApp, build_app
-from xcode.harness.agent_runtime.context_window import ContextWindowRollover
-from xcode.harness.agent_runtime.result import AgentHarnessResult
-from xcode.harness.config import (
+from cade.ai.models import get_models, get_providers
+from cade.ai.providers.base import ModelProvider
+from cade.ai.types import StreamOptions, ToolDefinition
+from cade.ai.usage import UsageTotals
+from cade.coding_agent.app import CadeApp, build_app
+from cade.harness.agent_runtime.context_window import ContextWindowRollover
+from cade.harness.agent_runtime.result import AgentHarnessResult
+from cade.harness.config import (
+    CadeRuntimeConfig,
     HooksRuntimeConfig,
     InlineInstructionSource,
-    XcodeRuntimeConfig,
 )
-from xcode.harness.session.surface import project_session_surface
+from cade.harness.session.surface import project_session_surface
 
-Variant = Literal["baseline", "xcode"]
+Variant = Literal["baseline", "cade"]
 
 _OVERFLOW_MARKERS = (
     "context length",
@@ -322,7 +322,7 @@ def _prepare_workspace(source: Path, workspace: Path) -> str:
     """复制 fixture，并创建不受父仓库影响的确定性 Git 基线。"""
     shutil.copytree(source, workspace, ignore=shutil.ignore_patterns(".git"))
     _run_git(workspace, "init", "--quiet")
-    _run_git(workspace, "config", "user.name", "Xcode Benchmark")
+    _run_git(workspace, "config", "user.name", "Cade Benchmark")
     _run_git(workspace, "config", "user.email", "benchmark@local.invalid")
     _run_git(workspace, "config", "core.autocrlf", "false")
     _run_git(workspace, "config", "core.filemode", "false")
@@ -386,7 +386,7 @@ def _run_git(
 def run_task(
     task: LongHorizonTask,
     variant: Variant,
-    runtime_config: XcodeRuntimeConfig,
+    runtime_config: CadeRuntimeConfig,
     options: RunOptions,
 ) -> dict[str, Any]:
     """在隔离工作区运行一个任务，并写出单次原始记录。"""
@@ -459,7 +459,7 @@ def run_task(
         for turn_index, turn in enumerate(task.turns, 1):
             current_turn = turn_index
             emit_progress("turn_started", turn.prompt, turn=turn_index)
-            if turn.rollover_before and variant == "xcode":
+            if turn.rollover_before and variant == "cade":
                 app.agent.request_context_window()
 
             call_start = len(calls)
@@ -644,11 +644,11 @@ def run_task(
 
 
 def _benchmark_runtime_config(
-    base: XcodeRuntimeConfig,
+    base: CadeRuntimeConfig,
     task: LongHorizonTask,
     *,
     sessions_dir: Path,
-) -> XcodeRuntimeConfig:
+) -> CadeRuntimeConfig:
     instruction = InlineInstructionSource(
         content=(
             "This is a controlled benchmark. Do not use subagents, web tools, "
@@ -683,12 +683,12 @@ def _benchmark_runtime_config(
 
 def _build_benchmark_app(
     workspace: Path,
-    runtime_config: XcodeRuntimeConfig,
+    runtime_config: CadeRuntimeConfig,
     variant: Variant,
     options: RunOptions,
     calls: list[ProviderCallRecord],
     progress_callback: Callable[[ProgressStage, str], None] | None = None,
-) -> XcodeApp:
+) -> CadeApp:
     app = build_app(
         project_root=workspace,
         runtime_config=runtime_config,
@@ -707,7 +707,7 @@ def _build_benchmark_app(
 
 
 def _run_turn(
-    app: XcodeApp,
+    app: CadeApp,
     prompt: str,
     progress_callback: Callable[[ProgressStage, str], None] | None = None,
 ) -> tuple[AgentHarnessResult, int]:
@@ -748,7 +748,7 @@ def _tool_call_detail(call: object) -> str:
 
 
 def _rebuild_history(
-    app: XcodeApp,
+    app: CadeApp,
     variant: Variant,
 ) -> tuple[list[AgentMessage], bool]:
     if variant == "baseline" or not isinstance(

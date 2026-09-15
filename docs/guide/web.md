@@ -1,13 +1,13 @@
 # 浏览器工作台
 
-Xcode Web workbench 由 FastAPI 服务、WebSocket 事件通道和单页前端组成。服务端持有一个 `XcodeApp` 和一个 `WebRunHub`，浏览器负责输入、展示、取消和审批。
+Cade Web workbench 由 FastAPI 服务、WebSocket 事件通道和单页前端组成。服务端持有一个 `CadeApp` 和一个 `WebRunHub`，浏览器负责输入、展示、取消和审批。
 
 ## 1. 启动
 
 ```bash
-xcode web
-xcode web --host 127.0.0.1 --port 8787 --open
-xcode web --project-root /path/to/project
+cade web
+cade web --host 127.0.0.1 --port 8787 --open
+cade web --project-root /path/to/project
 ```
 
 参数：
@@ -73,7 +73,7 @@ xcode web --project-root /path/to/project
 
 1. 浏览器提交任务。
 2. hub 广播 `run_started` 和 user message。
-3. 独立执行线程消费 `XcodeApp.ask_stream`。
+3. 独立执行线程消费 `CadeApp.ask_stream`。
 4. 事件通过 asyncio loop 安全广播。
 5. run 结束后广播 `run_idle`，刷新 session 与统计。
 
@@ -83,7 +83,7 @@ xcode web --project-root /path/to/project
 
 点击 session 可以读取 transcript；恢复后当前工作台切换到该 session，后续提交继续写入该账本。页面实时视图可以清空而不删除服务端 session。
 
-工作区切换会由 server factory 为目标目录创建新的 XcodeApp，迁移 hub 的当前 app，关闭旧 app，并刷新模型、session、MCP 和统计状态。最近工作区列表保存于用户级 `.xcode` 数据目录。
+工作区切换会由 server factory 为目标目录创建新的 CadeApp，迁移 hub 的当前 app，关闭旧 app，并刷新模型、session、MCP 和统计状态。最近工作区列表保存于用户级 `.cade` 数据目录。
 
 ## 7. 事件展示边界
 

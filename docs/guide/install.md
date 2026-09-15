@@ -1,6 +1,6 @@
 # 安装与环境准备
 
-Xcode 需要 Python 3.12 或更高版本。运行时依赖 OpenAI-compatible provider、终端交互、文件处理、MCP、FastAPI Web 服务和 Linux bubblewrap sandbox。
+Cade 需要 Python 3.12 或更高版本。运行时依赖 OpenAI-compatible provider、终端交互、文件处理、MCP、FastAPI Web 服务和 Linux bubblewrap sandbox。
 
 ## 1. 前置条件
 
@@ -27,8 +27,8 @@ Linux 以外的环境使用本地 `SubprocessShell`；工具权限和路径策�
 ## 2. 开发模式安装
 
 ```bash
-git clone https://github.com/reddishJade/xcode.git
-cd xcode
+git clone https://github.com/reddishJade/cade.git
+cd cade
 
 uv venv
 # Linux / macOS
@@ -48,7 +48,7 @@ uv pip install -e ".[dev]"
 也可以直接使用：
 
 ```bash
-uv run xcode --help
+uv run cade --help
 ```
 
 ## 3. 首次配置
@@ -56,10 +56,10 @@ uv run xcode --help
 交互式向导：
 
 ```bash
-xcode setup
+cade setup
 ```
 
-向导会收集 provider、API key、base URL、模型、thinking 和可用的 reasoning effort，并把配置写入项目根目录的 `xcode.config.json`。取消保存时，当前进程可以使用临时配置继续运行。
+向导会收集 provider、API key、base URL、模型、thinking 和可用的 reasoning effort，并把配置写入项目根目录的 `cade.config.json`。取消保存时，当前进程可以使用临时配置继续运行。
 
 也可以使用环境变量。常用 key 包括：
 
@@ -81,20 +81,20 @@ API key 也可以写入 provider profile。敏感配置适合放在个人配置�
 ## 4. 验证安装
 
 ```bash
-xcode --help
-xcode setup
-xcode -p "输出一句安装成功"
+cade --help
+cade setup
+cade -p "输出一句安装成功"
 ```
 
-若执行 `xcode` 没有指定子命令，程序启动终端 TUI。标准 REPL 使用 `xcode cli`，浏览器工作台使用 `xcode web`。
+若执行 `cade` 没有指定子命令，程序启动终端 TUI。标准 REPL 使用 `cade cli`，浏览器工作台使用 `cade web`。
 
 ## 5. 运行目录
 
 启动时默认以当前目录作为项目根目录。可以显式指定：
 
 ```bash
-xcode --project-root /path/to/project
-xcode --project-root D:\\work\\project cli
+cade --project-root /path/to/project
+cade --project-root D:\\work\\project cli
 ```
 
 会话、快照、MCP、技能和项目记忆都会依据这个项目根目录建立各自的运行边界。

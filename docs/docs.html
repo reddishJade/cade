@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Xcode 开发者文档 — Developer Documentation</title>
-  <meta name="description" content="Xcode 官方技术与开发者文档：设计哲学、五层架构、执行模式、Linux 沙箱、工具并发调度、会话压缩、MCP 扩展与 Slash 指令手册。">
+  <title>Cade 开发者文档 — Developer Documentation</title>
+  <meta name="description" content="Cade 官方技术与开发者文档：设计哲学、五层架构、执行模式、Linux 沙箱、工具并发调度、会话压缩、MCP 扩展与 Slash 指令手册。">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101012'/%3E%3Cpath d='M20 22 L31 32 L20 42' stroke='%23e0854a' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='36' y='39' width='11' height='5' rx='2.5' fill='%23f0efe9'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,12 +12,12 @@
   <script>
     (function() {
       try {
-        var l = localStorage.getItem('xcode-lang');
+        var l = localStorage.getItem('cade-lang');
         if (!l) { l = (navigator.language || '').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en'; }
         if (l === 'zh' || l === 'en') { document.documentElement.dataset.lang = l; document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en'; }
       } catch (e) {}
       try {
-        var t = localStorage.getItem('xcode-theme');
+        var t = localStorage.getItem('cade-theme');
         if (t === 'light' || t === 'dark') { document.documentElement.dataset.theme = t; }
       } catch (e) {}
     })();
@@ -381,7 +381,7 @@
       </button>
       <a class="nav-brand" href="index.html">
         <span class="brand-mark">&gt;_</span>
-        <span>xcode</span>
+        <span>cade</span>
         <span class="brand-badge"><span class="lz">开发者文档</span><span class="le">Docs Hub</span></span>
       </a>
     </div>
@@ -400,7 +400,7 @@
         <span class="lz">EN</span><span class="le">中</span>
       </button>
       <a class="btn nav-home" href="index.html"><span class="lz">返回主页</span><span class="le">Home</span></a>
-      <a class="btn btn-primary" href="https://github.com/reddishJade/xcode" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">GitHub</a>
     </div>
   </header>
 
@@ -454,10 +454,10 @@
       <!-- ================= 1. DESIGN PHILOSOPHY ================= -->
       <article id="design-philosophy" class="doc-page active">
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">架构</span><span class="le">Architecture</span> / <span>Design Philosophy</span></div>
-        <h1><span class="lz">Xcode 设计理念与核心实现</span><span class="le">Design Philosophy & Core Implementation</span></h1>
+        <h1><span class="lz">Cade 设计理念与核心实现</span><span class="le">Design Philosophy & Core Implementation</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 并不是一组大模型 API 与本地脚本的简单组合（薄包装），而是一个面向生产环境的 <strong>Python Coding Agent 运行时骨架（Runtime Harness）</strong>。核心围绕 <strong>可测试性（Testability）</strong>、<strong>可观测性（Observability）</strong> 与 <strong>纵深防御（Defense-in-depth）</strong> 进行架构设计。</span>
-          <span class="le">Xcode is not a thin API wrapper, but a production-grade <strong>Python Coding Agent Runtime Harness</strong> architected around testability, observability, and defense-in-depth.</span>
+          <span class="lz">Cade 并不是一组大模型 API 与本地脚本的简单组合（薄包装），而是一个面向生产环境的 <strong>Python Coding Agent 运行时骨架（Runtime Harness）</strong>。核心围绕 <strong>可测试性（Testability）</strong>、<strong>可观测性（Observability）</strong> 与 <strong>纵深防御（Defense-in-depth）</strong> 进行架构设计。</span>
+          <span class="le">Cade is not a thin API wrapper, but a production-grade <strong>Python Coding Agent Runtime Harness</strong> architected around testability, observability, and defense-in-depth.</span>
         </p>
 
         <h2 id="core-principles"><span class="lz">八大核心设计机制</span><span class="le">Eight Core Architectural Mechanisms</span></h2>
@@ -473,7 +473,7 @@
           </div>
           <div class="card-box">
             <h4><span>3. Linux Bubblewrap 沙箱</span> <span class="badge badge-blue">Hardened</span></h4>
-            <p><span class="lz">命名空间隔离；宿主只读；项目可写；<code>.git</code>/<code>.xcode</code> 重新只读保护；密钥目录与 <code>.env*</code> 全面遮蔽；网络隔离。</span><span class="le">Linux namespaces: host read-only, project write, read-only .git/.xcode, masked secrets (.env*), network isolation.</span></p>
+            <p><span class="lz">命名空间隔离；宿主只读；项目可写；<code>.git</code>/<code>.cade</code> 重新只读保护；密钥目录与 <code>.env*</code> 全面遮蔽；网络隔离。</span><span class="le">Linux namespaces: host read-only, project write, read-only .git/.cade, masked secrets (.env*), network isolation.</span></p>
           </div>
           <div class="card-box">
             <h4><span>4. 副作用感知并发分区</span> <span class="badge badge-amber">Concurrent</span></h4>
@@ -550,22 +550,22 @@
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">架构</span><span class="le">Architecture</span> / <span>System Architecture</span></div>
         <h1><span class="lz">五层系统架构与单向数据流</span><span class="le">Five-Layer Architecture & Unidirectional Flow</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 采用严格的五层分层架构，数据流向始终由高层向底层单向流动，每一层均可独立编写单元测试与契约测试。</span>
-          <span class="le">Xcode enforces a strict 5-layer design where dependencies flow unidirectionally from high-level interaction to low-level adapters.</span>
+          <span class="lz">Cade 采用严格的五层分层架构，数据流向始终由高层向底层单向流动，每一层均可独立编写单元测试与契约测试。</span>
+          <span class="le">Cade enforces a strict 5-layer design where dependencies flow unidirectionally from high-level interaction to low-level adapters.</span>
         </p>
 
         <div class="arch-diagram">
-          <div class="code-header"><span>src/xcode/ · 五层架构</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <div class="code-header"><span>src/cade/ · 五层架构</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
           <pre><code><span class="d">┌─</span>────────────────────────────────────────────────────────<span class="d">─┐</span>
-<span class="d">│</span> CLI / TUI <span class="c">(src/xcode/cli/)</span>                    <span class="c">交互层</span> <span class="d">│</span>
+<span class="d">│</span> CLI / TUI <span class="c">(src/cade/cli/)</span>                    <span class="c">交互层</span> <span class="d">│</span>
 <span class="d">├─</span>────────────────────────────────────────────────────────<span class="d">─┤</span>
-<span class="d">│</span> Coding Agent <span class="c">(src/xcode/coding_agent/)</span>        <span class="c">产品装配</span> <span class="d">│</span>
+<span class="d">│</span> Coding Agent <span class="c">(src/cade/coding_agent/)</span>        <span class="c">产品装配</span> <span class="d">│</span>
 <span class="d">├─</span>────────────────────────────────────────────────────────<span class="d">─┤</span>
-<span class="d">│</span> Harness <span class="c">(src/xcode/harness/)</span>                  <span class="c">运行时</span> <span class="d">│</span>
+<span class="d">│</span> Harness <span class="c">(src/cade/harness/)</span>                  <span class="c">运行时</span> <span class="d">│</span>
 <span class="d">├─</span>────────────────────────────────────────────────────────<span class="d">─┤</span>
-<span class="d">│</span> Agent Loop <span class="c">(src/xcode/agent/)</span>                <span class="c">合约层</span> <span class="d">│</span>
+<span class="d">│</span> Agent Loop <span class="c">(src/cade/agent/)</span>                <span class="c">合约层</span> <span class="d">│</span>
 <span class="d">├─</span>────────────────────────────────────────────────────────<span class="d">─┤</span>
-<span class="d">│</span> AI Providers <span class="c">(src/xcode/ai/)</span>                 <span class="c">适配层</span> <span class="d">│</span>
+<span class="d">│</span> AI Providers <span class="c">(src/cade/ai/)</span>                 <span class="c">适配层</span> <span class="d">│</span>
 <span class="d">└─</span>────────────────────────────────────────────────────────<span class="d">─┘</span>
 <span class="c">数据流：高层 → 低层，单向依赖，逐层可测</span></code></pre>
         </div>
@@ -583,27 +583,27 @@
             <tbody>
               <tr>
                 <td><strong>CLI / TUI</strong></td>
-                <td><code>src/xcode/cli/</code></td>
+                <td><code>src/cade/cli/</code></td>
                 <td><span class="lz">全屏 TUI 渲染、标准 REPL、Slash 指令解析、键盘交互与配置浏览器</span><span class="le">Fullscreen TUI, REPL, slash parser, keybinds, settings browser</span></td>
               </tr>
               <tr>
                 <td><strong>Coding Agent</strong></td>
-                <td><code>src/xcode/coding_agent/</code></td>
+                <td><code>src/cade/coding_agent/</code></td>
                 <td><span class="lz">组装代码编辑工具箱、任务状态机 (Todo)、模式切换与子代理工具</span><span class="le">File tools, todo state machine, work mode switching & subagent tool</span></td>
               </tr>
               <tr>
                 <td><strong>Harness</strong></td>
-                <td><code>src/xcode/harness/</code></td>
+                <td><code>src/cade/harness/</code></td>
                 <td><span class="lz">Session 事件账本、Linux Bubblewrap 沙箱、权限评估、MCP Client、长期记忆</span><span class="le">Session ledger, bwrap sandbox, policy engine, MCP client & memory</span></td>
               </tr>
               <tr>
                 <td><strong>Agent Loop</strong></td>
-                <td><code>src/xcode/agent/</code></td>
+                <td><code>src/cade/agent/</code></td>
                 <td><span class="lz">主事件循环、请求组装、上下文换窗调度、工具并发读写分区调度</span><span class="le">Agent loop, request assembly, context rollover scheduling & tool dispatcher</span></td>
               </tr>
               <tr>
                 <td><strong>AI Providers</strong></td>
-                <td><code>src/xcode/ai/</code></td>
+                <td><code>src/cade/ai/</code></td>
                 <td><span class="lz">OpenAI / DeepSeek / Xiaomi MiMo / ChatGLM 协议适配与 Thinking 流式解析</span><span class="le">Provider adapters, streaming HTTP transport & thinking parsers</span></td>
               </tr>
             </tbody>
@@ -627,8 +627,8 @@
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">快速上手</span><span class="le">Get Started</span> / <span>Install</span></div>
         <h1><span class="lz">安装与环境准备</span><span class="le">Install & Environment Setup</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 需要 Python 3.12+ 环境，推荐使用现代化的 <code>uv</code> 包管理器进行安装与依赖锁定。</span>
-          <span class="le">Xcode requires Python 3.12+ and recommends the modern <code>uv</code> package manager.</span>
+          <span class="lz">Cade 需要 Python 3.12+ 环境，推荐使用现代化的 <code>uv</code> 包管理器进行安装与依赖锁定。</span>
+          <span class="le">Cade requires Python 3.12+ and recommends the modern <code>uv</code> package manager.</span>
         </p>
 
         <h2><span class="lz">Linux 沙箱依赖前置检查</span><span class="le">Linux Bubblewrap Sandbox Prerequisites</span></h2>
@@ -646,12 +646,12 @@ sudo dnf install -y bubblewrap
 sudo pacman -S bubblewrap</code></pre>
         </div>
 
-        <h2><span class="lz">安装 Xcode</span><span class="le">Installing Xcode</span></h2>
+        <h2><span class="lz">安装 Cade</span><span class="le">Installing Cade</span></h2>
         <div class="code-box">
           <div class="code-header"><span>Terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
           <pre><code><span class="c"># 克隆仓库</span>
-git clone https://github.com/reddishJade/xcode.git
-cd xcode
+git clone https://github.com/reddishJade/cade.git
+cd cade
 
 <span class="c"># 推荐：通过 uv 创建虚拟环境并可编辑安装</span>
 uv venv
@@ -666,10 +666,10 @@ uv pip install -e ".[dev]"</code></pre>
         <div class="code-box">
           <div class="code-header"><span>Terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
           <pre><code><span class="c"># 启动交互式引导，一键选择 Provider 并配置 API Key</span>
-xcode setup
+cade setup
 
 <span class="c"># 启动全屏终端 (TUI)</span>
-xcode</code></pre>
+cade</code></pre>
         </div>
 
         <div class="docs-pager">
@@ -689,8 +689,8 @@ xcode</code></pre>
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">快速上手</span><span class="le">Get Started</span> / <span>Providers</span></div>
         <h1><span class="lz">模型与 Provider 配置</span><span class="le">Connect Models & Providers</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 原生支持主流推理大模型，提供 Thinking 思考链解析、多 Profile 角色分工与会话内动态模型热切换。</span>
-          <span class="le">Xcode supports DeepSeek, MiMo, ChatGLM, and OpenAI with thinking chain parsing and dynamic profile routing.</span>
+          <span class="lz">Cade 原生支持主流推理大模型，提供 Thinking 思考链解析、多 Profile 角色分工与会话内动态模型热切换。</span>
+          <span class="le">Cade supports DeepSeek, MiMo, ChatGLM, and OpenAI with thinking chain parsing and dynamic profile routing.</span>
         </p>
 
         <h2><span class="lz">支持的 Provider 与环境变量</span><span class="le">Supported Providers & Environment Variables</span></h2>
@@ -734,10 +734,10 @@ xcode</code></pre>
         </div>
 
         <h2><span class="lz">多 Profile 角色分工架构</span><span class="le">Multi-Profile Role Allocation</span></h2>
-        <p><span class="lz">在 <code>xcode.config.json</code> 中可以为主会话 (main)、自动化审查器 (reviewer) 和子代理 (subagent) 分配不同的模型策略：</span><span class="le">Assign specialized models and reasoning efforts to main, reviewer, and subagent roles:</span></p>
+        <p><span class="lz">在 <code>cade.config.json</code> 中可以为主会话 (main)、自动化审查器 (reviewer) 和子代理 (subagent) 分配不同的模型策略：</span><span class="le">Assign specialized models and reasoning efforts to main, reviewer, and subagent roles:</span></p>
 
         <div class="code-box">
-          <div class="code-header"><span>xcode.config.json</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <div class="code-header"><span>cade.config.json</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
           <pre><code>{
   <span class="c">"provider"</span>: {
     <span class="c">"default_transport"</span>: <span class="p">"deepseek_chat"</span>,
@@ -789,8 +789,8 @@ xcode</code></pre>
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">快速上手</span><span class="le">Get Started</span> / <span>Quickstart</span></div>
         <h1><span class="lz">快速上手与交互模式</span><span class="le">Interactive Use & Quickstart</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 支持全屏终端 (TUI)、标准 REPL (CLI) 与单轮提问 (-p) 模式，并提供强大的 REPL 增强语法。</span>
-          <span class="le">Xcode offers Fullscreen TUI, standard REPL CLI, and single-turn prompt mode with rich prefix syntax.</span>
+          <span class="lz">Cade 支持全屏终端 (TUI)、标准 REPL (CLI) 与单轮提问 (-p) 模式，并提供强大的 REPL 增强语法。</span>
+          <span class="le">Cade offers Fullscreen TUI, standard REPL CLI, and single-turn prompt mode with rich prefix syntax.</span>
         </p>
 
         <h2><span class="lz">REPL 增强输入语法</span><span class="le">Enhanced REPL Prefix Syntax</span></h2>
@@ -821,7 +821,7 @@ xcode</code></pre>
               </tr>
               <tr>
                 <td><code>/command</code></td>
-                <td><span class="lz">执行 Xcode 内部 Slash 控制指令</span><span class="le">Execute internal Xcode slash command</span></td>
+                <td><span class="lz">执行 Cade 内部 Slash 控制指令</span><span class="le">Execute internal Cade slash command</span></td>
                 <td><code>/plan 规划登录模块重构</code></td>
               </tr>
             </tbody>
@@ -845,7 +845,7 @@ xcode</code></pre>
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">核心运行机制</span><span class="le">Core Operations</span> / <span>Work Modes</span></div>
         <h1><span class="lz">执行模式：Plan / Build / Act</span><span class="le">Work Modes (Plan / Build / Act)</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 通过严格的执行模式定义工具权限边界、文件写权限与审批策略。</span>
+          <span class="lz">Cade 通过严格的执行模式定义工具权限边界、文件写权限与审批策略。</span>
           <span class="le">Work modes define tool permission boundaries, file write rules, and automated approval routing.</span>
         </p>
 
@@ -864,7 +864,7 @@ xcode</code></pre>
               <tr>
                 <td><span class="badge badge-blue">Plan</span></td>
                 <td><span class="badge badge-green">允许 (Allow)</span></td>
-                <td><span class="badge badge-amber">仅限 .xcode/plans/*.md</span></td>
+                <td><span class="badge badge-amber">仅限 .cade/plans/*.md</span></td>
                 <td><span class="badge badge-accent">禁止 (Deny)</span></td>
                 <td><span class="lz">代码库调研、方案设计、零副作用探索</span><span class="le">Code exploration & architectural planning</span></td>
               </tr>
@@ -888,7 +888,7 @@ xcode</code></pre>
 
         <div class="callout tip">
           <div class="callout-header">TIP · 两阶段开发最佳实践</div>
-          <p><span class="lz">1. 输入 <code>/plan 需求说明</code> 进入 Plan 模式，Agent 仅进行只读调研并在 <code>.xcode/plans/</code> 下生成详细设计文档；<br>2. 审阅方案后输入 <code>/build</code> 切换至 Build 模式，Agent 将在沙箱中全自动落地修改并运行测试。</span><span class="le">1. Use /plan to explore and write architecture docs to .xcode/plans/; 2. Review design, then type /build to execute autonomously under sandboxed guardrails.</span></p>
+          <p><span class="lz">1. 输入 <code>/plan 需求说明</code> 进入 Plan 模式，Agent 仅进行只读调研并在 <code>.cade/plans/</code> 下生成详细设计文档；<br>2. 审阅方案后输入 <code>/build</code> 切换至 Build 模式，Agent 将在沙箱中全自动落地修改并运行测试。</span><span class="le">1. Use /plan to explore and write architecture docs to .cade/plans/; 2. Review design, then type /build to execute autonomously under sandboxed guardrails.</span></p>
         </div>
 
         <div class="docs-pager">
@@ -913,7 +913,7 @@ xcode</code></pre>
         </p>
 
         <h2><span class="lz">95% 水位线上下文换窗</span><span class="le">95% Context Rollover</span></h2>
-        <p><span class="lz">当上下文达到当前模型容量（或 provider profile 复写值）的 95% 时，系统直接开启干净窗口：</span><span class="le">At 95% of the active model capacity (or provider profile override), Xcode opens a fresh window:</span></p>
+        <p><span class="lz">当上下文达到当前模型容量（或 provider profile 复写值）的 95% 时，系统直接开启干净窗口：</span><span class="le">At 95% of the active model capacity (or provider profile override), Cade opens a fresh window:</span></p>
         <ul>
           <li><strong>不生成摘要</strong> —— 旧窗口不会被递归压缩成新的事实来源；</li>
           <li><strong>完整历史留存</strong> —— session JSONL 保留原始事件，可用 <code>history</code> 精确检索与读取；</li>
@@ -960,8 +960,8 @@ xcode</code></pre>
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">核心运行机制</span><span class="le">Core Operations</span> / <span>Tools</span></div>
         <h1><span class="lz">核心工具箱与并发调度</span><span class="le">Core Tools & Concurrency Partitioning</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 内置 8 大核心工具，通过读写分区调度与 Read-before-edit SHA256 指纹校验杜绝竞态与脏写。</span>
-          <span class="le">Xcode provides 8 built-in core tools with read concurrency, serial write barriers, and SHA256 checksums.</span>
+          <span class="lz">Cade 内置 8 大核心工具，通过读写分区调度与 Read-before-edit SHA256 指纹校验杜绝竞态与脏写。</span>
+          <span class="le">Cade provides 8 built-in core tools with read concurrency, serial write barriers, and SHA256 checksums.</span>
         </p>
 
         <div class="table-wrap">
@@ -1095,7 +1095,7 @@ xcode</code></pre>
                 <td><span class="lz">允许正常源码读写与编译构建</span><span class="le">Allow normal development and builds</span></td>
               </tr>
               <tr>
-                <td><code>.git, .xcode, .agents</code></td>
+                <td><code>.git, .cade, .agents</code></td>
                 <td><span class="badge badge-amber">强制重新挂载只读</span></td>
                 <td><span class="lz">严禁模型绕过版本控制篡改提交历史或破坏运行时状态</span><span class="le">Prevent history tampering or harness corruption</span></td>
               </tr>
@@ -1135,7 +1135,7 @@ xcode</code></pre>
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">定制与扩展</span><span class="le">Customize</span> / <span>Configuration</span></div>
         <h1><span class="lz">配置系统与设置浏览器</span><span class="le">Configuration & Settings Browser</span></h1>
         <p class="lead-text">
-          <span class="lz">四级配置覆盖发现栈；通过 <code>xcode config</code> 或 <code>/config</code> 启动交互式配置浏览器。</span>
+          <span class="lz">四级配置覆盖发现栈；通过 <code>cade config</code> 或 <code>/config</code> 启动交互式配置浏览器。</span>
           <span class="le">4-level hierarchical configuration discovery stack with interactive settings browser.</span>
         </p>
 
@@ -1145,28 +1145,28 @@ xcode</code></pre>
             <div class="step-num">01</div>
             <div class="step-body">
               <h4><span class="lz">命令行参数 (CLI Arguments)</span><span class="le">CLI Arguments</span></h4>
-              <p><code>xcode --mode plan --model deepseek_chat/deepseek-v4-flash</code></p>
+              <p><code>cade --mode plan --model deepseek_chat/deepseek-v4-flash</code></p>
             </div>
           </div>
           <div class="step-item">
             <div class="step-num">02</div>
             <div class="step-body">
               <h4><span class="lz">环境变量 (Environment Variables)</span><span class="le">Environment Variables</span></h4>
-              <p><code>XCODE_MODE=build</code>, <code>DEEPSEEK_API_KEY=...</code></p>
+              <p><code>CADE_MODE=build</code>, <code>DEEPSEEK_API_KEY=...</code></p>
             </div>
           </div>
           <div class="step-item">
             <div class="step-num">03</div>
             <div class="step-body">
               <h4><span class="lz">项目级配置 (Project Configuration)</span><span class="le">Project Configuration</span></h4>
-              <p><code>./.xcode/xcode.config.json</code> 或 <code>./xcode.config.json</code></p>
+              <p><code>./.cade/cade.config.json</code> 或 <code>./cade.config.json</code></p>
             </div>
           </div>
           <div class="step-item">
             <div class="step-num">04</div>
             <div class="step-body">
               <h4><span class="lz">用户全局配置 (Global Configuration)</span><span class="le">Global Configuration</span></h4>
-              <p><code>~/.xcode/xcode.config.json</code></p>
+              <p><code>~/.cade/cade.config.json</code></p>
             </div>
           </div>
         </div>
@@ -1233,10 +1233,10 @@ xcode</code></pre>
         </p>
 
         <h2><span class="lz">配置 MCP 服务器</span><span class="le">Configuring MCP Servers</span></h2>
-        <p><span class="lz">在 <code>.xcode/mcp_config.json</code> 中添加服务定义：</span><span class="le">Define servers in .xcode/mcp_config.json:</span></p>
+        <p><span class="lz">在 <code>.cade/mcp_config.json</code> 中添加服务定义：</span><span class="le">Define servers in .cade/mcp_config.json:</span></p>
 
         <div class="code-box">
-          <div class="code-header"><span>.xcode/mcp_config.json</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <div class="code-header"><span>.cade/mcp_config.json</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
           <pre><code>{
   <span class="c">"mcpServers"</span>: {
     <span class="c">"sqlite"</span>: {
@@ -1288,7 +1288,7 @@ xcode</code></pre>
         <h2><span class="lz">Skill 目录结构规范</span><span class="le">Skill Structure Specification</span></h2>
         <div class="code-box">
           <div class="code-header"><span>File Structure</span></div>
-          <pre><code>.xcode/skills/refactor-helper/
+          <pre><code>.cade/skills/refactor-helper/
 ├── SKILL.md          <span class="c"># 必须：包含 YAML Frontmatter 与核心指导说明</span>
 ├── scripts/          <span class="c"># 可选：辅助脚本</span>
 └── references/       <span class="c"># 可选：参考规范与示例</span></code></pre>
@@ -1404,7 +1404,7 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
 
         <h2><span class="lz">Hook 配置范例</span><span class="le">Hook Configuration</span></h2>
         <div class="code-box">
-          <div class="code-header"><span>xcode.config.json</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <div class="code-header"><span>cade.config.json</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
           <pre><code>{
   <span class="c">"hooks"</span>: {
     <span class="c">"entries"</span>: [
@@ -1447,7 +1447,7 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
         <div class="card-grid">
           <div class="card-box">
             <h4><span>场景 1：大型陌生项目代码理解</span></h4>
-            <p><span class="lz">启动 <code>xcode</code> 输入 <code>/plan 梳理系统架构与核心数据流</code>，Agent 并发读取关键模块并在 <code>.xcode/plans/</code> 下输出完备架构说明。</span><span class="le">Explore foreign codebases in Plan mode with concurrent reading and zero side effects.</span></p>
+            <p><span class="lz">启动 <code>cade</code> 输入 <code>/plan 梳理系统架构与核心数据流</code>，Agent 并发读取关键模块并在 <code>.cade/plans/</code> 下输出完备架构说明。</span><span class="le">Explore foreign codebases in Plan mode with concurrent reading and zero side effects.</span></p>
           </div>
           <div class="card-box">
             <h4><span>场景 2：Plan 到 Build 两阶段新特性</span></h4>
@@ -1480,7 +1480,7 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">实战与参考</span><span class="le">Reference</span> / <span>Slash Commands</span></div>
         <h1><span class="lz">Slash 命令完全参考手册</span><span class="le">Slash Commands Full Reference</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 提供了 30+ 条以斜杠 <code>/</code> 开头的交互指令，支持 Tab 自动补全。</span>
+          <span class="lz">Cade 提供了 30+ 条以斜杠 <code>/</code> 开头的交互指令，支持 Tab 自动补全。</span>
           <span class="le">Complete categorized reference of 30+ slash commands across all functional areas.</span>
         </p>
 
@@ -1541,8 +1541,8 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">实战与参考</span><span class="le">Reference</span> / <span>CLI</span></div>
         <h1><span class="lz">CLI 命令行参数与子命令速查</span><span class="le">CLI Options & Subcommands Reference</span></h1>
         <p class="lead-text">
-          <span class="lz">Xcode 命令行入口、子命令与全局 Flags 速查参考手册。</span>
-          <span class="le">Quick reference for Xcode CLI entry points, subcommands, and global flags.</span>
+          <span class="lz">Cade 命令行入口、子命令与全局 Flags 速查参考手册。</span>
+          <span class="le">Quick reference for Cade CLI entry points, subcommands, and global flags.</span>
         </p>
 
         <h2><span class="lz">子命令列表</span><span class="le">Subcommands</span></h2>
@@ -1550,10 +1550,10 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
           <table>
             <thead><tr><th><span class="lz">子命令</span><span class="le">Subcommand</span></th><th><span class="lz">语法</span><span class="le">Syntax</span></th><th><span class="lz">功能说明</span><span class="le">Description</span></th></tr></thead>
             <tbody>
-              <tr><td><code>tui</code> (默认)</td><td><code>xcode [tui]</code></td><td><span class="lz">启动全屏终端交互界面</span><span class="le">Launch fullscreen Textual TUI</span></td></tr>
-              <tr><td><code>cli</code></td><td><code>xcode cli</code></td><td><span class="lz">启动标准 REPL 命令行模式</span><span class="le">Launch standard REPL interface</span></td></tr>
-              <tr><td><code>setup</code></td><td><code>xcode setup</code></td><td><span class="lz">启动交互式首次配置向导</span><span class="le">Launch first-run setup wizard</span></td></tr>
-              <tr><td><code>config</code></td><td><code>xcode config</code></td><td><span class="lz">打开交互式设置浏览器</span><span class="le">Launch interactive settings browser</span></td></tr>
+              <tr><td><code>tui</code> (默认)</td><td><code>cade [tui]</code></td><td><span class="lz">启动全屏终端交互界面</span><span class="le">Launch fullscreen Textual TUI</span></td></tr>
+              <tr><td><code>cli</code></td><td><code>cade cli</code></td><td><span class="lz">启动标准 REPL 命令行模式</span><span class="le">Launch standard REPL interface</span></td></tr>
+              <tr><td><code>setup</code></td><td><code>cade setup</code></td><td><span class="lz">启动交互式首次配置向导</span><span class="le">Launch first-run setup wizard</span></td></tr>
+              <tr><td><code>config</code></td><td><code>cade config</code></td><td><span class="lz">打开交互式设置浏览器</span><span class="le">Launch interactive settings browser</span></td></tr>
             </tbody>
           </table>
         </div>
@@ -1604,7 +1604,7 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
           var next = cur === 'zh' ? 'en' : 'zh';
           document.documentElement.dataset.lang = next;
           document.documentElement.lang = next === 'zh' ? 'zh-CN' : 'en';
-          try { localStorage.setItem('xcode-lang', next); } catch(e) {}
+          try { localStorage.setItem('cade-lang', next); } catch(e) {}
         });
       }
 
@@ -1617,10 +1617,10 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
           icons.forEach(function(ic) { ic.classList.toggle('active', ic.dataset.mode === mode); });
           if (mode === 'auto') {
             document.documentElement.removeAttribute('data-theme');
-            try { localStorage.removeItem('xcode-theme'); } catch(e) {}
+            try { localStorage.removeItem('cade-theme'); } catch(e) {}
           } else {
             document.documentElement.dataset.theme = mode;
-            try { localStorage.setItem('xcode-theme', mode); } catch(e) {}
+            try { localStorage.setItem('cade-theme', mode); } catch(e) {}
           }
         }
         var curTheme = document.documentElement.dataset.theme || 'auto';

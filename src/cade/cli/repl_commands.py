@@ -1,0 +1,1766 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import cast
+
+import questionary
+
+from cade.agent.messages import AgentMessage
+from cade.agent.types import ToolSpec
+from cade.harness.memory import (
+    MemoryLayer,
+    MemoryLayerFilter,
+    MemoryManager,
+    build_memory_block,
+)
+from cade.harness.security import (
+    FileGrantStore,
+    InMemoryGrantStore,
+    PermissionApprovalCallback,
+    PermissionEngine,
+    PermissionEngineConfig,
+    PermissionPolicy,
+)
+from cade.harness.session import SessionStore
+from cade.harness.session.types import JsonValue, SessionEntry, SessionInfoView
+from cade.harness.snapshot import SnapshotStore, TurnSnapshotRecord
+
+from .app_contract import ReplApp
+from .commands import (
+    COMMAND_GROUP_AUTH,
+    COMMAND_GROUP_EXIT,
+    COMMAND_GROUP_INFO,
+    COMMAND_GROUP_MODE,
+    COMMAND_GROUP_MODEL,
+    COMMAND_GROUP_SESSION_BRANCH,
+    COMMAND_GROUP_SESSION_LIFECYCLE,
+    COMMAND_GROUP_SESSION_ROLLBACK,
+    CommandContext,
+    CommandEntry,
+    PromptLike,
+    ReplState,
+    command_names,
+    generate_help_text,
+)
+from .config_registry import (
+    edit_setting_interactive,
+    find_setting,
+    load_effective_config,
+    matching_settings,
+    run_config_browser,
+)
+from .markdown import MarkdownRenderer
+from .repl_rendering import clear_terminal_display, print_startup_banner
+from .repl_sessions import (
+    current_view,
+    print_loaded_history,
+    resume_interactively,
+    resume_latest,
+    resumed_message,
+    select_session_interactively,
+)
+from .repl_settings import (
+    handle_effort_command,
+    handle_model_command,
+    handle_permissions,
+    handle_thinking_command,
+)
+from .repl_skills import activate_skill
+from .repl_tools import run_tool_command
+from .setup_wizard import CONFIG_FILENAME
+
+
+def _queue_followup(ctx: CommandContext, text: str) -> None:
+    """把斜杠命令产生的模型输入写入 durable inbox。"""
+    from cade.agent.messages import UserMessage
+
+    ctx.app.agent.followup(UserMessage(content=text), display_text=text)
+
+
+def cmd_help(cmd: str, ctx: CommandContext) -> bool:
+    """打印帮助信息。"""
+    print(HELP_TEXT)
+    return False
+
+
+def cmd_clear(cmd: str, ctx: CommandContext) -> bool:
+    """清空当前会话记录并开始新会话。"""
+    ctx.store.clear()
+    ctx.app.restore_session()
+    clear_terminal_display()
+    print_startup_banner(ctx.app, ctx.project_root)
+    return False
+
+
+def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
+    """从某条 user 消息截断，新建会话。"""
+    msgs = ctx.store.get_forkable_user_messages()
+    if not msgs:
+        print("No user messages to fork from.")
+        return False
+
+    def _fork_title(e: SessionEntry) -> str:
+        if isinstance(e.content, dict):
+            data = e.content.get("data")
+            if isinstance(data, dict):
+                return str(data.get("display_text", ""))
+        return ""
+
+    choices = [
+        questionary.Choice(
+            title=" ".join(_fork_title(e).split())[:100],
+            value=e,
+        )
+        for e in msgs
+    ]
+    selected = questionary.select("Select message to fork from:", choices=choices).ask()
+    if selected is None:
+        return False
+
+    parent_session_id = ctx.store.session_id
+    forked = ctx.store.fork_from_entry(selected.id)
+    ctx.store.current_path = forked.current_path
+    meta = ctx.store.current_metadata()
+    if ctx.snapshot_store is not None and meta is not None:
+        ctx.snapshot_store.fork_session(parent_session_id, meta.id)
+    ctx.app.restore_session()
+    print(f'Forked at: "{meta.title if meta else selected.id[:8]}"')
+    return False
+
+
+def cmd_clone(cmd: str, ctx: CommandContext) -> bool:
+    """完整复制当前会话到新文件。"""
+    parent_session_id = ctx.store.session_id
+    ctx.store.fork_into()
+    fork_meta = ctx.store.current_metadata()
+    if ctx.snapshot_store is not None and fork_meta is not None:
+        ctx.snapshot_store.fork_session(parent_session_id, fork_meta.id)
+    ctx.app.restore_session()
+    if fork_meta is not None:
+        print(f'Cloned: "{fork_meta.title}"')
+    return False
+
+
+def cmd_rewind(cmd: str, ctx: CommandContext) -> bool:
+    """回退最近的 N 轮用户交互。"""
+    parts = cmd.split()
+    turns = int(parts[1]) if len(parts) > 1 else 1
+    removed = ctx.store.rewind_turns(turns)
+    if ctx.snapshot_store is not None:
+        ctx.snapshot_store.rewind_to_turn_count(
+            ctx.store.session_id,
+            ctx.store.user_turn_count(),
+        )
+    ctx.app.restore_session()
+    turn_label = "turn" if turns == 1 else "turns"
+    print(f"Rewound {turns} user {turn_label} ({removed} transcript records removed).")
+    return False
+
+
+def cmd_resume(cmd: str, ctx: CommandContext) -> bool:
+    """从最近的或指定的会话恢复。"""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) == 2:
+        target = parts[1].strip()
+        if target == "last":
+            view = resume_latest(ctx.store)
+            if view:
+                _print_resumed_session(view, ctx)
+                ctx.app.restore_session()
+            else:
+                print("No conversations found.")
+            return False
+        ctx.store.resume(target)
+        _print_resumed_session(current_view(ctx.store), ctx)
+        ctx.app.restore_session()
+        return False
+    resume_interactively(
+        ctx.store, ctx.prompt_session, show_history=ctx.show_session_history
+    )
+    ctx.app.restore_session()
+    return False
+
+
+def cmd_tree(cmd: str, ctx: CommandContext) -> bool:
+    """显示会话分支树，选中的 entry 设为当前位置。"""
+    nodes = ctx.store.get_tree()
+    if not nodes:
+        print("No session tree available (no metadata).")
+        return False
+
+    choices = [
+        questionary.Choice(
+            title=f"{'  ' * n.depth}{'└─ ' if n.depth > 0 else ''}{n.title}{' ← current' if n.is_current else ''}",
+            value=n,
+        )
+        for n in nodes
+    ]
+    selected = questionary.select("Jump to entry:", choices=choices).ask()
+    if selected is None:
+        return False
+
+    if not ctx.store.jump_to_entry(selected.id):
+        print("Failed to set entry.")
+        return False
+
+    ctx.app.restore_session()
+    print(f"Moved to: {selected.title}")
+    return False
+
+
+def cmd_continue(cmd: str, ctx: CommandContext) -> bool:
+    """切换到当前项目最新的有意义会话。"""
+    view = ctx.store.find_latest_for_project(ctx.project_root)
+    if view is None:
+        print("No prior session found for this project.")
+        return False
+    if view.id == ctx.store.session_id:
+        print(f"Already on the latest session: {view.title}")
+        return False
+    ctx.store.resume(view.id)
+    _print_resumed_session(view, ctx)
+    ctx.app.restore_session()
+    return False
+
+
+def cmd_sessions(cmd: str, ctx: CommandContext) -> bool:
+    """交互式选择并恢复历史会话。"""
+    sessions = ctx.store.list_infos()
+    if not sessions:
+        print("No conversations found.")
+        return False
+
+    selected = select_session_interactively(sessions, "Select session to resume:")
+    if selected is None:
+        return False
+
+    ctx.store.resume(selected.id)
+    ctx.app.restore_session()
+    _print_resumed_session(selected, ctx)
+    return False
+
+
+def _print_resumed_session(view: SessionInfoView, ctx: CommandContext) -> None:
+    """在文本 REPL 中输出恢复提示；TUI 自行重建历史画面。"""
+    if not ctx.show_session_history:
+        return
+    print(resumed_message(view))
+    print_loaded_history(ctx.store)
+
+
+def cmd_rename(cmd: str, ctx: CommandContext) -> bool:
+    """重命名当前会话。"""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        current = ctx.store.current_metadata()
+        if current:
+            print(f'Current title: "{current.title}"')
+        print("Usage: /rename <title>")
+        return False
+    new_title = parts[1].strip()
+    meta = ctx.store.rename_session(new_title)
+    if meta is None:
+        print("No active session to rename.")
+        return False
+    print(f'Session renamed to: "{meta.title}"')
+    return False
+
+
+def cmd_login(cmd: str, ctx: CommandContext) -> bool:
+    """登录 AI 提供方账号（如 OpenAI Codex / ChatGPT 订阅）。"""
+    from .auth_cmd import handle_login_command
+
+    parts = cmd.split()
+    method = "browser"
+    provider = "openai-codex"
+    for part in parts[1:]:
+        if part in ("device", "device_code", "--device", "-d"):
+            method = "device_code"
+        elif not part.startswith("-"):
+            provider = part
+
+    handle_login_command(provider=provider, method=method)
+    return False
+
+
+def cmd_logout(cmd: str, ctx: CommandContext) -> bool:
+    """登出 AI 提供方账号并清除本地凭据。"""
+    from .auth_cmd import handle_logout_command
+
+    parts = cmd.split()
+    provider = (
+        parts[1] if len(parts) > 1 and not parts[1].startswith("-") else "openai-codex"
+    )
+    handle_logout_command(provider=provider)
+    return False
+
+
+def cmd_auth(cmd: str, ctx: CommandContext) -> bool:
+    """显示认证状态或执行登录/登出。"""
+    from .auth_cmd import handle_status_command
+
+    parts = cmd.split()
+    subcmd = parts[1].lower() if len(parts) > 1 else "status"
+    if subcmd == "login":
+        return cmd_login(" ".join(parts[1:]), ctx)
+    if subcmd == "logout":
+        return cmd_logout(" ".join(parts[1:]), ctx)
+    handle_status_command()
+    return False
+
+
+def cmd_model(cmd: str, ctx: CommandContext) -> bool:
+    """显示或切换当前模型。"""
+    handle_model_command(cmd, ctx.app)
+    return False
+
+
+def cmd_effort(cmd: str, ctx: CommandContext) -> bool:
+    """显示或设置 reasoning effort 级别。"""
+    handle_effort_command(cmd, ctx.app)
+    return False
+
+
+def cmd_thinking(cmd: str, ctx: CommandContext) -> bool:
+    """显示或切换 thinking 开/关。"""
+    handle_thinking_command(cmd, ctx.app)
+    return False
+
+
+def cmd_config(cmd: str, ctx: CommandContext) -> bool:
+    """打开交互式配置浏览器，浏览并修改 cade.config.json。"""
+    config_path = ctx.project_root / CONFIG_FILENAME
+    parts = cmd.split(maxsplit=1)
+    query = parts[1].strip() if len(parts) > 1 else ""
+
+    if not query:
+        run_config_browser(config_path)
+        return False
+
+    spec = find_setting(query)
+    if spec is None:
+        matches = matching_settings(query)
+        if matches:
+            print(f"'{query}' is ambiguous. Did you mean:")
+            for match in matches:
+                print(f"  {match.label} ({match.key})")
+        else:
+            print(f"No setting matches '{query}'. Use '/config' to browse all.")
+        return False
+
+    edit_setting_interactive(config_path, spec, load_effective_config(config_path))
+    return False
+
+
+def cmd_plan(cmd: str, ctx: CommandContext) -> bool:
+    """进入 Plan Mode（只读检查，禁止编辑和 shell）。"""
+    ctx.state.mode = "plan"
+    print(
+        "Plan Mode enabled. Read-only inspection tools are available; edits and shell are blocked."
+    )
+    parts = cmd.split(maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        _queue_followup(ctx, parts[1].strip())
+    return False
+
+
+def cmd_build(cmd: str, ctx: CommandContext) -> bool:
+    """进入 Build Mode（自动执行工作区变更，保留显式规则和硬边界）。"""
+    ctx.state.mode = "build"
+    print(
+        "Build Mode enabled. Workspace mutations run automatically; boundary "
+        "actions use automatic approval review without pausing for user input."
+    )
+    return False
+
+
+def cmd_act(cmd: str, ctx: CommandContext) -> bool:
+    """进入 Act Mode，边界动作恢复人工审批。"""
+    ctx.state.mode = "act"
+    print("Act Mode enabled. Boundary actions require user approval.")
+    return False
+
+
+def cmd_verbose(cmd: str, ctx: CommandContext) -> bool:
+    """设置输出详细程度: normal, verbose, debug。"""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) == 2:
+        val = parts[1].strip().lower()
+        if val in ("normal", "verbose", "debug"):
+            ctx.state.verbosity = val
+            print(f"Verbosity set to {val}.")
+        elif val == "on":
+            ctx.state.verbosity = "verbose"
+            print("Verbose mode on.")
+        elif val == "off":
+            ctx.state.verbosity = "normal"
+            print("Verbose mode off.")
+        else:
+            print(f"Unknown level: {val}. Use normal, verbose, debug, on, or off.")
+    else:
+        print(f"Current verbosity: {ctx.state.verbosity}")
+        print("Usage: /verbose normal|verbose|debug|on|off")
+    return False
+
+
+def cmd_debug(cmd: str, ctx: CommandContext) -> bool:
+    """切换 debug 模式（显示推理预览和展开工具结果）。"""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) == 2 and parts[1] == "on":
+        ctx.state.verbosity = "debug"
+        print("Debug mode on: reasoning preview and expanded tool results shown.")
+    elif len(parts) == 2 and parts[1] == "off" or ctx.state.verbosity == "debug":
+        ctx.state.verbosity = "normal"
+        print("Debug mode off.")
+    else:
+        ctx.state.verbosity = "debug"
+        print("Debug mode on: reasoning preview and expanded tool results shown.")
+    return False
+
+
+def cmd_steer(cmd: str, ctx: CommandContext) -> bool:
+    """向当前运行的 agent 注入实时指导，下次推理前生效。"""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        print("Usage: /steer <message>")
+        return False
+    msg = parts[1].strip()
+    from cade.agent.messages import UserMessage
+
+    outcome = ctx.app.agent.steer(UserMessage(content=msg))
+    if not outcome.wake_required:
+        print("[steer] injected into the active run")
+    else:
+        print("[steer] queued for the next run")
+    return False
+
+
+def cmd_queue(cmd: str, ctx: CommandContext) -> bool:
+    """设置忙时策略，或把消息加入 next-run follow-up 队列。"""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        print(f"Current busy-message mode: {ctx.state.busy_mode.value}")
+        print("Usage: /queue steer|followup|interrupt|<message>")
+        return False
+    msg = parts[1].strip()
+    from cade.harness.agent_runtime import BusyMessageMode
+
+    if msg in {mode.value for mode in BusyMessageMode}:
+        ctx.state.busy_mode = BusyMessageMode(msg)
+        print(f"Busy-message mode set to {msg}.")
+        return False
+
+    from cade.agent.messages import UserMessage
+
+    ctx.app.agent.followup(UserMessage(content=msg))
+    print("[queued] will start a new run after the current run finishes")
+    return False
+
+
+def _replace_context_window(
+    ctx: CommandContext,
+    *,
+    preserve_active_turn: bool,
+    action: str,
+) -> bool:
+    """立即执行无摘要硬换窗并持久化新的 surface。"""
+    from cade.agent._context_window import estimate_message_tokens
+    from cade.harness.agent_runtime.agent_helpers import to_dict
+    from cade.harness.agent_runtime.message_codec import (
+        messages_from_provider_dicts,
+    )
+
+    agent = getattr(ctx.app, "agent", None)
+    if agent is None:
+        print("No agent available.")
+        return False
+
+    # 1) 获取 agent 当前消息
+    history_messages = getattr(agent, "history_messages", None)
+    if not callable(history_messages):
+        print("Agent does not expose history.")
+        return False
+    before_msgs = cast(Callable[[], list[AgentMessage]], history_messages)()
+    if not before_msgs:
+        print("No active context to replace.")
+        return False
+
+    before_tokens = estimate_message_tokens(before_msgs)
+
+    rollover = getattr(agent, "context_rollover", None)
+    if not callable(rollover):
+        print("Context-window rollover is not configured.")
+        return False
+
+    load_history = getattr(agent, "load_history", None)
+    if not callable(load_history):
+        print("Agent does not support history replacement.")
+        return False
+
+    dict_messages = [to_dict(message) for message in before_msgs]
+    next_window = cast(
+        Callable[..., list[dict[str, object]]],
+        rollover,
+    )(dict_messages, preserve_active_turn=preserve_active_turn)
+    after_msgs = messages_from_provider_dicts(next_window)
+    after_tokens = estimate_message_tokens(after_msgs)
+
+    cast(Callable[[list[AgentMessage]], None], load_history)(after_msgs)
+
+    window_id = str(getattr(rollover, "last_window_id", "") or "")
+    if not window_id:
+        raise RuntimeError("context rollover did not produce a window id")
+    ctx.app.record_context_window_reset(
+        window_id=window_id,
+        messages_before=len(before_msgs),
+        messages_after=len(after_msgs),
+        replacement=after_msgs,
+    )
+
+    retention = (
+        "Retained the latest turn."
+        if preserve_active_turn
+        else "Previous turns remain available through history."
+    )
+    print(
+        f"{action} {window_id}: {len(before_msgs)} messages \u2192 "
+        f"{len(after_msgs)} messages ({before_tokens:,} \u2192 "
+        f"{after_tokens:,} estimated tokens). {retention} "
+        "No summary was generated."
+    )
+    return False
+
+
+def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
+    """通过硬换窗压缩上下文，并保留最近一个工作回合。"""
+    return _replace_context_window(
+        ctx,
+        preserve_active_turn=True,
+        action="Compacted into fresh context",
+    )
+
+
+def cmd_rollover(cmd: str, ctx: CommandContext) -> bool:
+    """丢弃普通对话投影并开启干净窗口。"""
+    parts = cmd.split()
+    force = len(parts) == 2 and parts[1] == "--force"
+    if len(parts) > 2 or (len(parts) == 2 and not force):
+        print("Usage: /rollover [--force]")
+        return False
+
+    from cade.harness.agent_runtime.context_window import has_working_note
+
+    if not force and not has_working_note(ctx.project_root):
+        print(
+            "Context rollover not started. Write NOTE.md with the current goal, "
+            "confirmed decisions, verification status, unresolved issues, and "
+            "next action; then run /rollover again. Use /rollover --force to "
+            "continue without a working note."
+        )
+        return False
+
+    return _replace_context_window(
+        ctx,
+        preserve_active_turn=False,
+        action="Rolled over to fresh context",
+    )
+
+
+def cmd_goal(cmd: str, ctx: CommandContext) -> bool:
+    """设置、显示、暂停、恢复或清除当前 session 的停止条件。"""
+    parts = cmd.split(maxsplit=1)
+    condition = parts[1].strip() if len(parts) == 2 else ""
+    agent = ctx.app.agent
+    if not condition:
+        active = agent.goal_condition
+        if active is None:
+            print("No active goal.")
+        else:
+            status = "paused" if agent.goal_paused else "active"
+            print(f"Goal: {active} [{status}]")
+        return False
+    action = condition.lower()
+    if action in {"clear", "reset"}:
+        agent.clear_goal()
+        _persist_goal_state(ctx)
+        print("Goal cleared.")
+        return False
+    if action == "pause":
+        active = agent.goal_condition
+        if active is None:
+            print("No active goal to pause.")
+        elif agent.goal_paused:
+            print(f"Goal already paused: {active}")
+        else:
+            agent.pause_goal()
+            _persist_goal_state(ctx)
+            print(f"Goal paused: {active}")
+        return False
+    if action == "resume":
+        active = agent.goal_condition
+        if active is None:
+            print("No paused goal to resume.")
+        elif not agent.goal_paused:
+            print(f"Goal already active: {active}")
+        else:
+            agent.resume_goal()
+            _persist_goal_state(ctx)
+            _queue_followup(
+                ctx,
+                "Continue working toward the active goal:\n\n" + active,
+            )
+            print(f"Goal resumed: {active}")
+        return False
+    agent.set_goal(condition)
+    _persist_goal_state(ctx)
+    _queue_followup(ctx, condition)
+    print(f"Goal set: {condition}")
+    return False
+
+
+def _persist_goal_state(ctx: CommandContext) -> None:
+    """把斜杠命令产生的 Goal 状态立即写入当前 session。"""
+    goal_state: dict[str, JsonValue] = {
+        key: value for key, value in ctx.app.agent.goal_state.items()
+    }
+    ctx.store.append(
+        "event",
+        {
+            "type": "goal_state",
+            "data": goal_state,
+        },
+    )
+
+
+def cmd_permissions(cmd: str, ctx: CommandContext) -> bool:
+    """列出或清除权限规则。"""
+    handle_permissions(
+        cmd,
+        ctx.session_grant_store,
+        ctx.permanent_grant_store,
+        static_policy=ctx.static_policy,
+        restricted_dirs=ctx.restricted_dirs,
+        project_root=ctx.project_root,
+        app=ctx.app,
+        store=ctx.store,
+    )
+    return False
+
+
+def cmd_hooks(cmd: str, ctx: CommandContext) -> bool:
+    """显示外部命令 hook 配置来源和最近运行状态。"""
+    diagnostics = ctx.app.hook_diagnostics()
+    if not diagnostics:
+        print("No external hooks configured.")
+        return False
+
+    print(f"External hooks ({len(diagnostics)}):")
+    for diagnostic in diagnostics:
+        matcher = diagnostic.matcher or "*"
+        status = (
+            f"{diagnostic.last_status} at {diagnostic.last_run_at}"
+            if diagnostic.last_run_at
+            else diagnostic.last_status
+        )
+        print(
+            f"  [{diagnostic.index}] {diagnostic.event} "
+            f"{'enabled' if diagnostic.enabled else 'disabled'} "
+            f"matcher={matcher} policy={diagnostic.failure_policy} "
+            f"subagents={'yes' if diagnostic.inherit_to_subagents else 'no'}"
+        )
+        print(
+            f"      source={diagnostic.source} runs={diagnostic.run_count} last={status}"
+        )
+        if diagnostic.last_error:
+            print(f"      error={diagnostic.last_error}")
+    return False
+
+
+def cmd_mcp(cmd: str, ctx: CommandContext) -> bool:
+    """显示 MCP 状态或手动重载配置。"""
+    parts = cmd.split(maxsplit=1)
+    action = parts[1].strip() if len(parts) == 2 else "status"
+    if action == "reload":
+        reload_mcp = getattr(ctx.app, "reload_mcp", None)
+        if reload_mcp is None:
+            print("MCP runtime is not available.")
+            return False
+        names = reload_mcp()
+        print(f"Reloaded MCP config. Registered {len(names)} MCP tools.")
+        return False
+    if action != "status":
+        print("Usage: /mcp status|reload")
+        return False
+    mcp_status = getattr(ctx.app, "mcp_status", None)
+    if mcp_status is None:
+        print("MCP runtime is not available.")
+        return False
+    statuses = mcp_status()
+    if not statuses:
+        print("No MCP servers configured.")
+        return False
+    for status in statuses:
+        identity = status.get("server_info") or {}
+        identity_text = ""
+        if isinstance(identity, dict) and identity:
+            name = identity.get("name", "?")
+            version = identity.get("version", "?")
+            identity_text = f" identity={name}@{version}"
+        protocol = status.get("protocol_version")
+        protocol_text = f" protocol={protocol}" if protocol else ""
+        error = status.get("last_error")
+        error_text = f" error={error}" if error else ""
+        print(
+            f"{status['server_name']}: state={status['state']} "
+            f"tools={status['tool_count']} deferred={status['deferred']}"
+            f"{protocol_text}{identity_text}{error_text}"
+        )
+    return False
+
+
+def cmd_tool(cmd: str, ctx: CommandContext) -> bool:
+    """直接执行一个已注册的工具。"""
+    output = run_tool_command(cmd, ctx.app)
+    ctx.store.append("event", {"type": "tool_command", "data": cmd})
+    ctx.store.append("event", {"type": "tool_result", "data": output})
+    ctx.renderer.render(output)
+    return False
+
+
+def cmd_skill(cmd: str, ctx: CommandContext) -> bool:
+    """显式激活一个已发现的技能。"""
+    parts = cmd.split(maxsplit=2)
+    if len(parts) < 2 or not parts[1].strip():
+        print("Usage: /skill NAME [prompt]")
+        return False
+    result = activate_skill(ctx.app, ctx.store, parts[1].strip(), mode=ctx.state.mode)
+    print(result.message)
+    if result.status in {"activated", "already_active"} and len(parts) == 3:
+        prompt = parts[2].strip()
+        if prompt:
+            _queue_followup(ctx, prompt)
+    return False
+
+
+def cmd_memory(cmd: str, ctx: CommandContext) -> bool:
+    """检索、列出或显式维护项目级与用户级记忆。"""
+    manager = MemoryManager(ctx.project_root)
+    parts = cmd.split(maxsplit=2)
+    action = parts[1].lower() if len(parts) >= 2 else "list"
+    payload = parts[2].strip() if len(parts) >= 3 else ""
+
+    if action == "list":
+        return _list_memory(manager, payload)
+    if action == "search":
+        return _search_memory(manager, payload)
+    if action == "add":
+        return _add_memory(manager, payload)
+    if action == "update":
+        return _update_memory(manager, payload)
+    if action == "delete":
+        return _delete_memory(manager, payload)
+
+    print("Usage: /memory list [all|project|user]")
+    print("       /memory search <query>")
+    print("       /memory add [project|user] <title> | <durable note>")
+    print("       /memory update [project|user] <title> | <durable note>")
+    print("       /memory delete [project|user] <title>")
+    print("Example: /memory add project Retry policy | Retry providers at most twice.")
+    return False
+
+
+def _list_memory(manager: MemoryManager, raw_layer: str) -> bool:
+    """列出指定记忆层级中的标题。"""
+    layer = raw_layer.lower() or "all"
+    if layer not in {"all", "project", "user"}:
+        print("Memory layer must be one of: all, project, user.")
+        return False
+
+    records = manager.read_memory_records(layer=cast(MemoryLayerFilter, layer))
+    if not records:
+        print("No memory records found.")
+        return False
+
+    print(f"Memory records ({len(records)}):")
+    for record in records:
+        print(f"  [{record.layer}] {record.title}")
+    return False
+
+
+def _search_memory(manager: MemoryManager, query: str) -> bool:
+    """打印跨层级记忆检索结果。"""
+    if not query:
+        print("Usage: /memory search <query>")
+        return False
+
+    records = manager.search_memory_records(query, limit=5)
+    if not records:
+        print(f"No memory matching {query!r}.")
+        return False
+
+    for record in records:
+        print(f"[{record.layer}] score={record.score:.3f}")
+        print(record.block.strip())
+        print()
+    return False
+
+
+def _add_memory(manager: MemoryManager, payload: str) -> bool:
+    """解析单行 Markdown 记忆并写入指定层级。"""
+    layer, value = _parse_memory_layer(payload)
+
+    title, separator, body = value.partition("|")
+    if not separator:
+        title, body = _split_memory_shorthand(value)
+    if not title.strip() or not body.strip():
+        print("Usage: /memory add [project|user] <title> | <durable note>")
+        return False
+
+    block = build_memory_block(title, body)
+    memory_layer = cast(MemoryLayer, layer)
+    if not manager.add_memory_block(
+        block,
+        layer=memory_layer,
+    ):
+        print(
+            "Memory was rejected because it is empty or duplicates an existing entry."
+        )
+        return False
+
+    memory_file = (
+        manager.memory_file if layer == "project" else manager.user_memory_file
+    )
+    print(f"Added {layer} memory: {title}")
+    print(f"Path: {memory_file}")
+    return False
+
+
+def _update_memory(manager: MemoryManager, payload: str) -> bool:
+    """按标题更新一条持久记忆。"""
+    layer, value = _parse_memory_layer(payload)
+    title, separator, body = value.partition("|")
+    if not separator or not title.strip() or not body.strip():
+        print("Usage: /memory update [project|user] <title> | <durable note>")
+        return False
+
+    memory_layer = cast(MemoryLayer, layer)
+    block = build_memory_block(title, body)
+    if not manager.update_memory_block(title, block, layer=memory_layer):
+        print("Memory was not updated because it was missing, empty, or duplicate.")
+        return False
+    print(f"Updated {layer} memory: {title.strip()}")
+    return False
+
+
+def _delete_memory(manager: MemoryManager, payload: str) -> bool:
+    """按标题删除一条持久记忆。"""
+    layer, title = _parse_memory_layer(payload)
+    if not title.strip():
+        print("Usage: /memory delete [project|user] <title>")
+        return False
+    if not manager.delete_memory_block(title, layer=cast(MemoryLayer, layer)):
+        print(f"Memory not found: {title.strip()}")
+        return False
+    print(f"Deleted {layer} memory: {title.strip()}")
+    return False
+
+
+def _parse_memory_layer(payload: str) -> tuple[str, str]:
+    """解析可选的 project/user 层级前缀。"""
+    first, separator, remainder = payload.partition(" ")
+    if separator and first.lower() in {"project", "user"}:
+        return first.lower(), remainder.strip()
+    return "project", payload
+
+
+def _split_memory_shorthand(text: str) -> tuple[str, str]:
+    """将自然语言记忆简写拆成标题和正文。"""
+    for separator in ("：", ":"):
+        title, found, body = text.partition(separator)
+        if found and title.strip() and body.strip():
+            return title.strip(), body.strip()
+    words = text.split(maxsplit=1)
+    if len(words) == 2:
+        return words[0].strip(), words[1].strip()
+    return text.strip(), text.strip()
+
+
+def cmd_exit(cmd: str, ctx: CommandContext) -> bool:
+    """退出 REPL。"""
+    return True
+
+
+@dataclass
+class _ContextSummary:
+    categories: list[tuple[str, int]]
+    total: int
+    context_window: int
+    model_name: str
+    spent: float
+    free: int
+    memory_text: str
+    skill_count: int
+    instruction_files: list[str]
+    skill_source_dirs: list[tuple[str, str]]
+
+
+def _format_token(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
+
+
+def _count_output_tokens(messages: list[object]) -> int:
+    """Sum output tokens from AssistantMessage.usage across history."""
+    total = 0
+    for msg in messages:
+        usage = getattr(msg, "usage", None) or {}
+        if isinstance(usage, dict):
+            ct = usage.get("completion_tokens") or usage.get("output_tokens", 0)
+            total += ct if isinstance(ct, int) else 0
+        elif hasattr(usage, "output"):
+            ct = getattr(usage, "output", 0)
+            total += ct if isinstance(ct, int) else 0
+    return total
+
+
+def _count_tokens_by_message_role(messages: list[object]) -> dict[str, int]:
+    """按角色拆解消息 token 用量（user / agent / tool_calls）。"""
+    from cade.agent._context_window import estimate_tokens
+    from cade.agent.messages import (
+        AssistantMessage,
+        ToolResultMessage,
+        UserMessage,
+    )
+    from cade.agent.types import TextContent, ThinkingContent, ToolCallContent
+
+    result: dict[str, int] = {"user": 0, "agent": 0, "tool_calls": 0}
+
+    for msg in messages:
+        if isinstance(msg, UserMessage):
+            content = msg.content
+            if isinstance(content, str):
+                result["user"] += estimate_tokens(content)
+            else:
+                for block in content:
+                    if isinstance(block, TextContent):
+                        result["user"] += estimate_tokens(block.text)
+        elif isinstance(msg, AssistantMessage):
+            for block in msg.content:
+                if isinstance(block, (TextContent, ThinkingContent)):
+                    text = (
+                        block.text if isinstance(block, TextContent) else block.thinking
+                    )
+                    result["agent"] += estimate_tokens(text)
+                elif isinstance(block, ToolCallContent):
+                    import json
+
+                    result["tool_calls"] += estimate_tokens(
+                        json.dumps(block.arguments or {}, default=str)
+                    )
+            if msg.reasoning_content:
+                result["agent"] += estimate_tokens(msg.reasoning_content)
+        elif isinstance(msg, ToolResultMessage):
+            content = msg.content
+            if isinstance(content, str):
+                result["tool_calls"] += estimate_tokens(content)
+            else:
+                for block in content:
+                    if isinstance(block, TextContent):
+                        result["tool_calls"] += estimate_tokens(block.text)
+
+    return result
+
+
+def _get_context_window(
+    model_name: str, context_window_override: int | None = None
+) -> int:
+    """返回模型上下文窗口；优先使用 provider profile 的覆盖值。"""
+    if context_window_override is not None and context_window_override > 0:
+        return context_window_override
+    from cade.ai.models import get_models, get_providers
+
+    for provider in get_providers():
+        for model in get_models(provider):
+            if model.id == model_name:
+                return model.context_window
+    return 0
+
+
+def _get_model_cost(model_name: str) -> object | None:
+    from cade.ai.models import get_model_cost as _resolve_model_cost
+
+    return _resolve_model_cost(model_name)
+
+
+def _usage_stats_for_agent(agent: object) -> str:
+    """从 provider 累计用量生成底栏摘要；无 usage 记录时返回空串。"""
+    from cade.ai.usage import format_usage_stats
+
+    provider = getattr(agent, "provider", None)
+    totals = getattr(provider, "usage_totals", None)
+    if totals is None or totals.requests == 0:
+        return ""
+    hit_rate = getattr(provider, "cache_hit_rate", None)
+    return format_usage_stats(totals, hit_rate)
+
+
+def _compute_context_summary(
+    agent: object, project_root: Path, state: ReplState
+) -> _ContextSummary:
+    """计算分类 token 用量，并更新 state 供底栏使用。"""
+    from cade.agent._context_window import estimate_tokens
+    from cade.coding_agent.prompting.identity import (
+        CORE_IDENTITY,
+    )
+    from cade.harness.agent_runtime.prompting.identity import (
+        SEARCH_STRATEGY,
+        TOOL_DISCIPLINE,
+    )
+
+    categories: list[tuple[str, int]] = []
+
+    system_text = f"{CORE_IDENTITY}\n\n{TOOL_DISCIPLINE}\n\n{SEARCH_STRATEGY}"
+    categories.append(("System prompt", estimate_tokens(system_text)))
+
+    registry = getattr(agent, "registry", None)
+    if registry is not None:
+        snap = registry
+        from cade.harness.agent_runtime.prompting import (
+            build_tool_guidelines,
+            build_tool_prompt,
+        )
+
+        parts = ["Available tools:\n" + build_tool_prompt(snap)]
+        guidelines = build_tool_guidelines(snap)
+        if guidelines:
+            parts.append("Guidelines:\n" + guidelines)
+        categories.append(("System tools", estimate_tokens("\n\n".join(parts))))
+
+    history_messages = getattr(agent, "history_messages", None)
+    messages = history_messages() if history_messages is not None else []
+    role_counts = _count_tokens_by_message_role(messages)
+    for key, label in [
+        ("user", "User messages"),
+        ("agent", "Agent responses"),
+        ("tool_calls", "Tool calls"),
+    ]:
+        if tokens := role_counts.get(key, 0):
+            categories.append((label, tokens))
+
+    memory_manager = MemoryManager(project_root)
+    memory_text = "\n".join(memory_manager.read_memory_blocks())
+    if memory_text:
+        categories.append(("Memory files", estimate_tokens(memory_text)))
+
+    skill_count = 0
+    runtime = getattr(agent, "_runtime", None)
+    skill_registry = getattr(runtime, "skill_registry", None) if runtime else None
+    if skill_registry is not None and hasattr(skill_registry, "list_summaries"):
+        summaries = skill_registry.list_summaries()
+        if summaries:
+            skill_count = len(summaries)
+            lines = [
+                (
+                    "<skill-activation>\n"
+                    "When the user task clearly matches a skill description below, "
+                    "call load_skill with that exact name before performing the task. "
+                    "Do not load a skill when no description clearly matches.\n"
+                    "</skill-activation>"
+                ),
+                "<available-skills>",
+            ]
+            for s in summaries:
+                desc = s.description
+                if len(desc) > 768:
+                    desc = desc[:765] + "..."
+                lines.append(f"  <skill name={s.name}>{desc}</skill>")
+            lines.append("</available-skills>")
+            categories.append(("Skills", estimate_tokens("\n".join(lines))))
+
+    instruction_files: list[str] = []
+    agents_md = project_root / "AGENTS.md"
+    if agents_md.is_file():
+        instruction_files.append(str(agents_md))
+
+    skill_source_dirs: list[tuple[str, str]] = []
+    if skill_registry is not None and hasattr(skill_registry, "list_summaries"):
+        seen_dirs: set[str] = set()
+        for skill in skill_registry.list_summaries():
+            src = skill.source or "user"
+            label = {"explicit": "explicit", "project": "project", "user": "user"}.get(
+                src, src
+            )
+            key = (label, src)
+            if key not in seen_dirs and src not in seen_dirs:
+                seen_dirs.add(src)
+        standard_dirs = []
+        from cade.harness.skills.discovery import build_skill_search_dirs
+
+        for path, priority in build_skill_search_dirs(project_root):
+            src_label = {
+                0: "explicit",
+                1: "project",
+                2: "project",
+                3: "user",
+                4: "user",
+            }.get(priority, "user")
+            if path.is_dir() and src_label in seen_dirs:
+                standard_dirs.append((src_label, str(path)))
+        skill_source_dirs = standard_dirs
+
+    provider = getattr(agent, "provider", None)
+    inner = getattr(provider, "active_provider", provider)
+    model_name = getattr(inner, "model", "unknown") if inner else "unknown"
+    context_window = _get_context_window(
+        model_name, getattr(inner, "context_window", None)
+    )
+    cost = _get_model_cost(model_name)
+
+    total = sum(t for _, t in categories)
+    free = max(0, context_window - total) if context_window > 0 else 0
+    cost_input_rate = getattr(cost, "input", 0) if cost else 0
+    cost_output_rate = getattr(cost, "output", 0) if cost else 0
+
+    input_cost = (total / 1_000_000) * cost_input_rate if cost_input_rate else 0
+    history = getattr(agent, "history_messages", list)()
+    output_tokens = _count_output_tokens(history)
+    output_cost = (
+        (output_tokens / 1_000_000) * cost_output_rate if cost_output_rate else 0
+    )
+    spent = input_cost + output_cost
+
+    context_str = (
+        f"{_format_token(total)}/{_format_token(context_window)}"
+        f" ({total / context_window * 100:.1f}%)"
+        if context_window > 0
+        else f"{_format_token(total)} tokens"
+    )
+    cost_str = f"${spent:.2f}" if spent > 0 else ""
+
+    state.last_dir = str(project_root)
+    state.model_name = model_name
+    state.context_usage = context_str
+    state.context_cost = cost_str
+    state.usage_stats = _usage_stats_for_agent(agent)
+
+    return _ContextSummary(
+        categories=categories,
+        total=total,
+        context_window=context_window,
+        model_name=model_name,
+        spent=spent,
+        free=free,
+        memory_text=memory_text,
+        skill_count=skill_count,
+        instruction_files=instruction_files,
+        skill_source_dirs=skill_source_dirs,
+    )
+
+
+def cmd_context(cmd: str, ctx: CommandContext) -> bool:
+    """显示当前会话上下文使用情况，按分类展示 token 用量。"""
+    agent = getattr(ctx.app, "agent", None)
+    if agent is None:
+        print("No agent available.")
+        return False
+
+    summary = _compute_context_summary(agent, ctx.project_root, ctx.state)
+
+    cost_str = f" · ${summary.spent:.2f}" if summary.spent > 0 else ""
+    usage_str = f" · {ctx.state.usage_stats}" if ctx.state.usage_stats else ""
+    print(
+        f" Context Usage · {summary.model_name} · "
+        f"{ctx.state.context_usage}{usage_str}{cost_str}"
+    )
+    print()
+
+    ICONS = {
+        "System prompt": "\u26c1",
+        "System tools": "\u26c1",
+        "User messages": "\u25c9",
+        "Agent responses": "\u25c9",
+        "Tool calls": "\u25c9",
+        "Skills": "\u26c1",
+        "Memory files": "\u26c1",
+    }
+    for name, tokens in summary.categories:
+        icon = ICONS.get(name, " ")
+        pct = (
+            (tokens / summary.context_window * 100) if summary.context_window > 0 else 0
+        )
+        print(f"   {icon} {name:<18} {_format_token(tokens):>7} tokens ({pct:.1f}%)")
+
+    if summary.context_window > 0:
+        free_pct = summary.free / summary.context_window * 100
+        print(
+            f"   □ {'Free space':<18} {_format_token(summary.free):>7} ({free_pct:.1f}%)"
+        )
+
+    if summary.memory_text:
+        block_count = max(1, summary.memory_text.count("## "))
+        print("\n Memory files \u00b7 /memory")
+        print(
+            f" \u2514 {block_count} blocks"
+            f" \u00b7 {_format_token(len(summary.memory_text))} chars"
+        )
+
+    if summary.instruction_files:
+        print("\n Instructions \u00b7 auto-loaded")
+        for f in summary.instruction_files:
+            print(f" \u2514 {f}")
+
+    if summary.skill_count > 0:
+        skill_token = next((t for n, t in summary.categories if n == "Skills"), 0)
+        print("\n Skills \u00b7 /skills")
+        print(
+            f" \u2514 {summary.skill_count} skills"
+            f" \u00b7 {_format_token(skill_token)} tokens"
+        )
+        if summary.skill_source_dirs:
+            seen_labels: set[str] = set()
+            for label, path in summary.skill_source_dirs:
+                if label not in seen_labels:
+                    seen_labels.add(label)
+                    print(f"    {label}: {path}")
+
+    return False
+
+
+def cmd_btw(cmd: str, ctx: CommandContext) -> bool:
+    """Ask a quick side question without interrupting the main conversation."""
+    parts = cmd.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        print("Usage: /btw <question>")
+        return False
+
+    question = parts[1].strip()
+
+    from cade.harness.agent_runtime.events import TextDeltaStructuredEvent
+
+    sys.stdout.write("\033[90m[side question]\033[0m\n")
+    sys.stdout.flush()
+
+    for event in ctx.app.ask_stream(question, mode=ctx.state.mode):
+        if isinstance(event, TextDeltaStructuredEvent):
+            sys.stdout.write(event.data)
+            sys.stdout.flush()
+
+    print()
+
+    ctx.app.restore_session()
+
+    return False
+
+
+def _parse_undo_count(cmd: str) -> int:
+    parts = cmd.split()
+    if len(parts) <= 1:
+        return 1
+    try:
+        n = int(parts[1])
+        return max(n, 1)
+    except ValueError:
+        return 1
+
+
+def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
+    """回退最近 N 轮用户轮次的文件变更（基于快照恢复）。"""
+    if ctx.snapshot_store is None:
+        print(
+            "Snapshot undo requires a git repository. This project is not a git repo."
+        )
+        return False
+
+    parts = cmd.split()
+    if len(parts) >= 2 and parts[1] == "--list":
+        records = ctx.snapshot_store.list_records(ctx.store.session_id)
+        if not records:
+            print("No snapshot records found.")
+        else:
+            print(f"Snapshot records ({len(records)} total):")
+            for r in reversed(records):
+                status = "UNDONE" if r.undone else "active"
+                print(
+                    f"  turn {r.turn_id} [{status}]: "
+                    f"{len(r.changed_files)} files, "
+                    f"{len(r.skipped_files)} skipped"
+                )
+        return False
+
+    n = _parse_undo_count(cmd)
+    records = ctx.snapshot_store.get_undoable_records(ctx.store.session_id, n)
+    if not records:
+        if ctx.snapshot_store.list_records(ctx.store.session_id):
+            print("Nothing to undo (all turns already undone).")
+        else:
+            print("Nothing to undo (no snapshot records).")
+        return False
+
+    agent = getattr(ctx.app, "agent", None)
+    approval_callback = cast(
+        "PermissionApprovalCallback | None",
+        getattr(agent, "current_approval_callback", None) if agent else None,
+    )
+
+    for record in reversed(records):
+        result = _revert_turn(ctx, approval_callback, record)
+        _report_undo_result(record, result)
+        if result.fatal_error:
+            print("Fatal error during undo. Stack preserved.")
+            return False
+        if result.skipped:
+            print(f"Turn {record.turn_id}: undo incomplete; record remains active.")
+            continue
+        record.undone = True
+        ctx.snapshot_store.update_record(ctx.store.session_id, record)
+    return False
+
+
+@dataclass
+class _RevertResult:
+    restored: list[str] = field(default_factory=list)
+    skipped: list[tuple[str, str]] = field(default_factory=list)
+    fatal_error: bool = False
+
+
+def _revert_turn(
+    ctx: CommandContext,
+    approval_callback: PermissionApprovalCallback | None,
+    record: TurnSnapshotRecord,
+) -> _RevertResult:
+    store = ctx.snapshot_store
+    assert store is not None, "snapshot_store required for undo"
+    svc = store.service(ctx.store.session_id)
+    result = _RevertResult()
+
+    for entry in record.changed_files:
+        try:
+            # Layer 1: 路径安全校验
+            svc._validate_path(entry.path)
+
+            # Layer 2: 确认路径在 changed_files 中
+            all_paths = {c.path for c in record.changed_files}
+            if entry.path not in all_paths:
+                result.skipped.append((entry.path, "path not in turn changed_files"))
+                continue
+
+            # Layer 3: 冲突检测 — 当前文件必须与 post 快照一致
+            if svc.has_conflict(record.post_snapshot_id, entry.path):
+                result.skipped.append((entry.path, "conflict: file changed after turn"))
+                continue
+
+            # Layer 4: 权限检查
+            if entry.kind == "created":
+                tool_name = "delete_file"
+                tool_input: dict[str, object] = {"path": entry.path}
+            elif entry.kind == "deleted":
+                result.skipped.append(
+                    (entry.path, "file was deleted during the turn — cannot restore")
+                )
+                continue
+            else:
+                tool_name = "write_file"
+                tool_input = {"path": entry.path}
+
+            tool_spec = next(
+                (
+                    spec
+                    for spec in tuple(getattr(ctx.app, "registry", ()) or ())
+                    if spec.name == tool_name
+                ),
+                None,
+            )
+            if tool_spec is None:
+                tool_spec = ToolSpec(
+                    name=tool_name,
+                    description="Restore a workspace file from a snapshot.",
+                    input_hint='JSON: {"path": "relative/path"}',
+                    handler=lambda _input, _on_update=None: "",
+                    schema={
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"],
+                        "additionalProperties": False,
+                    },
+                )
+
+            undo_agent = getattr(ctx.app, "agent", None)
+            engine = PermissionEngine(
+                PermissionEngineConfig(
+                    static_policy=ctx.static_policy,
+                    restricted_dirs=ctx.restricted_dirs,
+                    project_root=ctx.project_root,
+                    external_directories=getattr(undo_agent, "external_directories", ())
+                    if undo_agent is not None
+                    else (),
+                    sensitive_path_overrides=getattr(
+                        undo_agent, "sensitive_path_overrides", ()
+                    )
+                    if undo_agent is not None
+                    else (),
+                    session_grant_store=ctx.session_grant_store,
+                    permanent_grant_store=ctx.permanent_grant_store,
+                )
+            )
+            perm_result = engine.decide(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                tool_spec=tool_spec,
+                approval_callback=approval_callback,
+            )
+            if perm_result.blocked:
+                result.skipped.append(
+                    (entry.path, f"permission denied: {perm_result.reason}")
+                )
+                continue
+
+            # Layer 5: 执行
+            if entry.kind == "created":
+                abs_path = (ctx.project_root / entry.path).resolve()
+                if abs_path.exists():
+                    abs_path.unlink()
+                    result.restored.append(entry.path)
+                else:
+                    result.skipped.append((entry.path, "file already removed"))
+            else:
+                svc.restore_file(record.pre_snapshot_id, entry.path)
+                result.restored.append(entry.path)
+
+        except (ValueError, OSError, subprocess.CalledProcessError) as e:
+            result.skipped.append((entry.path, str(e)))
+            continue
+
+    return result
+
+
+def _report_undo_result(record: TurnSnapshotRecord, result: _RevertResult) -> None:
+    if result.fatal_error:
+        print(f"Turn {record.turn_id}: fatal error, stack preserved.")
+        return
+    if result.restored:
+        print(f"Turn {record.turn_id}: reverted {len(result.restored)} file(s):")
+        for p in result.restored:
+            print(f"  restored: {p}")
+    if result.skipped:
+        print(f"Turn {record.turn_id}: {len(result.skipped)} file(s) skipped:")
+        for path, reason in result.skipped:
+            print(f"  skipped: {path} ({reason})")
+
+
+COMMAND_REGISTRY: dict[str, CommandEntry] = {
+    "/help": CommandEntry(
+        handler=cmd_help, desc="Show this help.", group=COMMAND_GROUP_INFO
+    ),
+    "/clear": CommandEntry(
+        handler=cmd_clear,
+        desc="Start a new session transcript.",
+        group=COMMAND_GROUP_SESSION_LIFECYCLE,
+    ),
+    "/continue": CommandEntry(
+        handler=cmd_continue,
+        desc="Resume the latest session for this project.",
+        group=COMMAND_GROUP_SESSION_LIFECYCLE,
+    ),
+    "/new": CommandEntry(
+        handler=cmd_clear,
+        desc="Start a new session transcript.",
+        group=COMMAND_GROUP_SESSION_LIFECYCLE,
+    ),
+    "/fork": CommandEntry(
+        handler=cmd_fork,
+        desc="Fork from a user message into a new session.",
+        group=COMMAND_GROUP_SESSION_BRANCH,
+    ),
+    "/clone": CommandEntry(
+        handler=cmd_clone,
+        desc="Clone current session into a new file.",
+        group=COMMAND_GROUP_SESSION_BRANCH,
+    ),
+    "/rewind": CommandEntry(
+        handler=cmd_rewind,
+        desc="Remove the last N user turns from the transcript.",
+        args_desc="N",
+        accepts_args=True,
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+    ),
+    "/resume": CommandEntry(
+        handler=cmd_resume,
+        desc="Choose a recent conversation to resume.",
+        accepts_args=True,
+        group=COMMAND_GROUP_SESSION_LIFECYCLE,
+    ),
+    "/sessions": CommandEntry(
+        handler=cmd_sessions,
+        desc="List and resume recent conversations.",
+        group=COMMAND_GROUP_SESSION_LIFECYCLE,
+    ),
+    "/tree": CommandEntry(
+        handler=cmd_tree,
+        desc="Show session fork tree.",
+        group=COMMAND_GROUP_SESSION_BRANCH,
+    ),
+    "/model": CommandEntry(
+        handler=cmd_model,
+        desc="Show current model info.",
+        args_desc="[profile/]name[:thinking] [--thinking <level>]",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODEL,
+    ),
+    "/effort": CommandEntry(
+        handler=cmd_effort,
+        desc="Show current reasoning effort.",
+        args_desc="<off|minimal|low|medium|high|xhigh|max>",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODEL,
+    ),
+    "/thinking": CommandEntry(
+        handler=cmd_thinking,
+        desc="Toggle visible reasoning summaries (on/off).",
+        args_desc="on|off",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODEL,
+    ),
+    "/login": CommandEntry(
+        handler=cmd_login,
+        desc="Log in to an AI provider account (e.g. OpenAI Codex / ChatGPT).",
+        args_desc="[provider] [--device]",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
+    ),
+    "/logout": CommandEntry(
+        handler=cmd_logout,
+        desc="Log out from an AI provider account and clear credentials.",
+        args_desc="[provider]",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
+    ),
+    "/auth": CommandEntry(
+        handler=cmd_auth,
+        desc="Show authentication status or manage accounts.",
+        args_desc="status|login|logout",
+        accepts_args=True,
+        group=COMMAND_GROUP_AUTH,
+    ),
+    "/config": CommandEntry(
+        handler=cmd_config,
+        desc="Open the interactive settings browser for cade.config.json.",
+        args_desc="[setting]",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/plan": CommandEntry(
+        handler=cmd_plan,
+        desc="Enter Plan Mode: read-only inspection tools, no edits or shell.",
+        args_desc="[prompt]",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/build": CommandEntry(
+        handler=cmd_build,
+        desc=(
+            "Enter Build Mode: automatic execution with model-reviewed "
+            "boundary actions."
+        ),
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/act": CommandEntry(
+        handler=cmd_act,
+        desc="Enter Act Mode with user approval for boundary actions.",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/verbose": CommandEntry(
+        handler=cmd_verbose,
+        desc="Set output verbosity level: normal, verbose, or debug.",
+        args_desc="normal|verbose|debug",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/debug": CommandEntry(
+        handler=cmd_debug,
+        desc="Toggle debug mode (reasoning preview + expanded tool results).",
+        args_desc="on|off",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/steer": CommandEntry(
+        handler=cmd_steer,
+        desc="Inject real-time guidance into the active run (next inference).",
+        args_desc="<message>",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/queue": CommandEntry(
+        handler=cmd_queue,
+        desc="Set the busy-message mode or enqueue a next-run message.",
+        args_desc="steer|followup|collect|interrupt|<message>",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/compact": CommandEntry(
+        handler=cmd_compact,
+        desc="Compact into a fresh window while retaining the latest turn.",
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+    ),
+    "/rollover": CommandEntry(
+        handler=cmd_rollover,
+        desc="Start a clean context window using NOTE.md as the handoff.",
+        args_desc="[--force]",
+        accepts_args=True,
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+    ),
+    "/goal": CommandEntry(
+        handler=cmd_goal,
+        desc="Set, pause, resume, or clear an independently verified goal.",
+        args_desc="<condition>|pause|resume|clear",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODE,
+    ),
+    "/permissions": CommandEntry(
+        handler=cmd_permissions,
+        desc="List or clear active permission rules and grants.",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/hooks": CommandEntry(
+        handler=cmd_hooks,
+        desc="Show external hook sources and recent status.",
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/mcp": CommandEntry(
+        handler=cmd_mcp,
+        desc="Show MCP server status or reload .cade/mcp_config.json.",
+        args_desc="status|reload",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/tool": CommandEntry(
+        handler=cmd_tool,
+        desc="Run one registered tool directly, or list tools.",
+        args_desc="NAME INPUT|list",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/skill": CommandEntry(
+        handler=cmd_skill,
+        desc="Activate a discovered skill for this session.",
+        args_desc="NAME",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/memory": CommandEntry(
+        handler=cmd_memory,
+        desc="List, search, or add project and user memory.",
+        args_desc="list [all|project|user] | search <query> | add ...",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/rename": CommandEntry(
+        handler=cmd_rename,
+        desc="Rename the current session.",
+        args_desc="<title>",
+        accepts_args=True,
+        group=COMMAND_GROUP_SESSION_LIFECYCLE,
+    ),
+    "/undo": CommandEntry(
+        handler=cmd_undo,
+        desc="Undo file changes from the last N user turns (via snapshot restore).",
+        args_desc="[N|--list]",
+        accepts_args=True,
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+    ),
+    "/exit": CommandEntry(
+        handler=cmd_exit, desc="Exit the REPL.", group=COMMAND_GROUP_EXIT
+    ),
+    "/context": CommandEntry(
+        handler=cmd_context,
+        desc="Show context usage (token count, messages, etc.).",
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/btw": CommandEntry(
+        handler=cmd_btw,
+        desc="Ask a quick side question without interrupting the main conversation.",
+        args_desc="<question>",
+        accepts_args=True,
+        group=COMMAND_GROUP_INFO,
+    ),
+    "/quit": CommandEntry(
+        handler=cmd_exit,
+        desc="Alias for /exit.",
+        visible=False,
+        group=COMMAND_GROUP_EXIT,
+        canonical="/exit",
+    ),
+    "/revert": CommandEntry(
+        handler=cmd_undo,
+        desc="Alias for /undo.",
+        args_desc="[N|--list]",
+        accepts_args=True,
+        visible=False,
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+        canonical="/undo",
+    ),
+    "/new-context": CommandEntry(
+        handler=cmd_rollover,
+        desc="Deprecated alias for /rollover.",
+        args_desc="[--force]",
+        accepts_args=True,
+        visible=False,
+        group=COMMAND_GROUP_SESSION_ROLLBACK,
+        canonical="/rollover",
+    ),
+}
+
+COMMAND_NAMES = command_names(COMMAND_REGISTRY)
+HELP_TEXT = generate_help_text(COMMAND_REGISTRY)
+COMMAND_REGISTRY_EXPORT = COMMAND_REGISTRY
+
+
+def handle_command(
+    command: str,
+    store: SessionStore,
+    app: ReplApp,
+    renderer: MarkdownRenderer,
+    state: ReplState,
+    prompt_session: PromptLike,
+    session_grant_store: InMemoryGrantStore | None = None,
+    permanent_grant_store: FileGrantStore | None = None,
+    static_policy: PermissionPolicy | None = None,
+    restricted_dirs: tuple[str, ...] = (),
+    snapshot_store: SnapshotStore | None = None,
+    show_session_history: bool = True,
+) -> bool:
+    ctx = CommandContext(
+        store=store,
+        app=app,
+        renderer=renderer,
+        state=state,
+        prompt_session=prompt_session,
+        project_root=store.project_root,
+        session_grant_store=session_grant_store,
+        permanent_grant_store=permanent_grant_store,
+        static_policy=static_policy,
+        restricted_dirs=restricted_dirs,
+        snapshot_store=snapshot_store,
+        show_session_history=show_session_history,
+    )
+    for prefix in sorted(COMMAND_REGISTRY, key=len, reverse=True):
+        entry = COMMAND_REGISTRY[prefix]
+        if command == prefix or (
+            entry.accepts_args and command.startswith(prefix + " ")
+        ):
+            if entry.canonical is not None:
+                canonical_entry = COMMAND_REGISTRY[entry.canonical]
+                command = entry.canonical + command[len(prefix) :]
+                print(command)
+                return canonical_entry.handler(command, ctx)
+            return entry.handler(command, ctx)
+    print(f"Unknown command: {command}")
+    return False

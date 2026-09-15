@@ -11,7 +11,7 @@
 .ruff_cache/
 .uv-cache/
 .vscode/
-.xcode/
+.cade/
 
 # --- Python 缓存与构建 ——
 *.py[cod]
@@ -25,7 +25,7 @@ __pycache__/
 .venv*/
 opencode.json*
 uv.lock
-xcode.config.json
+cade.config.json
 
 # --- 构建产出 ——
 build/

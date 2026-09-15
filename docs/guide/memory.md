@@ -1,13 +1,13 @@
 # 长期记忆
 
-Xcode 的长期记忆保存跨 session 可复用的规则、架构决策、验证事实和解决方案。当前任务连续性由 session surface 与账本承担。
+Cade 的长期记忆保存跨 session 可复用的规则、架构决策、验证事实和解决方案。当前任务连续性由 session surface 与账本承担。
 
 ## 1. 两个记忆层
 
 | 层 | 默认文件 | 适合保存 |
 | --- | --- | --- |
 | project | `<project>/MEMORY.md` | 项目架构约定、技术选择、团队规则 |
-| user | `~/.xcode/memory/MEMORY.md` | 个人偏好、跨项目习惯、通用工作方式 |
+| user | `~/.cade/memory/MEMORY.md` | 个人偏好、跨项目习惯、通用工作方式 |
 
 每个 Markdown H2 section 形成一条 `MemoryRecord`。记录包含 title、body、layer 和由 layer/title 生成的稳定 id。旧格式的 metadata 行会被解析并从检索正文中剥离；退休状态记录不会进入结果。
 

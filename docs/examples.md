@@ -1,6 +1,6 @@
-# Xcode 实战场景与使用示例
+# Cade 实战场景与使用示例
 
-本文档提供 Xcode 在日常软件开发中的核心工作流与常见实战示例。
+本文档提供 Cade 在日常软件开发中的核心工作流与常见实战示例。
 
 ---
 
@@ -10,28 +10,28 @@
 
 ```bash
 # 查询代码实现
-xcode -p "解释 src/xcode/agent/agent.py 中的 AgentLoop 运行机制"
+cade -p "解释 src/cade/agent/agent.py 中的 AgentLoop 运行机制"
 
 # 执行特定定位
-xcode -p "检查项目中所有未被使用的 import 语句"
+cade -p "检查项目中所有未被使用的 import 语句"
 ```
 
 ---
 
 ## 2. 交互式全屏终端 (TUI) 与 REPL
 
-Xcode 默认启动类 VSCode 的全屏终端界面（TUI）：
+Cade 默认启动类 VSCode 的全屏终端界面（TUI）：
 
 ```bash
 # 启动 TUI 全屏交互
-xcode
+cade
 
 # 或启动标准 CLI / REPL 模式
-xcode cli
+cade cli
 ```
 
 在交互界面中，支持丰富的输入与控制能力：
-* **`@` 引用文件**：输入 `@src/xcode/main.py` 可直接将文件内容加入提问上下文。
+* **`@` 引用文件**：输入 `@src/cade/main.py` 可直接将文件内容加入提问上下文。
 * **`!` 执行 Shell**：输入 `!git status` 可在不通过模型的情况下直接运行本地命令。
 * **`$` 调用技能**：输入 `$refactor 提取通用基类` 可显式激活已加载的 Skill。
 
@@ -46,13 +46,13 @@ xcode cli
 ```text
 /plan 分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案
 ```
-* **运行机制**：Agent 处于只读模式，通过 `read_file`、`grep_search` 等工具勘察代码，分析现有实现并在 `.xcode/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
+* **运行机制**：Agent 处于只读模式，通过 `read_file`、`grep_search` 等工具勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
 * **安全保证**：此阶段 Agent 无法修改任何业务代码，无法执行任意 Shell 命令。
 
 ### 第二步：审查计划并一键切换到 Build 模式
 审阅生成的 Markdown 计划后，输入：
 ```text
-/build 按照 .xcode/plans/rbac_design.md 中的方案实现代码并跑通测试
+/build 按照 .cade/plans/rbac_design.md 中的方案实现代码并跑通测试
 ```
 * **运行机制**：Agent 自动切换为构建模式，依次使用 `edit_file` / `write_file` 应用修改，并通过 `bash` 运行单元测试。
 * **自动审查**：执行测试等低风险命令由独立的 Reviewer 模型自动审查放行；如果涉及跨工作区写入或敏感命令，则自动暂停向用户请求确认。
@@ -61,7 +61,7 @@ xcode cli
 
 ## 4. 会话分支探索与文件级快照撤销 (Undo)
 
-在探索不确定的重构思路时，Xcode 提供了完整的版本回退与分支能力：
+在探索不确定的重构思路时，Cade 提供了完整的版本回退与分支能力：
 
 ### 4.1 会话分支 (/fork)
 如果你想在某一轮对话的基础上尝试另一种技术方案：
@@ -79,15 +79,15 @@ xcode cli
 # 撤销最近一次工具执行所做的所有文件修改
 /undo
 ```
-Xcode 会利用内置的快照引擎瞬间将涉及的文件原子恢复至修改前的状态。
+Cade 会利用内置的快照引擎瞬间将涉及的文件原子恢复至修改前的状态。
 
 ---
 
 ## 5. 扩展能力：连接 MCP Server (Model Context Protocol)
 
-Xcode 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 stdio server 接入丰富的第三方工具（如数据库、GitLab、Sentry 等）。
+Cade 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 stdio server 接入丰富的第三方工具（如数据库、GitLab、Sentry 等）。
 
-在项目根目录创建 `.xcode/mcp_config.json`：
+在项目根目录创建 `.cade/mcp_config.json`：
 ```json
 {
   "mcpServers": {
@@ -103,7 +103,7 @@ Xcode 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 s
 }
 ```
 
-启动 Xcode 后，Agent 会自动发现并注册对应的动态工具：
+启动 Cade 后，Agent 会自动发现并注册对应的动态工具：
 ```text
 ● mcp__sqlite__read_query
 ● mcp__sqlite__describe_table
@@ -115,9 +115,9 @@ Xcode 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 s
 
 ## 6. 长期记忆管理 (Memory)
 
-Xcode 内置了分层的长期记忆系统：
+Cade 内置了分层的长期记忆系统：
 * **项目记忆**：位于项目根目录的 `MEMORY.md`，用于记录跨会话的技术选型、业务约定与关键约束；
-* **用户记忆**：位于 `~/.xcode/memory/MEMORY.md`，用于记录个人代码风格偏好。
+* **用户记忆**：位于 `~/.cade/memory/MEMORY.md`，用于记录个人代码风格偏好。
 
 ### 查看与检索记忆
 在 REPL 中：
@@ -137,7 +137,7 @@ Agent 在执行任务时，会根据需要通过 `search_memory` 工具按需检
 
 你可以通过配置外部命令 Hook，在 Agent 执行关键动作前后进行自动化校验或通知。
 
-在 `xcode.config.json` 中配置：
+在 `cade.config.json` 中配置：
 ```json
 {
   "hooks": {
