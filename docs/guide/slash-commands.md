@@ -13,7 +13,8 @@ REPL 和 TUI 使用统一命令注册表。输入 `/` 后按 Tab 可以补全命
 | `/queue` | `/queue steer\|followup\|interrupt\|MESSAGE` | 设置 busy policy，或排入 follow-up |
 | `/verbose` | `/verbose normal\|verbose\|debug` | 设置输出详细程度 |
 | `/debug` | `/debug on\|off` | 切换 debug 输出 |
-| `/new-context` | `/new-context` | 立即关闭当前工作窗口并开启新窗口，不生成摘要 |
+| `/compact` | `/compact` | 硬换窗并保留最近工作回合，不生成摘要 |
+| `/rollover` | `/rollover [--force]` | 使用 `NOTE.md` 交接并开启干净窗口；`--force` 跳过交接检查 |
 | `/goal` | `/goal CONDITION\|pause\|resume\|clear` | 设置、暂停、恢复或清除独立验收目标 |
 
 `/steer` 适合当前 run 的即时纠偏；`/queue` 的 follow-up 在当前 run 完成后启动新的 run。忙时普通输入默认按 `busy_mode` 处理。

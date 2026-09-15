@@ -627,7 +627,7 @@ CLI 提供：
 - `/plan`、`/build`、`/act` 模式切换。
 - `/model`、`/thinking`、`/effort` 动态模型控制。
 - `/sessions`、`/resume`、`/continue`、`/fork`、`/clone`、`/tree`、`/rewind`。
-- `/new-context`、`/context`、`/goal`、`/permissions`、`/hooks`、`/mcp`、`/memory`。
+- `/compact`、`/rollover`、`/context`、`/goal`、`/permissions`、`/hooks`、`/mcp`、`/memory`。
 - `/tool` 直接工具入口和 `!command` shell 快捷入口。
 - `$skill` 显式技能激活与 `@file` 文件引用。
 - Tab 补全、参数暗示、实时 Markdown、推理预览和工具摘要。

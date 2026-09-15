@@ -506,4 +506,8 @@ MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺
 - 原始 transcript 始终作为无损事实源，通过 `history` 按需召回
 - 项目根 `NOTE.md` 作为显式工作交接状态
 
+手动命令中，`/compact` 使用同一硬换窗机制并保留最近工作回合；
+`/rollover` 开启不携带普通对话的干净窗口，默认要求非空 `NOTE.md`，
+必要时可用 `/rollover --force` 跳过交接检查。
+
 `RepeatDetector`（`src/xcode/agent/watchdog.py`）：文件变更感知的重复检测，变更后自动清除只读调用历史。

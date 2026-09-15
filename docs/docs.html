@@ -933,8 +933,11 @@ xcode</code></pre>
 <span class="c"># 从当前会话的第 5 条消息分支创建全新会话</span>
 /fork 5
 
-<span class="c"># 手动开启干净上下文窗口</span>
-/new-context
+<span class="c"># 硬换窗并保留最近工作回合</span>
+/compact
+
+<span class="c"># 使用 NOTE.md 交接并开启干净窗口</span>
+/rollover
 
 <span class="c"># 查看当前 Token 消耗与换窗状态</span>
 /context</code></pre>
@@ -1501,7 +1504,8 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
               <tr><td><code>/undo</code></td><td><code>/undo [N]</code></td><td><span class="lz">原子回滚文件级快照修改</span><span class="le">Atomically undo file modifications</span></td></tr>
               <tr><td><code>/fork</code></td><td><code>/fork [turn_id]</code></td><td><span class="lz">从指定消息序号分支全新会话</span><span class="le">Branch new session from turn N</span></td></tr>
               <tr><td><code>/rewind</code></td><td><code>/rewind [N]</code></td><td><span class="lz">撤销最近 N 轮对话历史</span><span class="le">Rewind recent N conversational turns</span></td></tr>
-              <tr><td><code>/new-context</code></td><td><code>/new-context</code></td><td><span class="lz">手动开启干净上下文窗口</span><span class="le">Open a fresh context window</span></td></tr>
+              <tr><td><code>/compact</code></td><td><code>/compact</code></td><td><span class="lz">硬换窗并保留最近工作回合</span><span class="le">Roll over while retaining the latest turn</span></td></tr>
+              <tr><td><code>/rollover</code></td><td><code>/rollover [--force]</code></td><td><span class="lz">使用 NOTE.md 交接并开启干净窗口</span><span class="le">Use NOTE.md to hand off into a clean window</span></td></tr>
               <tr><td><code>/context</code></td><td><code>/context</code></td><td><span class="lz">查看 Token 消耗与换窗状态</span><span class="le">Inspect token usage and rollover status</span></td></tr>
             </tbody>
           </table>
