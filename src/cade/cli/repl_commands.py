@@ -54,6 +54,7 @@ from .config_registry import (
     run_config_browser,
 )
 from .markdown import MarkdownRenderer
+from .ptk_patch import safe_select
 from .repl_rendering import clear_terminal_display, print_startup_banner
 from .repl_sessions import (
     current_view,
@@ -117,7 +118,7 @@ def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
         )
         for e in msgs
     ]
-    selected = questionary.select("Select message to fork from:", choices=choices).ask()
+    selected = safe_select("Select message to fork from:", choices=choices)
     if selected is None:
         return False
 
@@ -199,7 +200,7 @@ def cmd_tree(cmd: str, ctx: CommandContext) -> bool:
         )
         for n in nodes
     ]
-    selected = questionary.select("Jump to entry:", choices=choices).ask()
+    selected = safe_select("Jump to entry:", choices=choices)
     if selected is None:
         return False
 

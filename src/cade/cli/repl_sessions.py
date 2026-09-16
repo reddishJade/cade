@@ -15,6 +15,7 @@ from cade.harness.session import (
 )
 
 from .commands import PromptLike
+from .ptk_patch import safe_select
 from .repl_rendering import CLI_COLOR_ASSISTANT, CLI_COLOR_INFO, CLI_COLOR_USER
 
 
@@ -104,7 +105,7 @@ def _run_session_picker(
     questionary_choices = [
         questionary.Choice(title=label, value=session) for session, label in choices
     ]
-    return questionary.select(title, choices=questionary_choices).ask()
+    return safe_select(title, choices=questionary_choices)
 
 
 def current_view(store: SessionStore) -> SessionMetadataView:
