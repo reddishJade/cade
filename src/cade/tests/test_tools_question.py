@@ -5,9 +5,11 @@ from __future__ import annotations
 import pytest
 
 from cade.coding_agent.tools.question import (
-    _choice_label,
     _format_answers,
     _questions,
+    build_question_tool,
+    choice_label,
+    set_question_prompt_handler,
 )
 
 
@@ -55,10 +57,27 @@ class TestQuestions:
 
 class TestChoiceLabel:
     def test_with_description(self) -> None:
-        assert " - " in _choice_label("A", "desc")
+        assert " - " in choice_label("A", "desc")
 
     def test_without_description(self) -> None:
-        assert _choice_label("A", None) == "A"
+        assert choice_label("A", None) == "A"
+
+
+class TestPromptHandler:
+    def test_requires_frontend_handler(self) -> None:
+        tool = build_question_tool()
+
+        result = tool.handler({"questions": [{"question": "Proceed?"}]})
+
+        assert "without an interactive prompt handler" in result
+
+    def test_delegates_to_frontend_handler(self) -> None:
+        tool = build_question_tool()
+        assert set_question_prompt_handler(tool, lambda _questions: [["Yes"]])
+
+        result = tool.handler({"questions": [{"question": "Proceed?"}]})
+
+        assert "Yes" in result
 
 
 class TestFormatAnswers:

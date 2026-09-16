@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from cade.harness.config import CadeRuntimeConfig, load_runtime_config
 
+from .ptk_patch import safe_select, safe_text
 from .setup_wizard import _load_existing_config, _save_config
 
 
@@ -375,7 +376,7 @@ def _select_option(spec: SettingSpec, current_display: str) -> str | None:
         f"{token} (current)" if token == current_display.lower() else token
         for token in tokens
     ]
-    picked = questionary.select(f"{spec.label}:", choices=titles).ask()
+    picked = safe_select(f"{spec.label}:", choices=titles)
     if picked is None:
         return None
     return picked.removesuffix(" (current)")
@@ -404,10 +405,10 @@ def edit_setting_interactive(
         hint = "Type value, enter to save, esc to cancel"
         if spec.nullable:
             hint += "; 'none' clears"
-        text = questionary.text(
+        text = safe_text(
             f"{spec.label} — {hint}:",
             default="",
-        ).ask()
+        )
         if text is not None and not text.strip():
             return
 
@@ -427,10 +428,10 @@ def run_config_browser(config_path: Path) -> None:
             for spec in SETTING_SPECS
         ]
         choices.append(questionary.Choice(title="Exit", value=None))
-        selected = questionary.select(
+        selected = safe_select(
             f"Config ({config_path.name}) — enter to change, esc to exit:",
             choices=choices,
-        ).ask()
+        )
         if selected is None:
             return
         edit_setting_interactive(config_path, selected, config)

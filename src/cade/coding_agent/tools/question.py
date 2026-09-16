@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
 from typing import Any
-
-import questionary
 
 from cade.agent.types import ToolInput, ToolSpec
 
@@ -26,15 +23,13 @@ class _QuestionToolHandler:
         self, data: ToolInput, _on_update: Callable[[str], None] | None = None
     ) -> str:
         prompt_handler = self.prompt_handler
-        if prompt_handler is None and not sys.stdin.isatty():
+        if prompt_handler is None:
             return (
-                "Cannot ask questions in non-interactive mode. Please rephrase "
-                "the request or use the interactive REPL."
+                "Cannot ask questions without an interactive prompt handler. "
+                "Please rephrase the request or use an interactive frontend."
             )
         questions = _questions(data.get("questions"))
-        if prompt_handler is not None:
-            return _format_answers(questions, prompt_handler(questions))
-        return _format_answers(questions, _ask_with_questionary(questions))
+        return _format_answers(questions, prompt_handler(questions))
 
 
 def build_question_tool() -> ToolSpec:
@@ -99,51 +94,6 @@ def set_question_prompt_handler(
     return True
 
 
-def _ask_with_questionary(
-    questions: list[dict[str, Any]],
-) -> list[list[str]]:
-    """使用独立 CLI prompt 收集回答。"""
-    answers: list[list[str]] = []
-    for item in questions:
-        header = item.get("header")
-        message = item["question"]
-        options = item.get("options")
-        if options:
-            display_to_label = {
-                _choice_label(option["label"], option.get("description")): option[
-                    "label"
-                ]
-                for option in options
-            }
-            choices = list(display_to_label)
-            if item.get("multiple"):
-                choices.append(CUSTOM_OPTION_LABEL)
-                selected = questionary.checkbox(message, choices=choices).ask()
-                if selected and CUSTOM_OPTION_LABEL in selected:
-                    custom = questionary.text("Your answer:", qmark=header or "?").ask()
-                    answers.append([str(custom)] if custom else [])
-                else:
-                    answers.append(
-                        [display_to_label[str(value)] for value in (selected or [])]
-                    )
-            else:
-                choices.append(CUSTOM_OPTION_LABEL)
-                selected = questionary.select(message, choices=choices).ask()
-                if selected == CUSTOM_OPTION_LABEL:
-                    custom = questionary.text("Your answer:", qmark=header or "?").ask()
-                    answers.append([str(custom)] if custom else [])
-                else:
-                    answers.append(
-                        [display_to_label[str(selected)]]
-                        if selected is not None
-                        else []
-                    )
-        else:
-            selected = questionary.text(message, qmark=header or "?").ask()
-            answers.append([str(selected)] if selected else [])
-    return answers
-
-
 def _questions(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not value:
         raise ValueError("questions must be a non-empty array")
@@ -187,7 +137,7 @@ def _questions(value: object) -> list[dict[str, Any]]:
     return questions
 
 
-def _choice_label(label: str, description: object) -> str:
+def choice_label(label: str, description: object) -> str:
     if isinstance(description, str) and description.strip():
         return f"{label} - {description.strip()}"
     return label
