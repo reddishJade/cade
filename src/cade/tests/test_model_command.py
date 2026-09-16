@@ -179,7 +179,10 @@ def test_handle_model_command_interactive_select() -> None:
         ),
         patch("questionary.select") as mock_select,
     ):
-        mock_select.return_value.ask.return_value = (selected_model, "openai_codex")
+        mock_select.return_value.unsafe_ask.return_value = (
+            selected_model,
+            "openai_codex",
+        )
         handle_model_command("/model", app)
 
     assert len(app.calls) == 1
@@ -364,7 +367,7 @@ def test_handle_model_command_escape_cancel_has_no_choice() -> None:
         patch("sys.stdin.isatty", return_value=True),
         patch("questionary.select") as mock_select,
     ):
-        mock_select.return_value.ask.return_value = None
+        mock_select.return_value.unsafe_ask.return_value = None
         handle_model_command("/model", app)
 
     choices = mock_select.call_args.kwargs["choices"]
@@ -437,9 +440,10 @@ def test_safe_select_catches_interrupt() -> None:
     from cade.cli.ptk_patch import safe_select
 
     with patch("questionary.select") as mock_select:
-        mock_select.return_value.ask.side_effect = KeyboardInterrupt()
-        res = safe_select("test", ["a", "b"], default="fallback")
-        assert res == "fallback"
+        mock_select.return_value.unsafe_ask.side_effect = KeyboardInterrupt()
+        assert safe_select("test", ["a", "b"], default="b") is None
+
+    assert mock_select.call_args.kwargs["default"] == "b"
 
 
 def test_safe_select_binds_escape_to_cancel() -> None:
@@ -447,20 +451,63 @@ def test_safe_select_binds_escape_to_cancel() -> None:
 
     with patch("questionary.select") as mock_select:
         question = mock_select.return_value
-        question.ask.return_value = None
+        question.unsafe_ask.return_value = None
 
         assert safe_select("test", ["a", "b"]) is None
 
     question.application.key_bindings.add.assert_called_once_with("escape", eager=True)
 
 
-def test_safe_text_catches_eof() -> None:
+def test_safe_select_does_not_hide_configuration_errors() -> None:
+    from cade.cli.ptk_patch import safe_select
+
+    with (
+        patch("questionary.select", side_effect=ValueError("empty choices")),
+        pytest.raises(ValueError, match="empty choices"),
+    ):
+        safe_select("test", [])
+
+
+def test_safe_checkbox_catches_interrupt_and_binds_escape() -> None:
+    from cade.cli.ptk_patch import safe_checkbox
+
+    with patch("questionary.checkbox") as mock_checkbox:
+        question = mock_checkbox.return_value
+        question.unsafe_ask.side_effect = KeyboardInterrupt()
+
+        assert safe_checkbox("test", ["a", "b"]) is None
+
+    question.application.key_bindings.add.assert_called_once_with("escape", eager=True)
+
+
+def test_safe_text_catches_eof_and_binds_escape() -> None:
     from cade.cli.ptk_patch import safe_text
 
     with patch("questionary.text") as mock_text:
-        mock_text.return_value.ask.side_effect = EOFError()
-        res = safe_text("test")
-        assert res is None
+        mock_text.return_value.unsafe_ask.side_effect = EOFError()
+        assert safe_text("test") is None
+
+    assert mock_text.call_args.kwargs["key_bindings"] is not None
+
+
+def test_force_exit_signal_handler_is_installed_once() -> None:
+    from cade.cli import ptk_patch
+
+    installed = ptk_patch._signal_handler_installed
+    try:
+        ptk_patch._signal_handler_installed = False
+        with (
+            patch("signal.getsignal", return_value=lambda *_: None) as mock_get,
+            patch("signal.signal") as mock_signal,
+            patch.object(ptk_patch.sys, "platform", "linux"),
+        ):
+            ptk_patch.install_force_exit_signal_handler()
+            ptk_patch.install_force_exit_signal_handler()
+
+        mock_get.assert_called_once()
+        mock_signal.assert_called_once()
+    finally:
+        ptk_patch._signal_handler_installed = installed
 
 
 def test_prompt_session_adapter_flushes_buffer() -> None:

@@ -4,7 +4,7 @@
 1. 操作系统级 Win32 控制台控制处理器（SetConsoleCtrlHandler），确保在任何卡死/阻塞状态下均可响应 Ctrl+C 退出；
 2. 抑制 prompt_toolkit 临时事件循环关闭时的句柄回调异常；
 3. 终端生命周期隔离看门狗（terminal_isolated）与输入缓冲区清空；
-4. 包装防弹的交互式选择器（safe_select / safe_text），杜绝 Win32 输入句柄争夺与死锁。
+4. 提供语义统一的可取消选择器、多选器与文本输入。
 """
 
 from __future__ import annotations
@@ -15,13 +15,16 @@ import os
 import sys
 import time
 import warnings
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from typing import Any, cast
 
 from prompt_toolkit.key_binding import KeyBindings
 
+_signal_handler_installed = False
 _console_ctrl_handler_installed = False
+_windows_ptk_patch_installed = False
 _last_ctrl_c_time: float = 0.0
+_last_win32_ctrl_c_time: float = 0.0
 _global_win32_ctrl_ref: Any = None
 
 
@@ -30,30 +33,34 @@ def install_force_exit_signal_handler() -> None:
 
     在任何情况下 3 秒内连续两次 Ctrl+C 强制退出进程，单次 Ctrl+C 打断并唤醒主线程。
     """
-    global _console_ctrl_handler_installed, _global_win32_ctrl_ref
+    global _signal_handler_installed, _console_ctrl_handler_installed
+    global _global_win32_ctrl_ref
     import signal
 
-    orig_handler = signal.getsignal(signal.SIGINT)
+    if not _signal_handler_installed:
+        orig_handler = signal.getsignal(signal.SIGINT)
 
-    def _sigint_handler(signum: int, frame: Any) -> None:
-        global _last_ctrl_c_time
-        now = time.monotonic()
-        if _last_ctrl_c_time > 0 and (now - _last_ctrl_c_time) < 3.0:
-            sys.stderr.write(
-                "\n\033[91m[强制退出]\033[0m 检测到连续 Ctrl+C，正在终止 Cade...\n"
-            )
-            sys.stderr.flush()
-            os._exit(0)
-        _last_ctrl_c_time = now
-        if callable(orig_handler):
-            orig_handler(signum, frame)
+        def _sigint_handler(signum: int, frame: Any) -> None:
+            global _last_ctrl_c_time
+            now = time.monotonic()
+            if _last_ctrl_c_time > 0 and (now - _last_ctrl_c_time) < 3.0:
+                sys.stderr.write(
+                    "\n\033[91m[强制退出]\033[0m 检测到连续 Ctrl+C，正在终止 Cade...\n"
+                )
+                sys.stderr.flush()
+                os._exit(0)
+            _last_ctrl_c_time = now
+            if callable(orig_handler):
+                orig_handler(signum, frame)
+            elif orig_handler != signal.SIG_IGN:
+                raise KeyboardInterrupt()
+
+        try:
+            signal.signal(signal.SIGINT, _sigint_handler)
+        except (ValueError, OSError):
+            pass
         else:
-            raise KeyboardInterrupt()
-
-    try:
-        signal.signal(signal.SIGINT, _sigint_handler)
-    except (ValueError, OSError):
-        pass
+            _signal_handler_installed = True
 
     if sys.platform == "win32" and not _console_ctrl_handler_installed:
         try:
@@ -63,18 +70,21 @@ def install_force_exit_signal_handler() -> None:
             PHANDLER_ROUTINE = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
 
             def _win32_ctrl_handler(ctrl_type: int) -> bool:
-                global _last_ctrl_c_time
+                global _last_win32_ctrl_c_time
                 # CTRL_C_EVENT = 0, CTRL_BREAK_EVENT = 1
                 if ctrl_type in (0, 1):
                     now = time.monotonic()
-                    if _last_ctrl_c_time > 0 and (now - _last_ctrl_c_time) < 3.0:
+                    if (
+                        _last_win32_ctrl_c_time > 0
+                        and (now - _last_win32_ctrl_c_time) < 3.0
+                    ):
                         sys.stderr.write(
                             "\n\033[91m[强制退出]\033[0m "
                             "检测到系统级连续 Ctrl+C，正在强制终止 Cade...\n"
                         )
                         sys.stderr.flush()
                         os._exit(0)
-                    _last_ctrl_c_time = now
+                    _last_win32_ctrl_c_time = now
                     try:
                         _thread.interrupt_main()
                     except (RuntimeError, OSError):
@@ -85,10 +95,11 @@ def install_force_exit_signal_handler() -> None:
                     os._exit(0)
                 return False
 
-            _global_win32_ctrl_ref = PHANDLER_ROUTINE(_win32_ctrl_handler)
+            handler_ref = PHANDLER_ROUTINE(_win32_ctrl_handler)
             k32 = ctypes.windll.kernel32
-            k32.SetConsoleCtrlHandler(_global_win32_ctrl_ref, True)
-            _console_ctrl_handler_installed = True
+            if k32.SetConsoleCtrlHandler(handler_ref, True):
+                _global_win32_ctrl_ref = handler_ref
+                _console_ctrl_handler_installed = True
         except (AttributeError, OSError):
             pass
 
@@ -169,9 +180,6 @@ def terminal_isolated() -> Generator[None, None, None]:
 
     在执行子交互、选择器或弹窗前记录终端模式，退出时完整复原并清空缓冲区脏事件。
     """
-    install_force_exit_signal_handler()
-    suppress_windows_ptk_shutdown_noise()
-
     saved_mode = get_console_mode()
     try:
         yield
@@ -185,31 +193,55 @@ def terminal_isolated() -> Generator[None, None, None]:
 
 def safe_select(
     message: str,
-    choices: list[Any],
+    choices: Sequence[Any],
     *,
     default: Any = None,
     use_shortcuts: bool = False,
 ) -> Any:
-    """安全执行 questionary.select，带有完整的终端生命周期隔离与异常防御。"""
+    """执行可取消的选择器；Ctrl+C 或 Esc 返回 None。"""
     with terminal_isolated():
         try:
             import questionary
 
             question = questionary.select(
-                message, choices=choices, use_shortcuts=use_shortcuts
+                message,
+                choices=choices,
+                default=default,
+                use_shortcuts=use_shortcuts,
             )
             bindings = cast(KeyBindings, question.application.key_bindings)
 
             @bindings.add("escape", eager=True)
             def _cancel_with_escape(event: Any) -> None:
                 """使用 Cade 统一的 Esc 语义关闭选择器。"""
-                event.app.exit(result=default, style="class:aborting")
+                event.app.exit(result=None, style="class:aborting")
 
-            return question.ask()
+            return question.unsafe_ask()
         except (KeyboardInterrupt, EOFError):
-            return default
-        except (RuntimeError, OSError, ValueError):
-            return default
+            return None
+
+
+def safe_checkbox(
+    message: str,
+    choices: Sequence[Any],
+    **kwargs: Any,
+) -> list[Any] | None:
+    """执行可取消的多选器；Ctrl+C 或 Esc 返回 None。"""
+    with terminal_isolated():
+        try:
+            import questionary
+
+            question = questionary.checkbox(message, choices=choices, **kwargs)
+            bindings = cast(KeyBindings, question.application.key_bindings)
+
+            @bindings.add("escape", eager=True)
+            def _cancel_with_escape(event: Any) -> None:
+                """使用 Cade 统一的 Esc 语义关闭多选器。"""
+                event.app.exit(result=None, style="class:aborting")
+
+            return cast(list[Any] | None, question.unsafe_ask())
+        except (KeyboardInterrupt, EOFError):
+            return None
 
 
 def safe_text(
@@ -219,26 +251,37 @@ def safe_text(
     qmark: str = "?",
     **kwargs: Any,
 ) -> str | None:
-    """安全执行 questionary.text，带有完整的终端生命周期隔离与异常防御。"""
+    """执行可取消的文本输入；Ctrl+C、Esc 或 EOF 返回 None。"""
     with terminal_isolated():
         try:
             import questionary
 
+            escape_bindings = KeyBindings()
+
+            @escape_bindings.add("escape", eager=True)
+            def _cancel_with_escape(event: Any) -> None:
+                """使用 Cade 统一的 Esc 语义关闭文本输入。"""
+                event.app.exit(result=None, style="class:aborting")
+
             return questionary.text(
-                message, default=default, qmark=qmark, **kwargs
-            ).ask()
+                message,
+                default=default,
+                qmark=qmark,
+                key_bindings=escape_bindings,
+                **kwargs,
+            ).unsafe_ask()
         except (KeyboardInterrupt, EOFError):
-            return None
-        except (RuntimeError, OSError, ValueError):
             return None
 
 
 def suppress_windows_ptk_shutdown_noise() -> None:
     """在 Windows 平台上抑制 prompt_toolkit 与 Win32 句柄退出时的无害 RuntimeError。"""
+    global _windows_ptk_patch_installed
     install_force_exit_signal_handler()
 
-    if sys.platform != "win32":
+    if sys.platform != "win32" or _windows_ptk_patch_installed:
         return
+    _windows_ptk_patch_installed = True
 
     try:
         import prompt_toolkit.eventloop as ptk_eventloop

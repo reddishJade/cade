@@ -9,6 +9,7 @@ from typing import cast
 
 from rich.console import Console
 
+from cade.coding_agent.tools.question import set_question_prompt_handler
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
     AssistantEventBlock,
@@ -56,6 +57,7 @@ from .markdown import MarkdownRenderer, TerminalMarkdownRenderer
 #   exception handler prints the full traceback to stderr — ugly but harmless.
 # ---------------------------------------------------------------------------
 from .ptk_patch import suppress_windows_ptk_shutdown_noise
+from .question_prompt import prompt_questions
 from .reasoning_effort import reasoning_effort_levels_for_transport
 from .repl_commands import COMMAND_NAMES, COMMAND_REGISTRY_EXPORT, handle_command
 from .repl_hitl import ReplHITLHandler
@@ -136,6 +138,8 @@ def run_repl(
     store = app.session_store
     markdown_renderer = renderer or TerminalMarkdownRenderer()
     registry = tuple(getattr(app, "registry", ()) or ())
+    for tool in registry:
+        set_question_prompt_handler(tool, prompt_questions)
 
     state = ReplState()
 

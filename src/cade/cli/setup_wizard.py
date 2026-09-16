@@ -8,12 +8,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import questionary
 from dotenv import dotenv_values
 
 from cade.ai.models import get_codex_models
 from cade.ai.resolver import ModelResolver
 
+from .ptk_patch import safe_select, safe_text
 from .reasoning_effort import (
     reasoning_effort_levels_for_transport,
     supports_reasoning_effort,
@@ -145,10 +145,10 @@ def has_valid_config(project_root: Path) -> bool:
 
 def prompt_auth_method() -> str | None:
     """询问认证方式，返回 account、api_key 或 None（用户取消）。"""
-    choice = questionary.select(
+    choice = safe_select(
         "Select authentication method:",
         choices=[AUTH_METHOD_ACCOUNT, AUTH_METHOD_API_KEY],
-    ).ask()
+    )
     if choice is None:
         return None
     if choice in (AUTH_METHOD_ACCOUNT, _LEGACY_LOGIN_CHOICE_AUTH):
@@ -183,7 +183,7 @@ def _resolve_transport(provider_key: str) -> str:
 def _select_provider() -> tuple[str, Any] | None:
     """交互式选择 LLM provider。返回 (key, preset) 或 None（取消）。"""
     choices = {preset["label"]: key for key, preset in PROVIDER_PRESETS.items()}
-    provider_label = questionary.select("Select provider:", choices=list(choices)).ask()
+    provider_label = safe_select("Select provider:", choices=list(choices))
     if provider_label is None:
         return None
     provider_key = choices[provider_label]
@@ -194,9 +194,7 @@ def _prompt_api_key(preset: dict[str, Any]) -> str | None:
     """交互式输入 API key。返回 key 或 None（取消）。"""
     env_key = preset["env_key"]
     env_val = os.environ.get(env_key) or ""
-    api_key = questionary.text(
-        "API Key:", default=env_val[:16] if env_val else "sk-"
-    ).ask()
+    api_key = safe_text("API Key:", default=env_val[:16] if env_val else "sk-")
     if api_key is None:
         return None
     if not api_key:
@@ -208,9 +206,7 @@ def _prompt_base_url(preset: dict[str, Any]) -> str | None:
     """交互式输入 Base URL。返回 URL 或 None（取消）。"""
     default_base_url = preset["base_url"]
     env_base_url = os.environ.get(preset["env_base_url"], "")
-    base_url = questionary.text(
-        "Base URL:", default=env_base_url or default_base_url
-    ).ask()
+    base_url = safe_text("Base URL:", default=env_base_url or default_base_url)
     if base_url is None:
         return None
     if not base_url:
@@ -221,7 +217,7 @@ def _prompt_base_url(preset: dict[str, Any]) -> str | None:
 def _prompt_model(preset: dict[str, Any]) -> str | None:
     """交互式选择模型。返回模型名或 None（取消）。"""
     if not preset["models"]:
-        model = questionary.text("Model name:").ask()
+        model = safe_text("Model name:")
         if model is None:
             return None
         if not model:
@@ -230,11 +226,11 @@ def _prompt_model(preset: dict[str, Any]) -> str | None:
 
     model_default = preset["default_model"]
     model_choices = [*preset["models"], "Custom (enter name)"]
-    model = questionary.select("Model:", choices=model_choices).ask()
+    model = safe_select("Model:", choices=model_choices)
     if model is None:
         return None
     if model == "Custom (enter name)":
-        model = questionary.text("Model name:").ask()
+        model = safe_text("Model name:")
         if model is None:
             return None
         if not model:
@@ -247,19 +243,19 @@ def _prompt_thinking_config(
     model: str,
 ) -> tuple[bool, str | None] | None:
     """交互式配置 thinking 开关和 effort 级别。返回 (thinking, effort) 或 None（取消）。"""
-    thinking_choice = questionary.select(
+    thinking_choice = safe_select(
         "Thinking:", choices=["enabled", "disabled"], default="enabled"
-    ).ask()
+    )
     if thinking_choice is None:
         return None
     thinking = thinking_choice == "enabled"
     reasoning_effort: str | None = None
     if thinking and supports_reasoning_effort(transport):
-        effort = questionary.select(
+        effort = safe_select(
             "Reasoning effort:",
             choices=list(reasoning_effort_levels_for_transport(transport, model)),
             default="high",
-        ).ask()
+        )
         if effort is None:
             return None
         reasoning_effort = effort
@@ -382,7 +378,7 @@ def run_setup_wizard(
         preset["label"], model, base_url, thinking, reasoning_effort, api_key
     )
 
-    save_choice = questionary.select(
+    save_choice = safe_select(
         "Save this configuration?",
         choices=[
             "Global default (~/.cade/settings.json, recommended)",
@@ -390,7 +386,7 @@ def run_setup_wizard(
             "Don't save (temporary configuration)",
         ],
         default="Global default (~/.cade/settings.json, recommended)",
-    ).ask()
+    )
     if save_choice is None:
         return ("cancelled", None)
 

@@ -201,17 +201,16 @@ def test_cli_auth_arguments() -> None:
 
 def test_prompt_auth_method_choices() -> None:
     with patch("questionary.select") as mock_select:
-        mock_select.return_value.ask.return_value = "Sign in with an account"
+        mock_select.return_value.unsafe_ask.return_value = "Sign in with an account"
         assert prompt_auth_method() == "account"
         kwargs = mock_select.call_args.kwargs
         assert kwargs["choices"] == [
             "Sign in with an account",
             "Sign in with an API key",
         ]
-        assert "default" not in kwargs
 
     with patch("questionary.select") as mock_select:
-        mock_select.return_value.ask.return_value = "Sign in with an API key"
+        mock_select.return_value.unsafe_ask.return_value = "Sign in with an API key"
         assert prompt_auth_method() == "api_key"
 
 

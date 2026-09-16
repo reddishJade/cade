@@ -193,19 +193,19 @@ class TestCredentialProbes:
 class TestPromptLoginMethod:
     def test_returns_auth_for_default_choice(self) -> None:
         with patch("questionary.select") as mock_select:
-            mock_select.return_value.ask.return_value = (
+            mock_select.return_value.unsafe_ask.return_value = (
                 "Sign in with ChatGPT (OAuth, recommended)"
             )
             assert prompt_login_method() == "auth"
 
     def test_returns_api_for_api_choice(self) -> None:
         with patch("questionary.select") as mock_select:
-            mock_select.return_value.ask.return_value = "Configure an API key"
+            mock_select.return_value.unsafe_ask.return_value = "Configure an API key"
             assert prompt_login_method() == "api"
 
     def test_returns_none_on_cancel(self) -> None:
         with patch("questionary.select") as mock_select:
-            mock_select.return_value.ask.return_value = None
+            mock_select.return_value.unsafe_ask.return_value = None
             assert prompt_login_method() is None
 
 
@@ -220,14 +220,14 @@ class TestRunSetupWizardSaveLocations:
             patch("questionary.select") as mock_select,
             patch("questionary.text") as mock_text,
         ):
-            mock_select.return_value.ask.side_effect = [
+            mock_select.return_value.unsafe_ask.side_effect = [
                 "DeepSeek",
                 "deepseek-flash",
                 "enabled",
                 "high",
                 "Global default (~/.cade/settings.json, recommended)",
             ]
-            mock_text.return_value.ask.side_effect = [
+            mock_text.return_value.unsafe_ask.side_effect = [
                 "sk-my-deepseek-key",
                 "https://api.deepseek.com",
             ]

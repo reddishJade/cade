@@ -8,7 +8,6 @@ from __future__ import annotations
 import threading
 from queue import Empty, Queue
 
-import questionary
 from rich.console import Console
 from rich.panel import Panel
 
@@ -16,6 +15,7 @@ from cade.agent.types import ApprovalRequest, ApprovalScope, ToolInput, ToolSpec
 from cade.harness.security import HITLDecision, HITLResult, HITLScope
 from cade.harness.security.permission_model.utils import command_grant_pattern
 
+from .ptk_patch import safe_select, safe_text
 from .repl_tools import brief_input
 
 _DEFAULT_HITL_TIMEOUT: float = 300.0
@@ -367,10 +367,10 @@ def _show_select_prompt(
 ) -> str | None:
     """显示 questionary 授权选择界面。"""
     brief = brief_input(tool.name, action_input)
-    return questionary.select(
+    return safe_select(
         f"Authorization required: {tool.name}\nInput: {brief}",
         choices=choices,
-    ).ask()
+    )
 
 
 def _ask_suggestion_with_timeout(timeout: float) -> str:
@@ -379,11 +379,11 @@ def _ask_suggestion_with_timeout(timeout: float) -> str:
 
     def run_prompt() -> None:
         try:
-            result = questionary.text(
+            result = safe_text(
                 "Tell model what to do:",
                 default="",
                 instruction="(press Enter to skip)",
-            ).ask()
+            )
             results.put(result or "")
         except (
             EOFError,

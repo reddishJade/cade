@@ -19,6 +19,7 @@ from cade.harness.security import (
     PermissionPolicy,
 )
 
+from .ptk_patch import safe_select, safe_text
 from .reasoning_effort import (
     reasoning_effort_levels_for_transport,
 )
@@ -239,10 +240,10 @@ def manage_permissions(
     )
 
     while True:
-        tab = questionary.select(
+        tab = safe_select(
             "Permissions:",
             choices=[*PERMISSION_TABS, "Done"],
-        ).ask()
+        )
         if tab in (None, "Done"):
             return
         if tab == "Recently denied":
@@ -330,11 +331,11 @@ def _handle_rule_tab(
     ]
     _render_rule_tab(decision, rules)
     choices = ["Add a new rule…", "Back"]
-    action = questionary.select(
+    action = safe_select(
         "Select action:",
         choices=choices,
         default="Add a new rule…",
-    ).ask()
+    )
     if action != "Add a new rule…":
         return False
     return add_permission_rule_interactive(
@@ -368,11 +369,11 @@ def _handle_workspace_tab(
 ) -> bool:
     del config_path
     _render_workspace_tab(config, project_root, restricted_dirs)
-    questionary.select(
+    safe_select(
         "Select action:",
         choices=["Back"],
         default="Back",
-    ).ask()
+    )
     return False
 
 
@@ -400,11 +401,11 @@ def _render_workspace_tab(
 
 
 def _pause_permission_tab() -> None:
-    questionary.select(
+    safe_select(
         "Select action:",
         choices=["Back"],
         default="Back",
-    ).ask()
+    )
 
 
 def add_permission_rule_interactive(
@@ -413,11 +414,11 @@ def add_permission_rule_interactive(
     *,
     default_decision: str = "ask",
 ) -> bool:
-    decision = questionary.select(
+    decision = safe_select(
         "Rule decision:",
         choices=["allow", "ask", "deny"],
         default=default_decision,
-    ).ask()
+    )
     if decision is None:
         return False
 
@@ -435,33 +436,33 @@ def add_permission_rule_interactive(
 
 
 def _prompt_custom_rule(decision: str) -> dict[str, Any] | None:
-    tool = questionary.text("Tool name or pattern:", default="bash").ask()
+    tool = safe_text("Tool name or pattern:", default="bash")
     if tool is None or not tool.strip():
         return None
     rule: dict[str, Any] = {"tool": tool.strip(), "decision": decision}
-    target_type = questionary.select(
+    target_type = safe_select(
         "Target type:",
         choices=["none", "command", "path", "mcp", "subagent", "skill"],
         default="none",
-    ).ask()
+    )
     if target_type is None:
         return None
     if target_type != "none":
         rule["target_type"] = target_type
-        target = questionary.text("Target pattern (optional):").ask()
+        target = safe_text("Target pattern (optional):")
         if target is None:
             return None
         if target.strip():
             rule["target"] = target.strip()
-    input_kind = questionary.select(
+    input_kind = safe_select(
         "Input match:",
         choices=["none", "prefix", "contains", "regex"],
         default="none",
-    ).ask()
+    )
     if input_kind is None:
         return None
     if input_kind != "none":
-        value = questionary.text(f"Input {input_kind}:").ask()
+        value = safe_text(f"Input {input_kind}:")
         if value is None or not value.strip():
             return None
         rule[f"input_{input_kind}"] = value.strip()
@@ -720,14 +721,6 @@ def _interactive_model_select(app: object) -> None:
         print("Model switching is not supported in this app.")
         return
 
-    from .ptk_patch import (
-        install_force_exit_signal_handler,
-        suppress_windows_ptk_shutdown_noise,
-    )
-
-    suppress_windows_ptk_shutdown_noise()
-    install_force_exit_signal_handler()
-
     available = get_available_model_entries(app)
     if not available:
         print("未检测到任何已登录或已配置 API Key 的可用模型。")
@@ -753,8 +746,6 @@ def _interactive_model_select(app: object) -> None:
             value=("__custom__", None),
         )
     )
-
-    from .ptk_patch import safe_select, safe_text
 
     selected = safe_select("选择要切换的目标模型:", choices=choices)
 
@@ -791,15 +782,6 @@ def _interactive_model_select(app: object) -> None:
 
 
 def handle_model_command(command: str, app: object) -> None:
-    from .ptk_patch import (
-        install_force_exit_signal_handler,
-        suppress_windows_ptk_shutdown_noise,
-        terminal_isolated,
-    )
-
-    suppress_windows_ptk_shutdown_noise()
-    install_force_exit_signal_handler()
-
     parts = command.split(maxsplit=3)
     if len(parts) == 1:
         if not sys.stdin.isatty():
@@ -817,8 +799,7 @@ def handle_model_command(command: str, app: object) -> None:
                     print("  - " + _format_model_entry(entry))
             print("\n用法: /model <model_name>")
             return
-        with terminal_isolated():
-            _interactive_model_select(app)
+        _interactive_model_select(app)
         return
 
     try:
