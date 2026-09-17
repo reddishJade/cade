@@ -47,7 +47,6 @@ HookFailurePolicy = Literal["ignore", "warn", "fail"]
 PROFILE_MAIN = "main"
 PROFILE_SUBAGENT = "subagent"
 PROFILE_FALLBACK = "fallback"
-PROFILE_REVIEWER = "reviewer"
 DEFAULT_PROMPT_MODULES: tuple[str, ...] = (
     "identity",
     "tool_discipline",
@@ -112,7 +111,6 @@ class ProviderRuntimeConfig(BaseModel):
             PROFILE_MAIN: ModelProfileRuntimeConfig(),
             PROFILE_SUBAGENT: ModelProfileRuntimeConfig(),
             PROFILE_FALLBACK: ModelProfileRuntimeConfig(),
-            PROFILE_REVIEWER: ModelProfileRuntimeConfig(),
         }
     )
 
@@ -556,7 +554,6 @@ def _resolve_model_profiles(
             resolved[name] = profile
     resolved.setdefault(PROFILE_SUBAGENT, resolved.get(PROFILE_MAIN, {}))
     resolved.setdefault(PROFILE_FALLBACK, resolved.get(PROFILE_MAIN, {}))
-    resolved.setdefault(PROFILE_REVIEWER, resolved.get(PROFILE_MAIN, {}))
     return resolved
 
 

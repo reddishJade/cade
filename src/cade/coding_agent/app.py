@@ -81,6 +81,7 @@ class CadeApp:
             raise ValueError("profile must be main or subagent")
         if self._model_profiles is None:
             self._model_profiles = {}
+        sync_reviewer = profile == "main" and "reviewer" not in self._model_profiles
         profile_config = self._model_profiles.get(profile) or ModelProfileConfig()
 
         from cade.ai.models import get_model_reasoning_efforts
@@ -153,15 +154,24 @@ class CadeApp:
             tool_stream=profile_config.tool_stream,
             response_format=profile_config.response_format,
         )
+        profiles: dict[str, ModelProfileProto] = {profile: new_cfg}
+        if sync_reviewer:
+            profiles["reviewer"] = new_cfg
+
         bundle = build_provider_bundle(
             ProviderSettings(
                 env_files=self._env_files,
-                model_profiles={profile: new_cfg},
+                model_profiles=profiles,
             )
         )
         new_provider = bundle.llms.get(profile, bundle.llm)
         if profile == "main":
             self.agent.replace_primary_provider(new_provider)
+            if sync_reviewer:
+                reviewer = self.agent.auto_approval_callback
+                replace_provider = getattr(reviewer, "replace_provider", None)
+                if callable(replace_provider):
+                    replace_provider(bundle.llms["reviewer"])
         elif self.subagents is None:
             raise RuntimeError("subagent runtime is not configured")
         else:
