@@ -134,6 +134,10 @@ class AutoApprovalReviewer:
         )
         self._closed = False
 
+    def replace_provider(self, provider: ModelProvider) -> None:
+        """替换后续审批使用的 provider。"""
+        self._provider = provider
+
     def __call__(self, request: ApprovalRequest) -> HITLResult:
         """同步适配权限引擎，并把 provider 运行隔离到独立线程。"""
         if self._closed:
