@@ -162,15 +162,15 @@ class PermissionEngineConfig:
 
     # ── 三态 ruleset 支持 ──
     mode_ruleset: tuple[Rule, ...] = ()
-    """当前执行模式的默认 ruleset。由 execution_modes.py 在切换 mode 时设置。"""
+    """Default ruleset for the current execution mode, set by execution_modes.py when the mode changes."""
     user_ruleset: tuple[Rule, ...] = ()
-    """用户配置中当前模式的规则 override。从 cade.config.json 加载。"""
+    """User-configured rule overrides for the current mode, loaded from cade.config.json."""
     mode_fallback: PermissionDecision = "ask"
-    """未匹配任何规则时的默认决策。plan='deny'，build/act='ask'。"""
+    """Default decision when no rule matches: plan='deny', build/act='ask'."""
     shell_unresolved_policy: ShellUnresolvedPolicy = "ask"
-    """Shell 效果无法静态确认时的模式级决策；危险命令始终拒绝。"""
+    """Mode-level decision when shell effects cannot be determined statically; dangerous commands are always denied."""
     approval_policy: ApprovalPolicy = "on-request"
-    """ask 是否可以交给 reviewer；never 在授权未命中时确定性拒绝。"""
+    """Whether ask decisions can be sent to a reviewer; never deterministically denies when no grant matches."""
 
 
 class PermissionEngine:

@@ -94,8 +94,8 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         html = """
         <html>
         <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-            <h2 style="color: #10a37f;">Cade 授权成功</h2>
-            <p>已成功连接 ChatGPT 订阅账户，您可以关闭此浏览器窗口并返回终端。</p>
+            <h2 style="color: #10a37f;">Cade authorization successful</h2>
+            <p>Connected to your ChatGPT subscription account. You can close this browser window and return to the terminal.</p>
         </body>
         </html>
         """
@@ -136,7 +136,8 @@ def login_openai_codex_browser(
 
     if notify_callback:
         notify_callback(
-            f"请在浏览器中完成 ChatGPT 订阅授权。\n如浏览器未自动打开，请访问:\n{auth_url}"
+            f"Complete ChatGPT subscription authorization in your browser.\n"
+            f"If the browser does not open automatically, visit:\n{auth_url}"
         )
 
     server = _OAuthCallbackServer(("127.0.0.1", 1455), _OAuthCallbackHandler)
@@ -150,19 +151,23 @@ def login_openai_codex_browser(
     while server_thread.is_alive():
         if time.time() - start_time > timeout_seconds:
             server.server_close()
-            raise TimeoutError("OpenAI Codex 网页授权超时，请重试。")
+            raise TimeoutError(
+                "OpenAI Codex browser authorization timed out; please retry."
+            )
         time.sleep(0.5)
 
     server.server_close()
 
     if server.received_error:
-        raise RuntimeError(f"OpenAI Codex 授权失败: {server.received_error}")
+        raise RuntimeError(
+            f"OpenAI Codex authorization failed: {server.received_error}"
+        )
 
     if not server.received_code:
-        raise RuntimeError("未能从回调中获取授权码。")
+        raise RuntimeError("Could not obtain an authorization code from the callback.")
 
     if server.received_state != state:
-        raise RuntimeError("OAuth state 不匹配，可能存在 CSRF 风险。")
+        raise RuntimeError("OAuth state mismatch; a CSRF attack may be in progress.")
 
     return exchange_code_for_token(server.received_code, verifier, REDIRECT_URI)
 
@@ -180,7 +185,7 @@ def login_openai_codex_device_code(
         )
         if resp.status_code != 200:
             raise RuntimeError(
-                f"获取 Device Code 失败 ({resp.status_code}): {resp.text}"
+                f"Failed to obtain device code ({resp.status_code}): {resp.text}"
             )
         data = resp.json()
         device_code = data["device_code"]
@@ -220,10 +225,10 @@ def login_openai_codex_device_code(
                 interval += 5
                 continue
             raise RuntimeError(
-                f"Device Code 授权失败 ({poll_resp.status_code}): {poll_resp.text}"
+                f"Device Code authorization failed ({poll_resp.status_code}): {poll_resp.text}"
             )
 
-    raise TimeoutError("Device Code 授权超时，请重试。")
+    raise TimeoutError("Device code authorization timed out; please retry.")
 
 
 def exchange_code_for_token(
@@ -243,7 +248,7 @@ def exchange_code_for_token(
         resp = client.post(TOKEN_URL, data=data)
         if resp.status_code != 200:
             raise RuntimeError(
-                f"换取 Access Token 失败 ({resp.status_code}): {resp.text}"
+                f"Failed to exchange authorization code for an access token ({resp.status_code}): {resp.text}"
             )
         return _build_credential_from_token_response(resp.json())
 
@@ -258,7 +263,9 @@ def refresh_openai_codex_token(refresh_token: str) -> AuthCredential:
     with httpx.Client(timeout=30.0) as client:
         resp = client.post(TOKEN_URL, data=data)
         if resp.status_code != 200:
-            raise RuntimeError(f"刷新 Token 失败 ({resp.status_code}): {resp.text}")
+            raise RuntimeError(
+                f"Token refresh failed ({resp.status_code}): {resp.text}"
+            )
         token_data = resp.json()
         if "refresh_token" not in token_data:
             token_data["refresh_token"] = refresh_token
@@ -305,14 +312,14 @@ class OpenAICodexAuthProvider:
         """按指定交互方式执行 Codex OAuth 登录。"""
         if method == "device_code":
             if notify_callback is None:
-                raise ValueError("Device code 登录需要提供 notify_callback")
+                raise ValueError("Device code login requires notify_callback")
             return login_openai_codex_device_code(notify_callback=notify_callback)
         if method == "browser":
             return login_openai_codex_browser(notify_callback=notify_callback)
-        raise ValueError(f"不支持的 OpenAI Codex 登录方式: {method}")
+        raise ValueError(f"Unsupported OpenAI Codex login method: {method}")
 
     def refresh(self, credential: AuthCredential) -> AuthCredential:
         """使用已存凭据刷新 Codex Access Token。"""
         if not credential.refresh:
-            raise ValueError("OpenAI Codex 凭据缺少 refresh token")
+            raise ValueError("OpenAI Codex credentials are missing a refresh token")
         return refresh_openai_codex_token(credential.refresh)

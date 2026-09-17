@@ -352,7 +352,9 @@ def _config_from_dict(
     try:
         return CadeRuntimeConfig.model_validate(data)
     except ValidationError as e:
-        lines = ["配置校验失败，请检查字段路径和来源配置层:"]
+        lines = [
+            "Configuration validation failed; check the field paths and configuration sources:"
+        ]
         for err in e.errors():
             path = ".".join(str(p) for p in err["loc"])
             line = f"  {path}: {err['msg']} (type={err['type']})"

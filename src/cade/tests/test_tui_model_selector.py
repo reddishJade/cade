@@ -72,7 +72,7 @@ def test_tui_model_command_uses_native_escape_menu(tmp_path: Path) -> None:
     assert request is not None
     assert [label for label, _value in request.choices] == [
         "new-model            [new]",
-        "输入自定义模型名称...",
+        "Enter a custom model name...",
     ]
 
     tui._cancel_key(None)
@@ -113,7 +113,10 @@ def test_tui_model_command_switches_selected_model(tmp_path: Path) -> None:
         tui._accept_command_choice()
 
     assert app.model_calls == [("new-model", "new_chat")]
-    assert any("已成功切换至模型: new-model" in item.text for item in tui._state.log)
+    assert any(
+        "Successfully switched to model: new-model" in item.text
+        for item in tui._state.log
+    )
 
 
 def test_tui_custom_model_escape_returns_to_model_menu(tmp_path: Path) -> None:

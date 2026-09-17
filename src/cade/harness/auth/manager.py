@@ -51,7 +51,7 @@ class AuthManager:
         """执行 Provider 登录并把结果写入宿主存储。"""
         auth_provider = self.providers.get(provider)
         if auth_provider is None:
-            raise ValueError(f"暂不支持的认证提供方: {provider}")
+            raise ValueError(f"Unsupported authentication provider: {provider}")
         credential = auth_provider.login(
             method=method,
             notify_callback=notify_callback,

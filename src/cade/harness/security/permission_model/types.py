@@ -49,35 +49,35 @@ type GrantRecordData = dict[str, object]
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: str = Field(description="工具名或通配符，如 'bash', 'write_file', '*'")
-    effect: PermissionDecisionV2 = Field(description="决策: allow / ask / deny")
+    action: str = Field(
+        description="Tool name or wildcard, e.g. 'bash', 'write_file', '*'"
+    )
+    effect: PermissionDecisionV2 = Field(description="Decision: allow / ask / deny")
 
     command: str | None = Field(
-        default=None,
-        description="shell 主命令，如 'git', 'rm', 'docker'",
+        default=None, description="Shell command, e.g. 'git', 'rm', 'docker',"
     )
     subcommand: str | None = Field(
-        default=None,
-        description="精确子命令，如 'push'",
+        default=None, description="Exact subcommand, e.g. 'push',"
     )
     subcommand_in: set[str] | None = Field(
         default=None,
-        description="匹配任一子命令，如 {'status', 'diff', 'log'}",
+        description="Match any subcommand, e.g. {'status', 'diff', 'log'}",
     )
     flags_any: set[str] | None = Field(
         default=None,
-        description="含任一 flag 即匹配，如 {'--force', '-f'}",
+        description="Match if any flag is present, e.g. {'--force', '-f'}",
     )
     flags_all: set[str] | None = Field(
         default=None,
-        description="含全部 flag 才匹配",
+        description="Match only if all flags are present",
     )
 
     resource_pattern: str | None = Field(
         default=None,
         description=(
-            "通配符路径/资源模式。非 shell 工具使用此字段匹配 target.value；"
-            "shell 工具中此项作为额外路径约束。"
+            "Wildcard path/resource pattern. Non-shell tools match target.value against this field; "
+            "for shell tools, this adds an additional path constraint."
         ),
     )
 

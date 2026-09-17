@@ -723,9 +723,11 @@ def _interactive_model_select(app: object) -> None:
 
     available = get_available_model_entries(app)
     if not available:
-        print("未检测到任何已登录或已配置 API Key 的可用模型。")
         print(
-            "提示: 可执行 /login 登录 ChatGPT，或在环境变量/.env 中配置相关 API Key。"
+            "No available models with a signed-in account or configured API key were found."
+        )
+        print(
+            "Hint: run /login to sign in to ChatGPT, or configure an API key in the environment or .env file."
         )
         return
 
@@ -742,19 +744,19 @@ def _interactive_model_select(app: object) -> None:
     # 自定义输入
     choices.append(
         questionary.Choice(
-            title="输入自定义模型名称...",
+            title="Enter a custom model name...",
             value=("__custom__", None),
         )
     )
 
-    selected = safe_select("选择要切换的目标模型:", choices=choices)
+    selected = safe_select("Select the model to switch to:", choices=choices)
 
     if not selected:
         return
 
     target_model, target_transport = selected
     if target_model == "__custom__":
-        text = safe_text("请输入模型名称:")
+        text = safe_text("Enter the model name:")
         if not text or not text.strip():
             return
         target_model = text.strip()
@@ -769,7 +771,7 @@ def _interactive_model_select(app: object) -> None:
         info = _model_info(app)
         t_name = info.get("transport", target_transport or "")
         t_info = f" (transport: {t_name})" if t_name else ""
-        print(f"✓ 已成功切换至模型: {new_model}{t_info}")
+        print(f"✓ Successfully switched to model: {new_model}{t_info}")
     except (
         AttributeError,
         KeyError,
@@ -778,7 +780,7 @@ def _interactive_model_select(app: object) -> None:
         TypeError,
         ValueError,
     ) as exc:
-        print(f"切换模型失败: {exc}")
+        print(f"Failed to switch model: {exc}")
 
 
 def handle_model_command(command: str, app: object) -> None:
@@ -794,10 +796,10 @@ def handle_model_command(command: str, app: object) -> None:
                 print("Model info not available.")
             available = get_available_model_entries(app)
             if available:
-                print("\n可用模型 (已认证/已配置):")
+                print("\nAvailable models (authenticated/configured):")
                 for entry in available:
                     print("  - " + _format_model_entry(entry))
-            print("\n用法: /model <model_name>")
+            print("\nUsage: /model <model_name>")
             return
         _interactive_model_select(app)
         return
