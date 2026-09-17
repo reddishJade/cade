@@ -138,7 +138,7 @@ class CadeApp:
                 resolved_base_url = resolved_base_url or resolution.default_base_url
             else:
                 raise ValueError(
-                    "未检测到有效的 openai-codex 登录凭据，请先执行 /login 登录 ChatGPT"
+                    "No valid openai-codex credentials found; run /login to sign in to ChatGPT"
                 )
 
         new_cfg: ModelProfileProto = ModelProfileConfig(

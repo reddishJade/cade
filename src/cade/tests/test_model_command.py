@@ -66,7 +66,7 @@ def test_handle_model_command_no_args_non_tty(capsys: Any) -> None:
         handle_model_command("/model", app)
     captured = capsys.readouterr().out
     assert "Model    : current-model" in captured
-    assert "用法: /model" in captured
+    assert "Usage: /model" in captured
 
 
 def test_handle_model_command_codex_alias() -> None:

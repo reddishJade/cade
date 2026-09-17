@@ -74,7 +74,7 @@ def create_app(
         model = str(payload.get("model", "") or "")
         effort = str(payload.get("effort", "") or "")
         if not model:
-            return JSONResponse({"error": "model 不能为空"}, status_code=400)
+            return JSONResponse({"error": "model must not be empty"}, status_code=400)
 
         def _apply() -> dict[str, object]:
             hub.app.set_model(
@@ -88,7 +88,9 @@ def create_app(
         try:
             result = await loop.run_in_executor(None, _apply)
         except Exception as exc:  # noqa: BLE001 - 返回给前端展示
-            return JSONResponse({"error": f"切换模型失败: {exc}"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Failed to switch model: {exc}"}, status_code=400
+            )
         return JSONResponse(result)
 
     @server.get("/api/git/branches")
@@ -99,9 +101,14 @@ def create_app(
     async def git_switch_endpoint(payload: dict) -> JSONResponse:
         name = str(payload.get("name", "") or "").strip()
         if not name:
-            return JSONResponse({"error": "分支名不能为空"}, status_code=400)
+            return JSONResponse(
+                {"error": "branch name must not be empty"}, status_code=400
+            )
         if hub.is_running:
-            return JSONResponse({"error": "回合运行中，无法切换分支"}, status_code=409)
+            return JSONResponse(
+                {"error": "Cannot switch branches while a turn is running"},
+                status_code=409,
+            )
 
         def _switch() -> tuple[bool, str]:
             return _git_switch(server.state.project_root, name)
@@ -110,7 +117,9 @@ def create_app(
         try:
             ok, message = await loop.run_in_executor(None, _switch)
         except Exception as exc:  # noqa: BLE001
-            return JSONResponse({"error": f"切换分支失败: {exc}"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Failed to switch branch: {exc}"}, status_code=400
+            )
         if not ok:
             return JSONResponse({"error": message}, status_code=400)
         return JSONResponse(
@@ -129,22 +138,29 @@ def create_app(
     async def switch_workspace_endpoint(payload: dict) -> JSONResponse:
         factory = app_factory
         if factory is None:
-            return JSONResponse({"error": "服务未启用工作区切换"}, status_code=400)
+            return JSONResponse(
+                {"error": "Workspace switching is not enabled"}, status_code=400
+            )
         raw = str(payload.get("path", "") or "").strip()
         if not raw:
-            return JSONResponse({"error": "路径不能为空"}, status_code=400)
+            return JSONResponse({"error": "path must not be empty"}, status_code=400)
         target = Path(raw).expanduser()
         if not target.is_dir():
-            return JSONResponse({"error": f"目录不存在: {raw}"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Directory does not exist: {raw}"}, status_code=400
+            )
         if hub.is_running:
             return JSONResponse(
-                {"error": "回合运行中，无法切换工作区"}, status_code=409
+                {"error": "Cannot switch workspaces while a turn is running"},
+                status_code=409,
             )
         loop = asyncio.get_running_loop()
         try:
             new_app = await loop.run_in_executor(None, lambda: factory(target))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
-            return JSONResponse({"error": f"工作区装配失败: {exc}"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Failed to build workspace: {exc}"}, status_code=400
+            )
         old_app = hub.app
         hub.set_app(new_app)
         old_app.close()
@@ -166,7 +182,9 @@ def create_app(
         try:
             infos = store.list_infos(limit=50)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
-            return JSONResponse({"error": f"无法读取会话索引: {exc}", "sessions": []})
+            return JSONResponse(
+                {"error": f"Failed to read session index: {exc}", "sessions": []}
+            )
         return JSONResponse(
             {
                 "current": store.session_id,
@@ -188,7 +206,10 @@ def create_app(
         new_id = hub.new_session()
         if new_id is None:
             return JSONResponse(
-                {"error": "当前回合运行中，请先停止再新建会话。"}, status_code=409
+                {
+                    "error": "A turn is currently running; stop it before creating a new session."
+                },
+                status_code=409,
             )
         return JSONResponse({"session_id": new_id})
 
@@ -196,7 +217,9 @@ def create_app(
     async def resume_session_endpoint(payload: dict) -> JSONResponse:
         session_id = str(payload.get("id", "") or "")
         if not session_id:
-            return JSONResponse({"error": "session id 不能为空"}, status_code=400)
+            return JSONResponse(
+                {"error": "session id must not be empty"}, status_code=400
+            )
         loop = asyncio.get_running_loop()
         try:
             resumed_id = await loop.run_in_executor(
@@ -206,7 +229,10 @@ def create_app(
             return JSONResponse({"error": str(exc)}, status_code=404)
         if resumed_id is None:
             return JSONResponse(
-                {"error": "当前回合运行中，请先停止再恢复会话。"}, status_code=409
+                {
+                    "error": "A turn is currently running; stop it before resuming a session."
+                },
+                status_code=409,
             )
         return JSONResponse(
             {
@@ -406,7 +432,7 @@ def _git_switch(project_root: Path, name: str) -> tuple[bool, str]:
     import shutil
 
     if shutil.which("git") is None:
-        return False, "未找到 git 可执行文件"
+        return False, "git executable not found"
 
     if name.startswith("origin/"):
         short = name.removeprefix("origin/")
@@ -426,9 +452,9 @@ def _git_switch(project_root: Path, name: str) -> tuple[bool, str]:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"git 执行失败: {exc}"
+        return False, f"git execution failed: {exc}"
     if result.returncode != 0:
-        return False, (result.stderr or result.stdout or "git switch 失败").strip()
+        return False, (result.stderr or result.stdout or "git switch failed").strip()
     return True, (result.stdout or "").strip()
 
 
@@ -517,13 +543,16 @@ async def _handle_message(
         )
         if not resolved:
             await websocket.send_json(
-                {"type": "run_error", "message": "审批请求不存在或已失效"}
+                {
+                    "type": "run_error",
+                    "message": "Approval request not found or expired",
+                }
             )
     elif message_type == "ping":
         await websocket.send_json({"type": "pong"})
     else:
         await websocket.send_json(
-            {"type": "run_error", "message": f"未知消息类型: {message_type}"}
+            {"type": "run_error", "message": f"Unknown message type: {message_type}"}
         )
 
 

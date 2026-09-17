@@ -959,8 +959,8 @@ class _CadeTui:
             self._state.log.append(
                 _LogEntry(
                     "system",
-                    "未检测到任何已登录或已配置 API Key 的可用模型。\n"
-                    "提示: 可执行 /login 登录 ChatGPT，或在环境变量/.env 中配置相关 API Key。",
+                    "No available models with a signed-in account or configured API key were found.\n"
+                    "Hint: run /login to sign in to ChatGPT, or configure an API key in the environment or .env file.",
                 )
             )
             self._refresh()
@@ -973,7 +973,7 @@ class _CadeTui:
                 if is_current_model_entry(entry, current_model, current_transport):
                     title = FormattedText([("class:model-current", title)])
                 choices.append((title, entry))
-            choices.append(("输入自定义模型名称...", "__custom__"))
+            choices.append(("Enter a custom model name...", "__custom__"))
             self._open_command_choices(choices, choose)
 
         def switch(entry: AvailableModelEntry | None, model: str) -> None:
@@ -995,7 +995,10 @@ class _CadeTui:
                 )
                 suffix = f" (transport: {transport})" if transport else ""
                 self._state.log.append(
-                    _LogEntry("system", f"✓ 已成功切换至模型: {new_model}{suffix}")
+                    _LogEntry(
+                        "system",
+                        f"✓ Successfully switched to model: {new_model}{suffix}",
+                    )
                 )
             except (
                 AttributeError,
@@ -1005,12 +1008,14 @@ class _CadeTui:
                 TypeError,
                 ValueError,
             ) as exc:
-                self._state.log.append(_LogEntry("error", f"切换模型失败: {exc}"))
+                self._state.log.append(
+                    _LogEntry("error", f"Failed to switch model: {exc}")
+                )
 
         def choose(selection: object) -> None:
             if selection == "__custom__":
                 self._open_command_text(
-                    "请输入模型名称 (esc 返回)",
+                    "Enter the model name (esc to return)",
                     lambda value: (
                         switch(None, value.strip()) if value.strip() else None
                     ),
