@@ -45,7 +45,7 @@ def install_force_exit_signal_handler() -> None:
             now = time.monotonic()
             if _last_ctrl_c_time > 0 and (now - _last_ctrl_c_time) < 3.0:
                 sys.stderr.write(
-                    "\n\033[91m[强制退出]\033[0m 检测到连续 Ctrl+C，正在终止 Cade...\n"
+                    "\n\033[91m[FORCED EXIT]\033[0m Multiple consecutive Ctrl+C presses detected; terminating Cade...\n"
                 )
                 sys.stderr.flush()
                 os._exit(0)
@@ -79,8 +79,8 @@ def install_force_exit_signal_handler() -> None:
                         and (now - _last_win32_ctrl_c_time) < 3.0
                     ):
                         sys.stderr.write(
-                            "\n\033[91m[强制退出]\033[0m "
-                            "检测到系统级连续 Ctrl+C，正在强制终止 Cade...\n"
+                            "\n\033[91m[FORCED EXIT]\033[0m "
+                            "Multiple system-level Ctrl+C presses detected; forcibly terminating Cade...\n"
                         )
                         sys.stderr.flush()
                         os._exit(0)

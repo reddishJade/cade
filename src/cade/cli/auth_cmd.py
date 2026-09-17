@@ -23,7 +23,7 @@ def handle_login_command(
         try:
             selected = prompt_auth_method()
         except KeyboardInterrupt:
-            print("\n认证方式选择已取消。")
+            print("\nAuthentication method selection cancelled.")
             return 130
         if selected is None:
             return 0
@@ -33,7 +33,7 @@ def handle_login_command(
         try:
             run_setup_wizard(project_root or Path.cwd(), from_connect=True)
         except KeyboardInterrupt:
-            print("\nAPI key 配置已取消。")
+            print("\nAPI key configuration cancelled.")
             return 130
         return 0
 
@@ -41,17 +41,19 @@ def handle_login_command(
         method = "browser"
 
     manager = AuthManager()
-    print(f"正在启动 {provider} 认证登录 (模式: {method})...")
+    print(f"Starting {provider} authentication login (method: {method})...")
 
     try:
         if method == "device_code":
 
             def notify_device(url: str, code: str) -> None:
-                print("\n================== 授权提示 ==================")
-                print(f"1. 请在浏览器中打开: {url}")
-                print(f"2. 输入一次性设备验证码: {code}")
+                print("\n================== Authorization ==================")
+                print(f"1. Open in your browser: {url}")
+                print(f"2. Enter the one-time device verification code: {code}")
                 print("==============================================")
-                print("正在等待授权完成 (按 Ctrl+C 取消)...")
+                print(
+                    "Waiting for authorization to complete (press Ctrl+C to cancel)..."
+                )
 
             cred = manager.login(
                 provider=provider,
@@ -61,7 +63,9 @@ def handle_login_command(
         else:
 
             def notify_browser(msg: str) -> None:
-                print(f"\n{msg}\n正在等待浏览器回调 (按 Ctrl+C 取消)...")
+                print(
+                    f"\n{msg}\nWaiting for the browser callback (press Ctrl+C to cancel)..."
+                )
 
             cred = manager.login(
                 provider=provider,
@@ -69,20 +73,22 @@ def handle_login_command(
                 notify_callback=notify_browser,
             )
 
-        print(f"\n✓ 成功登录 {provider}！凭据已安全保存至 {manager.storage_location}")
+        print(
+            f"\n✓ Successfully logged in to {provider}. Credentials securely saved to {manager.storage_location}"
+        )
         if cred.account_id:
-            print(f"  账号 ID: {cred.account_id}")
+            print(f"  Account ID: {cred.account_id}")
         if cred.expires:
             exp_dt = datetime.datetime.fromtimestamp(
                 cred.expires, tz=datetime.UTC
             ).astimezone()
-            print(f"  访问令牌有效期至: {exp_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"  Access token expires at: {exp_dt.strftime('%Y-%m-%d %H:%M:%S')}")
         return 0
     except KeyboardInterrupt:
-        print("\n登录操作已取消。")
+        print("\nLogin cancelled.")
         return 130
     except (RuntimeError, TimeoutError, ValueError) as exc:
-        print(f"\n✗ 登录失败: {exc}")
+        print(f"\n✗ Login failed: {exc}")
         return 1
 
 
@@ -91,9 +97,9 @@ def handle_logout_command(provider: str = "openai-codex") -> int:
     manager = AuthManager()
     success = manager.logout(provider)
     if success:
-        print(f"✓ 已成功登出 {provider}，本地凭据已清除。")
+        print(f"✓ Successfully logged out of {provider}; local credentials cleared.")
     else:
-        print(f"未找到 {provider} 的本地凭据或当前未登录。")
+        print(f"No local credentials found for {provider}; not currently logged in.")
     return 0
 
 
@@ -102,18 +108,22 @@ def handle_status_command() -> int:
     manager = AuthManager()
     accounts = manager.list_accounts()
     if not accounts:
-        print(f"当前暂无已登录账号。凭据文件: {manager.storage_location}")
-        print("您可以使用 `cade login` 进行登录。")
+        print(
+            f"No accounts are currently logged in. Credential file: {manager.storage_location}"
+        )
+        print("You can use `cade login` to sign in.")
         return 0
 
-    print(f"已登录账号列表 (存储于 {manager.storage_location}):")
+    print(f"Logged-in accounts (stored at {manager.storage_location}):")
     for acc in accounts:
         provider = str(acc.get("provider", ""))
-        account_id = str(acc.get("account_id") or "默认")
+        account_id = str(acc.get("account_id") or "default")
         expired = bool(acc.get("expired", False))
         has_refresh = bool(acc.get("has_refresh", False))
-        status_text = "已过期" if expired else "有效"
+        status_text = "expired" if expired else "valid"
         if expired and has_refresh:
-            status_text = "已过期 (支持自动刷新)"
-        print(f"  • Provider: {provider} | Account: {account_id} | 状态: {status_text}")
+            status_text = "expired (refresh available)"
+        print(
+            f"  • Provider: {provider} | Account: {account_id} | Status: {status_text}"
+        )
     return 0

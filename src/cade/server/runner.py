@@ -81,7 +81,7 @@ class WebRunHub:
             try:
                 sink(payload)
             except (OSError, RuntimeError, TypeError, ValueError) as exc:
-                _logger.debug("广播单一连接推送失败: %s", exc)
+                _logger.debug("Failed to broadcast to one connection: %s", exc)
                 continue
 
     def server_info(self) -> dict[str, Any]:
@@ -116,7 +116,7 @@ class WebRunHub:
             self.broadcast(
                 {
                     "type": "run_error",
-                    "message": "当前已有回合在运行，请等待完成或先取消。",
+                    "message": "A turn is already running; wait for it to finish or cancel it first.",
                 }
             )
             return
@@ -259,7 +259,7 @@ class WebRunHub:
             decision="deny",
             scope="once",
             status="failed",
-            rationale="Web 审批超时，按拒绝处理",
+            rationale="Web approval timed out; treating it as denied",
         )
 
 
