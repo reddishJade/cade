@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TextIO
 from uuid import uuid4
 
 import filelock
@@ -34,6 +36,39 @@ logger = logging.getLogger(__name__)
 SUMMARY_USER_CHARS = 120
 SUMMARY_ASSISTANT_CHARS = 180
 SUMMARY_TITLE_CHARS = 160
+_PRIVATE_DIR_MODE = 0o700
+_PRIVATE_FILE_MODE = 0o600
+
+
+def _ensure_private_directory(path: Path) -> None:
+    """创建私有目录，并收紧已有目录在 POSIX 上的权限。"""
+    path.mkdir(parents=True, exist_ok=True, mode=_PRIVATE_DIR_MODE)
+    if os.name != "nt":
+        path.chmod(_PRIVATE_DIR_MODE)
+
+
+def _secure_existing_file(path: Path) -> None:
+    """收紧已有 session 文件权限。"""
+    if path.exists() and os.name != "nt":
+        path.chmod(_PRIVATE_FILE_MODE)
+
+
+def _open_private_text(path: Path, *, append: bool) -> TextIO:
+    """以私有权限创建文本文件，避免创建后 chmod 的暴露窗口。"""
+    flags = os.O_WRONLY | os.O_CREAT
+    flags |= os.O_APPEND if append else os.O_TRUNC
+    descriptor = os.open(path, flags, _PRIVATE_FILE_MODE)
+    try:
+        if os.name != "nt":
+            os.fchmod(descriptor, _PRIVATE_FILE_MODE)
+        return os.fdopen(
+            descriptor,
+            "a" if append else "w",
+            encoding="utf-8",
+        )
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def _normalize_json_unicode(value: JsonValue) -> JsonValue:
@@ -95,21 +130,29 @@ class TreeSessionRepo:
         lock_timeout_seconds: float = 10.0,
     ) -> None:
         self.sessions_dir = sessions_dir
-        self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_private_directory(self.sessions_dir)
         self.project_root = (project_root or sessions_dir).resolve()
         index_dir = (
             self.sessions_dir.parent
             if self.sessions_dir.name == "sessions"
             else self.sessions_dir
         )
+        _ensure_private_directory(index_dir)
         self.index_path = index_dir / "session_index.json"
+        lock_path = index_dir / "session_store.lock"
+        lock_path.touch(mode=_PRIVATE_FILE_MODE, exist_ok=True)
+        _secure_existing_file(lock_path)
         self._lock = filelock.FileLock(
-            str(index_dir / "session_store.lock"),
+            str(lock_path),
             timeout=lock_timeout_seconds,
         )
+        _secure_existing_file(self.index_path)
+        for session_path in self.sessions_dir.glob("session-*.jsonl"):
+            _secure_existing_file(session_path)
         self.current_path = self._new_path()
         self.artifacts_dir = self.project_root / ".cade" / "session_artifacts"
-        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_private_directory(self.artifacts_dir.parent)
+        _ensure_private_directory(self.artifacts_dir)
 
     # ── 公共 API ──
 
@@ -129,7 +172,7 @@ class TreeSessionRepo:
                 content=content,
                 created_at=datetime.now(UTC).isoformat(timespec="seconds"),
             )
-            with self.current_path.open("a", encoding="utf-8") as f:
+            with _open_private_text(self.current_path, append=True) as f:
                 f.write(_dump_tree_entry(entry) + "\n")
             self._save_head_id(entry_id)
             return entry_id
@@ -182,6 +225,7 @@ class TreeSessionRepo:
         fork_path = self._new_path()
         if self.current_path.exists():
             shutil.copy2(self.current_path, fork_path)
+            _secure_existing_file(fork_path)
         now = datetime.now(UTC).isoformat(timespec="seconds")
         meta = TreeMetadata(
             id=self._session_id(fork_path),
@@ -209,7 +253,8 @@ class TreeSessionRepo:
         parent = self.ensure_metadata()
         with self._lock:
             child_path = self._new_path()
-            child_path.touch(exist_ok=False)
+            child_path.touch(mode=_PRIVATE_FILE_MODE, exist_ok=False)
+            _secure_existing_file(child_path)
             now = datetime.now(UTC).isoformat(timespec="seconds")
             metadata = TreeMetadata(
                 id=self._session_id(child_path),
@@ -239,6 +284,7 @@ class TreeSessionRepo:
         path = self._resolve_target(target)
         if not path.exists():
             raise ValueError(f"session does not exist: {path}")
+        _secure_existing_file(path)
         self.current_path = path
 
     def switch_branch(self, target: str) -> SessionInfoView:
@@ -431,7 +477,7 @@ class TreeSessionRepo:
 
         parent = self.ensure_metadata()
         fork_path = self._new_path()
-        with fork_path.open("w", encoding="utf-8") as f:
+        with _open_private_text(fork_path, append=False) as f:
             for e in entries:
                 if e.id in branch_ids:
                     pid = None if e.id == entry_id else e.parent_id
@@ -664,17 +710,15 @@ class TreeSessionRepo:
 
     def _write_metadata(self, items: list[TreeMetadata]) -> None:
         with self._lock:
-            self.index_path.parent.mkdir(parents=True, exist_ok=True)
+            _ensure_private_directory(self.index_path.parent)
             payload: JsonValue = {
                 "version": 1,
                 "storage": "tree-jsonl-v1",
                 "sessions": [item.model_dump() for item in items],
             }
             payload = _normalize_json_unicode(payload)
-            self.index_path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            with _open_private_text(self.index_path, append=False) as f:
+                f.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
     def _upsert_metadata(self, metadata: TreeMetadata) -> None:
         items = [item for item in self._load_metadata() if item.id != metadata.id]

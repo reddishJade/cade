@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -119,6 +121,47 @@ def test_session_store_normalizes_surrogates_before_json_serialization(
     assert recorder.store.read_entries()[0].content == raw_entry["content"]
     metadata = json.loads(recorder.store.index_path.read_text(encoding="utf-8"))
     assert metadata["sessions"][0]["title"] == "emoji: \U0001f600; invalid: \ufffd"
+
+
+def test_session_store_uses_private_permissions(tmp_path: Path) -> None:
+    recorder = _recorder(tmp_path)
+    recorder.store.ensure_metadata("private session")
+    recorder.store.append("event", {"value": "private"})
+
+    if os.name == "nt":
+        return
+    assert stat.S_IMODE(recorder.store.sessions_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(recorder.store.index_path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(recorder.store.artifacts_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(recorder.store.current_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(recorder.store.index_path.stat().st_mode) == 0o600
+    assert (
+        stat.S_IMODE(
+            (recorder.store.index_path.parent / "session_store.lock").stat().st_mode
+        )
+        == 0o600
+    )
+
+
+def test_session_store_tightens_existing_permissions(tmp_path: Path) -> None:
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir(mode=0o755)
+    transcript = sessions_dir / "session-existing.jsonl"
+    transcript.write_text("", encoding="utf-8")
+    index = tmp_path / "session_index.json"
+    index.write_text('{"version": 1, "sessions": []}\n', encoding="utf-8")
+    if os.name != "nt":
+        sessions_dir.chmod(0o755)
+        transcript.chmod(0o644)
+        index.chmod(0o644)
+
+    SessionStore(sessions_dir, project_root=tmp_path)
+
+    if os.name == "nt":
+        return
+    assert stat.S_IMODE(sessions_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(transcript.stat().st_mode) == 0o600
+    assert stat.S_IMODE(index.stat().st_mode) == 0o600
 
 
 def test_app_records_programmatic_turn_without_stream_fragments(tmp_path: Path) -> None:
