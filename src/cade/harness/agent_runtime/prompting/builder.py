@@ -4,7 +4,8 @@
 职责边界：
 - 稳定区：agent 身份、工具纪律、工具列表、搜索策略（注册表不变时缓存）
 - 动态区：环境信息（OS、Python、CWD）、CWD 目录快照（CWD 不变时缓存）
-- 易变区：git preflight、contextual retrieval 状态、session 通知（每轮重建）
+- 易变区：contextual retrieval 状态、session 通知（每轮重建）
+- 启动基线：git preflight（首次构建后冻结，避免把 agent 后续修改误判为用户修改）
 
 不属于本模块（由 context_collector 管理）：
 - 项目指令 → InstructionCollector
@@ -13,10 +14,10 @@
 - 笔记文件 → NotesCollector
 - 技能摘要 → SkillIndexCollector
 
-关于 git preflight 与 ActiveDiffCollector 的重叠：
-- 本模块的 git_preflight 提供工作区快照（status、last commit、diff --stat）
+关于 git preflight 与 ActiveDiffCollector 的边界：
+- 本模块的 git_preflight 提供 runtime 启动时的工作区基线
 - ActiveDiffCollector 提供任务特定的 diff 摘录（diff --unified=1 的实际代码变更）
-  两者在 git diff --stat 上重叠，但职责不同：**快照 vs 任务上下文**。
+  两者分别回答“启动前已有何物”与“当前任务改了什么”。
 """
 
 from __future__ import annotations
@@ -203,6 +204,9 @@ class DynamicRegionBuilder:
 
 
 class VolatileRegionBuilder:
+    def __init__(self) -> None:
+        self._git_baselines: dict[Path, str] = {}
+
     def build(self, context: PromptContext, enabled: set[str]) -> list[str]:
         volatile_parts: list[str] = []
         for module in VOLATILE_PROMPT_MODULE_ORDER:
@@ -210,7 +214,12 @@ class VolatileRegionBuilder:
                 continue
             match module:
                 case "git_preflight":
-                    volatile_parts.append(build_git_preflight(context.project_root))
+                    root = context.project_root.resolve()
+                    baseline = self._git_baselines.get(root)
+                    if baseline is None:
+                        baseline = build_git_preflight(root)
+                        self._git_baselines[root] = baseline
+                    volatile_parts.append(baseline)
                 case "contextual_retrieval":
                     if context.contextual_state is None:
                         continue
