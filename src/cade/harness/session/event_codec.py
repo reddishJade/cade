@@ -86,22 +86,22 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             "trigger": event.data.trigger,
             "replacement": encode_surface_messages(list(event.data.replacement)),
         }
+    run_state = (
+        event.data.run_state.to_dict() if event.data.run_state is not None else None
+    )
+    if run_state is not None:
+        run_state.pop("messages", None)
     return {
         "answer": event.data.answer,
         "steps": event.data.steps,
-        "tool_calls": [
-            {"id": call.id, "name": call.name, "input": call.input}
-            for call in event.data.tool_calls
-        ],
+        "tool_call_count": len(event.data.tool_calls),
         "termination_reason": event.data.termination_reason.value,
         "metrics": event.data.metrics,
         "watchdog_reason": event.data.watchdog_reason,
         "error_detail": event.data.error_detail,
         "needs_follow_up": event.data.needs_follow_up,
         "last_agent": event.data.last_agent,
-        "run_state": (
-            event.data.run_state.to_dict() if event.data.run_state is not None else None
-        ),
+        "run_state": run_state,
     }
 
 

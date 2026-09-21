@@ -110,6 +110,8 @@ context 入口。`AgentRuntimeConfig` 只保存 session inbox、取消、压缩�
 
 `context_window_reset` 保存完整、类型化的 surface replacement、来源 entry IDs、generation
 和指纹。replayer 只按日志顺序应用 replacement；旧窗口不生成摘要。
+`final` 不复制已经存在于语义事件中的 messages 和 tool-call 参数，只保存最终回答、
+计数、终止信息、metrics，以及恢复 mode/Goal/todo 所需的 run metadata。
 只有 `inbox/claimed` 中的 typed message 会进入模型 surface；普通命令记录为
 `command` event，不会伪装成用户消息。
 

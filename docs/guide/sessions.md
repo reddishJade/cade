@@ -26,7 +26,7 @@ Cade 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch 
   payload 只交给同步 `before_provider_request` hook，避免随历史长度重复落盘。
 - `assistant`、`tool_use`、`tool_result`：模型与工具语义事件。
 - `context_window_reset`：新窗口 ID、触发原因、replacement、generation、源 entry id 和 surface digest。
-- `final`：回答、终止原因、metrics 和 run state。
+- `final`：回答、终止原因、metrics 和不含消息副本的 run metadata。
 - `goal_state`：Goal 的条件、暂停状态和重入计数。
 - `subagent/descriptor`、`subagent/activation`、`subagent_run`：子代理身份与运行谱系。
 

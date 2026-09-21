@@ -53,21 +53,19 @@ class AgentHarnessResult:
 
 def _build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
     """将 AgentLoopResult 转换为 AgentHarnessResult。"""
-    answer_parts: list[str] = []
+    answer = ""
     tool_calls: list[ToolCall] = []
     messages: list[dict[str, Any]] = []
     for msg in result.messages:
         messages.append(to_dict(msg))
         if not isinstance(msg, AssistantMessage):
             continue
-        extracted = text_from_blocks(
+        answer = text_from_blocks(
             [
                 {"type": "text", "text": b.text} if isinstance(b, TextContent) else {}
                 for b in msg.content
             ]
         )
-        if extracted:
-            answer_parts.append(extracted)
         for block in msg.content:
             if isinstance(block, ToolCallContent):
                 tool_calls.append(
@@ -78,7 +76,6 @@ def _build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
                     )
                 )
 
-    answer = " ".join(answer_parts)
     metrics = None
     if result.metrics:
         metrics = {

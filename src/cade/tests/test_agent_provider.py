@@ -8,8 +8,9 @@ from collections.abc import AsyncIterator
 from cade.agent._provider import _collect_provider_events
 from cade.agent.agent_loop import run_agent_loop
 from cade.agent.config import AgentContext, AgentLoopConfig
-from cade.agent.messages import UserMessage
-from cade.agent.results import TerminationReason
+from cade.agent.messages import AssistantMessage, ToolResultMessage, UserMessage
+from cade.agent.results import AgentLoopResult, TerminationReason
+from cade.agent.types import TextContent, ToolCallContent
 from cade.ai.events import (
     FinalMessage,
     ProviderEvent,
@@ -204,6 +205,36 @@ async def test_provider_failure_reaches_loop_and_harness_results() -> None:
 
     harness_result = _build_structured_result(result)
     assert harness_result.provider_failure == result.provider_failure
+
+
+def test_structured_result_uses_only_last_assistant_as_answer() -> None:
+    result = AgentLoopResult(
+        messages=[
+            AssistantMessage(
+                content=[
+                    TextContent(text="I will inspect the file."),
+                    ToolCallContent(
+                        id="call-1",
+                        name="read_file",
+                        arguments={"path": "README.md"},
+                    ),
+                ]
+            ),
+            ToolResultMessage(
+                tool_call_id="call-1",
+                tool_name="read_file",
+                content="contents",
+            ),
+            AssistantMessage(content=[TextContent(text="The fix is complete.")]),
+        ],
+        surface=[],
+        steps=2,
+    )
+
+    harness_result = _build_structured_result(result)
+
+    assert harness_result.answer == "The fix is complete."
+    assert len(harness_result.tool_calls) == 1
 
 
 async def test_non_retryable_provider_failure_stops_after_first_request() -> None:
