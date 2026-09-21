@@ -85,6 +85,28 @@ def test_runtime_rollover_uses_provider_context_window_override() -> None:
     assert at_limit == "token_limit"
 
 
+def test_runtime_rollover_uses_codex_transport_context_window() -> None:
+    composition = SimpleNamespace(
+        config=AgentConfig(reserve_tokens=0, rollover_trigger_ratio=0.95)
+    )
+    provider = SimpleNamespace(
+        model="gpt-5.6-luna",
+        transport="openai_codex",
+        context_window=None,
+    )
+    rollover = cast(Any, lambda messages: messages)
+
+    before = _rollover_decision(
+        [], rollover, None, 258_399, cast(Any, composition), cast(Any, provider)
+    )
+    at_limit = _rollover_decision(
+        [], rollover, None, 258_400, cast(Any, composition), cast(Any, provider)
+    )
+
+    assert before is None
+    assert at_limit == "token_limit"
+
+
 def test_runtime_rollover_estimates_tokens_when_usage_is_missing() -> None:
     composition = SimpleNamespace(
         config=AgentConfig(reserve_tokens=0, rollover_trigger_ratio=0.95)
