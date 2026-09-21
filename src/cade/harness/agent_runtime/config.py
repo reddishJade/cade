@@ -252,6 +252,7 @@ def _build_before_provider_request_closure(
                     "prompt_version": get_prompt_version(),
                     "prompt_sha256": prompt_sha,
                     "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+                    "request_bytes": len(request_bytes),
                     "system_prompt_bytes": prompt_bytes,
                 },
                 **hook_correlation_fields(current),

@@ -32,6 +32,18 @@ _DURABLE_EVENT_TYPES = frozenset(
     }
 )
 
+_DURABLE_PROVIDER_REQUEST_FIELDS = (
+    "provider",
+    "options",
+    "composition_id",
+    "assembly",
+    "prompt_version",
+    "prompt_sha256",
+    "request_sha256",
+    "request_bytes",
+    "system_prompt_bytes",
+)
+
 
 class SessionBoundAgent(Protocol):
     @property
@@ -141,15 +153,24 @@ class SessionRecorder:
         }
 
     def record_provider_request(self, record: ProviderRequestRecord) -> None:
-        """保存 provider 实际收到的消息、工具和运行参数。"""
+        """保存可审计请求指纹，不在 session 中重复完整 wire payload。"""
         metadata = record.metadata or {}
+        durable = {
+            key: metadata[key]
+            for key in _DURABLE_PROVIDER_REQUEST_FIELDS
+            if key in metadata
+        }
+        messages = metadata.get("messages")
+        tools = metadata.get("tools")
+        durable["message_count"] = len(messages) if isinstance(messages, list) else 0
+        durable["tool_count"] = len(tools) if isinstance(tools, list) else 0
         self.store.append(
             "event",
             {
                 "schema_version": SESSION_EVENT_SCHEMA_VERSION,
                 "type": "provider_request",
                 "step": 0,
-                "data": _json_value(metadata),
+                "data": _json_value(durable),
                 "correlation": {
                     "timestamp": record.timestamp,
                     "session_id": record.session_id,
