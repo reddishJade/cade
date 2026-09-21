@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Final
 
@@ -212,6 +212,19 @@ _MODELS: dict[str, dict[str, Model]] = {
     },
 }
 
+# ChatGPT Codex 模型目录把默认工作窗口与可选最大窗口分开声明；这里使用
+# `context_window`，不能沿用 OpenAI API transport 的窗口，也不能使用
+# `max_context_window` 代替默认值。
+_TRANSPORT_CONTEXT_WINDOWS: Final[dict[str, dict[str, int]]] = {
+    "openai_codex": {
+        "gpt-6-astra": 272_000,
+        "gpt-5.6-sol": 272_000,
+        "gpt-5.6-terra": 272_000,
+        "gpt-5.6-luna": 272_000,
+        "gpt-5.5": 272_000,
+    }
+}
+
 
 def get_providers() -> list[str]:
     return list(_MODELS)
@@ -223,7 +236,14 @@ def get_models(provider_name: str) -> list[Model]:
 
 def get_codex_models() -> list[Model]:
     """返回 ChatGPT 登录时当前支持的 Codex 模型。"""
-    return get_models("openai")
+    context_windows = _TRANSPORT_CONTEXT_WINDOWS["openai_codex"]
+    return [
+        replace(
+            model,
+            context_window=context_windows.get(model.id, model.context_window),
+        )
+        for model in get_models("openai")
+    ]
 
 
 def get_model(provider_name: str, model_id: str) -> Model | None:
@@ -267,10 +287,20 @@ def resolve_model(provider_name: str, model_id: str) -> Model:
 # ── 模型选择语法解析 ──
 
 
-def get_model_context_window(model: str | None) -> int | None:
+def get_model_context_window(
+    model: str | None, *, transport: str | None = None
+) -> int | None:
     if not model:
         return None
     model_lower = normalize_model_id(model).lower()
+    transport_windows = _TRANSPORT_CONTEXT_WINDOWS.get(transport or "", {})
+    for model_id, context_window in sorted(
+        transport_windows.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if model_id in model_lower:
+            return context_window
     candidates = (
         (model_id, profile)
         for provider_models in _MODELS.values()
@@ -292,6 +322,7 @@ def effective_rollover_threshold(
     fallback_threshold: int = 32000,
     trigger_ratio: float = 0.95,
     context_window_override: int | None = None,
+    transport: str | None = None,
 ) -> int:
     """计算自动换窗触发线。
 
@@ -301,7 +332,7 @@ def effective_rollover_threshold(
     context_window = (
         context_window_override
         if context_window_override is not None and context_window_override > 0
-        else get_model_context_window(model)
+        else get_model_context_window(model, transport=transport)
     )
     if context_window is not None:
         ratio_threshold = int(context_window * trigger_ratio)

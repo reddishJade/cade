@@ -11,6 +11,7 @@ from cade.ai.models import (
     effective_rollover_threshold,
     get_codex_models,
     get_model,
+    get_model_context_window,
     get_model_cost,
     get_model_reasoning_efforts,
     get_models,
@@ -81,6 +82,49 @@ class TestParseModelMode:
 
 
 class TestRolloverThreshold:
+    @pytest.mark.parametrize(
+        "model_id",
+        (
+            "gpt-6-astra",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+        ),
+    )
+    def test_codex_models_use_272k_context_window(self, model_id: str) -> None:
+        assert get_model_context_window(model_id, transport="openai_codex") == 272_000
+
+    def test_codex_model_catalog_uses_transport_context_windows(self) -> None:
+        assert {model.context_window for model in get_codex_models()} == {272_000}
+
+    def test_direct_openai_catalog_keeps_its_own_context_window(self) -> None:
+        model = get_model("openai", "gpt-5.6-luna")
+
+        assert model is not None
+        assert model.context_window == 1_050_000
+
+    def test_codex_rollover_uses_effective_window_percent(self) -> None:
+        threshold = effective_rollover_threshold(
+            "gpt-5.6-luna",
+            reserve_tokens=0,
+            trigger_ratio=0.95,
+            transport="openai_codex",
+        )
+
+        assert threshold == 258_400
+
+    def test_explicit_context_window_overrides_codex_default(self) -> None:
+        threshold = effective_rollover_threshold(
+            "gpt-5.6-luna",
+            reserve_tokens=0,
+            trigger_ratio=0.95,
+            context_window_override=200_000,
+            transport="openai_codex",
+        )
+
+        assert threshold == 190_000
+
     @pytest.mark.parametrize(
         "provider_name",
         ("openai", "chatglm"),

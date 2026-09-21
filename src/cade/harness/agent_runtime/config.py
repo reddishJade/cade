@@ -419,7 +419,9 @@ def _request_token_budget(provider: ModelProvider, config: AgentConfig) -> int:
     window = override if isinstance(override, int) and override > 0 else None
     if window is None:
         model = getattr(provider, "model", "")
-        window = get_model_context_window(str(model))
+        window = get_model_context_window(
+            str(model), transport=getattr(provider, "transport", None)
+        )
     if window is None:
         return 0
     return max(1, window - max(config.reserve_tokens, 0))
@@ -455,6 +457,7 @@ def _rollover_decision(
         reserve_tokens=composition.config.reserve_tokens,
         trigger_ratio=composition.config.rollover_trigger_ratio,
         context_window_override=getattr(provider, "context_window", None),
+        transport=getattr(provider, "transport", None),
     )
     thresholds = [trigger]
     if composition.config.rollover_token_threshold > 0:
