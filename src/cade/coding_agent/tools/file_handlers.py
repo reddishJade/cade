@@ -576,8 +576,8 @@ def _display(root: Path, path: Path) -> str:
 
 
 def _prepare_edits(data: ToolInput) -> list[FileEdit]:
-    old_text = str(data.get("old_text", "")).strip()
-    if not old_text:
+    old_text = str(data.get("old_text", ""))
+    if not old_text.strip():
         raise ValueError("old_text must not be empty")
     if "new_text" not in data:
         raise ValueError("new_text is required")
