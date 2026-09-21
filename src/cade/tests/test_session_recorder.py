@@ -226,7 +226,9 @@ def test_context_reset_appends_epoch_without_rewriting_history(
     assert len(event["data"]["surface_sha256"]) == 64
 
 
-def test_provider_request_records_exact_model_visible_envelope(tmp_path: Path) -> None:
+def test_provider_request_records_fingerprint_without_wire_payload(
+    tmp_path: Path,
+) -> None:
     recorder = _recorder(tmp_path)
     inbox = SessionInbox(recorder.store)
     inbox.insert(UserMessage(content="question"), InboxLane.NEXT_TURN, wake=True)
@@ -239,6 +241,7 @@ def test_provider_request_records_exact_model_visible_envelope(tmp_path: Path) -
                 "provider": {"model": "test-model", "transport": "test"},
                 "prompt_sha256": "prompt-hash",
                 "request_sha256": "request-hash",
+                "request_bytes": 1234,
             },
             timestamp="2026-01-01T00:00:00+00:00",
             session_id=recorder.store.session_id,
@@ -250,7 +253,12 @@ def test_provider_request_records_exact_model_visible_envelope(tmp_path: Path) -
     event = recorder.store.build_branch()[-1].content
     assert isinstance(event, dict)
     assert event["type"] == "provider_request"
-    assert event["data"]["messages"] == [{"role": "system", "content": "rules"}]
+    assert "messages" not in event["data"]
+    assert "tools" not in event["data"]
+    assert event["data"]["message_count"] == 1
+    assert event["data"]["tool_count"] == 1
+    assert event["data"]["request_bytes"] == 1234
+    assert event["data"]["request_sha256"] == "request-hash"
     assert event["correlation"]["request_id"] == "request-1"
 
 
@@ -297,7 +305,10 @@ def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
         "context_trace": [],
     }
     assert record.metadata["options"] == {}
+    assert record.metadata["messages"] == [{"role": "system", "content": "rules"}]
+    assert record.metadata["tools"] == []
     assert record.metadata["composition_id"] == "generation-1"
+    assert record.metadata["request_bytes"] > 0
     assert len(record.metadata["request_sha256"]) == 64
     assert record.request_id == "session-1:request:1"
 

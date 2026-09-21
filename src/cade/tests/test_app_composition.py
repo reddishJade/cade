@@ -113,15 +113,12 @@ def test_real_build_app_minimal_run_and_replay_contract(
     first_request = providers[0].requests[0]
     first_envelope = _provider_request_events(first)[0]["data"]
     assert first_envelope["composition_id"] == first.agent.composition.generation_id
-    assert first_envelope["messages"] == first_request[0]
-    assert first_envelope["tools"] == [
-        {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.parameters,
-        }
-        for tool in first_request[1]
-    ]
+    assert first_envelope["message_count"] == len(first_request[0])
+    assert first_envelope["tool_count"] == len(first_request[1])
+    assert len(first_envelope["request_sha256"]) == 64
+    assert first_envelope["request_bytes"] > 0
+    assert "messages" not in first_envelope
+    assert "tools" not in first_envelope
     first.close()
 
     resumed = build_app(
@@ -144,7 +141,8 @@ def test_real_build_app_minimal_run_and_replay_contract(
         for message in second_messages
     )
     second_envelope = _provider_request_events(resumed)[-1]["data"]
-    assert second_envelope["messages"] == second_messages
+    assert second_envelope["message_count"] == len(second_messages)
+    assert len(second_envelope["request_sha256"]) == 64
     resumed.close()
 
 

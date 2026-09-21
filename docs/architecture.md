@@ -21,8 +21,9 @@ agent
 
 ## 核心不变量
 
-1. 模型可见即已记录。实际发给 provider 的 messages、tools 和 provider
-   参数必须先形成 `provider_request` envelope，能够审计和比对。
+1. 模型请求可验证。实际发给 provider 的 messages、tools 和参数必须先形成
+   `before_provider_request` hook envelope；session 在发送前持久化其 SHA-256、
+   规模、provider 和组装 trace，避免逐轮复制完整历史。
 2. session transcript 是事实账本。用户消息、稳定运行事件、压缩 epoch、
    子代理生命周期和最终回答只能追加，不能原地改写历史。
 3. 内存状态是日志投影。resume、fork 和 restart 从 transcript surface
@@ -102,7 +103,7 @@ context 入口。`AgentRuntimeConfig` 只保存 session inbox、取消、压缩�
 - `inbox/inserted`、`inbox/claimed`、`inbox/discarded`：输入内容、lane、来源和
   消费生命周期；
 - `assistant`：最终用户可见回答；
-- `provider_request`：provider 实际收到的输入和请求指纹；
+- `provider_request`：provider 请求指纹、规模、参数和组装 trace；
 - `assistant`、`tool_use`、`tool_result`、`final`：运行语义；
 - `context_window_reset`：追加式换窗边界，原 transcript 保持不变；
 - `subagent_run`：子运行的 started/completed/failed/cancelled 生命周期。
