@@ -163,6 +163,84 @@ class TestDiscoverRuntimeConfigOAuthFallback:
             assert main_profile.account_id == "acc-12345"
             assert main_profile.base_url == "https://chatgpt.com/backend-api"
 
+    def test_layered_profiles_inherit_oauth_after_raw_merge(
+        self, tmp_path: Path
+    ) -> None:
+        import json
+        from unittest.mock import patch
+
+        from cade.harness.config import discover_runtime_config
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        fake_home = tmp_path / "fake_home"
+        global_dir = fake_home / ".cade"
+        global_dir.mkdir(parents=True)
+        (global_dir / "settings.json").write_text(
+            json.dumps(
+                {
+                    "provider": {
+                        "model_profiles": {
+                            "main": {
+                                "transport": "deepseek_chat",
+                                "chat_model": "deepseek-flash",
+                                "base_url": "https://api.deepseek.com",
+                                "api_key": "sk-deepseek",
+                            }
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (project_dir / "cade.config.json").write_text(
+            json.dumps(
+                {
+                    "provider": {
+                        "model_profiles": {
+                            "main": {
+                                "transport": "openai_codex",
+                                "chat_model": "gpt-5.6-luna",
+                                "base_url": "https://chatgpt.com/backend-api",
+                                "api_key": "",
+                                "reasoning_effort": "max",
+                            }
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        mock_cred = type(
+            "MockCred",
+            (),
+            {
+                "access": "test-oauth-token",
+                "account_id": "acc-12345",
+                "expires": None,
+                "refresh": None,
+            },
+        )()
+
+        with (
+            patch("pathlib.Path.home", return_value=fake_home),
+            patch.dict("os.environ", {"USERPROFILE": str(fake_home)}, clear=False),
+            patch(
+                "cade.harness.auth.manager.AuthManager.get_valid_credential",
+                return_value=mock_cred,
+            ),
+        ):
+            cfg = discover_runtime_config(project_dir)
+
+        for profile_name in ("main", "subagent", "fallback"):
+            profile = cfg.provider.model_profiles[profile_name]
+            assert profile.transport == "openai_codex"
+            assert profile.chat_model == "gpt-5.6-luna"
+            assert profile.reasoning_effort == "max"
+            assert profile.base_url == "https://chatgpt.com/backend-api"
+            assert profile.api_key == "test-oauth-token"
+            assert profile.account_id == "acc-12345"
+
     def test_preserves_project_config_api_key(self, tmp_path: Path) -> None:
         import json
         from unittest.mock import patch
