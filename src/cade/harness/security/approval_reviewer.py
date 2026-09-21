@@ -13,7 +13,6 @@ from typing import Literal
 from cade.agent.types import ApprovalRequest
 from cade.ai.events import FinalMessage, Message, ProviderEvent, TextDelta
 from cade.ai.providers.base import ModelProvider
-from cade.ai.types import StreamOptions
 
 from .approval import HITLResult, ReviewAuthorization, ReviewRisk, ReviewStatus
 
@@ -99,6 +98,12 @@ _TIMEOUT_INSTRUCTIONS = (
     "The automatic approval review did not finish before its deadline. Do not "
     "treat the timeout itself as evidence that the action is unsafe. Retry once "
     "or ask the user for explicit approval."
+)
+
+_FAILURE_INSTRUCTIONS = (
+    "The automatic approval reviewer failed before returning a safety verdict. "
+    "Do not treat the infrastructure failure as a policy denial. Ask the user "
+    "for explicit approval of the exact action."
 )
 
 
@@ -242,12 +247,6 @@ class AutoApprovalReviewer:
         events: AsyncIterator[ProviderEvent] = self._provider.stream(
             messages=messages,
             tools=[],
-            options=StreamOptions(
-                temperature=0,
-                max_tokens=512,
-                timeout_ms=int(self._timeout_seconds * 1000),
-                max_retries=1,
-            ),
         )
         async for event in events:
             if isinstance(event, TextDelta):
@@ -343,10 +342,13 @@ def _truncate_middle(text: str, limit: int) -> str:
 
 
 def _unavailable_result(reason: str, *, status: ReviewStatus) -> HITLResult:
+    instructions = (
+        _TIMEOUT_INSTRUCTIONS if status == "timed_out" else _FAILURE_INSTRUCTIONS
+    )
     return HITLResult(
         "deny",
         "once",
-        suggestion=f"{reason}\n{_DENIAL_INSTRUCTIONS}",
+        suggestion=f"{reason}\n{instructions}",
         status=status,
         rationale=reason,
     )

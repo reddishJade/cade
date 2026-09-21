@@ -125,14 +125,7 @@ def test_auto_reviewer_allows_once_and_receives_full_evidence() -> None:
     assert result.authorization == "high"
     assert result.rationale == "Focused local validation."
     assert provider.requests[0][1] == []
-    assert provider.options == [
-        StreamOptions(
-            temperature=0,
-            max_tokens=512,
-            timeout_ms=90_000,
-            max_retries=1,
-        )
-    ]
+    assert provider.options == [None]
     prompt = str(provider.requests[0][0][-1]["content"])
     assert "pytest -q" in prompt
     assert "Run the project's focused tests." in prompt
@@ -152,4 +145,7 @@ def test_auto_reviewer_retries_then_fails_closed_on_provider_error() -> None:
     assert result.scope == "once"
     assert result.status == "failed"
     assert "failed" in result.suggestion
+    assert "infrastructure failure" in result.suggestion
+    assert "policy denial" in result.suggestion
+    assert "policy circumvention" not in result.suggestion
     assert len(provider.requests) == 3
