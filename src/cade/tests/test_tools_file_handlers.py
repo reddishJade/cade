@@ -80,6 +80,17 @@ class TestPrepareEdits:
         with pytest.raises(ValueError, match="must not be empty"):
             _prepare_edits(data)
 
+    def test_whitespace_only_old_text_raises(self) -> None:
+        data = {"old_text": "  \n\t", "new_text": "b"}
+        with pytest.raises(ValueError, match="must not be empty"):
+            _prepare_edits(data)
+
+    def test_preserves_old_text_whitespace_exactly(self) -> None:
+        old_text = "    indented line\n"
+        edits = _prepare_edits({"old_text": old_text, "new_text": "replacement"})
+
+        assert edits[0].old_text == old_text
+
     def test_edits_array_is_not_accepted(self) -> None:
         data = {"edits": [{"old_text": "a", "new_text": "b"}]}
         with pytest.raises(ValueError, match="old_text"):
