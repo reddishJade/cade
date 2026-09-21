@@ -379,9 +379,6 @@ def discover_runtime_config(
     project_raw = _load_raw_config(project_path)
     local_raw = _load_raw_config(local_path)
 
-    global_raw = _resolve_profiles_in_raw(global_raw)
-    project_raw = _resolve_profiles_in_raw(project_raw)
-    local_raw = _resolve_profiles_in_raw(local_raw)
     global_raw = _annotate_hook_sources(global_raw, global_path)
     project_raw = _annotate_hook_sources(project_raw, project_path)
     local_raw = _annotate_hook_sources(local_raw, local_path)
