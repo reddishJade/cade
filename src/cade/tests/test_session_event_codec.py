@@ -10,7 +10,7 @@ from cade.harness.agent_runtime.events import (
     ToolResultStructuredEvent,
     ToolUseStructuredEvent,
 )
-from cade.harness.agent_runtime.result import AgentHarnessResult
+from cade.harness.agent_runtime.result import AgentHarnessResult, RunState
 from cade.harness.session.event_codec import (
     SESSION_EVENT_SCHEMA_VERSION,
     encode_session_event,
@@ -48,13 +48,26 @@ def test_encode_assistant_and_final_payloads() -> None:
         FinalStructuredEvent(
             "final",
             1,
-            AgentHarnessResult(answer="done", messages=[], steps=1, tool_calls=[]),
+            AgentHarnessResult(
+                answer="done",
+                messages=[],
+                steps=1,
+                tool_calls=[
+                    ToolCall(id="call-1", name="read_file", input={"path": "a"})
+                ],
+                run_state=RunState(
+                    messages=[{"role": "tool", "content": "large result"}]
+                ),
+            ),
         )
     )
 
     assert assistant["data"] == [{"type": "text", "text": "done"}]
     assert final["data"]["answer"] == "done"
     assert final["data"]["termination_reason"] == "completed"
+    assert final["data"]["tool_call_count"] == 1
+    assert "tool_calls" not in final["data"]
+    assert final["data"]["run_state"] == {}
 
 
 def test_encode_tool_result_preserves_render_intent() -> None:
