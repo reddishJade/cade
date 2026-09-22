@@ -315,8 +315,17 @@ async def test_responses_provider_reads_mapping_usage() -> None:
 
 
 async def test_responses_provider_closes_per_request_client() -> None:
+    observed_loops: dict[str, asyncio.AbstractEventLoop] = {}
     mock_client = MagicMock()
-    mock_client.close = AsyncMock()
+
+    async def close_client() -> None:
+        observed_loops["closed"] = asyncio.get_running_loop()
+
+    def build_client(*_args: object, **_kwargs: object) -> MagicMock:
+        observed_loops["created"] = asyncio.get_running_loop()
+        return mock_client
+
+    mock_client.close = AsyncMock(side_effect=close_client)
     mock_client.responses.create.return_value = iter(
         [
             SimpleNamespace(
@@ -329,7 +338,7 @@ async def test_responses_provider_closes_per_request_client() -> None:
         ProviderConfig(api_key="sk-test", model="gpt-5.5")
     )
 
-    with patch("openai.AsyncOpenAI", return_value=mock_client):
+    with patch("openai.AsyncOpenAI", side_effect=build_client):
         events = [
             event
             async for event in provider.stream([{"role": "user", "content": "Hi"}], [])
@@ -337,6 +346,7 @@ async def test_responses_provider_closes_per_request_client() -> None:
 
     assert any(isinstance(event, FinalMessage) for event in events)
     mock_client.close.assert_awaited_once_with()
+    assert observed_loops["closed"] is observed_loops["created"]
 
 
 async def test_responses_provider_closes_per_request_client_after_error() -> None:
