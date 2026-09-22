@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 from .cli.config_cmd import handle_config_command
 from .cli.repl import run_repl
@@ -30,6 +31,16 @@ class _ExplicitAuthMethodAction(argparse.Action):
         del parser, option_string
         setattr(namespace, self.dest, values)
         namespace._auth_method_explicit = True
+
+
+class _CommandArgumentParser(argparse.ArgumentParser):
+    """Exec 参数错误使用机器协议的稳定退出码。"""
+
+    def error(self, message: str) -> NoReturn:
+        if self.prog.endswith(" exec"):
+            self.print_usage(sys.stderr)
+            self.exit(6, f"{self.prog}: error: {message}\n")
+        super().error(message)
 
 
 def _add_auth_arguments(parser: argparse.ArgumentParser) -> None:
@@ -155,6 +166,16 @@ def _build_cli_parser(subparsers) -> None:
     subparsers.add_parser("cli", help="Run the interactive command-line REPL")
 
 
+def _build_exec_parser(subparsers) -> None:
+    from .cli.exec_cmd import add_exec_arguments
+
+    exec_parser = subparsers.add_parser(
+        "exec",
+        help="Run one prompt with a stable automation protocol",
+    )
+    add_exec_arguments(exec_parser)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cade coding agent.")
     parser.add_argument(
@@ -185,7 +206,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         help="Resume a specific session by id.",
     )
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(
+        dest="command", parser_class=_CommandArgumentParser
+    )
     _build_config_parser(subparsers)
     _build_setup_parser(subparsers)
     _build_login_parser(subparsers)
@@ -193,6 +216,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _build_auth_parser(subparsers)
     _build_tui_parser(subparsers)
     _build_cli_parser(subparsers)
+    _build_exec_parser(subparsers)
     _build_web_parser(subparsers)
     return parser.parse_args(argv)
 
@@ -325,6 +349,11 @@ def main() -> int:
 
 
 def _run(args, runtime_config) -> int:
+    if args.command == "exec":
+        from .cli.exec_cmd import run_exec
+
+        return run_exec(args, runtime_config, _build_app_from_config)
+
     sessions_dir = (
         args.sessions_dir
         or resolve_config_path(args.project_root, runtime_config.paths.sessions_dir)

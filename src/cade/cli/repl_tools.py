@@ -415,6 +415,8 @@ def print_tool_result_rich(
 def final_stop_reason(data: AgentHarnessResult) -> str | None:
     if data.termination_reason.value == "step_limit":
         return "[stopped] step limit reached"
+    if data.termination_reason.value == "llm_call_limit":
+        return "[stopped] LLM call limit reached"
     if data.termination_reason.value == "watchdog":
         reason = data.watchdog_reason or "repeated tool calls detected"
         return f"[stopped] {reason}"

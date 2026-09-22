@@ -64,6 +64,7 @@ DEFAULT_PROMPT_MODULES: tuple[str, ...] = (
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     max_steps: Annotated[StrictInt, Field(gt=0)] | None = None
+    max_llm_calls: Annotated[StrictInt, Field(gt=0)] | None = None
     rollover_message_threshold: StrictInt = 0
     rollover_token_threshold: StrictInt = 0
     automatic_rollover: StrictBool = True

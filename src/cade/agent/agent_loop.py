@@ -35,7 +35,7 @@ from ._execution import (
     update_idle_tool_watchdog,
     update_repeated_tool_watchdog,
 )
-from ._provider import call_provider
+from ._provider import LlmCallLimitReached, call_provider
 from .config import (
     AgentContext,
     AgentLoopConfig,
@@ -275,16 +275,27 @@ async def _run_loop(
 
         # ── 内层循环：模型调用 + 重试 + max_tokens ──
         ctx_len_before = len(current_context.messages)
-        inner_result = await _run_inner_loop(
-            current_context,
-            config,
-            emit,
-            signal,
-            metrics,
-            step,
-            state,
-            prepared_assembly,
-        )
+        try:
+            inner_result = await _run_inner_loop(
+                current_context,
+                config,
+                emit,
+                signal,
+                metrics,
+                step,
+                state,
+                prepared_assembly,
+            )
+        except LlmCallLimitReached:
+            return _finish_loop(
+                new_messages,
+                current_context.messages,
+                step,
+                metrics,
+                state.active_provider,
+                emit,
+                termination_reason=TerminationReason.LLM_CALL_LIMIT,
+            )
 
         if inner_result is None:
             return _finish_loop(

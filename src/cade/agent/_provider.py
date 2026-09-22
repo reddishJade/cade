@@ -21,6 +21,7 @@ from cade.agent.events import (
     AgentEvent,
     MessageUpdateEvent,
     ThinkingUpdateEvent,
+    UsageUpdateEvent,
 )
 from cade.agent.messages import AssistantMessage
 from cade.agent.request import RequestAssembly
@@ -57,6 +58,10 @@ class _ProviderResponse:
 _REQUEST_BUDGET_FAILURE = "RequestBudgetExceededError"
 
 
+class LlmCallLimitReached(RuntimeError):
+    """模型调用预算已耗尽。"""
+
+
 async def call_provider(
     context: AgentContext,
     config: AgentLoopConfig,
@@ -68,6 +73,8 @@ async def call_provider(
     assembly: RequestAssembly | None = None,
 ) -> _ProviderResponse | None:
     """调用 provider；若流式生成期间被打断则返回 None。"""
+    if config.max_llm_calls is not None and metrics.llm_calls >= config.max_llm_calls:
+        raise LlmCallLimitReached
     if assembly is None:
         assembly = config.request_assembler.assemble(
             context,
@@ -179,6 +186,13 @@ async def _collect_provider_events(
             elif isinstance(event, ReasoningDelta):
                 emit(ThinkingUpdateEvent(reasoning_content=event.chunk))
                 await asyncio.sleep(0)
+            elif isinstance(event, UsageUpdate):
+                emit(
+                    UsageUpdateEvent(
+                        input_tokens=event.input_tokens,
+                        output_tokens=event.output_tokens,
+                    )
+                )
         return events
     except (
         LookupError,

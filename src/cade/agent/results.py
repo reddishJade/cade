@@ -23,6 +23,7 @@ class TerminationReason(StrEnum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     STEP_LIMIT = "step_limit"
+    LLM_CALL_LIMIT = "llm_call_limit"
     WATCHDOG = "watchdog"
     PROVIDER_ERROR = "provider_error"
 
