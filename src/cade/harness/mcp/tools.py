@@ -430,7 +430,7 @@ def compute_config_hash(server_config: dict[str, Any]) -> str:
     if timeout is not None:
         data["timeout"] = timeout
     serialized = json.dumps(data, sort_keys=True)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return hashlib.blake2b(serialized.encode("utf-8"), digest_size=32).hexdigest()
 
 
 def _cache_metadata(client: _mcp_mod.McpClient) -> dict[str, Any]:

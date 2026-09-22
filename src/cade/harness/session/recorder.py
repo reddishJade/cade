@@ -40,8 +40,8 @@ _DURABLE_PROVIDER_REQUEST_FIELDS = (
     "composition_id",
     "assembly",
     "prompt_version",
-    "prompt_sha256",
-    "request_sha256",
+    "prompt_digest",
+    "request_digest",
     "request_bytes",
     "system_prompt_bytes",
 )

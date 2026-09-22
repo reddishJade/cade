@@ -48,8 +48,8 @@ class ContextWindowState:
 class PromptCacheMetadata:
     """最近一次请求的 prompt/cache fingerprint。"""
 
-    prompt_sha256: str = ""
-    request_sha256: str = ""
+    prompt_digest: str = ""
+    request_digest: str = ""
     system_prompt_bytes: int = 0
     request_count: int = 0
 
@@ -156,8 +156,8 @@ class ContextManager:
             default=str,
         ).encode("utf-8")
         self.prompt_cache = PromptCacheMetadata(
-            prompt_sha256=hashlib.sha256(prompt_bytes).hexdigest(),
-            request_sha256=hashlib.sha256(request_bytes).hexdigest(),
+            prompt_digest=hashlib.blake2b(prompt_bytes, digest_size=32).hexdigest(),
+            request_digest=hashlib.blake2b(request_bytes, digest_size=32).hexdigest(),
             system_prompt_bytes=len(prompt_bytes),
             request_count=self.prompt_cache.request_count + 1,
         )

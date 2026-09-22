@@ -63,7 +63,7 @@ class RequestContextTrace:
     block_id: str
     included: bool
     token_count: int
-    content_sha256: str
+    content_digest: str
     provenance: str = ""
     truncated: bool = False
     truncation_reason: str | None = None
@@ -222,7 +222,9 @@ def _trace(block: ContextBlock, included: bool) -> RequestContextTrace:
         block_id=block.block_id,
         included=included,
         token_count=block.get_token_count(),
-        content_sha256=hashlib.sha256(block.content.encode("utf-8")).hexdigest(),
+        content_digest=hashlib.blake2b(
+            block.content.encode("utf-8"), digest_size=32
+        ).hexdigest(),
         provenance=block.provenance,
         truncated=block.truncated,
         truncation_reason=block.truncation_reason,
@@ -251,7 +253,9 @@ def _tool_trace(tools: list[ToolDefinition]) -> tuple[RequestContextTrace, ...]:
                 block_id=tool.name,
                 included=True,
                 token_count=estimate_tokens(payload),
-                content_sha256=hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                content_digest=hashlib.blake2b(
+                    payload.encode("utf-8"), digest_size=32
+                ).hexdigest(),
                 provenance=f"tool:{tool.name}",
                 scope="runtime",
             )

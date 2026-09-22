@@ -362,7 +362,7 @@ def canonical_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 
 
 def tool_catalog_fingerprint(tools: list[ToolDefinition]) -> str:
-    """计算工具集合指纹（SHA256 前 16 字符）。"""
+    """计算工具集合的稳定短指纹。"""
     canonical = canonical_tools(tools)
     serialized = json.dumps(canonical, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(serialized.encode()).hexdigest()[:16]
+    return hashlib.blake2b(serialized.encode(), digest_size=8).hexdigest()
