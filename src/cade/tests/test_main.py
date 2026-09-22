@@ -1,7 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from cade.main import _run, main, parse_args
+from cade.agent.results import TerminationReason
+from cade.main import _print_stream, _run, main, parse_args
 
 
 def _patch_main_startup(
@@ -151,6 +152,47 @@ def test_single_shot_closes_app_when_session_is_missing(
     else:
         raise AssertionError("missing session should fail")
     assert calls == ["close"]
+
+
+def test_single_shot_prints_non_completed_stop_reason(capsys) -> None:
+    _print_stream(
+        iter(
+            [
+                SimpleNamespace(type="text_delta", data="working"),
+                SimpleNamespace(
+                    type="final",
+                    data=SimpleNamespace(
+                        answer="working",
+                        termination_reason=TerminationReason.STEP_LIMIT,
+                        watchdog_reason=None,
+                        error_detail=None,
+                    ),
+                ),
+            ]
+        )
+    )
+
+    assert capsys.readouterr().out == "working\n[stopped] step limit reached\n"
+
+
+def test_single_shot_does_not_duplicate_step_limit_fallback(capsys) -> None:
+    _print_stream(
+        iter(
+            [
+                SimpleNamespace(
+                    type="final",
+                    data=SimpleNamespace(
+                        answer="step limit reached",
+                        termination_reason=TerminationReason.STEP_LIMIT,
+                        watchdog_reason=None,
+                        error_detail=None,
+                    ),
+                )
+            ]
+        )
+    )
+
+    assert capsys.readouterr().out == "[stopped] step limit reached\n"
 
 
 def test_main_requires_credentials_in_non_tty(monkeypatch, capsys) -> None:

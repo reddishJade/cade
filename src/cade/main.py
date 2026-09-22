@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .cli.config_cmd import handle_config_command
 from .cli.repl import run_repl
+from .cli.repl_tools import final_stop_reason
 from .cli.setup_wizard import (
     has_valid_config,
     prompt_login_method,
@@ -414,16 +415,22 @@ def _build_app_from_config(
 
 
 def _print_stream(events) -> None:
-    answer_parts = []
+    answer_parts: list[str] = []
+    final_answer = ""
+    stopped_reason: str | None = None
     for event in events:
         if event.type == "text_delta":
             print(str(event.data), end="", flush=True)
             answer_parts.append(str(event.data))
-        elif event.type == "final" and not answer_parts:
-            print(event.data.answer)
-            answer_parts.append(event.data.answer)
+        elif event.type == "final":
+            final_answer = event.data.answer
+            stopped_reason = final_stop_reason(event.data)
     if answer_parts:
         print()
+    if stopped_reason:
+        print(stopped_reason)
+    elif not answer_parts and final_answer:
+        print(final_answer)
 
 
 if __name__ == "__main__":
