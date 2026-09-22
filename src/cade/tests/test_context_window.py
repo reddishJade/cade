@@ -41,6 +41,21 @@ def test_rollover_uses_latest_user_turn_without_summary() -> None:
     assert "[Compressed]" not in rendered
 
 
+def test_rollover_does_not_treat_runtime_reminder_as_user_task() -> None:
+    messages = [
+        _message("system", "system"),
+        _message("user", "fix the SSE watchdog"),
+        _message("assistant", "investigating"),
+        _message("user", "<reminder>Update task progress.</reminder>"),
+    ]
+
+    window = ContextWindowRollover()(messages)
+    rendered = "\n".join(str(message["content"]) for message in window)
+
+    assert "fix the SSE watchdog" in rendered
+    assert "Update task progress" in rendered
+
+
 def test_rollover_does_not_mutate_source_messages() -> None:
     rollover = ContextWindowRollover(keep_recent_tool_results=0)
     messages = [

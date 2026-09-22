@@ -231,7 +231,7 @@ def test_context_reset_appends_epoch_without_rewriting_history(
     assert event["data"]["window_id"] == "window-2"
     assert event["data"]["trigger"] == "manual"
     assert event["data"]["generation"] == 1
-    assert len(event["data"]["surface_sha256"]) == 64
+    assert "surface_sha256" not in event["data"]
 
 
 def test_context_reset_captures_product_restoration_context(tmp_path: Path) -> None:
@@ -337,7 +337,8 @@ def test_large_tool_result_is_offloaded_but_history_remains_lossless(
         artifacts_dir=recorder.store.artifacts_dir,
     )
     history.set_session_id(recorder.store.session_id)
-    hits = history.search("exact-middle-needle")
+    assert history.search("exact-middle-needle") == []
+    hits = history.search("exact-middle-needle", include_artifacts=True)
     assert [hit.id for hit in hits] == [branch[0].id]
     exact_text = hits[0].text
     needle_offset = exact_text.index("exact-middle-needle")

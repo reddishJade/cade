@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import cast
 
@@ -85,17 +83,6 @@ def decode_surface_messages(value: object) -> list[AgentMessage]:
     return messages
 
 
-def surface_digest(messages: list[AgentMessage]) -> str:
-    """计算稳定 surface 指纹。"""
-    payload = json.dumps(
-        encode_surface_messages(messages),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
     """依次应用 transcript facts 与 surface replacement。"""
     messages: list[AgentMessage] = []
@@ -146,11 +133,6 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
                     "context window source entry IDs do not match the branch prefix"
                 )
             messages = decode_surface_messages(data["replacement"])
-            expected_digest = data.get("surface_sha256")
-            if expected_digest != surface_digest(messages):
-                raise InvalidSessionSurfaceError(
-                    "context window surface fingerprint does not match replacement"
-                )
             raw_generation = data.get("generation")
             if not isinstance(raw_generation, int) or raw_generation <= generation:
                 raise InvalidSessionSurfaceError(

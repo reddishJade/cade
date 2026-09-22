@@ -118,6 +118,39 @@ def test_history_search_only_reads_current_branch(tmp_path: Path) -> None:
     assert history.search("Abandoned branch secret") == []
 
 
+def test_history_search_prioritizes_user_task_over_repeated_tool_output(
+    tmp_path: Path,
+) -> None:
+    sessions_dir = tmp_path / ".cade" / "sessions"
+    _write_session(sessions_dir)
+    path = sessions_dir / "session-session-a.jsonl"
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    rows.insert(
+        -1,
+        {
+            "id": "tool-1",
+            "parent_id": "u2",
+            "type": "event",
+            "content": {
+                "type": "tool_result",
+                "data": {"content": "migration " * 1000},
+            },
+            "created_at": "2026-01-01T00:03:30+00:00",
+        },
+    )
+    rows[-1]["parent_id"] = "tool-1"
+    path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    history = SessionHistory(sessions_dir)
+    history.set_session_id("session-a")
+
+    hits = history.search("migration", limit=2)
+
+    assert [hit.id for hit in hits] == ["u2", "u1"]
+
+
 def test_history_around_returns_verbatim_neighbors(tmp_path: Path) -> None:
     sessions_dir = tmp_path / ".cade" / "sessions"
     _write_session(sessions_dir)
@@ -158,6 +191,7 @@ def test_history_tool_exposes_window_search_read_and_around(tmp_path: Path) -> N
         "query",
         "message_id",
         "limit",
+        "include_artifacts",
         "before",
         "after",
         "offset",
