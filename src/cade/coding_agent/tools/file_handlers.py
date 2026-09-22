@@ -114,8 +114,8 @@ def _parse_offset(data: ToolInput) -> int:
         return 1
     try:
         val = int(raw)
-    except (TypeError, ValueError):
-        raise ValueError("offset must be an integer")
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError("offset must be an integer") from None
     if val < 1:
         raise ValueError("offset must be positive")
     return val
@@ -127,8 +127,8 @@ def _parse_limit(data: ToolInput) -> int:
         return MAX_READ_LIMIT
     try:
         val = int(raw)
-    except (TypeError, ValueError):
-        raise ValueError("limit must be an integer")
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError("limit must be an integer") from None
     if val < 0:
         raise ValueError("limit must be non-negative")
     return val if val > 0 else MAX_READ_LIMIT
@@ -461,8 +461,8 @@ def _edit_file_impl(
                 edit.new_text,
                 replace_all=request.replace_all and len(request.edits) == 1,
             )
-        except ValueError as e:
-            raise ValueError(f"{e} in {display}")
+        except ValueError as exc:
+            raise ValueError(f"{exc} in {display}") from exc
         if request.replace_all and len(request.edits) == 1:
             count = normalized.count(edit.old_text)
             total_replacements = count
@@ -562,7 +562,7 @@ def _first_changed_line(before: str, after: str) -> int | None:
     before_lines = before.splitlines()
     after_lines = after.splitlines()
     for index, (before_line, after_line) in enumerate(
-        zip(before_lines, after_lines), start=1
+        zip(before_lines, after_lines, strict=False), start=1
     ):
         if before_line != after_line:
             return index

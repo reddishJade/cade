@@ -257,7 +257,7 @@ class SnapshotService:
         try:
             candidate.relative_to(self._project_root)
         except ValueError:
-            raise ValueError(f"path escapes project root: {path}")
+            raise ValueError(f"path escapes project root: {path}") from None
         return path
 
     def has_conflict(self, post_tree: str, rel_path: str) -> bool:

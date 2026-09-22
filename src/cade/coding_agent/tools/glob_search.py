@@ -261,8 +261,8 @@ def _glob_with_python(
 ) -> str:
     try:
         files = _search_utils.enumerate_search_files(root, base, use_ripgrep=False)
-    except FileNotFoundError as e:
-        raise ValueError(str(e))
+    except FileNotFoundError as exc:
+        raise ValueError(str(exc)) from exc
 
     matcher = _search_utils.build_path_matcher(
         pattern, recursive_basename=recursive_basename
