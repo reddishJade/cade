@@ -54,6 +54,9 @@ class _ProviderResponse:
     stop_reason: StopReason
 
 
+_REQUEST_BUDGET_FAILURE = "RequestBudgetExceededError"
+
+
 async def call_provider(
     context: AgentContext,
     config: AgentLoopConfig,
@@ -76,7 +79,14 @@ async def call_provider(
     if config.before_provider_request:
         config.before_provider_request(assembly)
 
+    budget_failure = _request_budget_failure(assembly)
+    if budget_failure is not None:
+        return _provider_events_to_response(
+            [budget_failure], metrics, lambda _event: None
+        )
+
     started = perf_counter()
+    metrics.llm_calls += 1
     events = await _collect_provider_events(
         provider,
         list(assembly.wire_messages),
@@ -93,6 +103,26 @@ async def call_provider(
     if context.context_manager is not None:
         context.context_manager.record_provider_usage(response.message.usage)
     return response
+
+
+def _request_budget_failure(assembly: RequestAssembly) -> ProviderFailure | None:
+    """在网络调用前拒绝无法通过换窗缩小的超预算请求。"""
+    budget = assembly.token_budget
+    estimated = assembly.estimated_tokens
+    if budget <= 0 or estimated <= budget:
+        return None
+    overage = estimated - budget
+    return ProviderFailure(
+        message=(
+            "Prepared request exceeds the provider input token budget: "
+            f"estimated {estimated}, budget {budget}, over by {overage}. "
+            "The active user turn, system prompt, or tool definitions cannot be "
+            "reduced by context rollover; shorten the input or increase the "
+            "configured context window."
+        ),
+        exception_type=_REQUEST_BUDGET_FAILURE,
+        status_code=413,
+    )
 
 
 def _is_cancelled(signal: CancellationSignal | None) -> bool:
