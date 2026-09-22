@@ -282,7 +282,10 @@ def test_unresolved_restricted_path_is_explicit_deny() -> None:
     )
 
 
-def test_external_path_denial_has_actionable_remediation(tmp_path: Path) -> None:
+def test_external_path_denial_has_actionable_remediation(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     engine = PermissionEngine(PermissionEngineConfig(project_root=tmp_path))
     outside = tmp_path.parent / "outside.txt"
 
@@ -294,6 +297,7 @@ def test_external_path_denial_has_actionable_remediation(tmp_path: Path) -> None
     assert result.remediation == (
         "Add the directory to external_directories with the required access."
     )
+    assert not caplog.records
 
 
 def test_multi_target_approval_only_offers_once(tmp_path: Path) -> None:
