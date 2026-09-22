@@ -12,6 +12,7 @@ cade [OPTIONS] [COMMAND]
 | --- | --- |
 | `tui` | 启动终端 TUI |
 | `cli` | 启动 CLI / REPL |
+| `exec` | 通过 NDJSON 机器协议执行单次 prompt |
 | `login` / `connect` | 选择账户 OAuth 或 API key provider |
 | `setup` | 运行 provider 配置向导 |
 | `config` | 打开交互式设置浏览器 |
@@ -40,7 +41,49 @@ cade --sessions-dir D:\\cade-sessions tui
 
 `--resume` 和 `--continue` 代表两种不同路径：前者打开选择器，后者直接使用当前项目最近会话。`--session` 会校验 session 所属项目。
 
-## 3. `cade login` / `cade connect`
+## 3. `cade exec`
+
+`exec` 是供外层 Agent、CI 和其他自动化调用方使用的非交互入口。默认情况下，stdout 只包含每行一个 JSON 对象的 NDJSON；库或 provider 诊断输出会被导向 stderr。
+
+```bash
+cade exec \
+  --project-root /tmp/project \
+  --sessions-dir /tmp/cade-sessions \
+  --model gpt-5.6-luna \
+  --transport openai-codex \
+  --reasoning-effort max \
+  --mode build \
+  --approval auto-review \
+  --max-steps 60 \
+  --max-llm-calls 80 \
+  --timeout 45m \
+  --prompt-file task.md
+```
+
+从 stdin 读取长 prompt，避免 shell 引号和命令行长度问题：
+
+```bash
+cade exec --mode build --prompt-file - < task.md
+```
+
+输出事件包括 `run.started`、`config.resolved`、`step.started`、`tool.started`、`tool.completed`、`budget.updated`、`context.reset` 和 `run.completed`。最终 envelope 含 session ID、步数、模型调用数、工具调用数、本次运行改动的文件和结构化错误。`--output-last-message PATH` 可同时把最终回答写入独立文件。
+
+稳定退出码：
+
+| 退出码 | 含义 |
+| --- | --- |
+| `0` | 正常完成 |
+| `2` | step、LLM call 或 watchdog 限制 |
+| `3` | provider 故障 |
+| `4` | 请求超出 token budget |
+| `5` | 审批不可用或 `deny` 拒绝 |
+| `6` | 参数或已解析配置无效 |
+| `124` | wall-clock timeout |
+| `130` | 运行被中断 |
+
+`--approval interactive` 在没有 TTY 时会立即失败。`auto-review` 使用 reviewer；如果没有单独配置 reviewer profile，reviewer 会跟随 main profile。`never` 只执行规则已允许的操作；`deny` 在第一个需审批操作上停止并返回 `5`。
+
+## 4. `cade login` / `cade connect`
 
 ```bash
 cade login
@@ -61,7 +104,7 @@ Select authentication method:
 
 API key 方式会配置 `main` profile，已有配置可重复运行，不会删除已保存的 OAuth 凭据。当前 `/config` 不编辑 provider；需要使用 `login`、`connect` 或 `setup`。
 
-## 4. `cade setup`
+## 5. `cade setup`
 
 ```bash
 cade setup
@@ -69,7 +112,7 @@ cade setup
 
 向导交互式配置 provider、API key、base URL、模型、thinking 和 reasoning effort。配置写入项目根目录的 `cade.config.json`；用户取消保存时可以使用临时配置运行当前进程。该向导也可以在首次运行后重复使用。
 
-## 5. `cade config`
+## 6. `cade config`
 
 ```bash
 cade config
@@ -81,7 +124,7 @@ cade config --config ./private-settings.json
 
 REPL 中的 `/config` 使用同一组设置定义；TUI 将选择菜单、说明和文本表单嵌入当前输出区域。
 
-## 6. `cade web`
+## 7. `cade web`
 
 ```bash
 cade web
@@ -98,7 +141,7 @@ cade web --project-root ./backend
 
 浏览器工作台使用 REST 读取状态，使用 `/ws` 接收实时事件和发送任务、取消、审批消息。详细协议位于 [web.md](web.md)。
 
-## 7. CLI 与 TUI 的共同输入
+## 8. CLI 与 TUI 的共同输入
 
 两种终端界面共享 CadeApp、工具注册表、session、权限 gate 和命令注册表：
 

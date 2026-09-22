@@ -32,6 +32,19 @@ class TestMaxSteps:
             AgentConfig(max_steps=value)
 
 
+class TestMaxLlmCalls:
+    def test_default_is_unbounded(self) -> None:
+        assert AgentLoopConfig().max_llm_calls is None
+        assert AgentConfig().max_llm_calls is None
+
+    @pytest.mark.parametrize("value", [0, -1])
+    def test_explicit_limit_must_be_positive(self, value: int) -> None:
+        with pytest.raises(ValidationError):
+            AgentLoopConfig(max_llm_calls=value)
+        with pytest.raises(ValidationError):
+            AgentConfig(max_llm_calls=value)
+
+
 class TestShouldContinueMaxTokens:
     def test_max_tokens_with_continuation_enabled(self) -> None:
         config = AgentLoopConfig(max_tokens_continuation=True)

@@ -99,8 +99,19 @@ def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
             answer = answer + " " + result.watchdog_reason
         else:
             answer = result.watchdog_reason
-    elif result.termination_reason is TerminationReason.STEP_LIMIT and not answer:
-        answer = "step limit reached"
+    elif (
+        result.termination_reason
+        in {
+            TerminationReason.STEP_LIMIT,
+            TerminationReason.LLM_CALL_LIMIT,
+        }
+        and not answer
+    ):
+        answer = (
+            "step limit reached"
+            if result.termination_reason is TerminationReason.STEP_LIMIT
+            else "LLM call limit reached"
+        )
 
     return AgentHarnessResult(
         answer=answer,

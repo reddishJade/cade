@@ -20,6 +20,7 @@ from cade.harness.agent_runtime.events import (
     ToolUpdateStructuredEvent,
     ToolUseStructuredEvent,
     TurnEndStructuredEvent,
+    UsageUpdateStructuredEvent,
 )
 from cade.harness.session.surface import encode_surface_messages
 
@@ -86,6 +87,8 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             "trigger": event.data.trigger,
             "replacement": encode_surface_messages(list(event.data.replacement)),
         }
+    if isinstance(event, UsageUpdateStructuredEvent):
+        return dict(event.data)
     run_state = (
         event.data.run_state.to_dict() if event.data.run_state is not None else None
     )

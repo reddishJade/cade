@@ -110,12 +110,45 @@ class _ShortProvider:
         yield TextDelta(chunk="hello")
 
 
+class _MaxTokensProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def stream(
+        self,
+        messages: list[dict[str, object]],
+        tools: list[object],
+        options: object | None = None,
+        **kwargs: object,
+    ) -> object:
+        del messages, tools, options, kwargs
+        self.calls += 1
+        yield TextDelta(chunk="partial")
+        yield FinalMessage(content="partial", stop_reason="max_tokens")
+
+
 async def test_collect_returns_events_when_not_cancelled() -> None:
     """未取消时正常收集全部事件。"""
     events = await _collect_provider_events(
         _ShortProvider(), [], [], None, lambda _event: None, None
     )
     assert events == [TextDelta(chunk="hello")]
+
+
+async def test_agent_loop_stops_before_exceeding_llm_call_limit() -> None:
+    provider = _MaxTokensProvider()
+
+    result = await run_agent_loop(
+        [UserMessage(content="continue")],
+        AgentContext(),
+        AgentLoopConfig(provider=provider, max_llm_calls=1),
+        lambda _event: None,
+    )
+
+    assert result.termination_reason is TerminationReason.LLM_CALL_LIMIT
+    assert result.metrics is not None
+    assert result.metrics.llm_calls == 1
+    assert provider.calls == 1
 
 
 async def test_agent_loop_terminates_when_interrupted_mid_stream() -> None:

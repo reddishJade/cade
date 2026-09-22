@@ -103,6 +103,15 @@ class ThinkingUpdateEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class UsageUpdateEvent(BaseModel):
+    """Provider 返回的当次请求 token 用量。"""
+
+    type: str = "usage_update"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model_config = ConfigDict(extra="forbid")
+
+
 class ContextWindowResetEvent(BaseModel):
     """旧上下文窗口关闭、新窗口开始事件。"""
 
@@ -127,5 +136,6 @@ type AgentEvent = (
     | ToolExecutionUpdateEvent
     | ToolExecutionEndEvent
     | ThinkingUpdateEvent
+    | UsageUpdateEvent
     | ContextWindowResetEvent
 )

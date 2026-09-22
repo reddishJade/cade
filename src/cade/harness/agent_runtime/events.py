@@ -26,6 +26,7 @@ from ...agent.events import (
     ToolExecutionUpdateEvent,
     TurnEndEvent,
     TurnStartEvent,
+    UsageUpdateEvent,
 )
 from ...agent.messages import AgentMessage, AssistantMessage
 from ...agent.types import AgentToolResult
@@ -59,6 +60,14 @@ class ReasoningDeltaStructuredEvent:
     type: Literal["reasoning_delta"]
     step: int
     data: str
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True)
+class UsageUpdateStructuredEvent:
+    type: Literal["usage_update"]
+    step: int
+    data: dict[str, int]
     correlation: EventCorrelation = field(default_factory=EventCorrelation)
 
 
@@ -172,6 +181,7 @@ type AgentHarnessEvent = (
     | TurnEndStructuredEvent
     | TextDeltaStructuredEvent
     | ReasoningDeltaStructuredEvent
+    | UsageUpdateStructuredEvent
     | AssistantStructuredEvent
     | ToolUseStructuredEvent
     | ToolUpdateStructuredEvent
@@ -212,6 +222,17 @@ def translate_event(
 
     if isinstance(event, ThinkingUpdateEvent):
         return _translate_thinking_update(event, state)
+
+    if isinstance(event, UsageUpdateEvent):
+        return UsageUpdateStructuredEvent(
+            "usage_update",
+            state.step,
+            {
+                "input_tokens": event.input_tokens,
+                "output_tokens": event.output_tokens,
+            },
+            state.correlation.snapshot(),
+        )
 
     if isinstance(event, MessageEndEvent):
         return _translate_message_end(event, state)

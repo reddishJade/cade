@@ -387,6 +387,7 @@ def build_loop_config(
         request_token_budget=_request_token_budget(provider, composition.config),
         request_assembler=composition.request_assembler,
         max_steps=composition.config.max_steps,
+        max_llm_calls=composition.config.max_llm_calls,
         tool_workers=composition.config.tool_workers,
         tool_timeout_seconds=float(composition.config.tool_timeout_seconds),
         max_step_retries=3,

@@ -11,6 +11,7 @@ class TestTerminationReason:
         assert TerminationReason.COMPLETED == "completed"
         assert TerminationReason.CANCELLED == "cancelled"
         assert TerminationReason.STEP_LIMIT == "step_limit"
+        assert TerminationReason.LLM_CALL_LIMIT == "llm_call_limit"
         assert TerminationReason.WATCHDOG == "watchdog"
         assert TerminationReason.PROVIDER_ERROR == "provider_error"
 
