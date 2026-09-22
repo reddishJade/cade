@@ -150,8 +150,7 @@ class TreeSessionRepo:
         for session_path in self.sessions_dir.glob("session-*.jsonl"):
             _secure_existing_file(session_path)
         self.current_path = self._new_path()
-        self.artifacts_dir = self.project_root / ".cade" / "session_artifacts"
-        _ensure_private_directory(self.artifacts_dir.parent)
+        self.artifacts_dir = index_dir / "session_artifacts"
         _ensure_private_directory(self.artifacts_dir)
 
     # ── 公共 API ──
