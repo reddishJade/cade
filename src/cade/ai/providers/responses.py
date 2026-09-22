@@ -458,65 +458,70 @@ class OpenAIResponsesProvider:
         messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
     ) -> AsyncIterator[ProviderEvent]:
+        owns_client = self._client is None
         client, extra_headers = self._get_client_and_headers()
-        instructions, input_messages = extract_responses_instructions(messages)
-        responses_input = to_responses_input(input_messages)
-        responses_tools = to_responses_tools(tools, strict=self._strict_tools())
+        try:
+            instructions, input_messages = extract_responses_instructions(messages)
+            responses_input = to_responses_input(input_messages)
+            responses_tools = to_responses_tools(tools, strict=self._strict_tools())
 
-        params: dict[str, Any] = {
-            "model": self.config.model,
-            "input": responses_input,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
+            params: dict[str, Any] = {
+                "model": self.config.model,
+                "input": responses_input,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
 
-        if instructions:
-            params["instructions"] = instructions
+            if instructions:
+                params["instructions"] = instructions
 
-        if responses_tools:
-            params["tools"] = responses_tools
+            if responses_tools:
+                params["tools"] = responses_tools
 
-        if self.config.response_format:
-            text_conf = to_responses_text_config(self.config.response_format)
-            if text_conf:
-                params["text"] = text_conf
+            if self.config.response_format:
+                text_conf = to_responses_text_config(self.config.response_format)
+                if text_conf:
+                    params["text"] = text_conf
 
-        # 应用上下文参数
-        opts = self._current_options
-        reasoning: dict[str, str] = {}
-        if self.config.reasoning_effort:
-            reasoning["effort"] = self.config.reasoning_effort
-        if self.config.thinking:
-            reasoning["summary"] = (
-                opts.reasoning_summary
-                if opts and opts.reasoning_summary is not None
-                else "auto"
-            )
-        if reasoning:
-            params["reasoning"] = reasoning
+            # 应用上下文参数
+            opts = self._current_options
+            reasoning: dict[str, str] = {}
+            if self.config.reasoning_effort:
+                reasoning["effort"] = self.config.reasoning_effort
+            if self.config.thinking:
+                reasoning["summary"] = (
+                    opts.reasoning_summary
+                    if opts and opts.reasoning_summary is not None
+                    else "auto"
+                )
+            if reasoning:
+                params["reasoning"] = reasoning
 
-        if opts:
-            if opts.temperature is not None:
-                params["temperature"] = opts.temperature
-            if opts.max_tokens is not None:
-                params["max_output_tokens"] = opts.max_tokens
-            if opts.top_p is not None:
-                params["top_p"] = opts.top_p
-            if opts.tool_choice is not None:
-                params["tool_choice"] = opts.tool_choice
+            if opts:
+                if opts.temperature is not None:
+                    params["temperature"] = opts.temperature
+                if opts.max_tokens is not None:
+                    params["max_output_tokens"] = opts.max_tokens
+                if opts.top_p is not None:
+                    params["top_p"] = opts.top_p
+                if opts.tool_choice is not None:
+                    params["tool_choice"] = opts.tool_choice
 
-        request_headers = dict(extra_headers)
-        if opts and opts.headers:
-            request_headers.update(opts.headers)
-        if request_headers:
-            params["extra_headers"] = request_headers
+            request_headers = dict(extra_headers)
+            if opts and opts.headers:
+                request_headers.update(opts.headers)
+            if request_headers:
+                params["extra_headers"] = request_headers
 
-        self._finalize_request_params(params)
+            self._finalize_request_params(params)
 
-        self._metrics["sent_messages"] = len(input_messages)
+            self._metrics["sent_messages"] = len(input_messages)
 
-        async for event in self._decode_responses_stream(client, params):
-            yield event
+            async for event in self._decode_responses_stream(client, params):
+                yield event
+        finally:
+            if owns_client:
+                await client.close()
 
     def _finalize_request_params(self, params: dict[str, Any]) -> None:
         """允许专用 transport 在发送前补充 Responses 请求参数。"""
