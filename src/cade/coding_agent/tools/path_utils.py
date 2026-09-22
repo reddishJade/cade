@@ -27,7 +27,7 @@ def resolve_project_path(project_root: Path, raw_path: str) -> Path:
 
 
 _BLOCKED_SPEC = pathspec.PathSpec.from_lines(
-    "gitwildmatch",
+    "gitignore",
     [
         ".git/",
         ".venv/",
