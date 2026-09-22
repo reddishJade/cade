@@ -10,6 +10,7 @@ import pytest
 
 from cade.agent.types import TerminalRenderIntent
 from cade.coding_agent.tools.bash import (
+    _build_bash_execution_plan,
     _parse_bash_request,
     _parse_timeout,
     _parse_workdir,
@@ -91,6 +92,19 @@ class TestParseWorkdir:
 
     def test_empty_string(self) -> None:
         assert _parse_workdir({"workdir": ""}) is None
+
+
+def test_bash_accepts_absolute_workdir_inside_project(tmp_path: Path) -> None:
+    nested = tmp_path / "packages" / "core"
+
+    plan = _build_bash_execution_plan(
+        _parse_bash_request({"command": "pwd", "workdir": str(nested)}),
+        tmp_path,
+        command_prefix=None,
+        spawn_hook=None,
+    )
+
+    assert plan.cwd == nested.resolve()
 
 
 def test_bash_tool_depends_directly_on_local_shell(tmp_path: Path) -> None:
