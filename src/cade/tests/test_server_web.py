@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import SimpleNamespace
@@ -107,15 +109,17 @@ class _FakeApp:
     def __init__(self) -> None:
         self.agent = _FakeAgent()
         self.session_store = _FakeStore()
+        self._model_info = {"model": "m"}
+        self._model_profiles: dict[str, object] = {}
 
-    def get_model_info(self) -> dict:
-        return {"model": "m"}
+    def get_model_info(self) -> dict[str, str]:
+        return dict(self._model_info)
 
     def mcp_status(self) -> tuple:
         return ()
 
 
-def test_hub_rejects_submit_while_running() -> None:
+async def test_hub_rejects_submit_while_running() -> None:
     outgoing: list[dict] = []
     hub = WebRunHub(_FakeApp())
 
@@ -124,13 +128,14 @@ def test_hub_rejects_submit_while_running() -> None:
 
     hub.attach(_sink)
 
-    class _FakeTask:
-        def done(self) -> bool:
-            return False
-
-    hub._run_task = _FakeTask()  # type: ignore[assignment]  # 模拟运行中的任务
-    hub.submit("hi", None)
-    assert outgoing and outgoing[-1]["type"] == "run_error"
+    hub._run_task = asyncio.create_task(asyncio.sleep(60))
+    try:
+        hub.submit("hi", None)
+        assert outgoing and outgoing[-1]["type"] == "run_error"
+    finally:
+        hub._run_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await hub._run_task
 
 
 def test_hub_install_user_approval_callback() -> None:
@@ -144,10 +149,8 @@ def test_model_payload_uses_current_model_effort_capabilities() -> None:
     from cade.server.api import _model_payload
 
     app = _FakeApp()
-    app._model_profiles = {  # type: ignore[attr-defined]
-        "main": SimpleNamespace(transport="openai_codex")
-    }
-    app.get_model_info = lambda: {  # type: ignore[method-assign]
+    app._model_profiles = {"main": SimpleNamespace(transport="openai_codex")}
+    app._model_info = {
         "model": "gpt-5.6-luna",
         "transport": "openai_codex",
         "reasoning_effort": "low",
@@ -157,7 +160,7 @@ def test_model_payload_uses_current_model_effort_capabilities() -> None:
         "cade.server.api._discover_models",
         return_value=["gpt-5.6-luna"],
     ):
-        payload = _model_payload(app)  # type: ignore[arg-type]
+        payload = _model_payload(app)
 
     assert payload["effort_options"] == [
         "none",
