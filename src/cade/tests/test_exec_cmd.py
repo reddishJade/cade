@@ -28,6 +28,12 @@ class _SessionStore:
     session_id = "session-test"
     current_path = Path("/tmp/session-session-test.jsonl")
 
+    def __init__(self) -> None:
+        self.records: list[tuple[str, dict[str, object]]] = []
+
+    def append(self, record_type: str, content: dict[str, object]) -> None:
+        self.records.append((record_type, content))
+
 
 class _App:
     def __init__(self, events: list[object]) -> None:
@@ -138,6 +144,14 @@ def test_exec_preserves_global_options_before_subcommand(tmp_path: Path) -> None
     assert args.continue_ is True
 
 
+def test_exec_resume_alias_maps_to_session() -> None:
+    args = parse_args(["exec", "resume", "run-1", "--prompt-file", "-"])
+
+    assert args.command == "exec"
+    assert args.session == "run-1"
+    assert args.prompt_file == Path("-")
+
+
 def test_exec_emits_only_json_lines_and_returns_completion_code(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
@@ -192,6 +206,7 @@ def test_exec_emits_only_json_lines_and_returns_completion_code(
     assert payloads[-1]["answer"] == "done"
     assert app.closed
     assert "provider diagnostic" in captured.err
+    assert app.session_store.records[-1][1]["type"] == "exec_result"
 
 
 def test_exec_maps_request_budget_failure_to_exit_four(tmp_path: Path, capsys) -> None:

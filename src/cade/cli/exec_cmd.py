@@ -18,7 +18,10 @@ from urllib.parse import urlparse
 from cade.agent.results import TerminationReason
 from cade.ai.models import get_model_context_window
 from cade.harness.config import CadeRuntimeConfig, resolve_config_path
+from cade.harness.session.schema import SESSION_EVENT_SCHEMA_VERSION
 from cade.server.serialize import event_to_dict, to_jsonable
+
+from .session_control import SessionRunControl
 
 _DURATION_RE = re.compile(r"^(?P<value>[0-9]+(?:\.[0-9]+)?)(?P<unit>s|m|h)?$")
 _TRANSPORTS = frozenset(
@@ -318,7 +321,9 @@ def _consume_exec_run(
     emitter.emit(resolved_config)
 
     timeout_state = _TimeoutState(app, args.timeout)
+    run_control = SessionRunControl(Path(session_path).parent, session_id, app)
     workspace_before = _workspace_snapshot(args.project_root)
+    run_control.start()
     timeout_state.start()
     final_data: Any | None = None
     approval_denied = False
@@ -335,6 +340,7 @@ def _consume_exec_run(
                     break
     finally:
         timeout_state.stop()
+        run_control.stop()
 
     if approval_denied:
         exit_code = 5
@@ -361,8 +367,23 @@ def _consume_exec_run(
         session_id=session_id,
         changed_files=_changed_files(args.project_root, workspace_before),
     )
+    _record_exec_result(app, completion)
     emitter.completed(**completion)
     return exit_code
+
+
+def _record_exec_result(app: Any, completion: dict[str, object]) -> None:
+    payload = {
+        "schema_version": SESSION_EVENT_SCHEMA_VERSION,
+        "type": "exec_result",
+        "step": completion["steps"],
+        "data": to_jsonable(completion),
+        "correlation": {},
+    }
+    try:
+        app.session_store.append("event", payload)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"Failed to persist exec result: {exc}", file=sys.stderr)
 
 
 def _resolved_config_event(

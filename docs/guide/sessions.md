@@ -110,3 +110,19 @@ Git 工程的每个用户 turn 可以建立 pre/post snapshot。快照使用 `.c
 ## 9. 历史检索
 
 `history` 工具在当前 branch 的原始 JSONL entry 上执行关键词 search，或读取指定 message id 附近的记录。它用于恢复后找回已经被 surface replacement 压缩的精确细节。
+
+## 10. 自动化控制面
+
+`cade session` 允许外层 Agent 查询 session，无需直接扫描 JSONL，也不要求 provider 凭据：
+
+```bash
+cade session status <session-id> --json
+cade session tail <session-id> --lines 20 --json
+cade session result <session-id> --json
+cade session export <session-id> --output run.json --json
+cade session interrupt <session-id> --json
+```
+
+`status` 返回路径、大小、entry 计数、是否已有结果和 active run 状态。`result` 优先返回 `cade exec` 写入的完整 result envelope，旧 session 则回退到最后一条 `final` 事件。`export` 使用权限为 `0600` 的原子写入生成单一 JSON 文件。
+
+`interrupt` 不根据 PID 向进程发送信号；它在 session 目录写入协作式中断请求，正在运行的 `cade exec` 会监听该请求并调用自身的流中断路径。不存在 active run 时，命令返回非零状态且 `accepted` 为 `false`。

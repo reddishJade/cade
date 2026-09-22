@@ -13,6 +13,7 @@ cade [OPTIONS] [COMMAND]
 | `tui` | 启动终端 TUI |
 | `cli` | 启动 CLI / REPL |
 | `exec` | 通过 NDJSON 机器协议执行单次 prompt |
+| `session` | 查询、导出或中断 session |
 | `login` / `connect` | 选择账户 OAuth 或 API key provider |
 | `setup` | 运行 provider 配置向导 |
 | `config` | 打开交互式设置浏览器 |
@@ -64,6 +65,7 @@ cade exec \
 
 ```bash
 cade exec --mode build --prompt-file - < task.md
+cade exec resume 20260922-163122 --prompt-file - < followup.md
 ```
 
 输出事件包括 `run.started`、`config.resolved`、`step.started`、`tool.started`、`tool.completed`、`budget.updated`、`context.reset` 和 `run.completed`。最终 envelope 含 session ID、步数、模型调用数、工具调用数、本次运行改动的文件和结构化错误。`--output-last-message PATH` 可同时把最终回答写入独立文件。
