@@ -21,7 +21,7 @@ from cade.ai.events import (
 )
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.harness.agent_runtime.cancellation import CancellationToken
-from cade.harness.agent_runtime.result import _build_structured_result
+from cade.harness.agent_runtime.result import build_structured_result
 
 
 class _EndlessProvider:
@@ -205,7 +205,7 @@ async def test_provider_failure_reaches_loop_and_harness_results() -> None:
     assert result.provider_failure.exception_type == "_ServiceUnavailable"
     assert result.provider_failure.status_code == 503
 
-    harness_result = _build_structured_result(result)
+    harness_result = build_structured_result(result)
     assert harness_result.provider_failure == result.provider_failure
 
 
@@ -233,7 +233,7 @@ def test_structured_result_uses_only_last_assistant_as_answer() -> None:
         steps=2,
     )
 
-    harness_result = _build_structured_result(result)
+    harness_result = build_structured_result(result)
 
     assert harness_result.answer == "The fix is complete."
     assert len(harness_result.tool_calls) == 1

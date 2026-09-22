@@ -9,7 +9,7 @@ from cade.agent.types import ToolSpec
 from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
-from .file_handlers import _edit_file, _write_file
+from .file_handlers import edit_file_content, write_file_content
 
 WRITE_FILE_SCHEMA = {
     "type": "object",
@@ -75,7 +75,7 @@ def build_write_file_tools(
             ),
             input_hint='JSON: {"path": "/absolute/path/to/file", "content": "..."}',
             handler=lambda data, _on_update=None: _handler(
-                lambda d: _write_file(root, ops, context_state, d), data
+                lambda d: write_file_content(root, ops, context_state, d), data
             ),
             schema=WRITE_FILE_SCHEMA,
             prompt_snippet="Create new files or deliberately replace entire files",
@@ -92,7 +92,7 @@ def build_write_file_tools(
             ),
             input_hint='JSON: {"path": "/absolute/path/to/file", "old_text": "...", "new_text": "..."}',
             handler=lambda data, _on_update=None: _handler(
-                lambda d: _edit_file(root, ops, context_state, d), data
+                lambda d: edit_file_content(root, ops, context_state, d), data
             ),
             schema=EDIT_FILE_SCHEMA,
             prompt_snippet=(

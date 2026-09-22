@@ -9,7 +9,7 @@ import pytest
 
 from cade.ai.events import Message, ProviderEvent, TextDelta
 from cade.ai.types import StreamOptions, ToolDefinition
-from cade.harness.agent_runtime.fallback import _FallbackWithRetryPrimary
+from cade.harness.agent_runtime.fallback import FallbackWithRetryPrimary
 
 
 @dataclass
@@ -56,7 +56,7 @@ class _ScriptedProvider:
             yield event
 
 
-async def _collect(provider: _FallbackWithRetryPrimary) -> list[ProviderEvent]:
+async def _collect(provider: FallbackWithRetryPrimary) -> list[ProviderEvent]:
     return [event async for event in provider.stream([], [])]
 
 
@@ -71,7 +71,7 @@ async def test_fallback_recovery_counts_completed_requests_not_events() -> None:
         "fallback",
         [many_events, many_events, many_events],
     )
-    provider = _FallbackWithRetryPrimary(primary, fallback)
+    provider = FallbackWithRetryPrimary(primary, fallback)
 
     with pytest.raises(RuntimeError, match="one"):
         await _collect(provider)
@@ -103,7 +103,7 @@ async def test_partial_primary_failure_does_not_duplicate_with_fallback() -> Non
 
     primary = _PartialProvider("primary", [])
     fallback = _ScriptedProvider("fallback", [[TextDelta(chunk="fallback")]])
-    provider = _FallbackWithRetryPrimary(
+    provider = FallbackWithRetryPrimary(
         primary,
         fallback,
         error_threshold=1,

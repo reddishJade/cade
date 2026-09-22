@@ -190,7 +190,7 @@ class _StreamTranslationState:
     )
 
 
-def _translate_event(
+def translate_event(
     event: AgentEvent,
     state: _StreamTranslationState,
 ) -> AgentHarnessEvent | list[AgentHarnessEvent] | None:

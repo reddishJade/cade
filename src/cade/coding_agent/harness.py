@@ -106,9 +106,9 @@ class CodingAgentHarness(AgentHarness):
         }
 
     def _build_result(self, visible_result: object) -> AgentHarnessResult:
-        from cade.harness.agent_runtime.result import _build_structured_result
+        from cade.harness.agent_runtime.result import build_structured_result
 
-        result = _build_structured_result(cast(AgentLoopResult, visible_result))
+        result = build_structured_result(cast(AgentLoopResult, visible_result))
         goal_notice = self._goal.consume_terminal_notice()
         answer = result.answer
         if goal_notice:

@@ -17,14 +17,14 @@ from .types import (
     Target,
 )
 from .utils import (
-    _access_satisfies,
-    _is_blocked_workspace_path,
-    _is_external_path,
-    _is_git_path,
-    _is_inside_path,
-    _is_sensitive_path,
     _looks_absolute,
-    _validate_symlinks_can_resolve,
+    access_satisfies,
+    is_blocked_workspace_path,
+    is_external_path,
+    is_git_path,
+    is_inside_path,
+    is_sensitive_path,
+    validate_symlinks_can_resolve,
 )
 
 
@@ -183,7 +183,7 @@ class PathBoundaryPolicyEvaluator:
         path_str = target.value
 
         if self._context is None:
-            if _is_external_path(path_str):
+            if is_external_path(path_str):
                 return Constraint(
                     decision="deny",
                     source="boundary",
@@ -250,9 +250,9 @@ class PathBoundaryPolicyEvaluator:
             return None
 
         for ext in self._context.external_directories:
-            if not _is_inside_path(candidate, ext.path):
+            if not is_inside_path(candidate, ext.path):
                 continue
-            if not _access_satisfies(ext.access, target.access):
+            if not access_satisfies(ext.access, target.access):
                 continue
             check = candidate.as_posix()
             return self._check_restrictions(check, raw, action, target)
@@ -265,7 +265,7 @@ class PathBoundaryPolicyEvaluator:
         action: Action,
         target: Target,
     ) -> Constraint:
-        if _is_git_path(check_path):
+        if is_git_path(check_path):
             return Constraint(
                 decision="deny",
                 source="boundary",
@@ -279,7 +279,7 @@ class PathBoundaryPolicyEvaluator:
                 ),
             )
 
-        if _is_sensitive_path(
+        if is_sensitive_path(
             check_path, access=target.access
         ) and not self._sensitive_override_allows(check_path, target):
             remediation = (
@@ -304,7 +304,7 @@ class PathBoundaryPolicyEvaluator:
                 ),
             )
 
-        if _is_blocked_workspace_path(check_path):
+        if is_blocked_workspace_path(check_path):
             return Constraint(
                 decision="deny",
                 source="boundary",
@@ -346,7 +346,7 @@ class PathBoundaryPolicyEvaluator:
             return False
         return any(
             resolved == override.path
-            and _access_satisfies(override.access, target.access)
+            and access_satisfies(override.access, target.access)
             for override in self._context.sensitive_path_overrides
         )
 
@@ -361,12 +361,12 @@ class PathBoundaryPolicyEvaluator:
         try:
             resolved_root = root.resolve(strict=False)
             source = resolved_root / target.value
-            _validate_symlinks_can_resolve(resolved_root, target.value)
+            validate_symlinks_can_resolve(resolved_root, target.value)
             candidate = source.resolve(strict=False)
         except (OSError, RuntimeError) as exc:
             raise _BoundaryResolutionError(str(exc)) from exc
 
-        if not _is_inside_path(candidate, resolved_root):
+        if not is_inside_path(candidate, resolved_root):
             raise _BoundaryEscapeError(target.value)
 
         return candidate.relative_to(resolved_root).as_posix() or "."

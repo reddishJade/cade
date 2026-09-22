@@ -51,7 +51,7 @@ class AgentHarnessResult:
     run_state: RunState | None = None
 
 
-def _build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
+def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
     """将 AgentLoopResult 转换为 AgentHarnessResult。"""
     answer = ""
     tool_calls: list[ToolCall] = []
@@ -125,7 +125,7 @@ def _message_dicts(value: object) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
-def _final_event(
+def final_event(
     step: int,
     result: AgentHarnessResult,
     correlation: EventCorrelation | None = None,

@@ -9,7 +9,7 @@ from cade.agent.types import ToolSpec
 from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
-from .file_handlers import _read_file
+from .file_handlers import read_file_content
 
 READ_FILE_SCHEMA = {
     "type": "object",
@@ -44,7 +44,7 @@ def build_read_file_tool(
     def handler(data, _on_update=None):
         if cancel_event is not None and cancel_event.is_set():
             raise ValueError("Tool cancelled")
-        return _read_file(root, ops, context_state, data)
+        return read_file_content(root, ops, context_state, data)
 
     return ToolSpec(
         name="read_file",

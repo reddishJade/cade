@@ -16,7 +16,7 @@ from cade.agent.config import (
     AgentLoopConfig,
     BeforeToolCallContext,
     BeforeToolCallResult,
-    _LoopRunState,
+    LoopRunState,
 )
 from cade.agent.events import (
     AgentEvent,
@@ -632,7 +632,7 @@ def is_tool_productive_default(
 
 
 def update_repeated_tool_watchdog(
-    state: _LoopRunState,
+    state: LoopRunState,
     tool_calls: list[ToolCallContent],
     config: AgentLoopConfig,
     tool_results: list[ToolResultMessage],
@@ -673,7 +673,7 @@ def update_repeated_tool_watchdog(
 
 
 def update_idle_tool_watchdog(
-    state: _LoopRunState,
+    state: LoopRunState,
     tool_calls: list[ToolCallContent],
     tool_results: list[ToolResultMessage],
     config: AgentLoopConfig,
