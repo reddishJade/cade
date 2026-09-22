@@ -12,13 +12,15 @@ DEFAULT_MAX_BYTES = 50 * 1024
 
 
 def resolve_project_path(project_root: Path, raw_path: str) -> Path:
-    relative_path = Path(raw_path.strip().strip("\"'") or ".")
-    if relative_path.is_absolute():
-        raise ValueError("absolute paths are not allowed")
-    if ".." in relative_path.parts:
+    requested_path = Path(raw_path.strip().strip("\"'") or ".")
+    if ".." in requested_path.parts:
         raise ValueError("parent-directory paths are not allowed")
     root = project_root.resolve()
-    candidate = (root / relative_path).resolve()
+    candidate = (
+        requested_path.resolve()
+        if requested_path.is_absolute()
+        else (root / requested_path).resolve()
+    )
     if candidate != root and root not in candidate.parents:
         raise ValueError("path escapes project root")
     return candidate

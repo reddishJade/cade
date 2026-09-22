@@ -138,7 +138,8 @@ def _build_schema(shell_syntax: str) -> dict[str, Any]:
         "workdir": {
             "type": "string",
             "description": (
-                "Working directory relative to project root. Defaults to project root."
+                "Working directory inside the project root, as a relative or absolute "
+                "path. Defaults to project root."
             ),
         },
     }
@@ -230,7 +231,7 @@ def _build_prompt_guidelines(
 
     # workdir 指引
     guidelines.append(
-        "Use the `workdir` parameter to run commands in a subdirectory."
+        "Use the `workdir` parameter to run commands inside the project."
         f" Project root: {root.as_posix()}"
     )
 

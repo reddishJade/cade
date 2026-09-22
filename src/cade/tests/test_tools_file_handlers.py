@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from cade.coding_agent.tools.file_handlers import (
@@ -14,7 +16,17 @@ from cade.coding_agent.tools.file_handlers import (
     _parse_offset,
     _prepare_edits,
     _truncate_line,
+    read_project_text_file,
 )
+
+
+def test_read_project_text_file_accepts_absolute_path_inside_project(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("contents", encoding="utf-8")
+
+    assert read_project_text_file(tmp_path, str(target)) == "contents"
 
 
 class TestParseOffset:

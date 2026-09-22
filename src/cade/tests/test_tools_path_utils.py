@@ -22,7 +22,14 @@ class TestResolveProjectPath:
         result = resolve_project_path(tmp_path, "sub/file.txt")
         assert result == (tmp_path / "sub/file.txt").resolve()
 
-    def test_absolute_raises(self, tmp_path: Path) -> None:
+    def test_absolute_inside_root(self, tmp_path: Path) -> None:
+        target = tmp_path / "sub" / "file.txt"
+
+        result = resolve_project_path(tmp_path, str(target))
+
+        assert result == target.resolve()
+
+    def test_absolute_outside_root_raises(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError):
             resolve_project_path(tmp_path, "/etc/passwd")
 
