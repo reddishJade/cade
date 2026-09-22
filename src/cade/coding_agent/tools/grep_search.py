@@ -178,8 +178,16 @@ def _grep_with_rg(
         text=True,
         errors="replace",
     )
-    assert proc.stdout is not None
-    assert proc.stderr is not None
+    stdout = proc.stdout
+    stderr_stream = proc.stderr
+    if stdout is None or stderr_stream is None:
+        proc.kill()
+        proc.wait()
+        if stdout is not None:
+            stdout.close()
+        if stderr_stream is not None:
+            stderr_stream.close()
+        raise RuntimeError("grep process pipes were not created")
 
     lines: list[str] = []
     truncated_lines = 0
@@ -188,7 +196,7 @@ def _grep_with_rg(
     stderr = ""
     try:
         while True:
-            raw_line = proc.stdout.readline()
+            raw_line = stdout.readline()
             if not raw_line:
                 break
             line = raw_line.rstrip("\n").rstrip("\r")
@@ -202,10 +210,10 @@ def _grep_with_rg(
                 proc.kill()
                 break
         proc.wait(timeout=5)
-        stderr = proc.stderr.read().strip()
+        stderr = stderr_stream.read().strip()
     finally:
-        proc.stdout.close()
-        proc.stderr.close()
+        stdout.close()
+        stderr_stream.close()
 
     if not stopped_for_limit and proc.returncode not in (0, 1):
         detail = stderr or f"exit code {proc.returncode}"

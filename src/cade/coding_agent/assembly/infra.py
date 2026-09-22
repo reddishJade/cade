@@ -47,7 +47,8 @@ def build_shared_infra(
             project_root,
             configured_sessions_dir,
         )
-        assert resolved_sessions_dir is not None
+        if resolved_sessions_dir is None:
+            raise RuntimeError("configured sessions directory could not be resolved")
         transcript_dir = resolved_sessions_dir
     else:
         transcript_dir = project_root / ".cade" / "sessions"

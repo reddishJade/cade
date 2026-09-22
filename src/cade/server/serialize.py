@@ -50,7 +50,8 @@ def to_jsonable(value: Any) -> Any:
 def event_to_dict(event: AgentHarnessEvent) -> dict[str, Any]:
     """把单个 AgentHarnessEvent 转成 WebSocket 推送载荷。"""
     payload = to_jsonable(event)
-    assert isinstance(payload, dict)
+    if not isinstance(payload, dict):
+        raise TypeError("serialized harness event must be an object")
     return _trim_event(payload)
 
 

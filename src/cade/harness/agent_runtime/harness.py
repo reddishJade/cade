@@ -444,7 +444,8 @@ class AgentHarness:
         async for event in self.arun_stream(question):
             if event.type == "final":
                 result = event.data
-        assert result is not None
+        if result is None:
+            raise RuntimeError("agent stream completed without a final result")
         return result
 
     def run_stream(self, question: str) -> Iterator[AgentHarnessEvent]:
@@ -568,7 +569,8 @@ class AgentHarness:
                         yield te
 
             result = turn_agent.last_result
-            assert result is not None
+            if result is None:
+                raise RuntimeError("agent loop completed without a result")
 
             visible_result = (
                 result.model_copy(

@@ -55,7 +55,8 @@ def build_load_skill_tool(
             )
 
         activated_skill, already_activated = registry.activate(name)
-        assert activated_skill is not None
+        if activated_skill is None:
+            return f"Unable to activate skill: {name}"
         skill = activated_skill
         safe_name = xml_escape_attr(name)
         safe_root = xml_escape_attr(str(skill.file_path.parent.resolve()))
