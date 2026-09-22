@@ -10,8 +10,10 @@ from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
     ContextWindowResetStructuredEvent,
     FinalStructuredEvent,
+    ToolResultStructuredEvent,
 )
 
+from .artifacts import offload_large_tool_result
 from .event_codec import SESSION_EVENT_SCHEMA_VERSION, encode_session_event
 from .subagent_runs import (
     SubagentActivationEvent,
@@ -90,6 +92,17 @@ class SessionRecorder:
         if event.type not in _DURABLE_EVENT_TYPES:
             return
         encoded = encode_session_event(event)
+        if isinstance(event, ToolResultStructuredEvent):
+            data = encoded.get("data")
+            if not isinstance(data, dict):
+                raise TypeError("tool result event data must be an object")
+            preview, reference = offload_large_tool_result(
+                self.store.artifacts_dir,
+                event.data.content,
+            )
+            data["content"] = preview
+            if reference is not None:
+                data["content_artifact"] = reference
         if isinstance(event, ContextWindowResetStructuredEvent):
             data = encoded.get("data")
             if not isinstance(data, dict):

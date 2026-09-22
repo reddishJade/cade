@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from cade.agent.config import AgentContext
-from cade.agent.messages import SystemMessage, UserMessage
+from cade.agent.messages import SystemMessage, ToolResultMessage, UserMessage
 from cade.agent.request import DefaultRequestAssembler
 from cade.coding_agent.app import CadeApp
 from cade.harness.agent_runtime.config import _build_before_provider_request_closure
@@ -19,10 +19,18 @@ from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
     FinalStructuredEvent,
     TextDeltaStructuredEvent,
+    ToolResultBlock,
+    ToolResultStructuredEvent,
 )
 from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.harness.observability import RuntimeCorrelation
-from cade.harness.session import InboxLane, SessionInbox, SessionStore
+from cade.harness.session import (
+    InboxLane,
+    SessionHistory,
+    SessionInbox,
+    SessionStore,
+    project_session_surface,
+)
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.subagent_runs import SubagentRunEvent
 
@@ -260,6 +268,82 @@ def test_provider_request_records_fingerprint_without_wire_payload(
     assert event["data"]["request_bytes"] == 1234
     assert event["data"]["request_sha256"] == "request-hash"
     assert event["correlation"]["request_id"] == "request-1"
+
+
+def test_large_tool_result_is_offloaded_but_history_remains_lossless(
+    tmp_path: Path,
+) -> None:
+    recorder = _recorder(tmp_path)
+    content = "A" * 50_000 + " exact-middle-needle " + "B" * 50_000
+
+    recorder.record_event(
+        ToolResultStructuredEvent(
+            "tool_result",
+            1,
+            ToolResultBlock(tool_use_id="call-1", content=content),
+        )
+    )
+
+    branch = recorder.store.build_branch()
+    assert len(branch) == 1
+    event = branch[0].content
+    assert isinstance(event, dict)
+    data = event["data"]
+    assert isinstance(data, dict)
+    assert "exact-middle-needle" not in str(data["content"])
+    reference = data["content_artifact"]
+    assert isinstance(reference, dict)
+    artifact_id = reference["artifact_id"]
+    assert isinstance(artifact_id, str)
+    artifact = recorder.store.artifacts_dir / f"{artifact_id}.txt"
+    assert artifact.read_text(encoding="utf-8") == content
+    assert recorder.store.current_path.stat().st_size < len(content) // 4
+    if os.name != "nt":
+        assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+
+    surface = project_session_surface(branch)
+    assert len(surface.messages) == 1
+    restored_result = surface.messages[0]
+    assert isinstance(restored_result, ToolResultMessage)
+    assert "exact-middle-needle" not in str(restored_result.content)
+    assert "use history read" in str(restored_result.content)
+
+    history = SessionHistory(
+        recorder.store.sessions_dir,
+        artifacts_dir=recorder.store.artifacts_dir,
+    )
+    history.set_session_id(recorder.store.session_id)
+    hits = history.search("exact-middle-needle")
+    assert [hit.id for hit in hits] == [branch[0].id]
+    exact_text = hits[0].text
+    needle_offset = exact_text.index("exact-middle-needle")
+    exact = history.read(
+        branch[0].id,
+        offset=needle_offset,
+        max_chars=len("exact-middle-needle"),
+    )
+    assert exact is not None
+    assert exact.content == "exact-middle-needle"
+
+
+def test_small_tool_result_remains_inline(tmp_path: Path) -> None:
+    recorder = _recorder(tmp_path)
+
+    recorder.record_event(
+        ToolResultStructuredEvent(
+            "tool_result",
+            1,
+            ToolResultBlock(tool_use_id="call-1", content="small result"),
+        )
+    )
+
+    event = recorder.store.build_branch()[0].content
+    assert isinstance(event, dict)
+    data = event["data"]
+    assert isinstance(data, dict)
+    assert data["content"] == "small result"
+    assert "content_artifact" not in data
+    assert list(recorder.store.artifacts_dir.iterdir()) == []
 
 
 def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:

@@ -57,9 +57,12 @@ def build_shared_infra(
         fallback_recent_messages=runtime_config.agent.fallback_recent_messages,
         fallback_recent_tokens=runtime_config.agent.fallback_recent_tokens,
     )
-    session_history = SessionHistory(transcript_dir)
     session_recorder = SessionRecorder(
         SessionStore(transcript_dir, project_root=project_root)
+    )
+    session_history = SessionHistory(
+        transcript_dir,
+        artifacts_dir=session_recorder.store.artifacts_dir,
     )
     session_inbox = SessionInbox(session_recorder.store)
     return SharedInfra(

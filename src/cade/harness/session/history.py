@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from cade.agent.types import ToolInput, ToolSpec
 
+from .artifacts import resolve_history_event_content
 from .schema import SESSION_EVENT_SCHEMA_VERSION
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -24,15 +25,17 @@ class HistoryEntry:
     type: str
     content: object
     created_at: str
+    artifacts_dir: Path | None = field(default=None, repr=False, compare=False)
 
     @property
     def text(self) -> str:
         claimed = _claimed_display_text(self.content)
         if claimed is not None:
             return claimed
-        if isinstance(self.content, str):
-            return self.content
-        return json.dumps(self.content, ensure_ascii=False, sort_keys=True)
+        resolved = resolve_history_event_content(self.content, self.artifacts_dir)
+        if isinstance(resolved, str):
+            return resolved
+        return json.dumps(resolved, ensure_ascii=False, sort_keys=True)
 
 
 @dataclass(frozen=True)
@@ -63,8 +66,13 @@ class ContextWindowRecord:
 class SessionHistory:
     """读取当前 branch 的 lossless JSONL 历史。"""
 
-    def __init__(self, sessions_dir: Path) -> None:
+    def __init__(
+        self,
+        sessions_dir: Path,
+        artifacts_dir: Path | None = None,
+    ) -> None:
         self.sessions_dir = sessions_dir
+        self.artifacts_dir = artifacts_dir or _default_artifacts_dir(sessions_dir)
         self.session_id: str | None = None
 
     def set_session_id(self, session_id: str) -> None:
@@ -165,7 +173,7 @@ class SessionHistory:
         if session_id is None:
             return []
         path = self.sessions_dir / f"session-{session_id}.jsonl"
-        entries = _read_entries(path)
+        entries = _read_entries(path, self.artifacts_dir)
         if not entries:
             return []
         head_id = self._head_id(session_id)
@@ -295,7 +303,10 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
     )
 
 
-def _read_entries(path: Path) -> list[HistoryEntry]:
+def _read_entries(
+    path: Path,
+    artifacts_dir: Path | None = None,
+) -> list[HistoryEntry]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -320,9 +331,16 @@ def _read_entries(path: Path) -> list[HistoryEntry]:
                 type=entry_type,
                 content=item.get("content"),
                 created_at=str(item.get("created_at", "")),
+                artifacts_dir=artifacts_dir,
             )
         )
     return entries
+
+
+def _default_artifacts_dir(sessions_dir: Path) -> Path:
+    if sessions_dir.name == "sessions":
+        return sessions_dir.parent / "session_artifacts"
+    return sessions_dir / "session_artifacts"
 
 
 def _render_entry(entry: HistoryEntry) -> str:
