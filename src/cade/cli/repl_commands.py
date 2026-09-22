@@ -1345,7 +1345,8 @@ def _revert_turn(
     record: TurnSnapshotRecord,
 ) -> _RevertResult:
     store = ctx.snapshot_store
-    assert store is not None, "snapshot_store required for undo"
+    if store is None:
+        raise RuntimeError("snapshot_store required for undo")
     svc = store.service(ctx.store.session_id)
     result = _RevertResult()
 

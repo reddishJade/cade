@@ -35,7 +35,8 @@ def to_dict(msg: AgentMessage) -> dict[str, Any]:
     if isinstance(msg, ToolResultMessage):
         return _tool_result_message_to_dict(msg)
     result = convert_to_llm([msg])
-    assert result, f"convert_to_llm returned empty for {type(msg).__name__}"
+    if not result:
+        raise ValueError(f"convert_to_llm returned empty for {type(msg).__name__}")
     return result[0]
 
 

@@ -785,7 +785,8 @@ class InstructionCollector:
             if remaining_bytes <= 0:
                 break
             if source.type == "file":
-                assert source.path is not None
+                if source.path is None:
+                    raise RuntimeError("file instruction source has no path")
                 path = root / source.path
                 resolved = path.resolve()
                 if resolved in configured_paths:
@@ -795,7 +796,8 @@ class InstructionCollector:
                     path, source.priority, remaining_bytes, source.scope
                 )
             else:
-                assert source.content is not None
+                if source.content is None:
+                    raise RuntimeError("inline instruction source has no content")
                 source_blocks, consumed_bytes = self._collect_inline(
                     source.content, source.priority, remaining_bytes, source.scope
                 )
@@ -1001,25 +1003,23 @@ class ActiveDiffCollector:
         if root is None:
             return []
 
-        stat_unstaged = _run_git(root, "diff", "--stat")
-        stat_staged = _run_git(root, "diff", "--cached", "--stat")
-        has_staged = stat_staged is not None and bool(stat_staged.strip())
-        has_unstaged = stat_unstaged is not None and bool(stat_unstaged.strip())
+        stat_unstaged = (_run_git(root, "diff", "--stat") or "").strip()
+        stat_staged = (_run_git(root, "diff", "--cached", "--stat") or "").strip()
+        has_staged = bool(stat_staged)
+        has_unstaged = bool(stat_unstaged)
 
         if not has_staged and not has_unstaged:
             return []
 
         stat_parts: list[str] = []
         if has_staged:
-            assert stat_staged is not None
             stat_parts.append("[staged]")
-            stat_parts.append(stat_staged.strip())
+            stat_parts.append(stat_staged)
         if has_unstaged:
-            assert stat_unstaged is not None
             if stat_parts:
                 stat_parts.append("")
             stat_parts.append("[unstaged]")
-            stat_parts.append(stat_unstaged.strip())
+            stat_parts.append(stat_unstaged)
         stat_summary = "\n".join(stat_parts)
 
         excerpt_block = _build_diff_excerpt_block(root, has_staged, has_unstaged)

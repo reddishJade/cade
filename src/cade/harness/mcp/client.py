@@ -243,9 +243,11 @@ class McpClient:
 
     async def _serve_commands(self, session: ClientSession) -> None:
         """串行执行宿主请求，close 命令返回后退出 context。"""
-        assert self._commands is not None
+        commands = self._commands
+        if commands is None:
+            raise RuntimeError("MCP command queue is not initialized")
         while True:
-            command = await self._commands.get()
+            command = await commands.get()
             if command.operation == "close":
                 command.future.set_result(None)
                 return
@@ -253,7 +255,8 @@ class McpClient:
                 if command.operation == "list_tools":
                     result = await self._list_tools(session, command.timeout)
                 else:
-                    assert command.name is not None
+                    if command.name is None:
+                        raise ValueError("call_tool command requires a tool name")
                     result = await self._call_tool(
                         session,
                         command.name,

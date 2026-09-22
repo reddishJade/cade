@@ -259,7 +259,8 @@ class CodingAgentHarness(AgentHarness):
         async for event in self.arun_stream(question, mode=mode):
             if event.type == "final":
                 result = event.data
-        assert result is not None
+        if result is None:
+            raise RuntimeError("agent stream completed without a final result")
         return result
 
     def run_stream(

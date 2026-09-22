@@ -236,8 +236,10 @@ async def _run_loop(
                     ),
                 )
             else:
-                assert config.rollover_decision is not None
-                reset_reason = config.rollover_decision(current_context.messages)
+                rollover_decision = config.rollover_decision
+                if rollover_decision is None:
+                    raise RuntimeError("context rollover decision is not configured")
+                reset_reason = rollover_decision(current_context.messages)
             if reset_reason is not None:
                 before = len(current_context.messages)
                 next_window = config.rollover_context(current_context.messages)

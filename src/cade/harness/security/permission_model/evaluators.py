@@ -237,7 +237,8 @@ class PathBoundaryPolicyEvaluator:
     def _try_external_directory(
         self, target: Target, action: Action
     ) -> Constraint | None:
-        assert self._context is not None
+        if self._context is None:
+            raise RuntimeError("path boundary context is not configured")
         raw = target.value
         resolved_root = self._context.project_root.resolve(strict=False)
 
@@ -356,7 +357,8 @@ class PathBoundaryPolicyEvaluator:
         return name == ".env" or name.startswith(".env.")
 
     def _resolve_workspace_path(self, target: Target) -> str:
-        assert self._context is not None
+        if self._context is None:
+            raise RuntimeError("path boundary context is not configured")
         root = self._context.project_root
         try:
             resolved_root = root.resolve(strict=False)
