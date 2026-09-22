@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from cade.agent.results import TerminationReason
 from cade.main import _print_stream, _run, main, parse_args
 
@@ -67,6 +69,32 @@ def test_cli_command_starts_repl(monkeypatch) -> None:
 
     assert _run(args, runtime_config) == 0
     assert calls == ["cli"]
+
+
+@pytest.mark.parametrize("command", ["tui", "cli"])
+def test_interactive_entry_closes_app_once_when_host_fails(
+    monkeypatch,
+    command: str,
+) -> None:
+    calls: list[str] = []
+
+    class _App:
+        def close(self) -> None:
+            calls.append("close")
+
+    def fail(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("host failed")
+
+    monkeypatch.setattr("cade.main._build_app_from_config", lambda *_: _App())
+    monkeypatch.setattr("cade.main.run_tui", fail)
+    monkeypatch.setattr("cade.main.run_repl", fail)
+    args = parse_args([command])
+    runtime_config = SimpleNamespace(paths=SimpleNamespace(sessions_dir=None))
+
+    with pytest.raises(RuntimeError, match="host failed"):
+        _run(args, runtime_config)
+
+    assert calls == ["close"]
 
 
 def test_single_shot_restores_requested_session_and_closes_app(
