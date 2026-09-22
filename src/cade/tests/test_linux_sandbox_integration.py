@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -130,6 +131,26 @@ def test_sensitive_files_are_unreadable(tmp_path: Path) -> None:
     result = shell.run(["cat", str(environment)], project)
 
     assert "do-not-read" not in result.stdout
+
+
+def test_sensitive_tracked_file_remains_compatible_with_git(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    npmrc = project / ".npmrc"
+    npmrc.write_text("//registry.invalid/:_authToken=secret", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "add", ".npmrc"], cwd=project, check=True)
+    policy = sandbox_policy_from_security(project, SecurityRuntimeConfig())
+    shell = _usable_shell(project, policy)
+
+    result = shell.run(
+        ["sh", "-c", "test -f .npmrc && git diff -- .npmrc"],
+        project,
+    )
+
+    assert result.returncode == 0
+    assert "unsupported file type" not in result.stderr
+    assert "cannot hash" not in result.stderr
 
 
 def test_default_network_namespace_blocks_connections(tmp_path: Path) -> None:

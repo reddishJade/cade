@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,9 +56,15 @@ class LinuxBubblewrapSandbox(CommandSandbox):
             raise ValueError("sandbox command cwd must stay inside the project root")
 
         placeholders = _prepare_protected_placeholders(self._policy)
+        unreadable_file = _prepare_unreadable_file_placeholder(self._policy)
+        finalize = _combined_finalizer(placeholders, unreadable_file)
         try:
             args = [str(self._bwrap_path), "--new-session", "--die-with-parent"]
-            args.extend(self._filesystem_args())
+            args.extend(
+                self._filesystem_args(
+                    unreadable_file.path if unreadable_file is not None else None
+                )
+            )
             args.extend(
                 (
                     "--unshare-user",
@@ -74,17 +81,15 @@ class LinuxBubblewrapSandbox(CommandSandbox):
             args.extend(("--cap-drop", "ALL", "--"))
             args.extend(argv)
         except (OSError, ValueError):
-            _protected_placeholder_finalizer(placeholders)()
+            finalize()
             raise
         return SandboxedCommand(
             argv=tuple(args),
             cwd=command_cwd,
-            finalize=(
-                _protected_placeholder_finalizer(placeholders) if placeholders else None
-            ),
+            finalize=finalize if placeholders or unreadable_file is not None else None,
         )
 
-    def _filesystem_args(self) -> list[str]:
+    def _filesystem_args(self, empty_file: Path | None) -> list[str]:
         policy = self._policy
         if policy.mode is SandboxMode.DANGER_FULL_ACCESS:
             return ["--bind", "/", "/", "--dev", "/dev"]
@@ -102,7 +107,9 @@ class LinuxBubblewrapSandbox(CommandSandbox):
             if unreadable.is_dir():
                 args.extend(("--tmpfs", str(unreadable)))
             else:
-                args.extend(("--ro-bind", "/dev/null", str(unreadable)))
+                if empty_file is None:
+                    raise RuntimeError("missing unreadable file placeholder")
+                args.extend(("--ro-bind", str(empty_file), str(unreadable)))
         return args
 
 
@@ -172,6 +179,14 @@ class _ProtectedPlaceholder:
     descriptor: int
 
 
+@dataclass(frozen=True)
+class _UnreadableFilePlaceholder:
+    path: Path
+    device: int
+    inode: int
+    descriptor: int
+
+
 def _prepare_protected_placeholders(
     policy: SandboxPolicy,
 ) -> tuple[_ProtectedPlaceholder, ...]:
@@ -218,6 +233,69 @@ def _linux_directory_open_flags() -> int:
             raise SandboxUnavailableError(f"Linux open flag is unavailable: {name}")
         flags |= value
     return flags
+
+
+def _prepare_unreadable_file_placeholder(
+    policy: SandboxPolicy,
+) -> _UnreadableFilePlaceholder | None:
+    """为敏感普通文件创建空的普通文件视图，保持 Git 等工具兼容。"""
+    if not any(not path.is_dir() for path in policy.unreadable_roots):
+        return None
+    descriptor, raw_path = tempfile.mkstemp(prefix="cade-sandbox-empty-")
+    path = Path(raw_path)
+    try:
+        os.fchmod(descriptor, 0o600)
+        metadata = os.fstat(descriptor)
+        return _UnreadableFilePlaceholder(
+            path=path,
+            device=metadata.st_dev,
+            inode=metadata.st_ino,
+            descriptor=descriptor,
+        )
+    except OSError:
+        os.close(descriptor)
+        path.unlink(missing_ok=True)
+        raise
+
+
+def _combined_finalizer(
+    placeholders: tuple[_ProtectedPlaceholder, ...],
+    unreadable_file: _UnreadableFilePlaceholder | None,
+) -> Callable[[], str | None]:
+    finalize_protected = _protected_placeholder_finalizer(placeholders)
+    completed = False
+
+    def finalize() -> str | None:
+        nonlocal completed
+        if completed:
+            return None
+        completed = True
+        violations: list[str] = []
+        protected_error = finalize_protected()
+        if protected_error is not None:
+            violations.append(protected_error)
+        if unreadable_file is not None:
+            try:
+                try:
+                    metadata = unreadable_file.path.lstat()
+                except FileNotFoundError:
+                    metadata = None
+                if metadata is not None and (
+                    metadata.st_dev != unreadable_file.device
+                    or metadata.st_ino != unreadable_file.inode
+                ):
+                    violations.append("sandbox empty-file placeholder was replaced")
+                elif metadata is not None:
+                    unreadable_file.path.unlink()
+            except OSError as exc:
+                violations.append(
+                    f"sandbox failed to remove empty-file placeholder: {exc}"
+                )
+            finally:
+                os.close(unreadable_file.descriptor)
+        return "; ".join(violations) if violations else None
+
+    return finalize
 
 
 def _protected_placeholder_finalizer(
