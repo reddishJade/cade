@@ -176,7 +176,19 @@ def _build_exec_parser(subparsers) -> None:
     add_exec_arguments(exec_parser)
 
 
+def _build_session_parser(subparsers) -> None:
+    from .cli.session_cmd import add_session_arguments
+
+    session_parser = subparsers.add_parser(
+        "session",
+        help="Inspect and control persisted sessions",
+    )
+    add_session_arguments(session_parser)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    effective_argv = _normalize_exec_resume(effective_argv)
     parser = argparse.ArgumentParser(description="Cade coding agent.")
     parser.add_argument(
         "-p", "--prompt", help="Run one prompt and exit (single-shot mode)."
@@ -217,8 +229,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _build_tui_parser(subparsers)
     _build_cli_parser(subparsers)
     _build_exec_parser(subparsers)
+    _build_session_parser(subparsers)
     _build_web_parser(subparsers)
-    return parser.parse_args(argv)
+    return parser.parse_args(effective_argv)
+
+
+def _normalize_exec_resume(argv: list[str]) -> list[str]:
+    """将 `exec resume ID` 转换为统一的 session 恢复参数。"""
+    try:
+        exec_index = argv.index("exec")
+    except ValueError:
+        return argv
+    resume_index = exec_index + 1
+    session_index = exec_index + 2
+    if (
+        session_index >= len(argv)
+        or argv[resume_index] != "resume"
+        or argv[session_index].startswith("-")
+    ):
+        return argv
+    return [
+        *argv[:resume_index],
+        "--session",
+        argv[session_index],
+        *argv[session_index + 1 :],
+    ]
 
 
 def main() -> int:
@@ -284,6 +319,16 @@ def main() -> int:
                 provider=getattr(args, "provider", "openai-codex"),
             )
         return handle_status_command()
+
+    if args.command == "session":
+        from .cli.session_cmd import handle_session_command
+
+        try:
+            runtime_config = discover_runtime_config(project_root, args.config)
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 6
+        return handle_session_command(args, runtime_config)
 
     temp_config: Path | None = None
 

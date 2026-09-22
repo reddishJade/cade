@@ -35,6 +35,40 @@ def test_parse_args_supports_tui_and_cli_commands() -> None:
     assert parse_args(["cli"]).command == "cli"
 
 
+def test_session_command_does_not_require_provider_credentials(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+    args = parse_args(
+        [
+            "session",
+            "--project-root",
+            str(tmp_path),
+            "status",
+            "run-1",
+        ]
+    )
+    monkeypatch.setattr("cade.main.parse_args", lambda: args)
+    monkeypatch.setattr(
+        "cade.cli.ptk_patch.suppress_windows_ptk_shutdown_noise", lambda: None
+    )
+    monkeypatch.setattr(
+        "cade.main.discover_runtime_config",
+        lambda *_args: calls.append("config") or object(),
+    )
+    monkeypatch.setattr(
+        "cade.cli.session_cmd.handle_session_command",
+        lambda *_args: calls.append("session") or 0,
+    )
+    monkeypatch.setattr(
+        "cade.main.has_valid_config",
+        lambda _root: (_ for _ in ()).throw(AssertionError("credentials checked")),
+    )
+
+    assert main() == 0
+    assert calls == ["config", "session"]
+
+
 def test_default_command_is_tui(monkeypatch) -> None:
     calls: list[str] = []
 
