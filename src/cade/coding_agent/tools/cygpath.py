@@ -23,6 +23,11 @@ _CYGPATH_CACHE: str | None = None
 """缓存的 cygpath 可执行路径，None 表示未找到。"""
 
 
+def _is_windows() -> bool:
+    """运行时判断 Windows，保留 MSYS2/Cygwin 专用分支的类型检查。"""
+    return sys.platform == "win32"
+
+
 def _find_cygpath() -> str | None:
     """查找 cygpath 可执行文件。"""
     global _CYGPATH_CACHE
@@ -39,7 +44,7 @@ def _find_cygpath() -> str | None:
 
 def is_cygwin_env() -> bool:
     """判断当前是否运行在 Cygwin/MSYS2 环境下。"""
-    if sys.platform != "win32":
+    if not _is_windows():
         return False
     # MSYS2: $MSYSTEM 环境变量存在
     if os.environ.get("MSYSTEM"):

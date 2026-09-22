@@ -28,6 +28,11 @@ _last_win32_ctrl_c_time: float = 0.0
 _global_win32_ctrl_ref: Any = None
 
 
+def _is_windows() -> bool:
+    """运行时判断 Windows，避免静态检查器删除平台专用分支。"""
+    return sys.platform == "win32"
+
+
 def install_force_exit_signal_handler() -> None:
     """安装底层信号与操作系统控制台事件监听器。
 
@@ -62,12 +67,13 @@ def install_force_exit_signal_handler() -> None:
         else:
             _signal_handler_installed = True
 
-    if sys.platform == "win32" and not _console_ctrl_handler_installed:
+    if _is_windows() and not _console_ctrl_handler_installed:
         try:
             import _thread
             import ctypes
 
-            PHANDLER_ROUTINE = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
+            ctypes_runtime: Any = ctypes
+            PHANDLER_ROUTINE = ctypes_runtime.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
 
             def _win32_ctrl_handler(ctrl_type: int) -> bool:
                 global _last_win32_ctrl_c_time
@@ -96,7 +102,7 @@ def install_force_exit_signal_handler() -> None:
                 return False
 
             handler_ref = PHANDLER_ROUTINE(_win32_ctrl_handler)
-            k32 = ctypes.windll.kernel32
+            k32 = ctypes_runtime.windll.kernel32
             if k32.SetConsoleCtrlHandler(handler_ref, True):
                 _global_win32_ctrl_ref = handler_ref
                 _console_ctrl_handler_installed = True
@@ -106,12 +112,13 @@ def install_force_exit_signal_handler() -> None:
 
 def flush_console_input_buffer() -> None:
     """清空 Windows 控制台输入缓冲区中的脏按键事件。"""
-    if sys.platform != "win32":
+    if not _is_windows():
         return
     try:
         import ctypes
 
-        k32 = ctypes.windll.kernel32
+        ctypes_runtime: Any = ctypes
+        k32 = ctypes_runtime.windll.kernel32
         stdin_handle = k32.GetStdHandle(-10)  # STD_INPUT_HANDLE
         k32.FlushConsoleInputBuffer(stdin_handle)
     except (AttributeError, OSError):
@@ -120,12 +127,13 @@ def flush_console_input_buffer() -> None:
 
 def get_console_mode() -> int | None:
     """获取当前 Windows 控制台标准输入模式。"""
-    if sys.platform != "win32":
+    if not _is_windows():
         return None
     try:
         import ctypes
 
-        k32 = ctypes.windll.kernel32
+        ctypes_runtime: Any = ctypes
+        k32 = ctypes_runtime.windll.kernel32
         stdin_handle = k32.GetStdHandle(-10)
         mode = ctypes.c_ulong()
         if k32.GetConsoleMode(stdin_handle, ctypes.byref(mode)):
@@ -137,12 +145,13 @@ def get_console_mode() -> int | None:
 
 def set_console_mode(mode: int) -> None:
     """设置 Windows 控制台标准输入模式。"""
-    if sys.platform != "win32":
+    if not _is_windows():
         return
     try:
         import ctypes
 
-        k32 = ctypes.windll.kernel32
+        ctypes_runtime: Any = ctypes
+        k32 = ctypes_runtime.windll.kernel32
         stdin_handle = k32.GetStdHandle(-10)
         k32.SetConsoleMode(stdin_handle, mode)
     except (AttributeError, OSError):
@@ -151,12 +160,13 @@ def set_console_mode(mode: int) -> None:
 
 def restore_console_mode() -> None:
     """确保 Windows 控制台模式恢复正常行输入模式。"""
-    if sys.platform != "win32":
+    if not _is_windows():
         return
     try:
         import ctypes
 
-        k32 = ctypes.windll.kernel32
+        ctypes_runtime: Any = ctypes
+        k32 = ctypes_runtime.windll.kernel32
         stdin_handle = k32.GetStdHandle(-10)  # STD_INPUT_HANDLE
         mode = ctypes.c_ulong()
         if k32.GetConsoleMode(stdin_handle, ctypes.byref(mode)):
@@ -279,7 +289,7 @@ def suppress_windows_ptk_shutdown_noise() -> None:
     global _windows_ptk_patch_installed
     install_force_exit_signal_handler()
 
-    if sys.platform != "win32" or _windows_ptk_patch_installed:
+    if not _is_windows() or _windows_ptk_patch_installed:
         return
     _windows_ptk_patch_installed = True
 
