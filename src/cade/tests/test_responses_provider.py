@@ -276,6 +276,44 @@ async def test_responses_provider_stream_events() -> None:
     assert provider._last_response_id == "resp_xyz123"
 
 
+async def test_responses_provider_reads_mapping_usage() -> None:
+    mock_client = MagicMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            {
+                "type": "response.completed",
+                "response": {
+                    "id": "resp_mapping_usage",
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 25,
+                        "input_tokens_details": {"cached_tokens": 40},
+                        "output_tokens_details": {"reasoning_tokens": 10},
+                    },
+                },
+            }
+        ]
+    )
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5"),
+        client=mock_client,
+    )
+
+    events = [
+        event
+        async for event in provider.stream([{"role": "user", "content": "Hi"}], [])
+    ]
+
+    usage = next(event for event in events if isinstance(event, UsageUpdate))
+    assert usage.input_tokens == 100
+    assert usage.output_tokens == 25
+    assert provider.metrics["cached_tokens"] == 40
+    assert provider.metrics["reasoning_tokens"] == 10
+    assert provider.usage_totals.input_tokens == 60
+    assert provider.usage_totals.output_tokens == 25
+    assert provider.usage_totals.cache_read_tokens == 40
+
+
 async def test_responses_provider_closes_per_request_client() -> None:
     mock_client = MagicMock()
     mock_client.close = AsyncMock()

@@ -316,6 +316,14 @@ def _response_value(value: object, name: str, default: Any = None) -> Any:
     return getattr(value, name, default)
 
 
+def _response_int(value: object, name: str) -> int:
+    """从 SDK 模型或字典事件中安全读取整数字段。"""
+    result = _response_value(value, name, 0)
+    if isinstance(result, int) and not isinstance(result, bool):
+        return result
+    return 0
+
+
 def _reasoning_summary_text(item: object) -> str:
     """从完整 reasoning item 中提取服务端生成的可见摘要。"""
     summary = _response_value(item, "summary")
@@ -653,19 +661,13 @@ class OpenAIResponsesProvider:
                                 yield ReasoningDelta(chunk=suffix)
                     usage = _response_value(resp, "usage")
                     if usage:
-                        prompt_tokens = getattr(usage, "input_tokens", 0) or 0
-                        completion_tokens = getattr(usage, "output_tokens", 0) or 0
-                        input_details = getattr(usage, "input_tokens_details", None)
-                        cached_tokens = (
-                            getattr(input_details, "cached_tokens", 0) or 0
-                            if input_details
-                            else 0
-                        )
-                        output_details = getattr(usage, "output_tokens_details", None)
-                        reasoning_tokens = (
-                            getattr(output_details, "reasoning_tokens", 0) or 0
-                            if output_details
-                            else 0
+                        prompt_tokens = _response_int(usage, "input_tokens")
+                        completion_tokens = _response_int(usage, "output_tokens")
+                        input_details = _response_value(usage, "input_tokens_details")
+                        cached_tokens = _response_int(input_details, "cached_tokens")
+                        output_details = _response_value(usage, "output_tokens_details")
+                        reasoning_tokens = _response_int(
+                            output_details, "reasoning_tokens"
                         )
 
                         self._metrics["cached_tokens"] = cached_tokens
