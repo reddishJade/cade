@@ -174,10 +174,20 @@ def test_linux_masks_unreadable_files_and_directories(tmp_path: Path) -> None:
 
     command = sandbox.wrap(["true"], tmp_path)
 
-    assert ("/dev/null", str(secret_file)) in _mounts(command.argv, "--ro-bind")
+    file_mount = next(
+        source
+        for source, target in _mounts(command.argv, "--ro-bind")
+        if target == str(secret_file)
+    )
+    placeholder = Path(file_mount)
+    assert placeholder.is_file()
+    assert placeholder.read_bytes() == b""
     assert ("--tmpfs", str(secret_directory)) in tuple(
         zip(command.argv, command.argv[1:], strict=False)
     )
+    assert command.finalize is not None
+    assert command.finalize() is None
+    assert not placeholder.exists()
 
 
 @LINUX_ONLY
