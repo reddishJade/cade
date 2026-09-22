@@ -6,7 +6,7 @@ import asyncio
 import threading
 import time
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -274,6 +274,71 @@ async def test_responses_provider_stream_events() -> None:
 
     # 验证 stateful session response id 跟踪
     assert provider._last_response_id == "resp_xyz123"
+
+
+async def test_responses_provider_closes_per_request_client() -> None:
+    mock_client = MagicMock()
+    mock_client.close = AsyncMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_owned", usage=None),
+            )
+        ]
+    )
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5")
+    )
+
+    with patch("openai.AsyncOpenAI", return_value=mock_client):
+        events = [
+            event
+            async for event in provider.stream([{"role": "user", "content": "Hi"}], [])
+        ]
+
+    assert any(isinstance(event, FinalMessage) for event in events)
+    mock_client.close.assert_awaited_once_with()
+
+
+async def test_responses_provider_closes_per_request_client_after_error() -> None:
+    mock_client = MagicMock()
+    mock_client.close = AsyncMock()
+    mock_client.responses.create.side_effect = RuntimeError("stream failed")
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5")
+    )
+
+    with (
+        patch("openai.AsyncOpenAI", return_value=mock_client),
+        pytest.raises(RuntimeError, match="stream failed"),
+    ):
+        async for _event in provider.stream([{"role": "user", "content": "Hi"}], []):
+            pass
+
+    mock_client.close.assert_awaited_once_with()
+
+
+async def test_responses_provider_does_not_close_injected_client() -> None:
+    mock_client = MagicMock()
+    mock_client.close = AsyncMock()
+    mock_client.responses.create.return_value = iter(
+        [
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(id="resp_injected", usage=None),
+            )
+        ]
+    )
+    provider = OpenAIResponsesProvider(
+        ProviderConfig(api_key="sk-test", model="gpt-5.5"),
+        client=mock_client,
+    )
+
+    async for _event in provider.stream([{"role": "user", "content": "Hi"}], []):
+        pass
+
+    mock_client.close.assert_not_awaited()
 
 
 async def test_codex_provider_backfills_reasoning_summary_from_done_item() -> None:
