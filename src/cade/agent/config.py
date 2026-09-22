@@ -130,6 +130,9 @@ type ContextWindowResetReason = Literal["token_limit", "manual", "model"]
 type RolloverDecisionHook = Callable[
     [list[AgentMessage]], ContextWindowResetReason | None
 ]
+type RequestRolloverDecisionHook = Callable[
+    [list[AgentMessage], int | None], ContextWindowResetReason | None
+]
 type ContextWindowRolloverHook = Callable[[list[AgentMessage]], list[AgentMessage]]
 type IsToolProductiveHook = Callable[
     [list[ToolCallContent], list[ToolResultMessage]], bool
@@ -176,6 +179,7 @@ class AgentLoopConfig(BaseModel):
     max_consecutive_idle_steps: int = 4  # 连续 4 次工具调用无产出则终止
 
     rollover_decision: RolloverDecisionHook | None = None
+    request_rollover_decision: RequestRolloverDecisionHook | None = None
     rollover_context: ContextWindowRolloverHook | None = None
 
     is_tool_productive: IsToolProductiveHook | None = None

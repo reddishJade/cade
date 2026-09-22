@@ -53,6 +53,7 @@ from .events import (
     TurnStartEvent,
 )
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
+from .request import RequestAssembly
 from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 
 _WINDOW_ID_PATTERN = re.compile(r'<context-window-reset id="([^"]+)">')
@@ -211,8 +212,32 @@ async def _run_loop(
             state.first_turn = False
 
         # ── 上下文窗口切换检查 ──
-        if config.rollover_decision and config.rollover_context:
-            reset_reason = config.rollover_decision(current_context.messages)
+        prepared_assembly: RequestAssembly | None = None
+        has_rollover_decision = bool(
+            config.request_rollover_decision or config.rollover_decision
+        )
+        if has_rollover_decision and config.rollover_context:
+            if (
+                config.request_rollover_decision is not None
+                and state.active_provider is not None
+            ):
+                prepared_assembly = config.request_assembler.assemble(
+                    current_context,
+                    current_step=step,
+                    options=config.options,
+                )
+            if config.request_rollover_decision is not None:
+                reset_reason = config.request_rollover_decision(
+                    current_context.messages,
+                    (
+                        prepared_assembly.estimated_tokens
+                        if prepared_assembly is not None
+                        else None
+                    ),
+                )
+            else:
+                assert config.rollover_decision is not None
+                reset_reason = config.rollover_decision(current_context.messages)
             if reset_reason is not None:
                 before = len(current_context.messages)
                 next_window = config.rollover_context(current_context.messages)
@@ -239,6 +264,12 @@ async def _run_loop(
                         replacement=list(current_context.messages),
                     )
                 )
+                if state.active_provider is not None:
+                    prepared_assembly = config.request_assembler.assemble(
+                        current_context,
+                        current_step=step,
+                        options=config.options,
+                    )
 
         # ── 内层循环：模型调用 + 重试 + max_tokens ──
         ctx_len_before = len(current_context.messages)
@@ -250,6 +281,7 @@ async def _run_loop(
             metrics,
             step,
             state,
+            prepared_assembly,
         )
 
         if inner_result is None:
@@ -493,6 +525,7 @@ async def _run_inner_loop(
     metrics: AgentLoopMetrics,
     step: int,
     state: _LoopRunState,
+    prepared_assembly: RequestAssembly | None = None,
 ) -> tuple[AssistantMessage, str, StreamProvider | None] | None:
     """内层循环：模型调用 → 错误重试 → max_tokens 续写。
 
@@ -522,6 +555,7 @@ async def _run_inner_loop(
             metrics,
             provider,
             current_step=step,
+            assembly=prepared_assembly,
         )
         if response is None:
             # 模型流式生成期间被打断：中止在途请求并退出本轮。
@@ -556,6 +590,7 @@ async def _run_inner_loop(
                 return fallback, "error", provider
             state.consecutive_continuations = continuation_count
             _append_continuation_prompt(context, message)
+            prepared_assembly = None
             continue
 
         # ── 正常结束 ──

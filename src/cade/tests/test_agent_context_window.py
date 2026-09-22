@@ -123,3 +123,22 @@ def test_runtime_rollover_estimates_tokens_when_usage_is_missing() -> None:
     )
 
     assert result == "token_limit"
+
+
+def test_runtime_rollover_prefers_current_request_estimate() -> None:
+    composition = SimpleNamespace(
+        config=AgentConfig(reserve_tokens=0, rollover_trigger_ratio=0.95)
+    )
+    provider = SimpleNamespace(model="gpt-5.5", context_window=1_000)
+
+    result = _rollover_decision(
+        [],
+        cast(Any, lambda messages: messages),
+        None,
+        100,
+        cast(Any, composition),
+        cast(Any, provider),
+        estimated_tokens=950,
+    )
+
+    assert result == "token_limit"

@@ -8,6 +8,8 @@ from collections.abc import AsyncIterator
 from cade.agent._provider import _collect_provider_events
 from cade.agent.agent_loop import run_agent_loop
 from cade.agent.config import AgentContext, AgentLoopConfig
+from cade.agent.context_manager import ContextManager
+from cade.agent.events import ContextWindowResetEvent
 from cade.agent.messages import AssistantMessage, ToolResultMessage, UserMessage
 from cade.agent.results import AgentLoopResult, TerminationReason
 from cade.agent.types import TextContent, ToolCallContent
@@ -273,3 +275,75 @@ async def test_non_retryable_provider_failure_stops_after_first_request() -> Non
     assert result.termination_reason is TerminationReason.PROVIDER_ERROR
     assert result.provider_failure is not None
     assert result.provider_failure.status_code == 403
+
+
+async def test_agent_loop_rolls_over_using_prepared_request_budget() -> None:
+    class _FinalProvider:
+        def __init__(self) -> None:
+            self.requests: list[list[dict[str, object]]] = []
+
+        async def stream(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **_kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            del tools, options
+            self.requests.append(messages)
+            yield FinalMessage(content="done", stop_reason="end_turn")
+
+    provider = _FinalProvider()
+    context_manager = ContextManager()
+    events: list[object] = []
+    result = await run_agent_loop(
+        [UserMessage(content="x" * 1_000)],
+        AgentContext(context_manager=context_manager),
+        AgentLoopConfig(
+            provider=provider,
+            request_rollover_decision=(
+                lambda _messages, estimated: (
+                    "token_limit" if (estimated or 0) >= 100 else None
+                )
+            ),
+            rollover_context=lambda _messages: [UserMessage(content="fresh window")],
+        ),
+        events.append,
+    )
+
+    assert result.termination_reason is TerminationReason.COMPLETED
+    assert len(provider.requests) == 1
+    assert provider.requests[0] == [{"role": "user", "content": "fresh window"}]
+    assert any(isinstance(event, ContextWindowResetEvent) for event in events)
+    assert context_manager.prompt_cache.request_count == 1
+
+
+async def test_agent_loop_preserves_legacy_rollover_hook_signature() -> None:
+    class _FinalProvider:
+        async def stream(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **_kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            del messages, tools, options
+            yield FinalMessage(content="done", stop_reason="end_turn")
+
+    inspected: list[int] = []
+
+    def legacy_decision(messages: list[object]) -> None:
+        inspected.append(len(messages))
+
+    await run_agent_loop(
+        [UserMessage(content="hello")],
+        AgentContext(),
+        AgentLoopConfig(
+            provider=_FinalProvider(),
+            rollover_decision=legacy_decision,
+            rollover_context=lambda messages: messages,
+        ),
+        lambda _event: None,
+    )
+
+    assert inspected == [1]
