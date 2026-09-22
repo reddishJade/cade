@@ -26,12 +26,12 @@ from .exit_keys import (
     resolve_exit_key_action,
 )
 from .git import git_branch_name
-from .shared.thinking import (  # noqa: F401 — re-exported for back-compat
-    format_elapsed,
-    reasoning_preview_lines,
-    should_print_reasoning_summary,
-    single_line_preview,
-)
+from .shared import thinking as _thinking
+
+format_elapsed = _thinking.format_elapsed
+reasoning_preview_lines = _thinking.reasoning_preview_lines
+should_print_reasoning_summary = _thinking.should_print_reasoning_summary
+single_line_preview = _thinking.single_line_preview
 
 CITE_START = "\ue200"
 CITE_SEP = "\ue202"
