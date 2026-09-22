@@ -100,6 +100,24 @@ def test_session_status_and_result_are_machine_readable(tmp_path: Path, capsys) 
     assert result_payload["result"]["answer"] == "done"
 
 
+def test_session_accepts_path_options_after_action(tmp_path: Path) -> None:
+    args = parse_args(
+        [
+            "session",
+            "status",
+            "run-1",
+            "--sessions-dir",
+            str(tmp_path / "sessions"),
+            "--project-root",
+            str(tmp_path),
+            "--json",
+        ]
+    )
+
+    assert args.sessions_dir == tmp_path / "sessions"
+    assert args.project_root == tmp_path
+
+
 def test_session_tail_and_export(tmp_path: Path, capsys) -> None:
     sessions_dir = tmp_path / "sessions"
     _write_session(sessions_dir, "run-1")
