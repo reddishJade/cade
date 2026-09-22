@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from cade.ai.cache import CacheUsage
+from cade.ai.events import UsageUpdate
 from cade.ai.usage import (
     UsageAccumulator,
     UsageTotals,
@@ -199,7 +200,8 @@ async def test_provider_accumulates_usage_from_stream() -> None:
     ]
 
     assert len(events) == 1
-    assert events[0].input_tokens == 1_000  # type: ignore[attr-defined]
+    assert isinstance(events[0], UsageUpdate)
+    assert events[0].input_tokens == 1_000
     totals = provider.usage_totals
     assert totals.requests == 1
     assert totals.input_tokens == 100

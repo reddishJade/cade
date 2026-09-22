@@ -123,7 +123,8 @@ class TestTruncateToolArgs:
     def test_truncates_long_string_value(self) -> None:
         args = {"data": "x" * 500}
         result = _truncate_tool_args(args, max_length=100)
-        assert "<truncated" in result["data"]  # type: ignore[operator]
+        assert isinstance(result["data"], str)
+        assert "<truncated" in result["data"]
 
     def test_short_value_unchanged(self) -> None:
         args = {"data": "short"}

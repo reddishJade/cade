@@ -9,6 +9,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -29,6 +30,12 @@ _model_cache: dict[str, tuple[float, list[str]]] = {}
 
 
 AppFactory = Callable[[Path], CadeApp]
+
+
+class _ModelInfoApp(Protocol):
+    """模型端点只依赖运行时暴露的轻量信息接口。"""
+
+    def get_model_info(self) -> dict[str, str]: ...
 
 
 def create_app(
@@ -324,7 +331,7 @@ def _stats_payload(app: CadeApp, project_root: Path) -> dict[str, object]:
     return payload
 
 
-def _model_payload(app: CadeApp) -> dict[str, object]:
+def _model_payload(app: _ModelInfoApp) -> dict[str, object]:
     """当前模型信息 + 可用模型列表 + effort 选项。"""
     info: dict[str, object] = dict(app.get_model_info())
     transport = _profile_transport(app)
@@ -458,14 +465,14 @@ def _git_switch(project_root: Path, name: str) -> tuple[bool, str]:
     return True, (result.stdout or "").strip()
 
 
-def _profile_transport(app: CadeApp) -> str:
+def _profile_transport(app: object) -> str:
     """读取 main profile 配置的 transport（而非 provider 实例标签）。"""
     profiles = getattr(app, "_model_profiles", None) or {}
     main = profiles.get("main")
     return str(getattr(main, "transport", "") or "") if main is not None else ""
 
 
-def _discover_models(app: CadeApp) -> list[str]:
+def _discover_models(app: _ModelInfoApp) -> list[str]:
     """调用网关 /models 发现真实可用的模型；失败返回空列表。"""
     try:
         base_url = str(app.get_model_info().get("base_url") or "")
