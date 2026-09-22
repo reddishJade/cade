@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -27,8 +26,6 @@ from .utils import (
     _looks_absolute,
     _validate_symlinks_can_resolve,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def _deny_metadata(reason_code: str, remediation: str) -> dict[str, object]:
@@ -208,10 +205,6 @@ class PathBoundaryPolicyEvaluator:
             candidate = self._try_external_directory(target, action)
             if candidate is not None:
                 return candidate
-            logger.warning(
-                "path resolved outside workspace boundary: %s",
-                path_str,
-            )
             return Constraint(
                 decision="deny",
                 source="boundary",
