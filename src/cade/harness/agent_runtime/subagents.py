@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Lock, RLock
 from uuid import uuid4
 
+from cade.agent.results import TerminationReason
 from cade.agent.types import ToolSpec
 from cade.ai.providers.base import ModelProvider
 from cade.harness.observability import SignalHookManager
@@ -369,11 +370,13 @@ class SubagentSessionManager:
                 await asyncio.sleep(0.01)
             acquired = True
             answer = ""
+            final_result = None
             async for event in activation.harness.arun_stream(prompt):
                 activation.recorder.record_event(event)
                 if event.type == "tool_update" and on_update is not None:
                     on_update(str(event.data.partial_result))
                 if event.type == "final":
+                    final_result = event.data
                     answer = event.data.answer
         except asyncio.CancelledError:
             parent_recorder.record_subagent_run(
@@ -414,6 +417,27 @@ class SubagentSessionManager:
                 activation.active_turns -= 1
             if acquired:
                 activation.turn_lock.release()
+        if final_result is None:
+            return self._failed_result(
+                activation,
+                parent_recorder,
+                run_id=run_id,
+                batch_id=batch_id,
+                task_index=task_index,
+                error="child run ended without a final result",
+            )
+        if final_result.termination_reason is not TerminationReason.COMPLETED:
+            error = final_result.error_detail or (
+                f"child run terminated with {final_result.termination_reason.value}"
+            )
+            return self._failed_result(
+                activation,
+                parent_recorder,
+                run_id=run_id,
+                batch_id=batch_id,
+                task_index=task_index,
+                error=error,
+            )
         parent_recorder.record_subagent_run(
             _run_event(
                 activation,
@@ -429,6 +453,34 @@ class SubagentSessionManager:
             run_id=run_id,
             status="completed",
             answer=answer,
+        )
+
+    def _failed_result(
+        self,
+        activation: _ChildActivation,
+        parent_recorder: SessionRecorder,
+        *,
+        run_id: str,
+        batch_id: str,
+        task_index: int,
+        error: str,
+    ) -> SubagentTaskResult:
+        descriptor = activation.descriptor
+        parent_recorder.record_subagent_run(
+            _run_event(
+                activation,
+                run_id,
+                batch_id,
+                task_index,
+                "failed",
+                error=error,
+            )
+        )
+        return SubagentTaskResult(
+            child_session_id=descriptor.child_session_id,
+            run_id=run_id,
+            status="failed",
+            error=error,
         )
 
     def _registry_for(

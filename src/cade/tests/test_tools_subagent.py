@@ -59,6 +59,20 @@ class _Provider:
         )
 
 
+class _FailingProvider(_Provider):
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        options: StreamOptions | None = None,
+        **kwargs: object,
+    ):
+        del messages, tools, options, kwargs
+        if False:
+            yield cast(ProviderEvent, TextDelta(""))
+        raise RuntimeError("insufficient balance")
+
+
 class _AllowMode:
     current_mode = "act"
     approvals_reviewer = "user"
@@ -195,6 +209,36 @@ async def test_one_shot_child_has_independent_durable_session(tmp_path: Path) ->
         message.get("role") == "user" and "child task only" in str(message)
         for message in provider.requests[0]
     )
+
+
+@pytest.mark.asyncio
+async def test_child_provider_failure_is_not_reported_as_completed(
+    tmp_path: Path,
+) -> None:
+    provider = _FailingProvider()
+    manager = _manager(tmp_path, provider)
+
+    result = await manager.execute(
+        description="inspect runtime",
+        prompt="child task only",
+        subagent_type="coding",
+        mode="one_shot",
+        run_id="run-1",
+        batch_id="batch-1",
+        task_index=1,
+    )
+
+    assert result.status == "failed"
+    assert "insufficient balance" in result.error
+    parent_events = manager._parent_store.build_branch()
+    run_states = [
+        entry.content["data"]["status"]
+        for entry in parent_events
+        if entry.type == "event"
+        and isinstance(entry.content, dict)
+        and entry.content.get("type") == "subagent_run"
+    ]
+    assert run_states == ["started", "failed"]
 
 
 @pytest.mark.asyncio

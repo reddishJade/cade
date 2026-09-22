@@ -82,14 +82,18 @@ class _SubagentHandler:
         async def execute() -> tuple[str, tuple[str, ...]]:
             if len(runs) == 1:
                 result = await _run_one(runs[0], self.manager, on_update)
+                if result.status != "completed":
+                    raise RuntimeError(_format_single(result, runs[0].task))
                 return _format_single(result, runs[0].task), (result.run_id,)
-            results = await _run_batch(
+            text, results = await _run_batch(
                 runs,
                 max_concurrent,
                 self.manager,
                 on_update,
             )
-            return results, tuple(run.run_id for run in runs)
+            if any(result.status != "completed" for result in results):
+                raise RuntimeError(text)
+            return text, tuple(run.run_id for run in runs)
 
         text, run_ids = async_run(execute())
         return ToolOutput(
@@ -121,6 +125,8 @@ class _SubagentContinueHandler:
                 on_update=on_update,
             )
         )
+        if result.status != "completed":
+            raise RuntimeError(_format_continuation(result))
         return ToolOutput(
             _format_continuation(result),
             render_intent=SubagentRenderIntent(
@@ -378,7 +384,7 @@ async def _run_batch(
     max_concurrent: int,
     manager: SubagentSessionManager,
     on_update: Callable[[str], None] | None,
-) -> str:
+) -> tuple[str, list[SubagentTaskResult]]:
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def limited(run: _SubagentRun) -> tuple[int, str, SubagentTaskResult]:
@@ -392,14 +398,21 @@ async def _run_batch(
                 _task_update(run.task_index, on_update),
             )
             if on_update is not None:
-                on_update(f"[{run.task_index}] ✓ {label}")
+                marker = "✓" if result.status == "completed" else "×"
+                on_update(f"[{run.task_index}] {marker} {label}")
             return run.task_index, label, result
 
     results = await asyncio.gather(*(limited(run) for run in runs))
-    lines = [f"Subagent batch completed: {len(results)} task(s)"]
+    failures = sum(result.status != "completed" for _, _, result in results)
+    heading = (
+        f"Subagent batch failed: {failures} of {len(results)} task(s)"
+        if failures
+        else f"Subagent batch completed: {len(results)} task(s)"
+    )
+    lines = [heading]
     for index, label, result in sorted(results, key=lambda item: item[0]):
         lines.append(f"\n## {index}. {label}\n{_format_result(result)}")
-    return "\n".join(lines)
+    return "\n".join(lines), [result for _, _, result in results]
 
 
 async def _run_one(
