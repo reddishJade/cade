@@ -37,6 +37,16 @@ class HistoryEntry:
             return resolved
         return json.dumps(resolved, ensure_ascii=False, sort_keys=True)
 
+    @property
+    def search_text(self) -> str:
+        """返回不解析外置 artifact 的有界检索文本。"""
+        claimed = _claimed_display_text(self.content)
+        if claimed is not None:
+            return claimed
+        if isinstance(self.content, str):
+            return self.content
+        return json.dumps(self.content, ensure_ascii=False, sort_keys=True)
+
 
 @dataclass(frozen=True)
 class HistoryRead:
@@ -80,7 +90,13 @@ class SessionHistory:
             raise ValueError(f"invalid session id: {session_id!r}")
         self.session_id = session_id
 
-    def search(self, query: str, *, limit: int = 5) -> list[HistoryEntry]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        include_artifacts: bool = False,
+    ) -> list[HistoryEntry]:
         """按关键词相关性搜索当前 branch。"""
         terms = _tokens(query)
         if not terms:
@@ -88,12 +104,14 @@ class SessionHistory:
         phrase = query.strip().casefold()
         scored: list[tuple[int, int, HistoryEntry]] = []
         for index, entry in enumerate(self._branch()):
-            text = entry.text.casefold()
-            matches = sum(text.count(term) for term in terms)
+            text = (entry.text if include_artifacts else entry.search_text).casefold()
+            matches = sum(min(text.count(term), 3) for term in terms)
             if matches == 0:
                 continue
             phrase_bonus = 10 if phrase and phrase in text else 0
-            scored.append((matches + phrase_bonus, index, entry))
+            scored.append(
+                (matches + phrase_bonus + _entry_priority(entry), index, entry)
+            )
         scored.sort(key=lambda item: (-item[0], -item[1]))
         return [entry for _, _, entry in scored[: min(max(limit, 1), 20)]]
 
@@ -230,6 +248,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             entries = history.search(
                 query,
                 limit=_bounded(data.get("limit"), 5, 20),
+                include_artifacts=data.get("include_artifacts") is True,
             )
         elif operation == "read":
             message_id = str(data.get("message_id", "")).strip()
@@ -283,6 +302,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                     "query": {"type": "string"},
                     "message_id": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "include_artifacts": {"type": "boolean"},
                     "before": {"type": "integer", "minimum": 0, "maximum": 20},
                     "after": {"type": "integer", "minimum": 0, "maximum": 20},
                     "offset": {"type": "integer", "minimum": 0},
@@ -375,6 +395,14 @@ def _tokens(text: str) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(re.findall(r"[a-z0-9_./:-]+|[\u3400-\u9fff]", text.casefold()))
     )
+
+
+def _entry_priority(entry: HistoryEntry) -> int:
+    if _claimed_display_text(entry.content) is not None:
+        return 20
+    if entry.type in {"user", "assistant"}:
+        return 8
+    return 0
 
 
 def _bounded(value: object, default: int, maximum: int) -> int:

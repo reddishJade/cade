@@ -20,7 +20,7 @@ from .subagent_runs import (
     SubagentDescriptor,
     SubagentRunEvent,
 )
-from .surface import encode_surface_messages, surface_digest
+from .surface import encode_surface_messages
 from .tree_store import TreeSessionRepo
 from .types import JsonValue
 
@@ -187,7 +187,6 @@ class SessionRecorder:
         return {
             "generation": generation,
             "source_entry_ids": [entry.id for entry in branch],
-            "surface_sha256": surface_digest(replacement),
         }
 
     def record_provider_request(self, record: ProviderRequestRecord) -> None:

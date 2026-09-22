@@ -20,7 +20,6 @@ from cade.harness.session.surface import (
     decode_surface_messages,
     encode_surface_messages,
     project_session_surface,
-    surface_digest,
 )
 from cade.harness.session.types import SessionEntry
 
@@ -57,7 +56,6 @@ def _replacement_event(
             "data": {
                 "generation": generation,
                 "source_entry_ids": source_entry_ids,
-                "surface_sha256": surface_digest(messages),
                 "replacement": encode_surface_messages(messages),
             },
             "correlation": {},

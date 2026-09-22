@@ -181,10 +181,11 @@ def render_context_window_reset(window_id: str) -> str:
     """渲染新窗口的最小恢复协议。"""
     return (
         f'<context-window-reset id="{window_id}">\n'
-        "The previous context window was closed without a summary. NOTE.md "
-        "contains explicit working state; the lossless session transcript is "
-        "authoritative. Use history list_windows/search/read/around to retrieve "
-        "older details before relying on memory.\n"
+        "The previous context window was closed without a summary. The current "
+        "user task and active turn are included in this window. Read NOTE.md when "
+        "present for explicit working state. The lossless session transcript is "
+        "authoritative; use history list_windows/search/read/around for older "
+        "exact details.\n"
         "</context-window-reset>"
     )
 
@@ -302,7 +303,9 @@ def _active_turn_start(
     fallback_recent_tokens: int,
 ) -> int:
     for index in range(len(messages) - 1, leading_system_end - 1, -1):
-        if messages[index].get("role") == "user":
+        if messages[index].get("role") == "user" and not _is_synthetic_user_message(
+            messages[index]
+        ):
             return index
     recent_count = min(
         fallback_recent_messages,
@@ -323,6 +326,17 @@ def _is_reset_notice(message: dict[str, Any]) -> bool:
     return message.get("role") == "system" and _RESET_TAG in str(
         message.get("content", "")
     )
+
+
+def _is_synthetic_user_message(message: dict[str, Any]) -> bool:
+    """识别运行时注入的 user-role 控制消息，避免覆盖真实任务边界。"""
+    if message.get("role") != "user":
+        return False
+    content = message.get("content", "")
+    if not isinstance(content, str):
+        return False
+    stripped = content.lstrip()
+    return stripped.startswith(("<reminder>", "<plan-timeout>"))
 
 
 def _compute_recent_count_from_tokens(
