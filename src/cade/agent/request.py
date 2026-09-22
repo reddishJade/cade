@@ -134,17 +134,18 @@ class DefaultRequestAssembler:
             *context_state.persistent_messages,
             *context.messages,
         ]
+        request_messages = self.hygiene.apply(base_messages)
         result = self.context_assembler.assemble(
             ContextAssemblyInput(
                 system_prompt=context.system_prompt,
-                messages=base_messages,
+                messages=request_messages,
                 tools=list(context.tools),
                 context_blocks=legacy_blocks,
                 current_step=current_step,
                 token_budget=context.request_token_budget,
             )
         )
-        messages = self.hygiene.apply(result.messages)
+        messages = result.messages
         wire_messages = self.converter(messages)
         tool_definitions = _tools_to_definitions(context.tools)
         assembly = RequestAssembly(
@@ -165,8 +166,6 @@ class DefaultRequestAssembler:
             budget_remaining=result.budget_remaining,
             options=options,
         )
-        if context.context_manager is not None:
-            context.context_manager.record_request(assembly)
         return assembly
 
     def _collect(

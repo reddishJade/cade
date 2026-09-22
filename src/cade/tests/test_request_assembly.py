@@ -137,6 +137,55 @@ def test_request_hygiene_changes_assembly_not_session_surface() -> None:
     assert surface[1].content == long_output
 
 
+def test_request_hygiene_runs_before_context_budgeting() -> None:
+    collectors = ContextCollectorRegistry()
+    collectors.register(_Collector())
+    long_output = "x" * 20_000
+    assembler = DefaultRequestAssembler(
+        context_collectors=collectors,
+        hygiene=RequestHygiene(
+            max_tool_result_bytes=100,
+            max_tool_arg_length=100,
+            keep_head_lines=1,
+            keep_tail_lines=1,
+        ),
+    )
+
+    assembly = assembler.assemble(
+        AgentContext(
+            messages=[
+                AssistantMessage(
+                    content=[
+                        ToolCallContent(
+                            id="call-1",
+                            name="bash",
+                            arguments={"command": "print output"},
+                        )
+                    ]
+                ),
+                ToolResultMessage(
+                    tool_call_id="call-1",
+                    tool_name="bash",
+                    content=long_output,
+                ),
+            ],
+            request_token_budget=1_000,
+        ),
+        current_step=0,
+        options=None,
+    )
+
+    assert assembly.estimated_tokens <= assembly.token_budget
+    assert assembly.budget_remaining == (
+        assembly.token_budget - assembly.estimated_tokens
+    )
+    assert any(
+        trace.block_id == "note-current" and trace.included
+        for trace in assembly.context_trace
+    )
+    assert long_output not in str(assembly.messages)
+
+
 def test_agent_loop_config_has_one_request_assembly_entrypoint() -> None:
     config = AgentLoopConfig()
 

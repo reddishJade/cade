@@ -23,6 +23,7 @@ from cade.agent.events import (
     ThinkingUpdateEvent,
 )
 from cade.agent.messages import AssistantMessage
+from cade.agent.request import RequestAssembly
 from cade.agent.results import AgentLoopMetrics
 from cade.agent.types import (
     CancellationSignal,
@@ -61,13 +62,17 @@ async def call_provider(
     metrics: AgentLoopMetrics,
     provider: StreamProvider,
     current_step: int = 0,
+    assembly: RequestAssembly | None = None,
 ) -> _ProviderResponse | None:
     """调用 provider；若流式生成期间被打断则返回 None。"""
-    assembly = config.request_assembler.assemble(
-        context,
-        current_step=current_step,
-        options=config.options,
-    )
+    if assembly is None:
+        assembly = config.request_assembler.assemble(
+            context,
+            current_step=current_step,
+            options=config.options,
+        )
+    if context.context_manager is not None:
+        context.context_manager.record_request(assembly)
     if config.before_provider_request:
         config.before_provider_request(assembly)
 

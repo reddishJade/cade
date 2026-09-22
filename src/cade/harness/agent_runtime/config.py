@@ -334,6 +334,7 @@ def build_loop_config(
 
     def rollover_decision_fn(
         loop_messages: list[AgentMessage],
+        estimated_tokens: int | None,
     ) -> ContextWindowResetReason | None:
         return _rollover_decision(
             loop_messages,
@@ -346,6 +347,7 @@ def build_loop_config(
             ),
             composition,
             provider,
+            estimated_tokens=estimated_tokens,
         )
 
     def rollover_fn(loop_messages: list[AgentMessage]) -> list[AgentMessage]:
@@ -395,7 +397,7 @@ def build_loop_config(
         watchdog_repeated_tool_limit=composition.config.watchdog_repeated_tool_limit,
         watchdog_repeated_tool_skip=watchdog_repeated_tool_skip or frozenset(),
         max_consecutive_idle_steps=4,
-        rollover_decision=(
+        request_rollover_decision=(
             rollover_decision_fn if context_rollover is not None else None
         ),
         rollover_context=rollover_fn if context_rollover is not None else None,
@@ -435,6 +437,7 @@ def _rollover_decision(
     last_prompt_tokens: int | None,
     composition: AgentComposition,
     provider: ModelProvider,
+    estimated_tokens: int | None = None,
 ) -> ContextWindowResetReason | None:
     if context_rollover is None:
         return None
@@ -450,7 +453,9 @@ def _rollover_decision(
         return "token_limit"
     from .agent_helpers import to_dict
 
-    measured_tokens = last_prompt_tokens
+    measured_tokens = estimated_tokens
+    if measured_tokens is None:
+        measured_tokens = last_prompt_tokens
     if measured_tokens is None:
         measured_tokens = estimate_message_tokens([to_dict(m) for m in messages])
     trigger = effective_rollover_threshold(
