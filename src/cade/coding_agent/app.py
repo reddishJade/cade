@@ -31,6 +31,7 @@ from .assembly import (
     build_agent,
     build_shared_infra,
 )
+from .working_note import render_working_note_restoration
 
 if TYPE_CHECKING:
     from cade.harness.agent_runtime.subagents import SubagentSessionManager
@@ -291,7 +292,15 @@ class CadeApp:
 
     def restore_session(self) -> None:
         """从当前 session branch 恢复完整 agent 运行状态。"""
-        replay_session(self.agent, self.session_store, self.contextual_state)
+        project_root = self.session_store.project_root
+        replay_session(
+            self.agent,
+            self.session_store,
+            self.contextual_state,
+            restoration_context_renderer=lambda state: render_working_note_restoration(
+                project_root, state
+            ),
+        )
 
     def mcp_status(self) -> tuple[dict[str, object], ...]:
         """返回 MCP server 运行时状态快照。"""

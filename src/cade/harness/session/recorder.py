@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Protocol
 
 from cade.agent.messages import AgentMessage
@@ -77,8 +77,14 @@ class ProviderRequestRecord(Protocol):
 class SessionRecorder:
     """记录一次运行产生的稳定语义事件，并绑定 agent 的 session 身份。"""
 
-    def __init__(self, store: TreeSessionRepo) -> None:
+    def __init__(
+        self,
+        store: TreeSessionRepo,
+        context_window_state_provider: Callable[[], Mapping[str, object] | None]
+        | None = None,
+    ) -> None:
         self.store = store
+        self._context_window_state_provider = context_window_state_provider
 
     def bind_agent(
         self,
@@ -109,6 +115,9 @@ class SessionRecorder:
                 raise TypeError("context window event data must be an object")
             replacement = list(event.data.replacement)
             data.update(self._surface_metadata(replacement))
+            restoration_context = self._context_window_state()
+            if restoration_context is not None:
+                data["restoration_context"] = restoration_context
         self.store.append("event", encoded)
         if isinstance(event, FinalStructuredEvent) and event.data.answer:
             self.record_assistant(event.data.answer)
@@ -129,23 +138,39 @@ class SessionRecorder:
     ) -> str:
         """追加一次完整 surface replacement，不修改既有 transcript。"""
         metadata = self._surface_metadata(replacement)
+        data: dict[str, JsonValue] = {
+            "window_id": window_id,
+            "trigger": "manual",
+            "messages_before": messages_before,
+            "messages_after": messages_after,
+            "replacement": encode_surface_messages(replacement),
+            **metadata,
+        }
+        restoration_context = self._context_window_state()
+        if restoration_context is not None:
+            data["restoration_context"] = restoration_context
         return self.store.append(
             "event",
             {
                 "schema_version": SESSION_EVENT_SCHEMA_VERSION,
                 "type": "context_window_reset",
                 "step": 0,
-                "data": {
-                    "window_id": window_id,
-                    "trigger": "manual",
-                    "messages_before": messages_before,
-                    "messages_after": messages_after,
-                    "replacement": encode_surface_messages(replacement),
-                    **metadata,
-                },
+                "data": data,
                 "correlation": {},
             },
         )
+
+    def _context_window_state(self) -> dict[str, JsonValue] | None:
+        provider = self._context_window_state_provider
+        if provider is None:
+            return None
+        state = provider()
+        if not state:
+            return None
+        encoded = _json_value(state)
+        if not isinstance(encoded, dict):
+            raise TypeError("context window restoration state must be an object")
+        return encoded
 
     def _surface_metadata(
         self,

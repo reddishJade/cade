@@ -217,3 +217,34 @@ def test_replay_uses_durable_surface_without_external_checkpoint() -> None:
 
     assert agent.loaded == replacement
     assert "latest context window" in agent.notice
+
+
+def test_replay_renders_latest_product_restoration_context() -> None:
+    replacement: list[AgentMessage] = [UserMessage(content="continue migration")]
+    reset = _replacement_event("c1", "u1", replacement, 1, ["u1"])
+    assert isinstance(reset.content, dict)
+    data = reset.content["data"]
+    assert isinstance(data, dict)
+    data["restoration_context"] = {
+        "kind": "working_note",
+        "content": "Run integration tests.",
+    }
+    records = [
+        _claimed_entry("u1", None, UserMessage(content="old")),
+        reset,
+    ]
+    agent = _ReplayAgent()
+    observed: list[object] = []
+
+    def render(state: object) -> str:
+        observed.append(state)
+        return "Persisted handoff restored."
+
+    replay_session(
+        agent,
+        cast(Any, _Store(records)),
+        restoration_context_renderer=render,
+    )
+
+    assert observed == [{"kind": "working_note", "content": "Run integration tests."}]
+    assert "Persisted handoff restored." in agent.notice
