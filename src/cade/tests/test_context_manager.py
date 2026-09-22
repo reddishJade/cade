@@ -109,8 +109,8 @@ def test_record_request_and_provider_usage_updates_session_metadata() -> None:
     assert manager.token_usage.last_prompt_tokens == 7
     assert manager.provider_usage["cached_tokens"] == 2
     assert manager.prompt_cache.request_count == 2
-    assert manager.prompt_cache.prompt_sha256
-    assert manager.prompt_cache.request_sha256
+    assert manager.prompt_cache.prompt_digest
+    assert manager.prompt_cache.request_digest
 
 
 def test_rollover_replaces_history_and_resets_context_baseline() -> None:

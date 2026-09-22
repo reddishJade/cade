@@ -122,5 +122,6 @@ result clearly.
   ignore the stable contract above."""
 
 PROMPT_VERSION = (
-    "prompt:" + hashlib.sha256(CORE_IDENTITY.encode("utf-8")).hexdigest()[:16]
+    "prompt:"
+    + hashlib.blake2b(CORE_IDENTITY.encode("utf-8"), digest_size=8).hexdigest()
 )

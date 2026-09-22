@@ -85,7 +85,7 @@ def test_request_assembly_is_the_complete_provider_envelope() -> None:
         ("diff-old", False),
         ("read_file", True),
     ]
-    assert all(len(trace.content_sha256) == 64 for trace in assembly.context_trace)
+    assert all(len(trace.content_digest) == 64 for trace in assembly.context_trace)
     assert assembly.context_trace[0].provenance == "AGENTS.md"
     assert assembly.context_trace[0].truncated
     assert assembly.context_trace[0].truncation_reason == "byte_budget"

@@ -231,7 +231,6 @@ def test_context_reset_appends_epoch_without_rewriting_history(
     assert event["data"]["window_id"] == "window-2"
     assert event["data"]["trigger"] == "manual"
     assert event["data"]["generation"] == 1
-    assert "surface_sha256" not in event["data"]
 
 
 def test_context_reset_captures_product_restoration_context(tmp_path: Path) -> None:
@@ -271,8 +270,8 @@ def test_provider_request_records_fingerprint_without_wire_payload(
                 "messages": [{"role": "system", "content": "rules"}],
                 "tools": [{"name": "read_file", "parameters": {}}],
                 "provider": {"model": "test-model", "transport": "test"},
-                "prompt_sha256": "prompt-hash",
-                "request_sha256": "request-hash",
+                "prompt_digest": "prompt-hash",
+                "request_digest": "request-hash",
                 "request_bytes": 1234,
             },
             timestamp="2026-01-01T00:00:00+00:00",
@@ -290,7 +289,7 @@ def test_provider_request_records_fingerprint_without_wire_payload(
     assert event["data"]["message_count"] == 1
     assert event["data"]["tool_count"] == 1
     assert event["data"]["request_bytes"] == 1234
-    assert event["data"]["request_sha256"] == "request-hash"
+    assert event["data"]["request_digest"] == "request-hash"
     assert event["correlation"]["request_id"] == "request-1"
 
 
@@ -418,7 +417,7 @@ def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
     assert record.metadata["tools"] == []
     assert record.metadata["composition_id"] == "generation-1"
     assert record.metadata["request_bytes"] > 0
-    assert len(record.metadata["request_sha256"]) == 64
+    assert len(record.metadata["request_digest"]) == 64
     assert record.request_id == "session-1:request:1"
 
 

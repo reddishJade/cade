@@ -195,7 +195,9 @@ def _build_before_provider_request_closure(
             if message.get("role") == "system"
         )
         prompt_bytes = len(system_prompt.encode("utf-8"))
-        prompt_sha = hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()
+        prompt_digest = hashlib.blake2b(
+            system_prompt.encode("utf-8"), digest_size=32
+        ).hexdigest()
         provider_info = {
             "model": provider.model,
             "base_url": provider.base_url,
@@ -240,7 +242,7 @@ def _build_before_provider_request_closure(
                                 "block_id": trace.block_id,
                                 "included": trace.included,
                                 "token_count": trace.token_count,
-                                "content_sha256": trace.content_sha256,
+                                "content_digest": trace.content_digest,
                                 "provenance": trace.provenance,
                                 "truncated": trace.truncated,
                                 "truncation_reason": trace.truncation_reason,
@@ -250,8 +252,10 @@ def _build_before_provider_request_closure(
                         ],
                     },
                     "prompt_version": get_prompt_version(),
-                    "prompt_sha256": prompt_sha,
-                    "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+                    "prompt_digest": prompt_digest,
+                    "request_digest": hashlib.blake2b(
+                        request_bytes, digest_size=32
+                    ).hexdigest(),
                     "request_bytes": len(request_bytes),
                     "system_prompt_bytes": prompt_bytes,
                 },

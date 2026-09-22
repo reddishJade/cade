@@ -115,7 +115,7 @@ def test_real_build_app_minimal_run_and_replay_contract(
     assert first_envelope["composition_id"] == first.agent.composition.generation_id
     assert first_envelope["message_count"] == len(first_request[0])
     assert first_envelope["tool_count"] == len(first_request[1])
-    assert len(first_envelope["request_sha256"]) == 64
+    assert len(first_envelope["request_digest"]) == 64
     assert first_envelope["request_bytes"] > 0
     assert "messages" not in first_envelope
     assert "tools" not in first_envelope
@@ -142,7 +142,7 @@ def test_real_build_app_minimal_run_and_replay_contract(
     )
     second_envelope = _provider_request_events(resumed)[-1]["data"]
     assert second_envelope["message_count"] == len(second_messages)
-    assert len(second_envelope["request_sha256"]) == 64
+    assert len(second_envelope["request_digest"]) == 64
     resumed.close()
 
 
