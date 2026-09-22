@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from cade.main import _run, main, parse_args
@@ -65,6 +66,91 @@ def test_cli_command_starts_repl(monkeypatch) -> None:
 
     assert _run(args, runtime_config) == 0
     assert calls == ["cli"]
+
+
+def test_single_shot_restores_requested_session_and_closes_app(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls: list[object] = []
+    view = SimpleNamespace(id="session-1", project_path=str(tmp_path))
+
+    class _Store:
+        def find_by_id(self, session_id: str):
+            calls.append(("find", session_id))
+            return view
+
+        def resume(self, session_id: str) -> None:
+            calls.append(("resume", session_id))
+
+    class _App:
+        session_store = _Store()
+
+        def restore_session(self) -> None:
+            calls.append("restore")
+
+        def ask_stream(self, prompt: str):
+            calls.append(("ask", prompt))
+            return iter(())
+
+        def close(self) -> None:
+            calls.append("close")
+
+    monkeypatch.setattr("cade.main._build_app_from_config", lambda *_: _App())
+    args = parse_args(
+        [
+            "--project-root",
+            str(tmp_path),
+            "--session",
+            "session-1",
+            "-p",
+            "continue",
+        ]
+    )
+    runtime_config = SimpleNamespace(paths=SimpleNamespace(sessions_dir=None))
+
+    assert _run(args, runtime_config) == 0
+    assert calls == [
+        ("find", "session-1"),
+        ("resume", "session-1"),
+        "restore",
+        ("ask", "continue"),
+        "close",
+    ]
+
+
+def test_single_shot_closes_app_when_session_is_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+
+    class _Store:
+        def find_by_id(self, _session_id: str):
+            return None
+
+    app = SimpleNamespace(
+        session_store=_Store(),
+        close=lambda: calls.append("close"),
+    )
+    monkeypatch.setattr("cade.main._build_app_from_config", lambda *_: app)
+    args = parse_args(
+        [
+            "--project-root",
+            str(tmp_path),
+            "--session",
+            "missing",
+            "-p",
+            "continue",
+        ]
+    )
+    runtime_config = SimpleNamespace(paths=SimpleNamespace(sessions_dir=None))
+
+    try:
+        _run(args, runtime_config)
+    except RuntimeError as exc:
+        assert str(exc) == "Session not found: missing"
+    else:
+        raise AssertionError("missing session should fail")
+    assert calls == ["close"]
 
 
 def test_main_requires_credentials_in_non_tty(monkeypatch, capsys) -> None:
