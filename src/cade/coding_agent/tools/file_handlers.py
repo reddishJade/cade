@@ -21,7 +21,7 @@ from cade.coding_agent.tools.path_utils import resolve_project_path
 from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
-from .file_image import _detect_image, _read_image
+from .file_image import detect_image, read_image
 from .file_mutation_queue import with_file_mutation
 from .path_utils import (
     SAMPLE_BYTES,
@@ -68,7 +68,7 @@ class WriteFileRequest:
     content: str
 
 
-def _read_file(
+def read_file_content(
     root: Path,
     operations: FileSystem,
     context_state: ContextualRetrievalState | None,
@@ -92,9 +92,9 @@ def _read_file(
     if operations.is_dir(filepath):
         return _read_directory(filepath, display, operations, data)
 
-    mime = _detect_image(filepath, operations)
+    mime = detect_image(filepath, operations)
     if mime is not None:
-        return _read_image(filepath, display, mime, operations)
+        return read_image(filepath, display, mime, operations)
 
     sample = operations.read_head(filepath, SAMPLE_BYTES)
     if is_binary_file(filepath, sample):
@@ -326,7 +326,7 @@ def _write_safe_path(root: Path, raw_path: str) -> Path:
     return filepath
 
 
-def _write_file(
+def write_file_content(
     root: Path,
     operations: FileSystem,
     context_state: ContextualRetrievalState | None,
@@ -400,7 +400,7 @@ def _write_file_impl(
     )
 
 
-def _edit_file(
+def edit_file_content(
     root: Path,
     operations: FileSystem,
     context_state: ContextualRetrievalState | None,

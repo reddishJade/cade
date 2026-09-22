@@ -203,7 +203,7 @@ def _display(root: Path, path: Path) -> str:
     return display_path(root, path)
 
 
-def _mtime_ns(path: Path) -> int:
+def mtime_ns(path: Path) -> int:
     try:
         return path.stat().st_mtime_ns
     except OSError:

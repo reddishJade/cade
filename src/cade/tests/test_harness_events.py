@@ -29,24 +29,24 @@ from cade.harness.agent_runtime.events import (
     _StreamTranslationState,
     _tool_update_text,
     _translate_context_window_reset,
-    _translate_event,
     _translate_message_update,
     _translate_thinking_update,
     _translate_tool_execution_end,
     _translate_tool_execution_start,
     _translate_turn_end,
+    translate_event,
 )
 
 
 def test_translate_start_event_returns_none() -> None:
     state = _StreamTranslationState()
-    assert _translate_event(AgentStartEvent(), state) is None
+    assert translate_event(AgentStartEvent(), state) is None
 
 
 def test_turn_start_increments_step() -> None:
     state = _StreamTranslationState()
     assert state.step == 0
-    _translate_event(TurnStartEvent(), state)
+    translate_event(TurnStartEvent(), state)
     assert state.step == 1
 
 

@@ -8,14 +8,14 @@ from cade.harness.security.permission_model.types import (
     Target,
 )
 from cade.harness.security.permission_model.utils import (
-    _access_satisfies,
     _grant_target_pattern,
-    _is_blocked_workspace_path,
-    _is_git_path,
-    _is_sensitive_path,
     _looks_absolute,
+    access_satisfies,
     command_grant_pattern,
     create_grant_record,
+    is_blocked_workspace_path,
+    is_git_path,
+    is_sensitive_path,
 )
 
 
@@ -65,52 +65,52 @@ class TestLooksAbsolute:
 
 class TestIsSensitivePath:
     def test_dotenv(self) -> None:
-        assert _is_sensitive_path(".env")
-        assert _is_sensitive_path(".env.production")
+        assert is_sensitive_path(".env")
+        assert is_sensitive_path(".env.production")
 
     def test_dotenv_example_write_only(self) -> None:
-        assert _is_sensitive_path(".env.example", access="write")
-        assert not _is_sensitive_path(".env.example", access="read")
+        assert is_sensitive_path(".env.example", access="write")
+        assert not is_sensitive_path(".env.example", access="read")
 
     def test_credential_paths(self) -> None:
-        assert _is_sensitive_path(".ssh/id_rsa")
-        assert _is_sensitive_path(".aws/config")
+        assert is_sensitive_path(".ssh/id_rsa")
+        assert is_sensitive_path(".aws/config")
 
     def normal_path_not_sensitive(self) -> None:
-        assert not _is_sensitive_path("src/main.py")
+        assert not is_sensitive_path("src/main.py")
 
 
 class TestIsBlockedWorkspacePath:
     def test_venv(self) -> None:
-        assert _is_blocked_workspace_path(".venv/lib/python")
+        assert is_blocked_workspace_path(".venv/lib/python")
 
     def test_pycache(self) -> None:
-        assert _is_blocked_workspace_path("src/__pycache__/foo.pyc")
+        assert is_blocked_workspace_path("src/__pycache__/foo.pyc")
 
     def test_normal_path(self) -> None:
-        assert not _is_blocked_workspace_path("src/main.py")
+        assert not is_blocked_workspace_path("src/main.py")
 
 
 class TestIsGitPath:
     def test_dotgit(self) -> None:
-        assert _is_git_path(".git/config")
+        assert is_git_path(".git/config")
 
     def test_non_git(self) -> None:
-        assert not _is_git_path("src/main.py")
+        assert not is_git_path("src/main.py")
 
 
 class TestAccessSatisfies:
     def test_read_write_covers_all(self) -> None:
-        assert _access_satisfies("read_write", "read")
-        assert _access_satisfies("read_write", "write")
+        assert access_satisfies("read_write", "read")
+        assert access_satisfies("read_write", "write")
 
     def test_read_only_read(self) -> None:
-        assert _access_satisfies("read", "read")
-        assert not _access_satisfies("read", "write")
+        assert access_satisfies("read", "read")
+        assert not access_satisfies("read", "write")
 
     def test_write_only_write(self) -> None:
-        assert _access_satisfies("write", "write")
-        assert not _access_satisfies("write", "read")
+        assert access_satisfies("write", "write")
+        assert not access_satisfies("write", "read")
 
 
 class TestCreateGrantRecord:

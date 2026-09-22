@@ -17,7 +17,7 @@ class _ImageFileOperations(Protocol):
     def read_bytes(self, path: Path) -> bytes: ...
 
 
-def _detect_image(path: Path, operations: _ImageFileOperations) -> str | None:
+def detect_image(path: Path, operations: _ImageFileOperations) -> str | None:
     try:
         buf = operations.read_bytes(path)
     except OSError:
@@ -25,7 +25,7 @@ def _detect_image(path: Path, operations: _ImageFileOperations) -> str | None:
     return filetype.guess_mime(buf)
 
 
-def _read_image(
+def read_image(
     path: Path, display_path: str, mime: str, operations: _ImageFileOperations
 ) -> str:
     data = operations.read_bytes(path)

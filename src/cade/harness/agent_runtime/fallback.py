@@ -170,7 +170,7 @@ class _FallbackSwitchingProvider:
             yield event
 
 
-class _FallbackWithRetryPrimary(_FallbackSwitchingProvider):
+class FallbackWithRetryPrimary(_FallbackSwitchingProvider):
     """扩展 _FallbackSwitchingProvider，在回退成功达到阈值后重试主 provider。"""
 
     def _record_success(self, provider: ModelProvider) -> None:

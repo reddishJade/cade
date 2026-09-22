@@ -39,15 +39,15 @@ from .config import (
 from .events import (
     AgentHarnessEvent,
     _StreamTranslationState,
-    _translate_event,
+    translate_event,
 )
-from .fallback import _FallbackWithRetryPrimary
+from .fallback import FallbackWithRetryPrimary
 from .message_codec import messages_from_run_state
 from .result import (
     AgentHarnessResult,
     RunState,
-    _build_structured_result,
-    _final_event,
+    build_structured_result,
+    final_event,
 )
 from .run_control import (
     ActiveRunHandle,
@@ -224,7 +224,7 @@ class AgentHarness:
 
     def _build_result(self, visible_result: object) -> AgentHarnessResult:
         """构建 turn 结果。子类可覆盖以注入 current_mode 等。"""
-        return _build_structured_result(visible_result)  # type: ignore[arg-type]
+        return build_structured_result(visible_result)  # type: ignore[arg-type]
 
     def _post_run(self, final: AgentHarnessResult) -> None:
         """turn 完成后的子类钩子。例如记忆反馈。"""
@@ -559,7 +559,7 @@ class AgentHarness:
                 finish_step_input=run_handle.finish_step_input,
                 reopen_step_input=run_handle.reopen_step_input,
             ):
-                translated = _translate_event(event, translation_state)
+                translated = translate_event(event, translation_state)
                 if translated is not None:
                     for te in (
                         translated if isinstance(translated, list) else [translated]
@@ -578,7 +578,7 @@ class AgentHarness:
             )
             final = self._build_result(visible_result)
             self._post_run(final)
-            yield _final_event(
+            yield final_event(
                 result.steps,
                 final,
                 self._correlation.snapshot(),
@@ -617,4 +617,4 @@ def _provider_for(composition: AgentComposition) -> ModelProvider:
     fallback = composition.fallback_provider
     if fallback is None:
         return composition.primary_provider
-    return _FallbackWithRetryPrimary(composition.primary_provider, fallback)
+    return FallbackWithRetryPrimary(composition.primary_provider, fallback)

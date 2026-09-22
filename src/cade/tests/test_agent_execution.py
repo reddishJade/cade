@@ -23,7 +23,7 @@ from cade.agent._execution import (
     update_repeated_tool_watchdog,
     validate_tool_arguments,
 )
-from cade.agent.config import AgentContext, AgentLoopConfig, _LoopRunState
+from cade.agent.config import AgentContext, AgentLoopConfig, LoopRunState
 from cade.agent.messages import AssistantMessage, ToolResultMessage
 from cade.agent.types import (
     AgentTool,
@@ -223,7 +223,7 @@ def _make_call(name: str, **kwargs: str) -> ToolCallContent:
 
 class TestUpdateRepeatedToolWatchdog:
     def test_no_repeat_no_trigger(self) -> None:
-        state = _LoopRunState()
+        state = LoopRunState()
         config = AgentLoopConfig()
         calls = [_make_call("read", id="c1")]
         results = [ToolResultMessage(tool_call_id="c1", tool_name="read", content="ok")]
@@ -231,7 +231,7 @@ class TestUpdateRepeatedToolWatchdog:
         assert state.repeated_tool_count == 0
 
     def test_repeat_triggers_watchdog(self) -> None:
-        state = _LoopRunState()
+        state = LoopRunState()
         config = AgentLoopConfig(watchdog_repeated_tool_limit=3)
         calls = [_make_call("read", id="c1")]
         results = [ToolResultMessage(tool_call_id="c1", tool_name="read", content="ok")]
@@ -243,7 +243,7 @@ class TestUpdateRepeatedToolWatchdog:
         assert "watchdog" in reason
 
     def test_skipped_tools_not_counted(self) -> None:
-        state = _LoopRunState()
+        state = LoopRunState()
         config = AgentLoopConfig(
             watchdog_repeated_tool_limit=2,
             watchdog_repeated_tool_skip=frozenset({"skip_tool"}),
@@ -257,7 +257,7 @@ class TestUpdateRepeatedToolWatchdog:
         assert reason is None
 
     def test_error_results_reset_counter(self) -> None:
-        state = _LoopRunState()
+        state = LoopRunState()
         config = AgentLoopConfig()
         calls = [_make_call("read", id="c1")]
         results = [
@@ -271,7 +271,7 @@ class TestUpdateRepeatedToolWatchdog:
 
 class TestUpdateIdleToolWatchdog:
     def test_productive_resets_counter(self) -> None:
-        state = _LoopRunState(consecutive_idle_steps=3)
+        state = LoopRunState(consecutive_idle_steps=3)
         config = AgentLoopConfig(max_consecutive_idle_steps=4)
         calls = [_make_call("read")]
         results = [ToolResultMessage(tool_call_id="c1", tool_name="read", content="ok")]
@@ -280,7 +280,7 @@ class TestUpdateIdleToolWatchdog:
         assert state.consecutive_idle_steps == 0
 
     def test_unproductive_triggers_watchdog(self) -> None:
-        state = _LoopRunState()
+        state = LoopRunState()
         config = AgentLoopConfig(max_consecutive_idle_steps=3)
         calls = [_make_call("read")]
         results = [

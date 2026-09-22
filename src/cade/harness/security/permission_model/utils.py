@@ -144,7 +144,7 @@ def compute_approval_candidate(
     )
 
 
-def _is_external_path(path: str) -> bool:
+def is_external_path(path: str) -> bool:
     return _looks_absolute(path) or ".." in path.split("/")
 
 
@@ -158,11 +158,11 @@ def _looks_absolute(path: str) -> bool:
     )
 
 
-def _is_inside_path(candidate: Path, root: Path) -> bool:
+def is_inside_path(candidate: Path, root: Path) -> bool:
     return candidate == root or candidate.is_relative_to(root)
 
 
-def _access_satisfies(dir_access: DirAccess, target_access: PermissionAccess) -> bool:
+def access_satisfies(dir_access: DirAccess, target_access: PermissionAccess) -> bool:
     if dir_access == "read_write":
         return True
     if dir_access == "read":
@@ -171,7 +171,7 @@ def _access_satisfies(dir_access: DirAccess, target_access: PermissionAccess) ->
         return target_access in ("write",)
 
 
-def _validate_symlinks_can_resolve(root: Path, relative_path: str) -> None:
+def validate_symlinks_can_resolve(root: Path, relative_path: str) -> None:
     current = root
     for part in _relative_path_parts(relative_path):
         current = current / part
@@ -184,12 +184,12 @@ def _relative_path_parts(relative_path: str) -> tuple[str, ...]:
     return tuple(part for part in relative_path.split("/") if part not in ("", "."))
 
 
-def _is_git_path(path: str) -> bool:
+def is_git_path(path: str) -> bool:
     parts = tuple(part for part in path.split("/") if part)
     return ".git" in parts
 
 
-def _is_sensitive_path(path: str, *, access: PermissionAccess = "read") -> bool:
+def is_sensitive_path(path: str, *, access: PermissionAccess = "read") -> bool:
     name = Path(path).name
 
     if name == ".env.example":
@@ -202,6 +202,6 @@ def _is_sensitive_path(path: str, *, access: PermissionAccess = "read") -> bool:
     return any(part in CREDENTIAL_PATH_PARTS for part in parts)
 
 
-def _is_blocked_workspace_path(path: str) -> bool:
+def is_blocked_workspace_path(path: str) -> bool:
     parts = tuple(part for part in path.split("/") if part)
     return any(part in BLOCKED_PATH_PARTS for part in parts)

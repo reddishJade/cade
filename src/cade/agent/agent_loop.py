@@ -39,8 +39,8 @@ from ._provider import call_provider
 from .config import (
     AgentContext,
     AgentLoopConfig,
+    LoopRunState,
     ShouldStopAfterTurnContext,
-    _LoopRunState,
 )
 from .events import (
     AgentEndEvent,
@@ -182,7 +182,7 @@ async def _run_loop(
     """
     metrics = AgentLoopMetrics()
     current_context = initial_context
-    state = _LoopRunState(active_provider=config.provider)
+    state = LoopRunState(active_provider=config.provider)
 
     step = 0
     while config.max_steps is None or step < config.max_steps:
@@ -524,7 +524,7 @@ async def _run_inner_loop(
     signal: CancellationSignal | None,
     metrics: AgentLoopMetrics,
     step: int,
-    state: _LoopRunState,
+    state: LoopRunState,
     prepared_assembly: RequestAssembly | None = None,
 ) -> tuple[AssistantMessage, str, StreamProvider | None] | None:
     """内层循环：模型调用 → 错误重试 → max_tokens 续写。

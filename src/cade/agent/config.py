@@ -28,7 +28,7 @@ from .messages import AgentMessage, AssistantMessage, ToolResultMessage
 from .request import DefaultRequestAssembler, RequestAssembler, RequestAssembly
 
 
-class _LoopRunState(BaseModel):
+class LoopRunState(BaseModel):
     """Agent 循环运行时状态，由 agent_loop.py 持有并更新。"""
 
     first_turn: bool = True

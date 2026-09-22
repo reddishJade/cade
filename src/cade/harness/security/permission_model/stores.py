@@ -17,7 +17,7 @@ from .types import (
     GrantRecordData,
     Target,
 )
-from .utils import _is_external_path, _is_inside_path
+from .utils import is_external_path, is_inside_path
 
 
 def _lookup_grant_record(
@@ -97,7 +97,7 @@ def _normalize_target_path(
     boundary_context: BoundaryContext | None = None,
 ) -> str:
     normalized = _normalize_path_text(path)
-    if boundary_context is None or _is_external_path(normalized):
+    if boundary_context is None or is_external_path(normalized):
         return normalized
 
     root = boundary_context.project_root
@@ -106,7 +106,7 @@ def _normalize_target_path(
         candidate = (resolved_root / normalized).resolve(strict=False)
     except (OSError, RuntimeError):
         return normalized
-    if not _is_inside_path(candidate, resolved_root):
+    if not is_inside_path(candidate, resolved_root):
         return normalized
     return candidate.relative_to(resolved_root).as_posix() or "."
 
