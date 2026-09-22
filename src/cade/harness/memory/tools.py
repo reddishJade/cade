@@ -79,8 +79,10 @@ def build_memory_tools(manager: MemoryManager) -> tuple[ToolSpec, ...]:
 
 
 def _parse_limit(value: object) -> int:
+    if not isinstance(value, (str, int, float)):
+        return 3
     try:
-        parsed = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        parsed = int(value)
+    except (OverflowError, ValueError):
         return 3
     return min(max(parsed, 1), 10)

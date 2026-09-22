@@ -15,7 +15,7 @@ import os
 import sys
 import time
 import warnings
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from typing import Any, cast
 
 from prompt_toolkit.key_binding import KeyBindings
@@ -31,6 +31,11 @@ _global_win32_ctrl_ref: Any = None
 def _is_windows() -> bool:
     """运行时判断 Windows，避免静态检查器删除平台专用分支。"""
     return sys.platform == "win32"
+
+
+def _mark_patched(callback: Callable[..., Any]) -> None:
+    """标记已安装的补丁，避免模块重载后重复包裹第三方函数。"""
+    callback.__dict__["_cade_patched"] = True
 
 
 def install_force_exit_signal_handler() -> None:
@@ -325,7 +330,7 @@ def suppress_windows_ptk_shutdown_noise() -> None:
                         return None
                 raise
 
-        _safe_run_in_executor_with_context._cade_patched = True  # type: ignore[attr-defined]
+        _mark_patched(_safe_run_in_executor_with_context)
         ptk_utils.run_in_executor_with_context = _safe_run_in_executor_with_context
         ptk_eventloop.run_in_executor_with_context = _safe_run_in_executor_with_context
 
@@ -355,7 +360,7 @@ def suppress_windows_ptk_shutdown_noise() -> None:
                     except (RuntimeError, OSError):
                         pass
 
-                _safe_add_win32_handle._cade_patched = True  # type: ignore[attr-defined]
+                _mark_patched(_safe_add_win32_handle)
                 win32_handles_cls.add_win32_handle = _safe_add_win32_handle
         except (ImportError, AttributeError):
             pass
@@ -389,7 +394,7 @@ def suppress_windows_ptk_shutdown_noise() -> None:
                 loop.set_exception_handler(_handler)
                 return loop
 
-            _patched_policy_new_event_loop._cade_patched = True  # type: ignore[attr-defined]
+            _mark_patched(_patched_policy_new_event_loop)
             policy_cls.new_event_loop = _patched_policy_new_event_loop
 
         try:

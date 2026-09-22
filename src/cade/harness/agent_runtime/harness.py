@@ -23,6 +23,7 @@ from ...agent.messages import (
     SystemMessage,
     UserMessage,
 )
+from ...agent.results import AgentLoopResult
 from ...agent.types import ApprovalCallback, ToolSpec
 from ..observability import HookRecord, RuntimeCorrelation
 from ..security.approval import ApprovalPolicy, ApprovalsReviewer
@@ -222,9 +223,9 @@ class AgentHarness:
         """子类可返回额外的 build_loop_config 参数。"""
         return {}
 
-    def _build_result(self, visible_result: object) -> AgentHarnessResult:
+    def _build_result(self, visible_result: AgentLoopResult) -> AgentHarnessResult:
         """构建 turn 结果。子类可覆盖以注入 current_mode 等。"""
-        return build_structured_result(visible_result)  # type: ignore[arg-type]
+        return build_structured_result(visible_result)
 
     def _post_run(self, final: AgentHarnessResult) -> None:
         """turn 完成后的子类钩子。例如记忆反馈。"""
