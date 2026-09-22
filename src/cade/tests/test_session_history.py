@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from cade.harness.session import SessionHistory, build_history_tools
+from cade.harness.session.history import _bounded
 
 
 def _claim(text: str) -> dict[str, object]:
@@ -28,6 +29,12 @@ def _claim(text: str) -> dict[str, object]:
         },
         "correlation": {},
     }
+
+
+def test_bounded_rejects_non_scalar_and_non_finite_values() -> None:
+    assert _bounded({}, 7, 100) == 7
+    assert _bounded(float("inf"), 7, 100) == 7
+    assert _bounded("150", 7, 100) == 100
 
 
 def _write_session(sessions_dir: Path) -> None:

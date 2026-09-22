@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
-from typing import cast
 from uuid import uuid4
 
 from cade.agent.config import AgentContext, BeforeToolCallContext
@@ -105,10 +104,10 @@ class CodingAgentHarness(AgentHarness):
             "completion_verifier": self._goal.completion_feedback,
         }
 
-    def _build_result(self, visible_result: object) -> AgentHarnessResult:
+    def _build_result(self, visible_result: AgentLoopResult) -> AgentHarnessResult:
         from cade.harness.agent_runtime.result import build_structured_result
 
-        result = build_structured_result(cast(AgentLoopResult, visible_result))
+        result = build_structured_result(visible_result)
         goal_notice = self._goal.consume_terminal_notice()
         answer = result.answer
         if goal_notice:

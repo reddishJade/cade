@@ -158,9 +158,11 @@ class WebRunHub:
         scope: str,
         suggestion: str,
     ) -> None:
-        scope_value: HITLScope = (
-            "once" if scope not in {"once", "session", "permanent"} else scope  # type: ignore[assignment]
-        )
+        scope_value: HITLScope = "once"
+        if scope == "session":
+            scope_value = "session"
+        elif scope == "permanent":
+            scope_value = "permanent"
         if decision == "allow":
             pending.result = HITLResult(
                 decision="allow",

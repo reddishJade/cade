@@ -360,9 +360,11 @@ def _tokens(text: str) -> tuple[str, ...]:
 
 
 def _bounded(value: object, default: int, maximum: int) -> int:
+    if not isinstance(value, (str, int, float)):
+        return default
     try:
-        return min(max(int(value), 0), maximum)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        return min(max(int(value), 0), maximum)
+    except (OverflowError, ValueError):
         return default
 
 

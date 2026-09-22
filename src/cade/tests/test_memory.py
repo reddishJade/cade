@@ -2,6 +2,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from cade.harness.memory import MemoryManager, build_memory_block, build_memory_tools
+from cade.harness.memory.tools import _parse_limit
+
+
+def test_memory_limit_rejects_non_scalar_and_non_finite_values() -> None:
+    assert _parse_limit({}) == 3
+    assert _parse_limit(float("inf")) == 3
+    assert _parse_limit("8") == 8
 
 
 def _manager(tmp_path: Path) -> MemoryManager:
