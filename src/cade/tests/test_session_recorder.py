@@ -234,6 +234,30 @@ def test_context_reset_appends_epoch_without_rewriting_history(
     assert len(event["data"]["surface_sha256"]) == 64
 
 
+def test_context_reset_captures_product_restoration_context(tmp_path: Path) -> None:
+    recorder = SessionRecorder(
+        SessionStore(tmp_path / "sessions", project_root=tmp_path),
+        context_window_state_provider=lambda: {
+            "kind": "working_note",
+            "content": "Next: run tests.",
+        },
+    )
+
+    recorder.record_context_window_reset(
+        window_id="window-2",
+        messages_before=4,
+        messages_after=1,
+        replacement=[UserMessage(content="continue")],
+    )
+
+    event = recorder.store.build_branch()[-1].content
+    assert isinstance(event, dict)
+    assert event["data"]["restoration_context"] == {
+        "kind": "working_note",
+        "content": "Next: run tests.",
+    }
+
+
 def test_provider_request_records_fingerprint_without_wire_payload(
     tmp_path: Path,
 ) -> None:

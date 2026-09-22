@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Protocol
 
 from cade.agent.messages import AgentMessage
@@ -45,6 +46,7 @@ def replay_session(
     agent: ReplayAgent,
     store: TreeSessionRepo,
     contextual_state: ContextualReplayState | None = None,
+    restoration_context_renderer: Callable[[object], str | None] | None = None,
 ) -> None:
     """把当前 session branch 的事实投影回 agent 内存。"""
     agent.session_id = store.session_id
@@ -61,19 +63,27 @@ def replay_session(
     if contextual_state is not None:
         contextual_state.clear()
         restore_contextual_state(contextual_state, records)
+    restoration_notice = None
+    if restoration_context_renderer is not None:
+        restoration_notice = restoration_context_renderer(
+            latest_restoration_context(records)
+        )
     if surface.generation > 0:
-        agent.set_resumed_notice(
-            "This session resumed in its latest context window. NOTE.md contains "
-            "explicit working state and the lossless transcript is authoritative. "
-            "Use history for older exact details instead of asking the user to "
-            "restate them."
+        notice = (
+            "This session resumed in its latest context window. Consult NOTE.md "
+            "for explicit working state when present; the lossless transcript is "
+            "authoritative. Use history for older exact details instead of asking "
+            "the user to restate them."
         )
     else:
-        agent.set_resumed_notice(
+        notice = (
             "This conversation was resumed from a previous session. "
             "The transcript history above has been loaded as context. "
             "Continue the task as if the session was uninterrupted."
         )
+    if restoration_notice:
+        notice = f"{notice}\n\n{restoration_notice}"
+    agent.set_resumed_notice(notice)
 
 
 def latest_run_state(records: list[SessionEntry]) -> object | None:
@@ -106,6 +116,19 @@ def latest_goal_state(records: list[SessionEntry]) -> object | None:
         run_state = data.get("run_state")
         if isinstance(run_state, dict) and isinstance(run_state.get("goal"), dict):
             return run_state["goal"]
+    return None
+
+
+def latest_restoration_context(records: list[SessionEntry]) -> object | None:
+    """读取最近一次换窗时持久化的产品层恢复上下文。"""
+    for record in reversed(records):
+        if record.type != "event" or not isinstance(record.content, dict):
+            continue
+        if record.content.get("type") != "context_window_reset":
+            continue
+        data = record.content.get("data")
+        if isinstance(data, dict):
+            return data.get("restoration_context")
     return None
 
 

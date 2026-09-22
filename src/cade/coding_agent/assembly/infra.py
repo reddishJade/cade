@@ -15,6 +15,8 @@ from cade.harness.memory import MemoryManager
 from cade.harness.session import SessionHistory, SessionInbox, SessionStore
 from cade.harness.session.recorder import SessionRecorder
 
+from ..working_note import capture_working_note
+
 
 @dataclass(frozen=True)
 class SharedInfra:
@@ -58,7 +60,8 @@ def build_shared_infra(
         fallback_recent_tokens=runtime_config.agent.fallback_recent_tokens,
     )
     session_recorder = SessionRecorder(
-        SessionStore(transcript_dir, project_root=project_root)
+        SessionStore(transcript_dir, project_root=project_root),
+        context_window_state_provider=lambda: capture_working_note(project_root),
     )
     session_history = SessionHistory(
         transcript_dir,
