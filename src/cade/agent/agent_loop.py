@@ -303,7 +303,6 @@ async def _run_loop(
         new_messages.extend(current_context.messages[ctx_len_before:-1])
 
         new_messages.append(message)
-        metrics.llm_calls += 1
 
         # ── 错误/中止 → 退出 ──
         if stop_reason in ("error", "aborted"):
