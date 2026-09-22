@@ -330,10 +330,32 @@ def _run(args, runtime_config) -> int:
         or (args.project_root / ".cade" / "sessions")
     )
     app = _build_app_from_config(args.project_root, runtime_config, sessions_dir)
-    if args.prompt:
-        _print_stream(app.ask_stream(args.prompt))
-        return 0
-    if args.command == "tui":
+    try:
+        if args.prompt:
+            _restore_single_shot_session(app, args)
+            _print_stream(app.ask_stream(args.prompt))
+            return 0
+        if args.command == "tui":
+            return run_tui(
+                app,
+                session_id=args.session,
+                auto_continue=args.continue_,
+                resume_latest=args.resume,
+                project_root=args.project_root,
+            )
+        if args.command == "cli":
+            if args.session:
+                return run_repl(
+                    app,
+                    session_id=args.session,
+                    project_root=args.project_root,
+                )
+            if args.continue_:
+                return run_repl(app, auto_continue=True, project_root=args.project_root)
+            if args.resume:
+                return run_repl(app, resume_latest=True, project_root=args.project_root)
+            return run_repl(app, project_root=args.project_root)
+
         return run_tui(
             app,
             args.project_root,
@@ -341,26 +363,42 @@ def _run(args, runtime_config) -> int:
             auto_continue=args.continue_,
             resume_latest=args.resume,
         )
-    if args.command == "cli":
-        if args.session:
-            return run_repl(
-                app,
-                session_id=args.session,
-                project_root=args.project_root,
-            )
-        if args.continue_:
-            return run_repl(app, auto_continue=True, project_root=args.project_root)
-        if args.resume:
-            return run_repl(app, resume_latest=True, project_root=args.project_root)
-        return run_repl(app, project_root=args.project_root)
+    finally:
+        close = getattr(app, "close", None)
+        if callable(close):
+            close()
 
-    return run_tui(
-        app,
-        args.project_root,
-        session_id=args.session,
-        auto_continue=args.continue_,
-        resume_latest=args.resume,
-    )
+
+def _restore_single_shot_session(app, args) -> None:
+    """在单次 prompt 执行前应用与交互宿主相同的 session 选择。"""
+    store = app.session_store
+    selected = None
+    if args.session is not None:
+        selected = store.find_by_id(args.session)
+        if selected is None:
+            raise RuntimeError(f"Session not found: {args.session}")
+        stored = (
+            Path(selected.project_path).resolve() if selected.project_path else None
+        )
+        if stored is None or stored != args.project_root.resolve():
+            raise RuntimeError(
+                f"Session belongs to another project: {selected.project_path}"
+            )
+    elif args.continue_:
+        selected = store.find_latest_for_project(args.project_root)
+    elif args.resume:
+        from .cli.repl_sessions import select_session_interactively
+
+        selected = select_session_interactively(
+            store.list_infos(),
+            "Select session to resume:",
+        )
+        if selected is None:
+            raise RuntimeError("Session resume cancelled")
+    if selected is None:
+        return
+    store.resume(selected.id)
+    app.restore_session()
 
 
 def _build_app_from_config(
