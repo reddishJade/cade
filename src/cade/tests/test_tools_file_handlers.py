@@ -44,6 +44,9 @@ class TestParseOffset:
         with pytest.raises(ValueError, match="integer"):
             _parse_offset({"offset": "abc"})
 
+        with pytest.raises(ValueError, match="integer"):
+            _parse_offset({"offset": float("inf")})
+
 
 class TestParseLimit:
     def test_default(self) -> None:
@@ -58,6 +61,9 @@ class TestParseLimit:
     def test_non_int_raises(self) -> None:
         with pytest.raises(ValueError, match="integer"):
             _parse_limit({"limit": "abc"})
+
+        with pytest.raises(ValueError, match="integer"):
+            _parse_limit({"limit": float("inf")})
 
 
 class TestTruncateLine:

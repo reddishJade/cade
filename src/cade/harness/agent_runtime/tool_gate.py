@@ -719,7 +719,7 @@ def _tool_results_count_as_progress(
     results_by_id = {
         str(getattr(result, "tool_call_id", "")): result for result in tool_results
     }
-    for tool_use, positional_result in zip(tool_uses, tool_results):
+    for tool_use, positional_result in zip(tool_uses, tool_results, strict=False):
         result = results_by_id.get(tool_use.id, positional_result)
         is_error = getattr(result, "is_error", None)
         if isinstance(is_error, bool) and not is_error:

@@ -176,7 +176,7 @@ def test_linux_masks_unreadable_files_and_directories(tmp_path: Path) -> None:
 
     assert ("/dev/null", str(secret_file)) in _mounts(command.argv, "--ro-bind")
     assert ("--tmpfs", str(secret_directory)) in tuple(
-        zip(command.argv, command.argv[1:])
+        zip(command.argv, command.argv[1:], strict=False)
     )
 
 

@@ -162,7 +162,7 @@ def resolve_absolute_path(root: Path, raw_path: str) -> Path:
         try:
             resolved.relative_to(root)
         except ValueError:
-            raise ValueError("path escapes project root")
+            raise ValueError("path escapes project root") from None
     return resolved
 
 
