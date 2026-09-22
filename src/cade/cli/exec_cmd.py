@@ -35,6 +35,7 @@ _TRANSPORTS = frozenset(
         "custom",
     }
 )
+_EVENT_PREVIEW_CHARS = 4000
 
 
 class ExecValidationError(ValueError):
@@ -117,6 +118,12 @@ def add_exec_arguments(parser: argparse.ArgumentParser) -> None:
         help="Output protocol (default: jsonl).",
     )
     parser.add_argument(
+        "--event-detail",
+        choices=["compact", "full"],
+        default="compact",
+        help="Event detail level (default: compact).",
+    )
+    parser.add_argument(
         "--output-last-message",
         type=Path,
         help="Write the final assistant answer to this file.",
@@ -176,7 +183,7 @@ def run_exec(
 ) -> int:
     """执行一个 prompt，并通过稳定的文本或 NDJSON 协议返回结果。"""
     app: Any | None = None
-    emitter = _ExecEmitter(args.event_format)
+    emitter = _ExecEmitter(args.event_format, args.event_detail)
     redirected = (
         contextlib.redirect_stdout(sys.stderr)
         if args.event_format == "jsonl"
@@ -550,8 +557,15 @@ def _changed_files(
     return sorted(
         path
         for path in before.keys() | after.keys()
-        if before.get(path) != after.get(path)
+        if not _is_cade_internal_path(path) and before.get(path) != after.get(path)
     )
+
+
+def _is_cade_internal_path(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized == ".cade" or normalized.startswith(".cade/")
 
 
 class _TimeoutState:
@@ -588,8 +602,9 @@ class _TimeoutState:
 class _ExecEmitter:
     """保证 JSONL stdout 只包含完整 JSON 对象。"""
 
-    def __init__(self, event_format: str) -> None:
+    def __init__(self, event_format: str, event_detail: str = "compact") -> None:
         self._event_format = event_format
+        self._event_detail = event_detail
         self._output = sys.stdout
         self.token_budget = 0
 
@@ -616,6 +631,9 @@ class _ExecEmitter:
         payload["step"] = step
         event_type = payload.get("type")
         data = payload.get("data")
+        if self._event_detail == "full":
+            self.emit(payload)
+            return
         if event_type == "message_start":
             self.emit({"type": "step.started", "step": step})
         elif event_type == "tool_use" and isinstance(data, dict):
@@ -625,7 +643,6 @@ class _ExecEmitter:
                     "step": step,
                     "name": data.get("name"),
                     "tool_call_id": data.get("id"),
-                    "input": data.get("input", {}),
                 }
             )
         elif event_type == "tool_result" and isinstance(data, dict):
@@ -635,12 +652,19 @@ class _ExecEmitter:
                     "step": step,
                     "tool_call_id": data.get("tool_use_id"),
                     "status": data.get("status"),
-                    "content": data.get("content"),
+                    **_content_preview(data.get("content")),
                     "permission_notice": data.get("permission_notice"),
                 }
             )
-        elif event_type == "context_window_reset":
-            self.emit({**payload, "type": "context.reset"})
+        elif event_type == "context_window_reset" and isinstance(data, dict):
+            self.emit(
+                {
+                    "type": "context.reset",
+                    "step": step,
+                    "reason": data.get("reason"),
+                    "window_index": data.get("window_index"),
+                }
+            )
         elif event_type == "usage_update" and isinstance(data, dict):
             self.emit(
                 {
@@ -651,8 +675,21 @@ class _ExecEmitter:
                     "token_budget": self.token_budget,
                 }
             )
-        else:
+        elif event_type in {"error", "warning"}:
             self.emit(payload)
 
     def completed(self, **payload: object) -> None:
         self.emit({"type": "run.completed", **payload})
+
+
+def _content_preview(value: object) -> dict[str, object]:
+    """为机器事件提供有界预览，完整正文仍保存在 session 中。"""
+    if value is None:
+        return {"content": None, "content_chars": 0, "content_truncated": False}
+    content = value if isinstance(value, str) else json.dumps(to_jsonable(value))
+    length = len(content)
+    return {
+        "content": content[:_EVENT_PREVIEW_CHARS],
+        "content_chars": length,
+        "content_truncated": length > _EVENT_PREVIEW_CHARS,
+    }

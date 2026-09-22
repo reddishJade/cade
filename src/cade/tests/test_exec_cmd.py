@@ -193,20 +193,79 @@ def test_exec_emits_only_json_lines_and_returns_completion_code(
     assert [payload["type"] for payload in payloads] == [
         "run.started",
         "config.resolved",
-        "text_delta",
         "budget.updated",
         "run.completed",
     ]
     assert payloads[0]["session_id"] == "session-test"
     assert payloads[1]["context_window"] == 272000
     assert payloads[1]["token_budget"] == 255616
-    assert payloads[2]["step"] == 1
-    assert payloads[3]["estimated_tokens"] == 120443
+    assert payloads[2]["estimated_tokens"] == 120443
     assert payloads[-1]["exit_code"] == 0
     assert payloads[-1]["answer"] == "done"
     assert app.closed
     assert "provider diagnostic" in captured.err
     assert app.session_store.records[-1][1]["type"] == "exec_result"
+
+
+def test_exec_full_event_detail_preserves_raw_events(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    app = _App(
+        [
+            TextDeltaStructuredEvent(type="text_delta", step=1, data="done"),
+            FinalStructuredEvent(type="final", step=1, data=_final_result()),
+        ]
+    )
+    args = parse_args(
+        [
+            "exec",
+            "--project-root",
+            str(tmp_path),
+            "--event-detail",
+            "full",
+            "--approval",
+            "never",
+            "--prompt-file",
+            "-",
+        ]
+    )
+    monkeypatch.setattr("cade.cli.exec_cmd.sys.stdin.read", lambda: "fix it")
+
+    assert run_exec(args, CadeRuntimeConfig(), lambda *_args: app) == 0
+
+    payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert payloads[2]["type"] == "text_delta"
+    assert payloads[2]["data"] == "done"
+
+
+def test_exec_compact_tool_result_is_bounded(tmp_path: Path, capsys) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    result = ToolResultStructuredEvent(
+        type="tool_result",
+        step=1,
+        data=ToolResultBlock(
+            tool_use_id="call-1",
+            content="x" * 5000,
+            status="ok",
+        ),
+    )
+    app = _App(
+        [result, FinalStructuredEvent(type="final", step=1, data=_final_result())]
+    )
+    args = parse_args(
+        ["exec", "--project-root", str(tmp_path), "--approval", "never", "fix it"]
+    )
+
+    assert run_exec(args, CadeRuntimeConfig(), lambda *_args: app) == 0
+
+    payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    completed = next(item for item in payloads if item["type"] == "tool.completed")
+    assert len(completed["content"]) == 4000
+    assert completed["content_chars"] == 5000
+    assert completed["content_truncated"] is True
 
 
 def test_exec_maps_request_budget_failure_to_exit_four(tmp_path: Path, capsys) -> None:
@@ -318,6 +377,9 @@ def test_exec_reports_only_files_changed_during_run(tmp_path: Path, capsys) -> N
     class _ChangingApp(_App):
         def ask_stream(self, _prompt: str):
             tracked.write_text("after with a different size", encoding="utf-8")
+            internal = tmp_path / ".cade" / "session_artifacts" / "result.txt"
+            internal.parent.mkdir(parents=True)
+            internal.write_text("internal", encoding="utf-8")
             yield FinalStructuredEvent(type="final", step=1, data=final)
 
     app = _ChangingApp([])

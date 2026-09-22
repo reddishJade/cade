@@ -40,14 +40,38 @@ def add_session_arguments(parser: argparse.ArgumentParser) -> None:
     actions = parser.add_subparsers(dest="session_action", required=True)
     for name in ("status", "tail", "result", "interrupt"):
         action = actions.add_parser(name)
+        _add_session_path_arguments(action)
         action.add_argument("session_id")
         action.add_argument("--json", action="store_true", dest="json_output")
         if name == "tail":
             action.add_argument("--lines", type=_positive_int, default=20)
     export = actions.add_parser("export")
+    _add_session_path_arguments(export)
     export.add_argument("session_id")
     export.add_argument("--output", type=Path, required=True)
     export.add_argument("--json", action="store_true", dest="json_output")
+
+
+def _add_session_path_arguments(parser: argparse.ArgumentParser) -> None:
+    """允许路径参数出现在 session 动作之后且不覆盖全局值。"""
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="Project root directory.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="Runtime configuration file.",
+    )
+    parser.add_argument(
+        "--sessions-dir",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="Session transcript directory.",
+    )
 
 
 def handle_session_command(
