@@ -110,17 +110,20 @@ def _grep(root: Path, rg: str | None, data: dict[str, Any]) -> str:
     context = _validated_int(data, "context", 0, minimum=0)
 
     if rg:
-        return _grep_with_rg(
-            root,
-            raw_path,
-            pattern,
-            glob_pattern,
-            max_results,
-            ignore_case,
-            literal,
-            context,
-            rg,
-        )
+        try:
+            return _grep_with_rg(
+                root,
+                raw_path,
+                pattern,
+                glob_pattern,
+                max_results,
+                ignore_case,
+                literal,
+                context,
+                rg,
+            )
+        except FileNotFoundError:
+            pass
     return _grep_fallback(
         root,
         raw_path,

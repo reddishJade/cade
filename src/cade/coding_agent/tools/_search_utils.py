@@ -16,12 +16,16 @@ _RG_CHECKED = False
 
 
 def get_rg_path() -> str | None:
-    """启动时检查一次 rg 可用性，后续调用缓存结果。"""
+    """缓存可用的 rg 路径，并在工具被移走后重新解析。"""
     global _RG_PATH, _RG_CHECKED
-    if not _RG_CHECKED:
+    if not _RG_CHECKED or (_RG_PATH is not None and not _rg_available(_RG_PATH)):
         _RG_PATH = get_tool_path("rg")
         _RG_CHECKED = True
     return _RG_PATH
+
+
+def _rg_available(path: str) -> bool:
+    return Path(path).is_file() and os.access(path, os.X_OK)
 
 
 def enumerate_search_files(
@@ -40,7 +44,10 @@ def enumerate_search_files(
     if use_ripgrep:
         rg = get_rg_path()
         if rg:
-            return _enumerate_with_ripgrep(root, base, rg)
+            try:
+                return _enumerate_with_ripgrep(root, base, rg)
+            except FileNotFoundError:
+                pass
     return _enumerate_with_python(root, base)
 
 
