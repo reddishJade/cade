@@ -79,6 +79,14 @@ class TestApplyTextReplacement:
         with pytest.raises(ValueError, match="Could not find"):
             apply_text_replacement("hello", "nope", "new")
 
+    def test_redacted_old_text_explains_masked_file_content(self) -> None:
+        with pytest.raises(ValueError, match="placeholder is not literal file content"):
+            apply_text_replacement(
+                'apiKey: "local-marker"',
+                'apiKey: "[REDACTED]"',
+                'apiKey: "local-marker"',
+            )
+
     def test_multiple_matches_raises(self) -> None:
         with pytest.raises(ValueError, match="multiple matches"):
             apply_text_replacement("a a", "a", "b")
