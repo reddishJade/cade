@@ -268,6 +268,32 @@ def test_exec_compact_tool_result_is_bounded(tmp_path: Path, capsys) -> None:
     assert completed["content_truncated"] is True
 
 
+def test_exec_compact_tool_failure_has_error_status(tmp_path: Path, capsys) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    result = ToolResultStructuredEvent(
+        type="tool_result",
+        step=1,
+        data=ToolResultBlock(
+            tool_use_id="call-1",
+            content="exit code: 127",
+            status="error",
+        ),
+    )
+    app = _App(
+        [result, FinalStructuredEvent(type="final", step=1, data=_final_result())]
+    )
+    args = parse_args(
+        ["exec", "--project-root", str(tmp_path), "--approval", "never", "fix it"]
+    )
+
+    assert run_exec(args, CadeRuntimeConfig(), lambda *_args: app) == 0
+
+    payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    completed = next(item for item in payloads if item["type"] == "tool.completed")
+    assert completed["status"] == "error"
+
+
 def test_exec_maps_request_budget_failure_to_exit_four(tmp_path: Path, capsys) -> None:
     from cade.cli.exec_cmd import run_exec
 
