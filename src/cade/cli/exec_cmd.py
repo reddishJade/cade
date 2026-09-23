@@ -441,10 +441,12 @@ def _resolved_config_event(
 
 
 def _is_permission_denial(event: Any) -> bool:
-    return bool(
-        event.type == "tool_result"
-        and event.data.status == "error"
-        and event.data.permission_notice
+    if event.type != "tool_result" or event.data.status != "error":
+        return False
+    notice = (event.data.permission_notice or "").casefold()
+    return any(
+        phrase in notice
+        for phrase in ("approval required", "approval denied", "permission denied")
     )
 
 
