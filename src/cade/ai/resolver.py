@@ -13,8 +13,9 @@ from cade.ai.models import get_codex_models, normalize_model_id
 
 # 别名映射：不区分大小写，映射到规范 model ID
 MODEL_ALIASES: Final[dict[str, str]] = {
-    "codex": "gpt-5.6-sol",
-    "openai-codex": "gpt-5.6-sol",
+    "codex": "gpt-6-sol",
+    "openai-codex": "gpt-6-sol",
+    "gpt-6": "gpt-6-sol",
     "gpt-5.6": "gpt-5.6-sol",
 }
 

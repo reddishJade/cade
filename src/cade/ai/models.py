@@ -14,9 +14,10 @@ from cade.ai.types import Cost, Model
 THINKING_LEVELS = frozenset(
     ("off", "none", "minimal", "low", "medium", "high", "xhigh", "max")
 )
+GPT_6_REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+GPT_6_ASTRA_REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 GPT_56_REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 GPT_55_REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
-GPT_6_ASTRA_REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,28 @@ _MODELS: dict[str, dict[str, Model]] = {
             max_tokens=128_000,
             cost=Cost(input=10, output=50, cache_read=1.00),
             reasoning_efforts=GPT_6_ASTRA_REASONING_EFFORTS,
+        ),
+        "gpt-6-sol": Model(
+            id="gpt-6-sol",
+            name="GPT-6 Sol",
+            api="openai-responses",
+            provider="openai",
+            reasoning=True,
+            context_window=1_050_000,
+            max_tokens=128_000,
+            cost=Cost(input=2, output=10, cache_read=0.20),
+            reasoning_efforts=GPT_6_REASONING_EFFORTS,
+        ),
+        "gpt-6-luna": Model(
+            id="gpt-6-luna",
+            name="GPT-6 Luna",
+            api="openai-responses",
+            provider="openai",
+            reasoning=True,
+            context_window=1_050_000,
+            max_tokens=128_000,
+            cost=Cost(input=0.10, output=0.50, cache_read=0.01),
+            reasoning_efforts=GPT_6_REASONING_EFFORTS,
         ),
         "gpt-5.6-sol": Model(
             id="gpt-5.6-sol",
@@ -218,6 +241,8 @@ _MODELS: dict[str, dict[str, Model]] = {
 _TRANSPORT_CONTEXT_WINDOWS: Final[dict[str, dict[str, int]]] = {
     "openai_codex": {
         "gpt-6-astra": 272_000,
+        "gpt-6-sol": 272_000,
+        "gpt-6-luna": 272_000,
         "gpt-5.6-sol": 272_000,
         "gpt-5.6-terra": 272_000,
         "gpt-5.6-luna": 272_000,
