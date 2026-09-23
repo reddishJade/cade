@@ -365,7 +365,7 @@ def test_exec_deny_stops_on_first_permission_denial(tmp_path: Path, capsys) -> N
             tool_use_id="call-1",
             content="blocked",
             status="error",
-            permission_notice="approval required",
+            approval_denied=True,
         ),
     )
     app = _App([denied])
@@ -400,7 +400,9 @@ def test_exec_failed_approved_command_is_not_approval_denial(
             tool_use_id="call-1",
             content="exit code: 1",
             status="error",
-            permission_notice="Automatic approval review approved (risk: low)",
+            permission_notice=(
+                "Automatic approval review approved: checking a permission denied error"
+            ),
         ),
     )
     app = _App(

@@ -23,7 +23,12 @@ from cade.agent._execution import (
     update_repeated_tool_watchdog,
     validate_tool_arguments,
 )
-from cade.agent.config import AgentContext, AgentLoopConfig, LoopRunState
+from cade.agent.config import (
+    AgentContext,
+    AgentLoopConfig,
+    BeforeToolCallResult,
+    LoopRunState,
+)
 from cade.agent.messages import AssistantMessage, ToolResultMessage
 from cade.agent.types import (
     AgentTool,
@@ -121,6 +126,27 @@ class TestPartitionToolCalls:
         batches = partition_tool_calls_for_execution(ctx, calls)
         assert len(batches) == 1
         assert len(batches[0]) == 1
+
+
+async def test_blocked_approval_preserves_structured_denial() -> None:
+    call = ToolCallContent(id="call-1", name="read", arguments={})
+    batch = await execute_tool_calls(
+        AgentContext(tools=[_MockTool("read")]),
+        AssistantMessage(content=[call]),
+        [call],
+        AgentLoopConfig(
+            before_tool_call=lambda _ctx, _signal: BeforeToolCallResult(
+                block=True,
+                reason="approval rejected",
+                approval_denied=True,
+            )
+        ),
+        None,
+        lambda _event: None,
+    )
+
+    assert batch.results[0].is_error
+    assert batch.results[0].metadata == {"approval_denied": True}
 
 
 def test_validate_tool_arguments_materializes_frozen_schema() -> None:

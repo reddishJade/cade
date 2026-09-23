@@ -75,6 +75,7 @@ class BeforeToolCallResult(BaseModel):
     block: bool = False
     reason: str = ""
     suggestion: str = ""
+    approval_denied: bool = False
     args: ToolArguments | None = None
     model_config = ConfigDict(extra="forbid")
 

@@ -96,10 +96,34 @@ def test_tool_execution_end() -> None:
     assert isinstance(result, ToolResultStructuredEvent)
     assert result.data.status == "ok"
     assert result.data.permission_notice == "Allowed by session grant"
+    assert not result.data.approval_denied
     assert result.data.render_intent == TerminalRenderIntent(
         command="pwd",
         cwd="/project",
     )
+
+
+def test_tool_execution_end_preserves_approval_denial() -> None:
+    from cade.agent.messages import ToolResultMessage
+
+    result = _translate_tool_execution_end(
+        ToolExecutionEndEvent(
+            tool_call_id="c1",
+            tool_name="bash",
+            result=ToolResultMessage(
+                tool_call_id="c1",
+                tool_name="bash",
+                content="blocked",
+                is_error=True,
+                metadata={"approval_denied": True},
+            ),
+            is_error=True,
+        ),
+        _StreamTranslationState(),
+    )
+
+    assert isinstance(result, ToolResultStructuredEvent)
+    assert result.data.approval_denied
 
 
 def test_tool_execution_end_error() -> None:
