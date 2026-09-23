@@ -230,7 +230,7 @@ provider 层自身使用 `ProviderRuntime` 处理临时 HTTP、连接和超时�
 `DefaultRequestAssembler` 是 provider 请求的唯一组装入口。它按固定顺序执行：
 
 1. 修复历史中的工具调用配对。
-2. 收集配置指令、活动 diff、最近验证失败、笔记、技能摘要和运行状态。
+2. 收集配置指令、最近验证失败、笔记、技能摘要和运行状态。
 3. 对会话级 section 执行 snapshot/diff 渲染。
 4. 把 system context、user context、历史消息和工具定义组合起来。
 5. 应用确定性的 request hygiene。
@@ -244,7 +244,7 @@ provider 层自身使用 `ProviderRuntime` 处理临时 HTTP、连接和超时�
 
 每个上下文块包含：
 
-- 来源：instruction、skill、active_diff、notes、recent_validation、environment、tools、permissions、mode 等。
+- 来源：instruction、skill、notes、recent_validation、environment、tools、permissions、mode 等。
 - 目标：system 或 user_context。
 - 优先级：critical、high、medium、low、background。
 - 生命周期：turn/step expiry。
@@ -270,15 +270,13 @@ provider 层自身使用 `ProviderRuntime` 处理临时 HTTP、连接和超时�
 当前编码 Agent 使用以下上下文来源：
 
 - 项目与用户指令：按 root 到 cwd 的层级发现 `AGENTS.override.md`、`AGENTS.md`、`agents.md`、`AGENTS.txt`，共享累计 32 KB 字节预算。
-- 活动 Git diff：提供 staged/unstaged 状态、统计和有限 diff excerpt，预算 8 KB。
 - 最近验证错误：保留最近一次相关 shell 错误，预算 4 KB。
 - `.cade/notes`：读取 Markdown 与文本笔记，预算 4 KB。
 - 技能目录：注入轻量 skill catalog，正文按激活加载。
 - 运行快照：环境、工具、权限和执行模式按状态 section 注入。
-- Git preflight：提供状态、最近提交、脏 diff 统计和用户已有修改提示，并使用短 TTL 缓存。
 - 当前任务相关文件与工具结果：通过 LRU 记录 active file、recent files 和 recent tool results。
 
-稳定 prompt 区域包含身份、工具纪律、引用说明、工具清单和搜索策略；动态区域包含环境与 cwd；易变区域包含 Git、检索状态和 session notices。稳定区域和 cwd 区域使用缓存，易变区域按轮次重建。
+稳定 prompt 区域包含身份、工具纪律、引用说明、工具清单和搜索策略；动态区域包含环境与 cwd；易变区域包含检索状态和 session notices。稳定区域和 cwd 区域使用缓存，易变区域按轮次重建。
 
 ### 4.5 请求卫生与事实保留
 

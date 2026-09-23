@@ -1,23 +1,16 @@
-"""System prompt 构建器：agent 身份、工具纪律、环境快照、git preflight 等。
+"""System prompt 构建器：agent 身份、工具纪律与环境快照。
 
 本模块是 prompt 构建的两个系统之一（另一个见 agent/context_collector.py）。
 职责边界：
 - 稳定区：agent 身份、工具纪律、工具列表、搜索策略（注册表不变时缓存）
 - 动态区：环境信息（OS、Python、CWD）、CWD 目录快照（CWD 不变时缓存）
 - 易变区：contextual retrieval 状态、session 通知（每轮重建）
-- 启动基线：git preflight（首次构建后冻结，避免把 agent 后续修改误判为用户修改）
 
 不属于本模块（由 context_collector 管理）：
 - 项目指令 → InstructionCollector
-- 活动 diff 摘要 → ActiveDiffCollector
 - 验证失败 → RecentValidationCollector
 - 笔记文件 → NotesCollector
 - 技能摘要 → SkillIndexCollector
-
-关于 git preflight 与 ActiveDiffCollector 的边界：
-- 本模块的 git_preflight 提供 runtime 启动时的工作区基线
-- ActiveDiffCollector 提供任务特定的 diff 摘录（diff --unified=1 的实际代码变更）
-  两者分别回答“启动前已有何物”与“当前任务改了什么”。
 """
 
 from __future__ import annotations
@@ -32,7 +25,6 @@ from cade.agent.types import ToolSpec
 from cade.harness.config import DEFAULT_PROMPT_MODULES
 
 from ..contextual import ContextualRetrievalState
-from ..git_preflight import build_git_preflight
 from .identity import (
     CITATION_INSTRUCTION,
     DYNAMIC_PROMPT_MODULE_ORDER,
@@ -204,22 +196,12 @@ class DynamicRegionBuilder:
 
 
 class VolatileRegionBuilder:
-    def __init__(self) -> None:
-        self._git_baselines: dict[Path, str] = {}
-
     def build(self, context: PromptContext, enabled: set[str]) -> list[str]:
         volatile_parts: list[str] = []
         for module in VOLATILE_PROMPT_MODULE_ORDER:
             if module not in enabled:
                 continue
             match module:
-                case "git_preflight":
-                    root = context.project_root.resolve()
-                    baseline = self._git_baselines.get(root)
-                    if baseline is None:
-                        baseline = build_git_preflight(root)
-                        self._git_baselines[root] = baseline
-                    volatile_parts.append(baseline)
                 case "contextual_retrieval":
                     if context.contextual_state is None:
                         continue

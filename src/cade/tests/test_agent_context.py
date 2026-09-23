@@ -103,13 +103,13 @@ class TestBlockToText:
 
     def test_with_metadata(self) -> None:
         block = ContextBlock(
-            source=ContextBlockSource.ACTIVE_DIFF,
+            source=ContextBlockSource.NOTES,
             priority=ContextPriority.HIGH,
             content="diff content",
             metadata={"files": 3},
         )
         text = _block_to_text(block)
-        assert "[active_diff]" in text
+        assert "[notes]" in text
         assert "files=3" in text
 
 
