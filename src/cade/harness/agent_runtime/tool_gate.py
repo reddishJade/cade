@@ -104,8 +104,17 @@ class _RedactingAdapter(ToolSpecAdapter):
         content = await self._execute_handler(dict(params), _redacted_update)
         metadata = getattr(content, "metadata", None)
         render_intent = getattr(content, "render_intent", None)
+        original_text = str(content)
+        visible_text = redact_text(original_text)
+        if visible_text != original_text:
+            visible_text += (
+                "\n\n[Tool output notice: masked values are display-only; the "
+                "source is unchanged by masking. Exact-text edits must match "
+                "the real file. "
+                "Use unmasked surrounding text or another precise edit method.]"
+            )
         return AgentToolResult(
-            content=[TextContent(text=redact_text(str(content)))],
+            content=[TextContent(text=visible_text)],
             details=metadata if isinstance(metadata, dict) else None,
             is_error=bool(getattr(content, "is_error", False)),
             render_intent=render_intent,
