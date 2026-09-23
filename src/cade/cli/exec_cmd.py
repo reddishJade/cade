@@ -17,6 +17,11 @@ from urllib.parse import urlparse
 
 from cade.agent.results import TerminationReason
 from cade.ai.models import get_model_context_window
+from cade.harness.agent_runtime.events import (
+    AgentHarnessEvent,
+    ToolResultStructuredEvent,
+    ToolUseStructuredEvent,
+)
 from cade.harness.config import CadeRuntimeConfig, resolve_config_path
 from cade.harness.session.schema import SESSION_EVENT_SCHEMA_VERSION
 from cade.server.serialize import event_to_dict, to_jsonable
@@ -334,11 +339,13 @@ def _consume_exec_run(
     timeout_state.start()
     final_data: Any | None = None
     approval_denied = False
+    validation = _ValidationTracker()
     try:
         for event in app.ask_stream(prompt):
             if event.type == "final":
                 final_data = event.data
                 continue
+            validation.observe(event)
             emitter.emit_event(event)
             if _is_permission_denial(event):
                 approval_denied = True
@@ -373,6 +380,7 @@ def _consume_exec_run(
         exit_code=exit_code,
         session_id=session_id,
         changed_files=_changed_files(args.project_root, workspace_before),
+        validation=validation.results(),
     )
     _record_exec_result(app, completion)
     emitter.completed(**completion)
@@ -448,6 +456,43 @@ def _is_permission_denial(event: Any) -> bool:
     )
 
 
+class _ValidationTracker:
+    """仅汇总显式标记的验证调用及实际工具结果。"""
+
+    def __init__(self) -> None:
+        self._checks: dict[str, dict[str, object]] = {}
+
+    def observe(self, event: AgentHarnessEvent) -> None:
+        if isinstance(event, ToolUseStructuredEvent):
+            call = event.data
+            if call.name == "bash" and call.input.get("purpose") == "validation":
+                self._checks[call.id] = {
+                    "tool_call_id": call.id,
+                    "status": "incomplete",
+                    "exit_code": None,
+                }
+            return
+        if not isinstance(event, ToolResultStructuredEvent):
+            return
+        check = self._checks.get(event.data.tool_use_id)
+        if check is None:
+            return
+        exit_code = event.data.exit_code
+        if event.data.approval_denied:
+            status = "blocked"
+        elif event.data.status == "error" or (exit_code is not None and exit_code != 0):
+            status = "failed"
+        elif exit_code == 0:
+            status = "passed"
+        else:
+            status = "unknown"
+        check["status"] = status
+        check["exit_code"] = exit_code
+
+    def results(self) -> list[dict[str, object]]:
+        return [dict(check) for check in self._checks.values()]
+
+
 def _exit_code(final_data: Any) -> int:
     reason = final_data.termination_reason
     if reason is TerminationReason.COMPLETED:
@@ -476,6 +521,7 @@ def _completion_payload(
     exit_code: int,
     session_id: str,
     changed_files: list[str],
+    validation: list[dict[str, object]],
 ) -> dict[str, object]:
     metrics = final_data.metrics if final_data is not None else None
     failure = final_data.provider_failure if final_data is not None else None
@@ -506,7 +552,7 @@ def _completion_payload(
         "llm_calls": 0 if metrics is None else metrics.get("llm_calls", 0),
         "tool_calls": 0 if metrics is None else metrics.get("tool_calls", 0),
         "changed_files": changed_files,
-        "validation": [],
+        "validation": validation,
         "error": error,
         "answer": "" if final_data is None else final_data.answer,
     }
@@ -652,6 +698,7 @@ class _ExecEmitter:
                     "step": step,
                     "tool_call_id": data.get("tool_use_id"),
                     "status": data.get("status"),
+                    "exit_code": data.get("exit_code"),
                     "approval_denied": data.get("approval_denied"),
                     **_content_preview(data.get("content")),
                     "permission_notice": data.get("permission_notice"),

@@ -83,7 +83,10 @@ def test_tool_execution_end() -> None:
                 tool_call_id="c1",
                 tool_name="read_file",
                 content="result text",
-                metadata={"permission_notice": "Allowed by session grant"},
+                metadata={
+                    "permission_notice": "Allowed by session grant",
+                    "exit_code": 0,
+                },
                 render_intent=TerminalRenderIntent(
                     command="pwd",
                     cwd="/project",
@@ -96,6 +99,7 @@ def test_tool_execution_end() -> None:
     assert isinstance(result, ToolResultStructuredEvent)
     assert result.data.status == "ok"
     assert result.data.permission_notice == "Allowed by session grant"
+    assert result.data.exit_code == 0
     assert not result.data.approval_denied
     assert result.data.render_intent == TerminalRenderIntent(
         command="pwd",

@@ -70,6 +70,8 @@ cade exec resume 20260922-163122 --prompt-file - < followup.md
 
 输出事件包括 `run.started`、`config.resolved`、`step.started`、`tool.started`、`tool.completed`、`budget.updated`、`context.reset` 和 `run.completed`。最终 envelope 含 session ID、步数、模型调用数、工具调用数、本次运行改动的文件和结构化错误。`--output-last-message PATH` 可同时把最终回答写入独立文件。
 
+`bash` 工具执行测试、lint、类型检查等验证命令时，可设置 `purpose: "validation"`。`run.completed.validation` 仅汇总显式标记的调用，按 `tool_call_id` 与工具事件关联，记录 `passed`、`failed`、`blocked`、`incomplete` 或 `unknown` 及退出码；空列表表示本次运行没有记录到标记的验证调用，不代表代码已通过验证。未标记的探索和环境准备命令不会被推断为验证。运行完成状态与验证结果分别报告，验证失败不会自动把 `run.completed.status` 改为失败。
+
 稳定退出码：
 
 | 退出码 | 含义 |
