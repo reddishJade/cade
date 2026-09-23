@@ -643,7 +643,10 @@ class ToolGate:
             if result.metadata:
                 suggestion = str(result.metadata.get("suggestion", suggestion))
             return BeforeToolCallResult(
-                block=True, reason=result.reason, suggestion=suggestion
+                block=True,
+                reason=result.reason,
+                suggestion=suggestion,
+                approval_denied=_approval_denied(result),
             )
         return None
 
@@ -749,6 +752,17 @@ def _stricter_decision(
         "deny": 2,
     }
     return proposed if priority[proposed] > priority[current] else current
+
+
+def _approval_denied(result: PermissionEngineResult) -> bool:
+    """仅将未获授权的 ask 或明确拒绝的审批标为审批失败。"""
+    return result.blocked and (
+        result.decision == "ask"
+        or (
+            result.approval_result is not None
+            and result.approval_result.decision == "deny"
+        )
+    )
 
 
 def _permission_notice(result: PermissionEngineResult | None) -> str | None:

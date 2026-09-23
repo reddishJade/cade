@@ -441,12 +441,10 @@ def _resolved_config_event(
 
 
 def _is_permission_denial(event: Any) -> bool:
-    if event.type != "tool_result" or event.data.status != "error":
-        return False
-    notice = (event.data.permission_notice or "").casefold()
-    return any(
-        phrase in notice
-        for phrase in ("approval required", "approval denied", "permission denied")
+    return bool(
+        event.type == "tool_result"
+        and event.data.status == "error"
+        and event.data.approval_denied
     )
 
 
@@ -654,6 +652,7 @@ class _ExecEmitter:
                     "step": step,
                     "tool_call_id": data.get("tool_use_id"),
                     "status": data.get("status"),
+                    "approval_denied": data.get("approval_denied"),
                     **_content_preview(data.get("content")),
                     "permission_notice": data.get("permission_notice"),
                 }

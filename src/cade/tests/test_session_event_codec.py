@@ -78,6 +78,7 @@ def test_encode_tool_result_preserves_render_intent() -> None:
             ToolResultBlock(
                 tool_use_id="call-1",
                 content="edited",
+                approval_denied=True,
                 render_intent=DiffRenderIntent(
                     patch="@@ -1 +1 @@\n-old\n+new",
                     files=("src/app.py",),
@@ -93,3 +94,4 @@ def test_encode_tool_result_preserves_render_intent() -> None:
         "files": ("src/app.py",),
         "first_changed_line": 1,
     }
+    assert encoded["data"]["approval_denied"] is True

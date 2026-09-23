@@ -319,7 +319,9 @@ async def _execute_one_impl(
         message = before_result.reason or "Tool execution was blocked"
         if before_result.suggestion:
             message = f"{message}\n\nSuggestion: {before_result.suggestion}"
-        return _error_result(tool_call, message)
+        return _error_result(
+            tool_call, message, approval_denied=before_result.approval_denied
+        )
     if before_result is not None and before_result.args is not None:
         args = before_result.args
         tool_call = tool_call.model_copy(update={"arguments": args})
@@ -385,6 +387,8 @@ def _find_tool(
 def _error_result(
     tool_call: ToolCallContent,
     content: str,
+    *,
+    approval_denied: bool = False,
 ) -> tuple[ToolResultMessage, bool]:
     return (
         ToolResultMessage(
@@ -392,6 +396,7 @@ def _error_result(
             tool_name=tool_call.name,
             content=content,
             is_error=True,
+            metadata={"approval_denied": True} if approval_denied else None,
         ),
         False,
     )

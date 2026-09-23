@@ -16,6 +16,7 @@ from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
 from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.agent_runtime.tool_gate import (
+    _approval_denied,
     _approval_transcript,
     _permission_notice,
     _RedactingAdapter,
@@ -144,6 +145,19 @@ async def test_unmasked_tool_result_has_no_mask_notice() -> None:
 
     assert isinstance(result.content[0], TextContent)
     assert result.content[0].text == "plain content"
+
+
+def test_approval_denial_uses_permission_decision() -> None:
+    assert _approval_denied(PermissionEngineResult(decision="ask", blocked=True))
+    assert _approval_denied(
+        PermissionEngineResult(
+            decision="deny",
+            blocked=True,
+            approval_result=ApprovalResult(decision="deny", scope="once"),
+        )
+    )
+    assert not _approval_denied(PermissionEngineResult(decision="deny", blocked=True))
+    assert not _approval_denied(PermissionEngineResult(decision="allow", blocked=False))
 
 
 def test_permission_notice_describes_automatic_session_grant() -> None:
