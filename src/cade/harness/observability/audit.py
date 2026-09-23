@@ -13,7 +13,7 @@ from typing import Protocol
 SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
     re.compile(
-        r"(?i)\b(api[_-]?key|secret|token|password)\b\s*[:=]\s*[\"']?([A-Za-z0-9_./+=-]{8,})"
+        r"(?i)\b(api[_-]?key|secret|token|password)\b(\s*[:=]\s*)([\"']?)([A-Za-z0-9_./+=-]{8,})"
     ),
 )
 
@@ -99,6 +99,7 @@ def redact_text(value: object) -> str:
 
 
 def _redact_match(match: re.Match[str]) -> str:
-    if len(match.groups()) >= 2:
-        return f"{match.group(1)}=[REDACTED]"
+    if len(match.groups()) >= 4:
+        prefix = f"{match.group(1)}{match.group(2)}{match.group(3)}"
+        return f"{prefix}[REDACTED]"
     return "[REDACTED]"
