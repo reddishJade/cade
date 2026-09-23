@@ -86,6 +86,8 @@ class TestRolloverThreshold:
         "model_id",
         (
             "gpt-6-astra",
+            "gpt-6-sol",
+            "gpt-6-luna",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
@@ -288,24 +290,47 @@ class TestRegistryAccess:
         assert get_model("openai", "does-not-exist") is None
 
     def test_openai_models_declare_supported_reasoning_efforts(self) -> None:
-        assert get_model_reasoning_efforts("gpt-5.6-luna") == (
-            "none",
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max",
-        )
+        for model_id in ("gpt-6-sol", "gpt-6-luna", "gpt-5.6-luna"):
+            assert get_model_reasoning_efforts(model_id) == (
+                "none",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+            )
         assert "minimal" not in get_model_reasoning_efforts("gpt-5.5")
         assert "none" not in get_model_reasoning_efforts("gpt-6-astra")
         assert get_model_reasoning_efforts("unknown-model") == ()
+
+    def test_gpt6_models_registered_with_current_pricing(self) -> None:
+        sol = get_model("openai", "gpt-6-sol")
+        assert sol is not None
+        assert sol.name == "GPT-6 Sol"
+        assert sol.context_window == 1_050_000
+        assert sol.max_tokens == 128_000
+        assert sol.cost.input == 2.0
+        assert sol.cost.output == 10.0
+        assert sol.cost.cache_read == 0.20
+
+        luna = get_model("openai", "gpt-6-luna")
+        assert luna is not None
+        assert luna.name == "GPT-6 Luna"
+        assert luna.context_window == 1_050_000
+        assert luna.max_tokens == 128_000
+        assert luna.cost.input == 0.10
+        assert luna.cost.output == 0.50
+        assert luna.cost.cache_read == 0.01
 
 
 class TestModelResolver:
     def test_resolve_alias(self) -> None:
         codex_model = ModelResolver.resolve_alias("codex")
+        assert codex_model == "gpt-6-sol"
         assert codex_model == ModelResolver.resolve_alias("CODEX")
         assert codex_model == ModelResolver.resolve_alias("openai-codex")
+        assert ModelResolver.resolve_alias("gpt-6") == "gpt-6-sol"
+        assert ModelResolver.resolve_alias("gpt-5.6") == "gpt-5.6-sol"
         assert codex_model in {model.id for model in get_codex_models()}
         assert ModelResolver.resolve_alias("unaliased-model") == "unaliased-model"
 

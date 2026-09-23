@@ -72,7 +72,7 @@ BIGMODEL_API_KEY=...
 
 | provider | 模型 |
 | --- | --- |
-| OpenAI | `gpt-5.5`、`gpt-5.4`、`gpt-5.4-mini` |
+| OpenAI | `gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.5` |
 | DeepSeek | `deepseek-v4-pro`、`deepseek-flash` |
 | ChatGLM | `glm-5.1`、`glm-5`、`glm-5-turbo`、`glm-4.7`、`glm-4.7-flash` |
 | MiMo | `mimo-v2.5-pro`、`mimo-v2.5` |
