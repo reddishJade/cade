@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from cade.agent.config import AgentContext, BeforeToolCallContext
 from cade.agent.messages import AssistantMessage, ToolResultMessage, UserMessage
 from cade.agent.request import DefaultRequestAssembler
-from cade.agent.types import ToolCallContent
+from cade.agent.types import TextContent, ToolCallContent, ToolSpec
 from cade.ai.events import ToolCall
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
@@ -16,6 +18,7 @@ from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.agent_runtime.tool_gate import (
     _approval_transcript,
     _permission_notice,
+    _RedactingAdapter,
     _stricter_decision,
     _tool_results_count_as_progress,
 )
@@ -104,6 +107,43 @@ def test_any_successful_tool_result_counts_as_progress() -> None:
 
 def test_empty_tool_batch_does_not_count_as_progress() -> None:
     assert not _tool_results_count_as_progress([], [], {})
+
+
+@pytest.mark.asyncio
+async def test_redacted_tool_result_explains_display_only_mask() -> None:
+    adapter = _RedactingAdapter(
+        ToolSpec(
+            name="read_file",
+            description="Read text",
+            input_hint="path",
+            handler=lambda _params, _update: 'apiKey: "example-test-key"',
+        )
+    )
+
+    result = await adapter.execute("call-1", {})
+
+    assert isinstance(result.content[0], TextContent)
+    assert 'apiKey: "[REDACTED]"' in result.content[0].text
+    assert "example-test-key" not in result.content[0].text
+    assert "display-only" in result.content[0].text
+    assert "Exact-text edits" in result.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_unmasked_tool_result_has_no_mask_notice() -> None:
+    adapter = _RedactingAdapter(
+        ToolSpec(
+            name="read_file",
+            description="Read text",
+            input_hint="path",
+            handler=lambda _params, _update: "plain content",
+        )
+    )
+
+    result = await adapter.execute("call-1", {})
+
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "plain content"
 
 
 def test_permission_notice_describes_automatic_session_grant() -> None:
