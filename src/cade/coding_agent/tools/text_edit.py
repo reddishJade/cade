@@ -43,6 +43,12 @@ def apply_text_replacement(
 
     idx = content.find(old_string)
     if idx == -1:
+        if "[REDACTED]" in old_string:
+            raise ValueError(
+                "Could not find old_string: [REDACTED] is a display mask; "
+                "the placeholder is not literal file content. "
+                "Use known text or edit around the masked value."
+            )
         raise ValueError(
             "Could not find old_string in the file. "
             "It must match exactly, including all whitespace and newlines."
