@@ -8,7 +8,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from cade.agent.types import TerminalRenderIntent, ToolInput, ToolOutput, ToolSpec
 from cade.harness.execution_env import (
@@ -36,6 +36,7 @@ class BashRequest:
     command: str
     timeout: int  # 毫秒
     workdir: str | None = None
+    purpose: Literal["validation"] | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,7 @@ def build_bash_tool(
                 "exit_code": result.returncode,
                 "timed_out": result.timed_out,
                 "cancelled": result.cancelled,
+                **({"purpose": request.purpose} if request.purpose is not None else {}),
             },
             is_error=result.returncode != 0 or result.timed_out or result.cancelled,
             render_intent=TerminalRenderIntent(
@@ -146,6 +148,14 @@ def _build_schema(shell_syntax: str) -> dict[str, Any]:
             "description": (
                 "Working directory inside the project root, as a relative or absolute "
                 "path. Defaults to project root."
+            ),
+        },
+        "purpose": {
+            "type": "string",
+            "enum": ["validation"],
+            "description": (
+                "Set to validation only for a check whose outcome should appear "
+                "in the run's validation record."
             ),
         },
     }
@@ -240,6 +250,11 @@ def _build_prompt_guidelines(
         "Use the `workdir` parameter to run commands inside the project."
         f" Project root: {root.as_posix()}"
     )
+    guidelines.append(
+        "Set `purpose` to `validation` for test, lint, type, build, or other "
+        "checks whose outcomes you will cite as verification. Use commands "
+        "that fail if a check fails."
+    )
 
     # 运行时变量
     import sys as _sys
@@ -266,7 +281,18 @@ def _parse_bash_request(data: ToolInput) -> BashRequest:
         command=command,
         timeout=_parse_timeout(data),
         workdir=_parse_workdir(data),
+        purpose=_parse_purpose(data),
     )
+
+
+def _parse_purpose(data: ToolInput) -> Literal["validation"] | None:
+    """仅接受显式验证意图，避免从命令文本推断。"""
+    purpose = data.get("purpose")
+    if purpose is None:
+        return None
+    if purpose != "validation":
+        raise ValueError("purpose must be validation")
+    return "validation"
 
 
 def _parse_workdir(data: ToolInput) -> str | None:

@@ -59,6 +59,10 @@ class TestParseBashRequest:
         with pytest.raises(ValueError, match="command"):
             _parse_bash_request({"input": "echo legacy"})
 
+    def test_unrecognized_purpose_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="purpose must be validation"):
+            _parse_bash_request({"command": "echo hi", "purpose": "exploration"})
+
 
 class TestParseTimeout:
     def test_default(self) -> None:
@@ -145,6 +149,21 @@ def test_bash_nonzero_exit_is_a_structured_tool_failure(tmp_path: Path) -> None:
     assert output.is_error
     assert output.metadata["exit_code"] == 127
     assert "exit code: 127" in output
+
+
+def test_bash_validation_purpose_is_explicit_metadata(tmp_path: Path) -> None:
+    shell = _RecordingShell(ExecutionResult(returncode=0))
+    tool = build_bash_tool(
+        tmp_path,
+        shell_spec=ShellSpec("sh", ("sh", "-c"), "posix"),
+        shell=shell,
+    )
+
+    output = tool.handler({"command": "pytest -q", "purpose": "validation"}, None)
+
+    assert output.metadata["purpose"] == "validation"
+    assert output.metadata["exit_code"] == 0
+    assert (tool.schema or {})["properties"]["purpose"]["enum"] == ["validation"]
 
 
 def test_bash_timeout_is_a_structured_tool_failure(tmp_path: Path) -> None:

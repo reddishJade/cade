@@ -11,12 +11,13 @@ from types import SimpleNamespace
 import pytest
 
 from cade.agent.results import TerminationReason
-from cade.ai.events import ProviderFailure
+from cade.ai.events import ProviderFailure, ToolCall
 from cade.harness.agent_runtime.events import (
     FinalStructuredEvent,
     TextDeltaStructuredEvent,
     ToolResultBlock,
     ToolResultStructuredEvent,
+    ToolUseStructuredEvent,
     UsageUpdateStructuredEvent,
 )
 from cade.harness.agent_runtime.result import AgentHarnessResult
@@ -292,6 +293,129 @@ def test_exec_compact_tool_failure_has_error_status(tmp_path: Path, capsys) -> N
     payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     completed = next(item for item in payloads if item["type"] == "tool.completed")
     assert completed["status"] == "error"
+
+
+def test_exec_records_explicit_validation_results(tmp_path: Path, capsys) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    events: list[object] = []
+    for call_id, command, purpose, status, exit_code in (
+        ("check-1", "pytest -q", "validation", "ok", 0),
+        ("check-2", "ruff check src", "validation", "error", 1),
+        ("explore-1", "ls", None, "ok", 0),
+    ):
+        args: dict[str, object] = {"command": command}
+        if purpose is not None:
+            args["purpose"] = purpose
+        events.append(
+            ToolUseStructuredEvent(
+                type="tool_use",
+                step=1,
+                data=ToolCall(id=call_id, name="bash", input=args),
+            )
+        )
+        events.append(
+            ToolResultStructuredEvent(
+                type="tool_result",
+                step=1,
+                data=ToolResultBlock(
+                    tool_use_id=call_id,
+                    content="output",
+                    status=status,
+                    exit_code=exit_code,
+                ),
+            )
+        )
+    events.append(FinalStructuredEvent(type="final", step=2, data=_final_result()))
+    app = _App(events)
+    args = parse_args(
+        ["exec", "--project-root", str(tmp_path), "--approval", "never", "fix it"]
+    )
+
+    assert run_exec(args, CadeRuntimeConfig(), lambda *_args: app) == 0
+
+    payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    completed = next(item for item in payloads if item["type"] == "run.completed")
+    assert completed["validation"] == [
+        {"tool_call_id": "check-1", "status": "passed", "exit_code": 0},
+        {"tool_call_id": "check-2", "status": "failed", "exit_code": 1},
+    ]
+    assert (
+        app.session_store.records[-1][1]["data"]["validation"]
+        == completed["validation"]
+    )
+
+
+def test_exec_records_unfinished_validation(tmp_path: Path, capsys) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    app = _App(
+        [
+            ToolUseStructuredEvent(
+                type="tool_use",
+                step=1,
+                data=ToolCall(
+                    id="check-1",
+                    name="bash",
+                    input={"command": "pytest -q", "purpose": "validation"},
+                ),
+            ),
+            FinalStructuredEvent(type="final", step=2, data=_final_result()),
+        ]
+    )
+    args = parse_args(
+        ["exec", "--project-root", str(tmp_path), "--approval", "never", "fix it"]
+    )
+
+    assert run_exec(args, CadeRuntimeConfig(), lambda *_args: app) == 0
+
+    payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    completed = next(item for item in payloads if item["type"] == "run.completed")
+    assert completed["validation"] == [
+        {"tool_call_id": "check-1", "status": "incomplete", "exit_code": None}
+    ]
+
+
+def test_validation_does_not_claim_success_without_exit_evidence() -> None:
+    from cade.cli.exec_cmd import _ValidationTracker
+
+    tracker = _ValidationTracker()
+    for call_id in ("unknown", "blocked"):
+        tracker.observe(
+            ToolUseStructuredEvent(
+                type="tool_use",
+                step=1,
+                data=ToolCall(
+                    id=call_id,
+                    name="bash",
+                    input={"command": "check", "purpose": "validation"},
+                ),
+            )
+        )
+    tracker.observe(
+        ToolResultStructuredEvent(
+            type="tool_result",
+            step=1,
+            data=ToolResultBlock(tool_use_id="unknown", content="ok", status="ok"),
+        )
+    )
+    tracker.observe(
+        ToolResultStructuredEvent(
+            type="tool_result",
+            step=1,
+            data=ToolResultBlock(
+                tool_use_id="blocked",
+                content="approval denied",
+                status="error",
+                approval_denied=True,
+            ),
+        )
+    )
+
+    assert tracker.results() == [
+        {"tool_call_id": "unknown", "status": "unknown", "exit_code": None},
+        {"tool_call_id": "blocked", "status": "blocked", "exit_code": None},
+    ]
 
 
 def test_exec_maps_request_budget_failure_to_exit_four(tmp_path: Path, capsys) -> None:

@@ -140,6 +140,7 @@ class ToolResultBlock:
     status: Literal["ok", "error"] = "ok"
     permission_notice: str | None = None
     approval_denied: bool = False
+    exit_code: int | None = None
     render_intent: ToolRenderIntent | None = None
     type: str = "tool_result"
 
@@ -376,11 +377,15 @@ def _translate_tool_execution_end(
 ) -> AgentHarnessEvent | list[AgentHarnessEvent]:
     permission_notice: str | None = None
     approval_denied = False
+    exit_code: int | None = None
     if event.result is not None and event.result.metadata is not None:
         raw_notice = event.result.metadata.get("permission_notice")
         if isinstance(raw_notice, str):
             permission_notice = raw_notice
         approval_denied = event.result.metadata.get("approval_denied") is True
+        raw_exit_code = event.result.metadata.get("exit_code")
+        if isinstance(raw_exit_code, int) and not isinstance(raw_exit_code, bool):
+            exit_code = raw_exit_code
     result_event = ToolResultStructuredEvent(
         "tool_result",
         state.step,
@@ -390,6 +395,7 @@ def _translate_tool_execution_end(
             status="error" if event.is_error else "ok",
             permission_notice=permission_notice,
             approval_denied=approval_denied,
+            exit_code=exit_code,
             render_intent=(event.result.render_intent if event.result else None),
         ),
         state.correlation.snapshot(event.tool_call_id),
