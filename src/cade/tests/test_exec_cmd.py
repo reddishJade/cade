@@ -388,6 +388,39 @@ def test_exec_deny_stops_on_first_permission_denial(tmp_path: Path, capsys) -> N
     assert payload["exit_code"] == 5
 
 
+def test_exec_failed_approved_command_is_not_approval_denial(
+    tmp_path: Path, capsys
+) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    failed_command = ToolResultStructuredEvent(
+        type="tool_result",
+        step=1,
+        data=ToolResultBlock(
+            tool_use_id="call-1",
+            content="exit code: 1",
+            status="error",
+            permission_notice="Automatic approval review approved (risk: low)",
+        ),
+    )
+    app = _App(
+        [
+            failed_command,
+            FinalStructuredEvent(type="final", step=2, data=_final_result()),
+        ]
+    )
+    args = parse_args(
+        ["exec", "--project-root", str(tmp_path), "--approval", "deny", "fix it"]
+    )
+
+    status = run_exec(args, CadeRuntimeConfig(), lambda *_args: app)
+
+    payload = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert status == 0
+    assert payload["status"] == "completed"
+    assert payload["error"] is None
+
+
 def test_exec_reports_only_files_changed_during_run(tmp_path: Path, capsys) -> None:
     from cade.cli.exec_cmd import run_exec
 
