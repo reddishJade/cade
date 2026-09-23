@@ -89,7 +89,7 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
     "modules": [
       "identity", "tool_discipline", "citations", "tools",
       "search_strategy", "environment", "cwd",
-      "git_preflight", "contextual_retrieval", "notices"
+      "contextual_retrieval", "notices"
     ],
     "instructions": [
       {"type": "file", "path": "TEAM_RULES.md", "priority": "critical"},

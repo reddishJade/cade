@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import IntEnum, StrEnum
@@ -30,7 +29,6 @@ logger = logging.getLogger(__name__)
 class ContextBlockSource(StrEnum):
     INSTRUCTION = "instruction"
     SKILL = "skill"
-    ACTIVE_DIFF = "active_diff"
     NOTES = "notes"
     RECENT_VALIDATION = "recent_validation"
     ENVIRONMENT = "environment"
@@ -962,125 +960,6 @@ def _prepare_manifest(
         text.encode("utf-8"), max_bytes, source
     )
     return prepared
-
-
-# ── 内置收集器：活动 diff ──
-
-
-ACTIVE_DIFF_MAX_BYTES: int = 8 * 1024
-_DIFF_CMD_TIMEOUT: int = 5
-
-_ACTIVE_DIFF_TRUNCATED_MARKER = (
-    "<active-diff-truncated>Diff truncated because it exceeded the maximum "
-    "allowed size. Use bash git diff for full details.</active-diff-truncated>"
-)
-
-
-def _run_git(root: Path, *args: str) -> str | None:
-    try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=root,
-            capture_output=True,
-            check=False,
-            text=True,
-            errors="replace",
-            timeout=_DIFF_CMD_TIMEOUT,
-        )
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return None
-    if completed.returncode != 0:
-        return None
-    return completed.stdout
-
-
-class ActiveDiffCollector:
-    def __init__(self, project_root: Path | None = None) -> None:
-        self._project_root = project_root
-
-    def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        root = input.project_root or self._project_root
-        if root is None:
-            return []
-
-        stat_unstaged = (_run_git(root, "diff", "--stat") or "").strip()
-        stat_staged = (_run_git(root, "diff", "--cached", "--stat") or "").strip()
-        has_staged = bool(stat_staged)
-        has_unstaged = bool(stat_unstaged)
-
-        if not has_staged and not has_unstaged:
-            return []
-
-        stat_parts: list[str] = []
-        if has_staged:
-            stat_parts.append("[staged]")
-            stat_parts.append(stat_staged)
-        if has_unstaged:
-            if stat_parts:
-                stat_parts.append("")
-            stat_parts.append("[unstaged]")
-            stat_parts.append(stat_unstaged)
-        stat_summary = "\n".join(stat_parts)
-
-        excerpt_block = _build_diff_excerpt_block(root, has_staged, has_unstaged)
-        if excerpt_block is not None:
-            ideal = stat_summary + "\n\n" + excerpt_block
-        else:
-            ideal = stat_summary
-
-        marker = _ACTIVE_DIFF_TRUNCATED_MARKER
-        marker_bytes = _utf8_size(marker)
-        ideal_bytes = _utf8_size(ideal)
-
-        if ideal_bytes <= ACTIVE_DIFF_MAX_BYTES:
-            body = ideal
-        else:
-            content_budget = ACTIVE_DIFF_MAX_BYTES - marker_bytes
-            if content_budget <= 0:
-                return []
-            body = _utf8_prefix(ideal, content_budget) + marker
-
-        if not body.strip():
-            return []
-
-        return [
-            ContextBlock(
-                source=ContextBlockSource.ACTIVE_DIFF,
-                target=ContextBlockTarget.USER_CONTEXT,
-                priority=ContextPriority.HIGH,
-                content=body,
-                provenance=f"git diff: {root}",
-                truncated=ideal_bytes > ACTIVE_DIFF_MAX_BYTES,
-                truncation_reason=(
-                    "byte_budget" if ideal_bytes > ACTIVE_DIFF_MAX_BYTES else None
-                ),
-                scope="runtime",
-            )
-        ]
-
-
-def _build_diff_excerpt_block(
-    root: Path, has_staged: bool, has_unstaged: bool
-) -> str | None:
-    if has_unstaged:
-        raw = _run_git(root, "diff", "--unified=1", "--no-color")
-    elif has_staged:
-        raw = _run_git(root, "diff", "--cached", "--unified=1", "--no-color")
-    else:
-        return None
-
-    if raw is None or not raw.strip():
-        return None
-
-    lines = raw.splitlines()
-    excerpt: str
-    if len(lines) <= 30:
-        excerpt = raw.strip()
-    else:
-        excerpt = "\n".join(lines[:30]) + (
-            f"\n[... {len(lines) - 30} diff lines omitted ...]"
-        )
-    return "<diff-excerpt>\n" + excerpt + "\n</diff-excerpt>"
 
 
 # ── 内置收集器：最近验证/测试失败 ──

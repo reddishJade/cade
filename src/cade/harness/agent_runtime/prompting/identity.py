@@ -28,7 +28,6 @@ STABLE_PROMPT_MODULE_ORDER: tuple[str, ...] = (
 )
 DYNAMIC_PROMPT_MODULE_ORDER: tuple[str, ...] = ("environment", "cwd")
 VOLATILE_PROMPT_MODULE_ORDER: tuple[str, ...] = (
-    "git_preflight",
     "contextual_retrieval",
     "notices",
 )

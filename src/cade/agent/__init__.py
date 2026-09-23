@@ -6,7 +6,6 @@ from .agent import Agent
 from .agent_loop import run_agent_loop
 from .config import AgentContext, AgentLoopConfig
 from .context import (
-    ActiveDiffCollector,
     ContextAssembler,
     ContextAssemblyInput,
     ContextAssemblyResult,
@@ -55,7 +54,6 @@ from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 from .types import AgentTool, CancellationSignal
 
 __all__ = [
-    "ActiveDiffCollector",
     "Agent",
     "AgentContext",
     "AgentEvent",

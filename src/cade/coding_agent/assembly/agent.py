@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cade.agent.context import (
-    ActiveDiffCollector,
     ContextBlockSource,
     ContextCollectorRegistry,
     ContextPriority,
@@ -162,9 +161,6 @@ def build_agent(
                 project_root=project_root,
             ),
         )
-    )
-    context_collectors.register_section(
-        make_collector_section("active_diff", ActiveDiffCollector(project_root))
     )
     context_collectors.register_section(
         make_collector_section("recent_validation", RecentValidationCollector())

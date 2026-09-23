@@ -36,7 +36,7 @@ class _Collector:
                 truncation_reason="byte_budget",
             ),
             ContextBlock(
-                source=ContextBlockSource.ACTIVE_DIFF,
+                source=ContextBlockSource.MODE,
                 priority=ContextPriority.LOW,
                 content="expired diff",
                 block_id="diff-old",
