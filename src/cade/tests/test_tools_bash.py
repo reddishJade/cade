@@ -21,10 +21,11 @@ from cade.harness.execution_env import ExecutionResult
 
 
 class _RecordingShell:
-    def __init__(self) -> None:
+    def __init__(self, result: ExecutionResult | None = None) -> None:
         self.argv: list[str] = []
         self.cwd: Path | None = None
         self.timeout = 0
+        self.result = result or ExecutionResult(stdout="local output")
 
     def run(
         self,
@@ -41,7 +42,7 @@ class _RecordingShell:
         self.timeout = timeout
         if on_progress is not None:
             on_progress("local output")
-        return ExecutionResult(stdout="local output", stderr="", returncode=0)
+        return self.result
 
 
 class TestParseBashRequest:
@@ -129,3 +130,32 @@ def test_bash_tool_depends_directly_on_local_shell(tmp_path: Path) -> None:
         command="printf local",
         cwd=tmp_path.resolve().as_posix(),
     )
+
+
+def test_bash_nonzero_exit_is_a_structured_tool_failure(tmp_path: Path) -> None:
+    shell = _RecordingShell(ExecutionResult(stderr="missing", returncode=127))
+    tool = build_bash_tool(
+        tmp_path,
+        shell_spec=ShellSpec("sh", ("sh", "-c"), "posix"),
+        shell=shell,
+    )
+
+    output = tool.handler({"command": "missing-tool"}, None)
+
+    assert output.is_error
+    assert output.metadata["exit_code"] == 127
+    assert "exit code: 127" in output
+
+
+def test_bash_timeout_is_a_structured_tool_failure(tmp_path: Path) -> None:
+    shell = _RecordingShell(ExecutionResult(timed_out=True, returncode=0))
+    tool = build_bash_tool(
+        tmp_path,
+        shell_spec=ShellSpec("sh", ("sh", "-c"), "posix"),
+        shell=shell,
+    )
+
+    output = tool.handler({"command": "long-running"}, None)
+
+    assert output.is_error
+    assert output.metadata["timed_out"] is True

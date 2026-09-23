@@ -102,6 +102,12 @@ def build_bash_tool(
         output = _render_bash_output(result, acc, plan.timeout)
         return ToolOutput(
             output,
+            metadata={
+                "exit_code": result.returncode,
+                "timed_out": result.timed_out,
+                "cancelled": result.cancelled,
+            },
+            is_error=result.returncode != 0 or result.timed_out or result.cancelled,
             render_intent=TerminalRenderIntent(
                 command=plan.command,
                 cwd=plan.cwd.as_posix(),
