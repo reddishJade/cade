@@ -249,7 +249,6 @@ uv run pyright src/
 | [docs/evaluation-roadmap.md](docs/evaluation-roadmap.md) | Eval 全局阶段路线与验收门槛 |
 | `src/xcode/main.py` | CLI 入口点与子命令 |
 | `src/xcode/harness/assembly/` | 运行时装配与工具注册 |
-| [docs/source-review.md](docs/source-review.md) | 源码级架构审查 |
 
 
 ---
