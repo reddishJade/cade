@@ -171,3 +171,35 @@ def test_live_result_is_available_before_recorder_catches_up(tmp_path: Path) -> 
     assert "file_state=unchanged" in blocks[0].content
     assert "exit_code=0" in blocks[0].content
     assert "passed" in blocks[0].content
+
+
+def test_long_validation_command_is_labeled_as_a_preview(tmp_path: Path) -> None:
+    from cade.agent.messages import ToolResultMessage
+
+    workspace = _workspace(tmp_path)
+    store = SessionStore(tmp_path / "sessions", project_root=workspace)
+    output = build_bash_tool(workspace).handler(
+        {
+            "command": "python -c 'print(\"passed\")' # " + "x" * 300,
+            "purpose": "validation",
+        },
+        None,
+    )
+    blocks = ValidationCollector(workspace, store).collect(
+        ContextCollectionInput(
+            messages=[
+                ToolResultMessage(
+                    tool_call_id="long-command",
+                    tool_name="bash",
+                    content=str(output),
+                    metadata=output.metadata,
+                    render_intent=output.render_intent,
+                )
+            ],
+            project_root=workspace,
+        )
+    )
+    assert "command_preview=" in blocks[0].content
+    assert "full commands" in blocks[0].content
+    assert "exit_code=0" in blocks[0].content
+    (tmp_path / "command-preview.txt").write_text(blocks[0].content)
