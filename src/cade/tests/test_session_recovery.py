@@ -100,6 +100,51 @@ def test_identical_text_in_separate_responses_is_preserved(tmp_path: Path) -> No
     assert _report(recorder, tmp_path / "projection.json") == ["same", "same"]
 
 
+def test_fork_rebases_window_sources_and_keeps_generations(tmp_path: Path) -> None:
+    recorder = _new_session(tmp_path)
+    recorder.record_assistant("first answer")
+    recorder.record_context_window_reset(
+        window_id="window-1",
+        messages_before=2,
+        messages_after=1,
+        replacement=[UserMessage(content="first task")],
+    )
+    inbox = SessionInbox(recorder.store)
+    inbox.insert(UserMessage(content="second task"), InboxLane.NEXT_TURN, wake=True)
+    inbox.claim_initial("second-run")
+    anchor = recorder.store.get_forkable_user_messages()[-1].id
+    recorder.record_context_window_reset(
+        window_id="window-2",
+        messages_before=2,
+        messages_after=1,
+        replacement=[UserMessage(content="second task")],
+    )
+    original_bytes = recorder.store.current_path.read_bytes()
+    fork = recorder.store.fork_from_entry(anchor)
+    assert recorder.store.current_path.read_bytes() == original_bytes
+    assert project_session_surface(fork.build_branch()).messages == (
+        UserMessage(content="second task"),
+    )
+    fork_recorder = SessionRecorder(fork)
+    fork_recorder.record_context_window_reset(
+        window_id="window-3",
+        messages_before=1,
+        messages_after=1,
+        replacement=[UserMessage(content="next action")],
+    )
+    assert project_session_surface(fork.build_branch()).generation == 3
+    _report(fork_recorder, tmp_path / "fork-projection.json")
+    branch = fork.build_branch()
+    for index, entry in enumerate(branch):
+        if (
+            isinstance(entry.content, dict)
+            and entry.content.get("type") == "context_window_reset"
+        ):
+            assert entry.content["data"]["source_entry_ids"] == [
+                record.id for record in branch[:index]
+            ]
+
+
 def test_claimed_input_waits_for_complete_tool_batch(tmp_path: Path) -> None:
     from cade.agent.messages import ToolResultMessage
     from cade.harness.agent_runtime.events import (

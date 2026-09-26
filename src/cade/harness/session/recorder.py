@@ -177,12 +177,16 @@ class SessionRecorder:
         replacement: list[AgentMessage],
     ) -> dict[str, JsonValue]:
         branch = self.store.build_branch()
-        generation = 1 + sum(
-            1
+        generations = [
+            data.get("generation", 0)
             for entry in branch
             if entry.type == "event"
             and isinstance(entry.content, dict)
             and entry.content.get("type") == "context_window_reset"
+            and isinstance(data := entry.content.get("data"), dict)
+        ]
+        generation = 1 + max(
+            (value for value in generations if isinstance(value, int)), default=0
         )
         return {
             "generation": generation,
