@@ -12,6 +12,7 @@ from cade.agent.types import ToolInput, ToolSpec
 
 from .artifacts import resolve_history_event_content
 from .schema import SESSION_EVENT_SCHEMA_VERSION
+from .tree_store import build_session_branch, read_session_entries
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
@@ -191,23 +192,24 @@ class SessionHistory:
         if session_id is None:
             return []
         path = self.sessions_dir / f"session-{session_id}.jsonl"
-        entries = _read_entries(path, self.artifacts_dir)
-        if not entries:
-            return []
-        head_id = self._head_id(session_id)
-        by_id = {entry.id: entry for entry in entries}
-        if head_id is None or head_id not in by_id:
-            return entries
-        branch: list[HistoryEntry] = []
-        current: str | None = head_id
-        seen: set[str] = set()
-        while current and current in by_id and current not in seen:
-            seen.add(current)
-            entry = by_id[current]
-            branch.append(entry)
-            current = entry.parent_id
-        branch.reverse()
-        return branch
+        entries = read_session_entries(path)
+        legacy_head = (
+            self._head_id(session_id)
+            if entries and entries[-1].head_id is None
+            else None
+        )
+        branch = build_session_branch(entries, legacy_head)
+        return [
+            HistoryEntry(
+                id=entry.id,
+                parent_id=entry.parent_id,
+                type=entry.type,
+                content=entry.content,
+                created_at=entry.created_at,
+                artifacts_dir=self.artifacts_dir,
+            )
+            for entry in branch
+        ]
 
     def _head_id(self, session_id: str) -> str | None:
         index_dir = (
@@ -321,40 +323,6 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             ),
         ),
     )
-
-
-def _read_entries(
-    path: Path,
-    artifacts_dir: Path | None = None,
-) -> list[HistoryEntry]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    entries: list[HistoryEntry] = []
-    for line in lines:
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(item, dict):
-            continue
-        entry_id = str(item.get("id", "")).strip()
-        entry_type = str(item.get("type", "")).strip()
-        if not entry_id or not entry_type:
-            continue
-        parent = item.get("parent_id")
-        entries.append(
-            HistoryEntry(
-                id=entry_id,
-                parent_id=str(parent) if parent else None,
-                type=entry_type,
-                content=item.get("content"),
-                created_at=str(item.get("created_at", "")),
-                artifacts_dir=artifacts_dir,
-            )
-        )
-    return entries
 
 
 def _default_artifacts_dir(sessions_dir: Path) -> Path:

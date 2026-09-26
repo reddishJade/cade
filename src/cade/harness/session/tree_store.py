@@ -4,7 +4,7 @@
   {"id":"e1","parent_id":null,"type":"event","content":{"type":"inbox/inserted",...}}
   {"id":"e2","parent_id":"e1","type":"event","content":{"type":"inbox/claimed",...}}
 
-head_id 记录在 session_index.json 的 metadata 中。
+新记录在 JSONL 中提交 head_id；session_index.json 只缓存导航及展示元数据。
 分支只需在同文件中追加不同 parent_id 的 entry。
 """
 
@@ -103,6 +103,7 @@ class TreeEntryModel(BaseModel):
     type: str
     content: JsonValue
     created_at: str
+    head_id: str | None = None
 
 
 class TreeMetadata(BaseModel):
@@ -116,6 +117,105 @@ class TreeMetadata(BaseModel):
     updated_at: str
     parent_id: str | None = None
     head_id: str | None = None  # 当前活动叶节点
+
+
+def _sync_directory(path: Path) -> None:
+    """把新文件名或原子替换的目录项提交到磁盘。"""
+    if os.name == "nt":
+        return
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def read_session_entries(path: Path) -> list[SessionEntry]:
+    """读取完整事实；仅忽略未以换行提交的损坏末行。"""
+    if not path.exists():
+        return []
+    entries: list[SessionEntry] = []
+    seen: set[str] = set()
+    with path.open("rb") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                model = TreeEntryModel.model_validate_json(line)
+            except ValidationError as exc:
+                if not line.endswith(b"\n"):
+                    logger.warning(
+                        "ignoring incomplete session tail: %s:%s", path, line_number
+                    )
+                    break
+                raise ValueError(
+                    f"invalid session record: {path}:{line_number}"
+                ) from exc
+            if model.id in seen:
+                raise ValueError(f"duplicate session entry ID: {model.id}")
+            if model.parent_id is not None and model.parent_id not in seen:
+                raise ValueError(
+                    f"missing or forward session parent: {model.parent_id}"
+                )
+            seen.add(model.id)
+            if model.head_id is not None and model.head_id not in seen:
+                raise ValueError(f"missing session head: {model.head_id}")
+            entries.append(SessionEntry(**model.model_dump()))
+    return entries
+
+
+def build_session_branch(
+    entries: list[SessionEntry], legacy_head_id: str | None = None
+) -> list[SessionEntry]:
+    """由日志中的 head 提交构建分支，旧文件才使用索引指针。"""
+    if not entries:
+        return []
+    head_id = entries[-1].head_id or legacy_head_id or entries[-1].id
+    by_id = {entry.id: entry for entry in entries}
+    branch: list[SessionEntry] = []
+    seen: set[str] = set()
+    current: str | None = head_id
+    while current is not None:
+        if current in seen or current not in by_id:
+            raise ValueError(f"invalid session branch at entry: {current}")
+        seen.add(current)
+        entry = by_id[current]
+        branch.append(entry)
+        current = entry.parent_id
+    return list(reversed(branch))
+
+
+def _read_log_tail(path: Path) -> tuple[TreeEntryModel | None, int]:
+    """只读取末条记录，正常追加不扫描完整历史；返回可恢复的文件长度。"""
+    if not path.exists():
+        return None, 0
+    with path.open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        end = valid_end = stream.tell()
+        while end > 0:
+            size = min(4096, end)
+            while True:
+                start = end - size
+                stream.seek(start)
+                chunk = stream.read(size)
+                body = chunk[:-1] if chunk.endswith(b"\n") else chunk
+                boundary = body.rfind(b"\n")
+                if boundary >= 0 or start == 0:
+                    row_start = start + boundary + 1
+                    line = chunk[boundary + 1 :]
+                    break
+                size = min(end, size * 2)
+            if not line.strip():
+                end = row_start
+                continue
+            try:
+                return TreeEntryModel.model_validate_json(line), valid_end
+            except ValidationError as exc:
+                if line.endswith(b"\n"):
+                    raise ValueError(f"invalid committed session tail: {path}") from exc
+                logger.warning("recovering incomplete session tail: %s", path)
+                end = valid_end = row_start
+        return None, valid_end
 
 
 class TreeSessionRepo:
@@ -163,90 +263,67 @@ class TreeSessionRepo:
     def append(self, record_type: str, content: JsonValue) -> str:
         """追加一条树 entry，自动设置 parent_id 为当前 head。"""
         with self._lock:
+            self.ensure_metadata()
             head_id = self._load_head_id()
             entry_id = uuid4().hex[:12]
             entry = TreeEntryModel(
                 id=entry_id,
+                head_id=entry_id,
                 parent_id=head_id,
                 type=record_type,
                 content=content,
                 created_at=datetime.now(UTC).isoformat(timespec="seconds"),
             )
-            with _open_private_text(self.current_path, append=True) as f:
-                f.write(_dump_tree_entry(entry) + "\n")
+            self._append_entry(entry)
             self._save_head_id(entry_id)
             return entry_id
 
     def read_entries(self) -> list[SessionEntry]:
         """读取当前会话的全部 entry。"""
-        if not self.current_path.exists():
-            return []
-        entries: list[SessionEntry] = []
-        for line in self.current_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                data = json.loads(line)
-                model = TreeEntryModel.model_validate(data)
-                entries.append(
-                    SessionEntry(
-                        id=model.id,
-                        parent_id=model.parent_id,
-                        type=model.type,
-                        content=model.content,
-                        created_at=model.created_at,
-                    )
-                )
-            except (ValidationError, json.JSONDecodeError, TypeError):
-                continue
-        return entries
+        with self._lock:
+            return read_session_entries(self.current_path)
 
     def build_branch(self) -> list[SessionEntry]:
-        """从当前 head 回溯到根，返回从根到叶的路径。"""
-        entries = self.read_entries()
-        by_id = {e.id: e for e in entries}
-        head_id = self._load_head_id()
-        if head_id is None or head_id not in by_id:
-            return entries[-200:] if entries else []
-        chain: list[SessionEntry] = []
-        current: str | None = head_id
-        while current and current in by_id:
-            chain.append(by_id[current])
-            parent = by_id[current].parent_id
-            if parent == current:
-                break
-            current = parent
-        chain.reverse()
-        return chain
+        """从已提交 head 回溯到根，不截断或混合旁支。"""
+        with self._lock:
+            entries = self.read_entries()
+            if entries and entries[-1].head_id is not None:
+                return build_session_branch(entries)
+            meta = self._metadata_for_path(self.current_path)
+            return build_session_branch(entries, meta.head_id if meta else None)
 
     def fork_into(self, title: str = "", summary: str = "") -> TreeSessionRepo:
         """从当前 head 分叉，创建新会话（新文件，拷贝 entry）。"""
-        parent = self.ensure_metadata()
-        fork_path = self._new_path()
-        if self.current_path.exists():
-            shutil.copy2(self.current_path, fork_path)
-            _secure_existing_file(fork_path)
-        now = datetime.now(UTC).isoformat(timespec="seconds")
-        meta = TreeMetadata(
-            id=self._session_id(fork_path),
-            title=title or f"Fork of {parent.title}",
-            summary=summary or parent.summary,
-            project_path=parent.project_path,
-            transcript_path=str(fork_path),
-            created_at=now,
-            updated_at=now,
-            parent_id=parent.id,
-            head_id=self._load_head_id(),
-        )
-        self._upsert_metadata(meta)
-        fork = TreeSessionRepo.__new__(TreeSessionRepo)
-        fork.sessions_dir = self.sessions_dir
-        fork.project_root = self.project_root
-        fork.index_path = self.index_path
-        fork._lock = self._lock
-        fork.current_path = fork_path
-        fork.artifacts_dir = self.artifacts_dir
-        return fork
+        with self._lock:
+            parent = self.ensure_metadata()
+            fork_path = self._new_path()
+            if self.current_path.exists():
+                shutil.copy2(self.current_path, fork_path)
+                _secure_existing_file(fork_path)
+                with fork_path.open("rb") as stream:
+                    os.fsync(stream.fileno())
+                _sync_directory(fork_path.parent)
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            meta = TreeMetadata(
+                id=self._session_id(fork_path),
+                title=title or f"Fork of {parent.title}",
+                summary=summary or parent.summary,
+                project_path=parent.project_path,
+                transcript_path=str(fork_path),
+                created_at=now,
+                updated_at=now,
+                parent_id=parent.id,
+                head_id=self._load_head_id(),
+            )
+            self._upsert_metadata(meta)
+            fork = TreeSessionRepo.__new__(TreeSessionRepo)
+            fork.sessions_dir = self.sessions_dir
+            fork.project_root = self.project_root
+            fork.index_path = self.index_path
+            fork._lock = self._lock
+            fork.current_path = fork_path
+            fork.artifacts_dir = self.artifacts_dir
+            return fork
 
     def spawn_child(self, title: str, summary: str = "") -> TreeSessionRepo:
         """创建空的直接子会话，并在索引中持久化 lineage。"""
@@ -314,7 +391,7 @@ class TreeSessionRepo:
                 return 0
             target_idx = max(0, len(user_indices) - turns)
             target_entry = branch[user_indices[target_idx]]
-            self._save_head_id(target_entry.id)
+            self._move_head(target_entry.id)
             return len(user_indices) - target_idx
 
     def user_turn_count(self) -> int:
@@ -339,26 +416,31 @@ class TreeSessionRepo:
         return sorted_views
 
     def ensure_metadata(self, first_user_text: str | None = None) -> TreeMetadata:
-        existing = self._metadata_for_path(self.current_path)
-        if existing is not None:
-            return existing
-        now = datetime.now(UTC).isoformat(timespec="seconds")
-        title = (
-            _make_title(first_user_text) if first_user_text else "Untitled conversation"
-        )
-        meta = TreeMetadata(
-            id=self._session_id(self.current_path),
-            title=title,
-            summary=_make_initial_summary(first_user_text)
-            if first_user_text
-            else "Conversation started.",
-            project_path=str(self.project_root),
-            transcript_path=str(self.current_path),
-            created_at=now,
-            updated_at=now,
-        )
-        self._upsert_metadata(meta)
-        return meta
+        """在同一把锁内创建或返回展示元数据。"""
+        with self._lock:
+            existing = self._metadata_for_path(self.current_path)
+            if existing is not None:
+                return existing
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            title = (
+                _make_title(first_user_text)
+                if first_user_text
+                else "Untitled conversation"
+            )
+            meta = TreeMetadata(
+                id=self._session_id(self.current_path),
+                title=title,
+                summary=_make_initial_summary(first_user_text)
+                if first_user_text
+                else "Conversation started.",
+                project_path=str(self.project_root),
+                transcript_path=str(self.current_path),
+                created_at=now,
+                updated_at=now,
+                head_id=self._load_head_id(),
+            )
+            self._upsert_metadata(meta)
+            return meta
 
     def update_summary(self) -> TreeMetadata | None:
         with self._lock:
@@ -415,13 +497,18 @@ class TreeSessionRepo:
             return updated
 
     def current_metadata(self) -> TreeMetadata | None:
-        return self._metadata_for_path(self.current_path)
+        metadata = self._metadata_for_path(self.current_path)
+        return (
+            metadata.model_copy(update={"head_id": self._load_head_id()})
+            if metadata
+            else None
+        )
 
     def protocol_info(self) -> dict:
         return {
             "version": 1,
             "storage": "tree-jsonl-v1",
-            "recovery_boundary": "head_id_and_entry_tree",
+            "recovery_boundary": "committed_log_head_and_entry_tree",
         }
 
     def get_user_messages(self) -> list[SessionEntry]:
@@ -447,76 +534,85 @@ class TreeSessionRepo:
         ]
 
     def jump_to_entry(self, entry_id: str) -> bool:
-        """将 head_id 指向指定 entry，实现树内导航。"""
-        entries = self.read_entries()
-        if not any(e.id == entry_id for e in entries):
-            return False
-        self._save_head_id(entry_id)
-        return True
+        """将导航意图追加到日志，索引丢失后仍可恢复回退位置。"""
+        with self._lock:
+            if not any(
+                entry.id == entry_id and entry.type != "head"
+                for entry in self.read_entries()
+            ):
+                return False
+            self._move_head(entry_id)
+            return True
 
     def fork_from_entry(
         self, entry_id: str, title: str = "", summary: str = ""
     ) -> TreeSessionRepo:
         """从指定 entry 分叉：新建会话，只保留从该 entry 到 head 的路径。"""
-        branch = self.build_branch()
-        start = next(
-            (index for index, entry in enumerate(branch) if entry.id == entry_id), None
-        )
-        if start is None:
-            raise ValueError(f"entry {entry_id} not on current branch")
-        copied = branch[start:]
-        parent = self.ensure_metadata()
-        fork_path = self._new_path()
-        with _open_private_text(fork_path, append=False) as f:
-            for index, entry in enumerate(copied):
-                content = deepcopy(entry.content)
-                if (
-                    isinstance(content, dict)
-                    and content.get("type") == "context_window_reset"
-                ):
-                    data = content.get("data")
-                    expected = [item.id for item in branch[: start + index]]
+        with self._lock:
+            branch = self.build_branch()
+            start = next(
+                (index for index, entry in enumerate(branch) if entry.id == entry_id),
+                None,
+            )
+            if start is None:
+                raise ValueError(f"entry {entry_id} not on current branch")
+            copied = branch[start:]
+            parent = self.ensure_metadata()
+            fork_path = self._new_path()
+            with _open_private_text(fork_path, append=False) as f:
+                for index, entry in enumerate(copied):
+                    content = deepcopy(entry.content)
                     if (
-                        not isinstance(data, dict)
-                        or data.get("source_entry_ids") != expected
+                        isinstance(content, dict)
+                        and content.get("type") == "context_window_reset"
                     ):
-                        raise ValueError(
-                            "cannot fork an invalid context window source prefix"
+                        data = content.get("data")
+                        expected = [item.id for item in branch[: start + index]]
+                        if (
+                            not isinstance(data, dict)
+                            or data.get("source_entry_ids") != expected
+                        ):
+                            raise ValueError(
+                                "cannot fork an invalid context window source prefix"
+                            )
+                        data["source_entry_ids"] = [item.id for item in copied[:index]]
+                    f.write(
+                        _dump_tree_entry(
+                            TreeEntryModel(
+                                id=entry.id,
+                                head_id=entry.id,
+                                parent_id=None if index == 0 else entry.parent_id,
+                                type=entry.type,
+                                content=content,
+                                created_at=entry.created_at,
+                            )
                         )
-                    data["source_entry_ids"] = [item.id for item in copied[:index]]
-                f.write(
-                    _dump_tree_entry(
-                        TreeEntryModel(
-                            id=entry.id,
-                            parent_id=None if index == 0 else entry.parent_id,
-                            type=entry.type,
-                            content=content,
-                            created_at=entry.created_at,
-                        )
+                        + "\n"
                     )
-                    + "\n"
-                )
-        now = datetime.now(UTC).isoformat(timespec="seconds")
-        meta = TreeMetadata(
-            id=self._session_id(fork_path),
-            title=title or f"Fork of {parent.title}",
-            summary=summary or parent.summary,
-            project_path=parent.project_path,
-            transcript_path=str(fork_path),
-            created_at=now,
-            updated_at=now,
-            parent_id=parent.id,
-            head_id=self._load_head_id(),
-        )
-        self._upsert_metadata(meta)
-        fork = TreeSessionRepo.__new__(TreeSessionRepo)
-        fork.sessions_dir = self.sessions_dir
-        fork.project_root = self.project_root
-        fork.index_path = self.index_path
-        fork._lock = self._lock
-        fork.current_path = fork_path
-        fork.artifacts_dir = self.artifacts_dir
-        return fork
+                f.flush()
+                os.fsync(f.fileno())
+            _sync_directory(fork_path.parent)
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            meta = TreeMetadata(
+                id=self._session_id(fork_path),
+                title=title or f"Fork of {parent.title}",
+                summary=summary or parent.summary,
+                project_path=parent.project_path,
+                transcript_path=str(fork_path),
+                created_at=now,
+                updated_at=now,
+                parent_id=parent.id,
+                head_id=self._load_head_id(),
+            )
+            self._upsert_metadata(meta)
+            fork = TreeSessionRepo.__new__(TreeSessionRepo)
+            fork.sessions_dir = self.sessions_dir
+            fork.project_root = self.project_root
+            fork.index_path = self.index_path
+            fork._lock = self._lock
+            fork.current_path = fork_path
+            fork.artifacts_dir = self.artifacts_dir
+            return fork
 
     def get_tree(self) -> list[TreeNode]:
         # ponytail: 跳过流式碎片，重连孤儿子节点
@@ -639,10 +735,49 @@ class TreeSessionRepo:
     # ── 内部 ──
 
     def _load_head_id(self) -> str | None:
+        tail, _ = _read_log_tail(self.current_path)
+        if tail is None:
+            return None
+        if tail.head_id is not None:
+            return tail.head_id
         meta = self._metadata_for_path(self.current_path)
-        if meta is not None:
-            return meta.head_id
-        return None
+        return (meta.head_id if meta else None) or tail.id
+
+    def _append_entry(self, entry: TreeEntryModel) -> None:
+        """提交事实后才更新索引；追加前清理未提交的半条记录。"""
+        _, valid_end = _read_log_tail(self.current_path)
+        existed = self.current_path.exists()
+        needs_separator = False
+        if existed:
+            with self.current_path.open("r+b") as stream:
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() != valid_end:
+                    stream.truncate(valid_end)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if valid_end:
+                    stream.seek(valid_end - 1)
+                    needs_separator = stream.read(1) != b"\n"
+        with _open_private_text(self.current_path, append=True) as stream:
+            if needs_separator:
+                stream.write("\n")
+            stream.write(_dump_tree_entry(entry) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        if not existed:
+            _sync_directory(self.current_path.parent)
+
+    def _move_head(self, entry_id: str) -> None:
+        entry = TreeEntryModel(
+            id=uuid4().hex[:12],
+            parent_id=entry_id,
+            head_id=entry_id,
+            type="head",
+            content=entry_id,
+            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        )
+        self._append_entry(entry)
+        self._save_head_id(entry_id)
 
     def _save_head_id(self, entry_id: str) -> None:
         meta = self._metadata_for_path(self.current_path)
@@ -720,13 +855,26 @@ class TreeSessionRepo:
                 "sessions": [item.model_dump() for item in items],
             }
             payload = _normalize_json_unicode(payload)
-            with _open_private_text(self.index_path, append=False) as f:
-                f.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+            temporary = (
+                self.index_path.parent / f".{self.index_path.name}.{uuid4().hex}.tmp"
+            )
+            try:
+                with _open_private_text(temporary, append=False) as stream:
+                    stream.write(
+                        json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+                    )
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.index_path)
+                _sync_directory(self.index_path.parent)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def _upsert_metadata(self, metadata: TreeMetadata) -> None:
-        items = [item for item in self._load_metadata() if item.id != metadata.id]
-        items.insert(0, metadata)
-        self._write_metadata(items)
+        with self._lock:
+            items = [item for item in self._load_metadata() if item.id != metadata.id]
+            items.insert(0, metadata)
+            self._write_metadata(items)
 
     def _metadata_for_path(self, path: Path) -> TreeMetadata | None:
         sid = self._session_id(path)
@@ -849,7 +997,7 @@ def _filter_tree_entries(
     removed: set[str] = set()
 
     for e in raw:
-        if _is_noisy_event(e):
+        if e.type == "head" or _is_noisy_event(e):
             removed.add(e.id)
         else:
             filtered.append(e)
