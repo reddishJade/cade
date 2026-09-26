@@ -87,6 +87,8 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
     """依次应用 transcript facts 与 surface replacement。"""
     messages: list[AgentMessage] = []
     pending_tool_calls: list[ToolCallContent] = []
+    open_tool_calls: set[str] = set()
+    deferred_inputs: list[AgentMessage] = []
     seen_tool_call_ids: set[str] = set()
     event_assistant_texts: list[str] = []
     generation = 0
@@ -118,7 +120,10 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
                 raise InvalidSessionSurfaceError(
                     "inbox claim event must contain exactly one message"
                 )
-            messages.append(claimed[0])
+            if open_tool_calls:
+                deferred_inputs.append(claimed[0])
+            else:
+                messages.append(claimed[0])
             event_assistant_texts.clear()
             continue
         if event_type == "context_window_reset":
@@ -141,26 +146,38 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
             generation = raw_generation
             replacement_entry_id = record.id
             pending_tool_calls.clear()
+            open_tool_calls.clear()
+            deferred_inputs.clear()
             seen_tool_call_ids = _tool_call_ids(messages)
             event_assistant_texts.clear()
             continue
 
         event = _transcript_event(data, str(event_type))
         if isinstance(event, _AssistantEvent):
+            before = len(messages)
             _append_tool_assistant(
                 messages,
                 event,
                 pending_tool_calls,
                 seen_tool_call_ids,
             )
-            event_assistant_texts.extend(event.texts)
+            if len(messages) > before:
+                open_tool_calls.update(_tool_call_ids(messages[-1:]))
+            event_assistant_texts.append("".join(event.texts).strip())
         elif isinstance(event, ToolCallContent):
             if event.id not in seen_tool_call_ids:
                 pending_tool_calls.append(event)
+                open_tool_calls.add(event.id)
                 seen_tool_call_ids.add(event.id)
         elif isinstance(event, ToolResultMessage):
             _append_tool_result(messages, event, pending_tool_calls)
+            open_tool_calls.discard(event.tool_call_id)
+            if not open_tool_calls:
+                messages.extend(deferred_inputs)
+                deferred_inputs.clear()
 
+    # 崩溃可能留下未完成工具批次，已 claim 的输入不能因此消失。
+    messages.extend(deferred_inputs)
     return SessionSurface(
         messages=tuple(messages),
         generation=generation,
@@ -173,6 +190,10 @@ def validate_tool_pairing(messages: list[AgentMessage]) -> None:
     pending: set[str] = set()
     completed: set[str] = set()
     for message in messages:
+        if pending and not isinstance(message, ToolResultMessage):
+            raise InvalidSessionSurfaceError(
+                "tool results must immediately follow assistant tool calls"
+            )
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if not isinstance(block, ToolCallContent):
@@ -223,12 +244,26 @@ def _append_plain_assistant(
     from cade.agent.types import TextContent
 
     text = str(record.content).strip()
-    event_text = "\n\n".join(event_texts).strip()
-    remaining = (
-        text[len(event_text) :].strip()
-        if event_text and text.startswith(event_text)
-        else text
+    # 最终记录通常重复最后一个模型响应，旧记录也可能拼接整个回合文本。
+    candidates = ["\n\n".join(event_texts).strip()]
+    if event_texts:
+        candidates.append(event_texts[-1])
+    event_text = next(
+        (
+            candidate
+            for candidate in sorted(candidates, key=len, reverse=True)
+            if candidate
+            and (
+                text == candidate
+                or (
+                    text.startswith(candidate)
+                    and text[len(candidate) : len(candidate) + 1].isspace()
+                )
+            )
+        ),
+        "",
     )
+    remaining = text[len(event_text) :].strip() if event_text else text
     if remaining:
         messages.append(AssistantMessage(content=[TextContent(text=remaining)]))
 
@@ -255,7 +290,7 @@ def _assistant_event(data: object) -> _AssistantEvent | None:
         if not isinstance(raw, dict):
             continue
         if raw.get("type") == "text":
-            text = str(raw.get("text", "")).strip()
+            text = str(raw.get("text", ""))
             if text:
                 content.append(TextContent(text=text))
                 texts.append(text)
@@ -264,7 +299,7 @@ def _assistant_event(data: object) -> _AssistantEvent | None:
         if call is not None:
             content.append(call)
             ids.add(call.id)
-    if not ids:
+    if not content:
         return None
     return _AssistantEvent(tuple(content), frozenset(ids), tuple(texts))
 
@@ -311,7 +346,7 @@ def _append_tool_assistant(
         if isinstance(block, ToolCallContent) and block.id not in seen
     ]
     calls = [*pending, *inline_calls]
-    if not calls:
+    if not calls and event.tool_call_ids:
         return
     content = [
         block for block in event.content if not isinstance(block, ToolCallContent)
