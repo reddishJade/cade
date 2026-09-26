@@ -18,6 +18,9 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 
+from cade.agent.messages import UserMessage
+from cade.harness.session import InboxLane, SessionInbox, SessionStore
+
 
 class TuiTerminal:
     """保存终端输入步骤和每次检查的原始画面。"""
@@ -26,6 +29,7 @@ class TuiTerminal:
         self.root = root
         self.socket = f"cade-ux-{uuid4().hex[:12]}"
         self.steps: list[list[str]] = []
+        self.command = ""
 
     def run(self, *args: str) -> str:
         self.steps.append(list(args))
@@ -119,6 +123,7 @@ def ux_terminal(tmp_path: Path) -> Iterator[TuiTerminal]:
         ]
     )
     terminal = TuiTerminal(tmp_path)
+    terminal.command = command
     terminal.run(
         "new-session",
         "-d",
@@ -132,6 +137,7 @@ def ux_terminal(tmp_path: Path) -> Iterator[TuiTerminal]:
         str(tmp_path),
         command,
     )
+    terminal.run("set-option", "-t", "ui:0", "remain-on-exit", "on")
     try:
         terminal.wait("terminal-ux-model")
         yield terminal
@@ -175,7 +181,7 @@ def test_real_terminal_completion_and_responsive_layout(
     lines = screen.splitlines()
     logo_index = next(i for i, line in enumerate(lines) if line.startswith("█"))
     input_index = next(i for i, line in enumerate(lines) if line.startswith(">"))
-    assert logo_index > 12
+    assert logo_index <= 1
     assert input_index - logo_index < 25
     assert "─" not in screen
     assert "48;2;33;38;45" in (terminal.root / "01-welcome.ansi").read_text()
@@ -198,7 +204,7 @@ def test_real_terminal_completion_and_responsive_layout(
     screen = terminal.save("01a-large-welcome")
     assert_footer_and_input(screen, width=180)
     lines = screen.splitlines()
-    assert next(i for i, line in enumerate(lines) if line.startswith("█")) > 20
+    assert next(i for i, line in enumerate(lines) if line.startswith("█")) <= 1
 
     terminal.run("resize-window", "-t", "ui:0", "-x", "60", "-y", "16")
     terminal.wait(f"cade v{version('cade-agent')}")
@@ -267,3 +273,72 @@ def test_real_terminal_completion_and_responsive_layout(
     terminal.run("resize-window", "-t", "ui:0", "-x", "60", "-y", "12")
     terminal.wait("utput\n")
     terminal.save("10-resize-follows-latest")
+
+
+def test_real_terminal_exit_summary_and_copyable_resume(
+    ux_terminal: TuiTerminal,
+) -> None:
+    """退出摘要在界面清理后保留，并能从原配置和带空格的目录恢复。"""
+    terminal = ux_terminal
+    terminal.keys("C-q")
+    terminal.wait("No task saved.")
+    screen = terminal.save("11-empty-exit")
+    assert screen.count("Time ") == 1
+    assert "To resume:" not in screen
+    assert "[Tools]" not in screen
+
+    sessions_dir = terminal.root / "saved sessions"
+    store = SessionStore(sessions_dir, project_root=terminal.root)
+    inbox = SessionInbox(store)
+    inbox.insert(
+        UserMessage(content="RESUME_EXIT_FIXTURE"), InboxLane.NEXT_TURN, wake=True
+    )
+    inbox.claim_initial("terminal-resume-fixture")
+    store.append("assistant", "已保存的终端恢复内容。")
+    store.update_summary()
+    command = (
+        terminal.command
+        + " "
+        + shlex.join(
+            ["--sessions-dir", str(sessions_dir), "--session", store.session_id]
+        )
+    )
+    terminal.run("respawn-pane", "-k", "-t", "ui:0.0", command)
+    terminal.wait("RESUME_EXIT_FIXTURE")
+    terminal.save("12-restored-session")
+    terminal.keys("C-c", "C-c")
+    terminal.wait("To resume:")
+    screen = terminal.save("13-saved-exit")
+    assert screen.count("Time ") == 1
+    assert screen.count("To resume:") == 1
+    assert f"Session {store.session_id}" in screen
+    assert "[Tools]" not in screen
+
+    joined = terminal.run("capture-pane", "-p", "-J", "-t", "ui:0.0")
+    resume = next(
+        line.split("To resume: ", 1)[1]
+        for line in joined.splitlines()
+        if "To resume: " in line
+    ).rstrip()
+    args = shlex.split(resume)
+    assert args[args.index("--session") + 1] == store.session_id
+    assert args[args.index("--sessions-dir") + 1] == str(sessions_dir)
+    assert args[args.index("--config") + 1] == str(terminal.root / "config.json")
+    (terminal.root / "resume-command.txt").write_text(resume + "\n")
+    terminal.run(
+        "respawn-pane",
+        "-k",
+        "-t",
+        "ui:0.0",
+        "env -u NO_COLOR TERM=xterm-256color "
+        "COLORTERM=truecolor PROMPT_TOOLKIT_COLOR_DEPTH=DEPTH_24_BIT " + resume,
+    )
+    terminal.wait("RESUME_EXIT_FIXTURE")
+    terminal.save("14-copied-command-restores")
+    terminal.paste("/ex")
+    terminal.wait("Exit the REPL.")
+    terminal.keys("Enter")
+    terminal.wait("> /exit", absent="Exit the REPL.")
+    terminal.keys("Enter")
+    terminal.wait("To resume:")
+    terminal.save("15-slash-exit")
