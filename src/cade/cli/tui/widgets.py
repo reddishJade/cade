@@ -6,12 +6,17 @@ import re
 from collections.abc import Callable
 from typing import cast
 
+from prompt_toolkit.application import get_app
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import StyleAndTextTuples
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.controls import FormattedTextControl, UIContent
+from prompt_toolkit.layout.menus import CompletionsMenuControl
 from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
+from prompt_toolkit.utils import get_cwidth
 
 from ..commands import PromptText
+from .chrome import fit_text
 
 _file_ref_pattern = re.compile(r"(?<!\S)@([^\s]+)")
 
@@ -65,6 +70,40 @@ class TuiInputLexer(Lexer):
         if not frags:
             frags.append(("", line))
         return cast(StyleAndTextTuples, frags)
+
+
+class TuiCompletionControl(CompletionsMenuControl):
+    """将补全名称与说明限制在窗口宽度内，并突出当前选项。"""
+
+    def create_content(self, width: int, height: int) -> UIContent:
+        state = get_app().current_buffer.complete_state
+        if state is None or not state.completions:
+            return UIContent()
+        index = state.complete_index or 0
+        name_width = min(
+            max(get_cwidth(item.display_text) for item in state.completions),
+            max(1, width // 2 - 2),
+        )
+
+        def get_line(line: int) -> StyleAndTextTuples:
+            item = state.completions[line]
+            suffix = ".current" if line == index else ""
+            name = fit_text(item.display_text, name_width)
+            padding = " " * max(0, name_width - get_cwidth(name) + 2)
+            description = fit_text(item.display_meta_text, width - name_width - 4)
+            return [
+                (
+                    f"class:completion-menu.completion{suffix}",
+                    f"{'›' if line == index else ' '} {name}{padding}",
+                ),
+                (f"class:completion-menu.meta.completion{suffix}", description),
+            ]
+
+        return UIContent(
+            get_line=get_line,
+            cursor_position=Point(x=0, y=index),
+            line_count=len(state.completions),
+        )
 
 
 def tui_input_prompt(
