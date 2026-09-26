@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
 from uuid import uuid4
@@ -86,12 +87,19 @@ def ux_terminal(tmp_path: Path) -> Iterator[TuiTerminal]:
                             "base_url": "http://127.0.0.1:9",
                         }
                     }
-                }
+                },
+                "prompt": {
+                    "instructions": [
+                        {"type": "inline", "content": "终端布局验证"},
+                        {"type": "file", "path": "missing-instructions.md"},
+                    ]
+                },
             }
         ),
         encoding="utf-8",
     )
     (tmp_path / "README.md").write_text("# 终端验证\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("保持文件不变。\n", encoding="utf-8")
     command = shlex.join(
         [
             "env",
@@ -140,12 +148,13 @@ def ux_terminal(tmp_path: Path) -> Iterator[TuiTerminal]:
 
 
 def assert_footer_and_input(screen: str, *, width: int) -> None:
-    """输入边界和状态区必须完整，不被菜单或换行覆盖。"""
+    """输入背景的上下留白和状态区必须完整，不被菜单或换行覆盖。"""
     lines = screen.splitlines()
     index = next(i for i, line in enumerate(lines) if line.startswith(">"))
-    assert set(lines[index - 1].strip()) == {"─"}
+    assert not lines[index - 1].strip()
+    assert not lines[index + 1].strip()
     assert any("context:" in line for line in lines[index + 1 :])
-    assert any("mode:" in line for line in lines[index + 1 :])
+    assert any("● " in line for line in lines[index + 1 :])
     assert all(len(line) <= width for line in lines)
 
 
@@ -157,8 +166,47 @@ def test_real_terminal_completion_and_responsive_layout(
     assert "Describe a task" in screen
     assert "Ctrl+O tool details" in screen
     assert "No previous task in this project" in screen
-    assert "Enter send · Ctrl+J newline" in screen
+    assert "[Tools]" in screen and "read_file" in screen
+    assert "[Context]" in screen and "AGENTS.md" in screen
+    assert "inline instruction" not in screen
+    assert "missing-instructions.md" not in screen
+    assert "█▀▀▀ █▀▀█ █▀▀▄ █▀▀▀" in screen
+    assert f"v{version('cade-agent')}" in screen
+    lines = screen.splitlines()
+    logo_index = next(i for i, line in enumerate(lines) if line.startswith("█"))
+    input_index = next(i for i, line in enumerate(lines) if line.startswith(">"))
+    assert logo_index > 12
+    assert input_index - logo_index < 25
+    assert "─" not in screen
+    assert "48;2;33;38;45" in (terminal.root / "01-welcome.ansi").read_text()
+    colored_lines = Text.from_ansi(
+        (terminal.root / "01-welcome.ansi").read_text()
+    ).split("\n", allow_blank=True)
+    for index in (input_index - 1, input_index, input_index + 1):
+        styled = colored_lines[index]
+        assert len(styled.plain) == 120
+        assert any(
+            span.style.bgcolor is not None
+            and span.style.bgcolor.get_truecolor().hex == "#21262d"
+            for span in styled.spans
+            if not isinstance(span.style, str)
+        )
     assert_footer_and_input(screen, width=120)
+
+    terminal.run("resize-window", "-t", "ui:0", "-x", "180", "-y", "52")
+    terminal.wait("[Context]")
+    screen = terminal.save("01a-large-welcome")
+    assert_footer_and_input(screen, width=180)
+    lines = screen.splitlines()
+    assert next(i for i, line in enumerate(lines) if line.startswith("█")) > 20
+
+    terminal.run("resize-window", "-t", "ui:0", "-x", "60", "-y", "16")
+    terminal.wait(f"cade v{version('cade-agent')}")
+    screen = terminal.save("01b-compact-welcome")
+    assert "[Tools]" in screen and "[Context]" in screen
+    assert_footer_and_input(screen, width=60)
+    terminal.run("resize-window", "-t", "ui:0", "-x", "120", "-y", "42")
+    terminal.wait("█▀▀▀ █▀▀█ █▀▀▄ █▀▀▀")
 
     terminal.keys("/")
     terminal.wait("Start a new session")
@@ -169,8 +217,11 @@ def test_real_terminal_completion_and_responsive_layout(
     terminal.keys("Down", "Enter")
     terminal.wait("> /new", absent="Start a new session")
     terminal.save("03-completion-accepted")
-    terminal.keys("C-c")
-    terminal.wait("\n>\n", absent="> /new")
+    terminal.keys("Enter")
+    terminal.wait("\n>\n", absent="No previous task in this project")
+    screen = terminal.save("03a-new-session")
+    assert "[Context]" in screen
+    assert "█▀▀▀ █▀▀█ █▀▀▄ █▀▀▀" in screen
 
     terminal.paste("@READ")
     terminal.wait("README.md")
@@ -199,7 +250,7 @@ def test_real_terminal_completion_and_responsive_layout(
     terminal.keys("Enter")
     terminal.wait("> /plan", absent="Enter Plan Mode")
     terminal.keys("Enter")
-    terminal.wait("mode: plan")
+    terminal.wait("● plan")
     terminal.save("07-mode")
     terminal.paste("/mod")
     terminal.wait("Show current model info")
