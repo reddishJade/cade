@@ -52,3 +52,46 @@ class TestContentToText:
     def test_list_with_tool_result(self) -> None:
         content = [{"type": "tool_result", "content": "output"}]
         assert _content_to_text(content) == "output"
+
+
+def test_tool_error_metadata_survives_state_round_trip(tmp_path) -> None:
+    import json
+
+    from cade.agent.messages import ToolResultMessage
+    from cade.harness.agent_runtime.agent_helpers import to_dict
+
+    original = ToolResultMessage(
+        tool_call_id="failure-1",
+        tool_name="bash",
+        content="command failed",
+        is_error=True,
+        metadata={"exit_code": 7},
+        timestamp=123,
+    )
+    encoded = to_dict(original)
+    (tmp_path / "message-state.json").write_text(json.dumps(encoded), encoding="utf-8")
+    restored = messages_from_provider_dicts([encoded])[0]
+    assert isinstance(restored, ToolResultMessage)
+    assert restored.is_error is True
+    assert restored.tool_name == "bash"
+    assert restored.metadata == {"exit_code": 7}
+    assert restored.timestamp == 123
+
+
+def test_legacy_tool_status_is_restored_as_error() -> None:
+    restored = messages_from_provider_dicts(
+        [
+            {
+                "role": "tool",
+                "tool_call_id": "failure-1",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "content": "cancelled",
+                        "status": "interrupted",
+                    }
+                ],
+            }
+        ]
+    )[0]
+    assert restored.is_error is True

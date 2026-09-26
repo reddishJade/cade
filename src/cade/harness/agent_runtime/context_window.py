@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from cade.agent._context_window import estimate_tokens
 from cade.agent.config import ContextWindowResetReason
+from cade.agent.messages import AgentMessage
 from cade.agent.types import ToolInput, ToolSpec
 
 from ..skill_activation import activated_skill_names, is_skill_activation_content
@@ -59,6 +60,30 @@ class ContextWindowRollover:
         self.active_window_token_threshold = active_window_token_threshold
         self.tool_trim_trigger_ratio = tool_trim_trigger_ratio
         self.last_window_id: str | None = None
+
+    def rollover_messages(
+        self,
+        messages: list[AgentMessage],
+        *,
+        preserve_user_request: bool = True,
+    ) -> list[AgentMessage]:
+        """直接保留内部消息，避免 provider 格式往返丢失内容与元数据。"""
+        from .agent_helpers import to_dict
+        from .message_codec import messages_from_provider_dicts
+
+        indexed = [
+            {**to_dict(message), "_source_index": index}
+            for index, message in enumerate(messages)
+        ]
+        fresh = self(indexed, preserve_user_request=preserve_user_request)
+        restored: list[AgentMessage] = []
+        for item in fresh:
+            index = item.get("_source_index")
+            if isinstance(index, int):
+                restored.append(messages[index].model_copy(deep=True))
+            else:
+                restored.extend(messages_from_provider_dicts([item]))
+        return restored
 
     def __call__(
         self,

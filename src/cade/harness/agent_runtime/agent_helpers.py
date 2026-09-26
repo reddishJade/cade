@@ -33,7 +33,17 @@ T = TypeVar("T")
 def to_dict(msg: AgentMessage) -> dict[str, Any]:
     """将类型化消息转为 dict（保持 state.messages 的 dict 格式）。"""
     if isinstance(msg, ToolResultMessage):
-        return _tool_result_message_to_dict(msg)
+        result = _tool_result_message_to_dict(msg)
+        result.update(
+            tool_name=msg.tool_name,
+            is_error=msg.is_error,
+            metadata=msg.metadata,
+            render_intent=(
+                msg.render_intent.model_dump(mode="json") if msg.render_intent else None
+            ),
+            timestamp=msg.timestamp,
+        )
+        return result
     result = convert_to_llm([msg])
     if not result:
         raise ValueError(f"convert_to_llm returned empty for {type(msg).__name__}")

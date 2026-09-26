@@ -510,12 +510,18 @@ def _replace_context_window(
         print("Agent does not support history replacement.")
         return False
 
-    dict_messages = [to_dict(message) for message in before_msgs]
-    next_window = cast(
-        Callable[..., list[dict[str, object]]],
-        rollover,
-    )(dict_messages, preserve_user_request=preserve_user_request)
-    after_msgs = messages_from_provider_dicts(next_window)
+    from cade.harness.agent_runtime.context_window import ContextWindowRollover
+
+    if isinstance(rollover, ContextWindowRollover):
+        after_msgs = rollover.rollover_messages(
+            before_msgs, preserve_user_request=preserve_user_request
+        )
+    else:
+        dict_messages = [to_dict(message) for message in before_msgs]
+        next_window = cast(Callable[..., list[dict[str, object]]], rollover)(
+            dict_messages, preserve_user_request=preserve_user_request
+        )
+        after_msgs = messages_from_provider_dicts(next_window)
     after_tokens = estimate_message_tokens(after_msgs)
 
     cast(Callable[[list[AgentMessage]], None], load_history)(after_msgs)

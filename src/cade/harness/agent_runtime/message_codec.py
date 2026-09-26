@@ -12,7 +12,12 @@ from ...agent.messages import (
     ToolResultMessage,
     UserMessage,
 )
-from ...agent.types import ContentBlock, TextContent, ToolCallContent
+from ...agent.types import (
+    ContentBlock,
+    TextContent,
+    ToolCallContent,
+    parse_tool_render_intent,
+)
 from .result import RunState
 
 
@@ -44,9 +49,21 @@ def _message_from_provider_dict(item: dict[str, Any]) -> AgentMessage | None:
     if role == "assistant":
         return _assistant_from_provider_dict(item)
     if role == "tool":
+        failed = bool(item.get("is_error", False))
+        if isinstance(content, list):
+            failed = failed or any(
+                isinstance(part, dict) and part.get("status", "ok") != "ok"
+                for part in content
+            )
+        metadata = item.get("metadata")
         return ToolResultMessage(
             tool_call_id=str(item.get("tool_call_id", "")),
             content=_tool_result_content_from_provider(content),
+            tool_name=str(item.get("tool_name", "")),
+            is_error=failed,
+            metadata=metadata if isinstance(metadata, dict) else None,
+            render_intent=parse_tool_render_intent(item.get("render_intent")),
+            timestamp=int(item.get("timestamp", 0)),
         )
     return None
 

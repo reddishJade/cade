@@ -316,3 +316,35 @@ def test_runtime_rollover_releases_large_active_turn(tmp_path: Path) -> None:
     assert messages == original
     assert len(fresh) == len(second)
     assert "active turn are included" not in str(fresh)
+
+
+def test_typed_rollover_preserves_user_content_and_metadata(tmp_path: Path) -> None:
+    import json
+
+    from cade.agent.messages import AssistantMessage, SystemMessage, UserMessage
+    from cade.agent.types import ImageContent, TextContent
+
+    user = UserMessage(
+        content=[
+            TextContent(text="inspect this image"),
+            ImageContent(
+                source={"type": "base64", "data": "YWJj", "media_type": "image/png"}
+            ),
+        ],
+        timestamp=123,
+    )
+    source = [
+        SystemMessage(content="startup", timestamp=45),
+        user,
+        AssistantMessage(content=[TextContent(text="old work")], phase="commentary"),
+    ]
+    rollover = ContextWindowRollover()
+    fresh = rollover.rollover_messages(source)
+    (tmp_path / "typed-rollover.json").write_text(
+        json.dumps([message.model_dump(mode="json") for message in fresh]),
+        encoding="utf-8",
+    )
+    assert fresh[0] == source[0]
+    assert fresh[-1] == user
+    assert fresh[-1] is not user
+    assert not any(isinstance(message, AssistantMessage) for message in fresh)
