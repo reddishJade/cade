@@ -39,7 +39,7 @@ TUI_STYLES: dict[str, str] = {
 }
 
 
-_CADE_LOGO = (
+CADE_LOGO = (
     "█▀▀▀ █▀▀█ █▀▀▄ █▀▀▀",
     "█    █▄▄█ █  █ █▀▀ ",
     "█▄▄▄ █  █ █▄▄▀ █▄▄▄",
@@ -59,7 +59,7 @@ def welcome_text(
     if compact:
         lines = [f"cade v{version}", "/ commands · @ files · Ctrl+J newline"]
     else:
-        lines = [*_CADE_LOGO]
+        lines = [*CADE_LOGO]
         lines[-1] += f"  v{version}"
         lines.extend(
             [

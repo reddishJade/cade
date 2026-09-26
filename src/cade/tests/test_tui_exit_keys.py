@@ -40,7 +40,7 @@ def _build_tui(tmp_path: Path) -> _CadeTui:
 
 def _exit_patches(tui: _CadeTui):
     return (
-        patch("cade.cli.tui.app.print_saved_conversation"),
+        patch("cade.cli.tui.app.print_exit_summary"),
         patch.object(type(tui._application), "exit"),
     )
 
