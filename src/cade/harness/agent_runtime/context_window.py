@@ -11,8 +11,13 @@ from uuid import uuid4
 
 from cade.agent._context_window import estimate_tokens
 from cade.agent.config import ContextWindowResetReason
-from cade.agent.messages import AgentMessage
-from cade.agent.types import ToolInput, ToolSpec
+from cade.agent.messages import (
+    AgentMessage,
+    AssistantMessage,
+    SystemMessage,
+    ToolResultMessage,
+)
+from cade.agent.types import ToolCallContent, ToolInput, ToolSpec
 
 from ..skill_activation import activated_skill_names, is_skill_activation_content
 
@@ -83,6 +88,16 @@ class ContextWindowRollover:
                 restored.append(messages[index].model_copy(deep=True))
             else:
                 restored.extend(messages_from_provider_dicts([item]))
+        actions = _render_completed_actions(messages)
+        if actions:
+            for position, message in enumerate(restored):
+                if isinstance(message, SystemMessage) and message.content.startswith(
+                    _RESET_TAG
+                ):
+                    restored[position] = message.model_copy(
+                        update={"content": f"{message.content}\n\n{actions}"}
+                    )
+                    break
         return restored
 
     def __call__(
@@ -150,6 +165,58 @@ class ContextWindowRollover:
             max_content_chars=self.max_tool_result_chars,
             preserve_tool_result_ids=preserved_results,
         )
+
+
+def _render_completed_actions(messages: list[AgentMessage]) -> str:
+    """为最近已结束的调用保存有界索引，不携带输出或可执行命令。"""
+    calls = {
+        block.id: block
+        for message in messages
+        if isinstance(message, AssistantMessage)
+        for block in message.content
+        if isinstance(block, ToolCallContent)
+    }
+    lines: list[str] = []
+    seen: set[str] = set()
+    for message in reversed(messages):
+        if not isinstance(message, ToolResultMessage):
+            continue
+        call = calls.get(message.tool_call_id)
+        if call is None or call.id in seen:
+            continue
+        seen.add(call.id)
+        record: dict[str, object] = {
+            "tool_call_id": call.id[:96],
+            "tool": call.name[:80],
+            "status": "error" if message.is_error else "returned",
+        }
+        args = call.arguments or {}
+        path = args.get("path")
+        if isinstance(path, str):
+            record["path"] = path.encode()[:160].decode(errors="ignore")
+        metadata = message.metadata or {}
+        code = metadata.get("exit_code")
+        if isinstance(code, int) and not isinstance(code, bool):
+            record["exit_code"] = code
+        line = json.dumps(record, ensure_ascii=False)
+        if len(("\n".join([*lines, line])).encode()) > 1536:
+            break
+        lines.append(line)
+        if len(lines) == 6:
+            break
+    if not lines:
+        return ""
+    return (
+        "<recent-tool-actions>\n"
+        "Raw index of the previous window's latest completed calls, not a claim "
+        "that code is correct or the task is complete. Continue the pending action "
+        "using NOTE.md and current validation facts. Avoid restarting broad file "
+        "discovery just because the tool transcript was released; read exact "
+        "history or current files only for a specific missing detail. Search "
+        "history by tool_call_id for the original arguments and output.\n"
+        + "\n".join(reversed(lines))
+        + "\n</recent-tool-actions>"
+    )
 
 
 def has_working_note(project_root: Path) -> bool:
