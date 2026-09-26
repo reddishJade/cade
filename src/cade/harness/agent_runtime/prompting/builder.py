@@ -299,6 +299,23 @@ def render_memory_protocol(manager: MemoryManager) -> str:
         (
             "<long-horizon-memory>",
             "NOTE.md is the explicit working-state index for the current task.",
+            (
+                "Keep its execution frontier first and concise: current status, next "
+                "action, user constraints, completed work, remaining work, and "
+                "verification evidence (commands, results, relevant files). Only the "
+                "first 4 KiB is injected; replace obsolete status instead of appending "
+                "another investigation diary."
+            ),
+            (
+                "Update that frontier after meaningful edits or verification, and "
+                "before further investigation when a context-budget reminder arrives. "
+                "Create a minimal checkpoint before broad investigation; unknown "
+                "progress can be recorded as unknown. "
+                "On recovery, continue the next unfinished action. Reuse verified "
+                "results when relevant files are unchanged; repeat checks only for "
+                "changed code or unresolved uncertainty. If the original task is "
+                "already complete, report completion instead of starting over."
+            ),
             "The lossless session transcript is the source of truth for exact history.",
             f"Project memory: {manager.memory_file}",
             f"User memory: {manager.user_memory_file}",
