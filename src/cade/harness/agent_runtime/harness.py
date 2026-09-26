@@ -528,6 +528,9 @@ class AgentHarness:
             correlation=self._correlation,
             **self._build_loop_config_extras(),
         )
+        loop_config.refresh_request_prefix = lambda: self._build_context_messages(
+            question, composition
+        )
 
         try:
             self.cancellation_token.reset()
