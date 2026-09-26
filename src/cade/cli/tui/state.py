@@ -19,6 +19,7 @@ from ..repl_rendering import _render_citations
 from ..repl_tools import brief_input, final_stop_reason, tool_call_text
 from ..shared.thinking import ReasoningCore, format_elapsed, single_line_preview
 from ..tool_rendering import render_intent_summary
+from .chrome import compact_path
 from .rendering import (
     markdown_ansi_lines,
     render_line_fragments,
@@ -26,7 +27,8 @@ from .rendering import (
     wrap_ansi_lines,
 )
 
-_THINKING_ANSI = "\x1b[38;2;128;128;128m"
+_THINKING_ANSI = "\x1b[38;2;139;148;158;3m"
+_USER_ANSI = "\x1b[48;2;33;38;45m\x1b[38;2;201;209;217m"
 _ANSI_RESET = "\x1b[0m"
 
 if TYPE_CHECKING:
@@ -91,6 +93,7 @@ class _ExplorationCall:
     complete: bool = False
     failed: bool = False
     detail: str = ""
+    permission_notice: str = ""
 
 
 @dataclass
@@ -100,6 +103,7 @@ class _LogEntry:
     markdown: bool = False
     exploration_calls: list[_ExplorationCall] = field(default_factory=list)
     text_parts: list[str] | None = None
+    tool_id: str = ""
     _ansi_cache_key: tuple[object, ...] | None = field(default=None, repr=False)
     _ansi_lines: list[str] | None = field(default=None, repr=False)
 
@@ -131,6 +135,7 @@ class _LogEntry:
                 call.complete,
                 call.failed,
                 call.detail,
+                call.permission_notice,
             )
             for call in self.exploration_calls
         )
@@ -488,7 +493,15 @@ class _TuiState:
                 return wrap_ansi_lines(lines, width) if color else lines
             if entry.role == "thinking":
                 return lines
-            return _wrap_plain_lines(lines, width)
+            wrapped = _wrap_plain_lines(lines, width)
+            if color and entry.role == "you":
+                return [
+                    f"{_USER_ANSI}{line}"
+                    f"{' ' * max(0, (width or get_cwidth(line)) - get_cwidth(line))}"
+                    f"{_ANSI_RESET}"
+                    for line in wrapped
+                ]
+            return wrapped
 
         if not color:
             return render()
@@ -542,12 +555,22 @@ class _TuiState:
             title = "• Exploring" if active else "• Explored"
             if self.tool_collapsed:
                 suffix = " (ctrl+o to expand)" if show_tool_expand else ""
-                lines.append(f"{title}{suffix}")
+                for call in entry.exploration_calls:
+                    marker = "✗" if call.failed else "●"
+                    lines.append(f"{marker} {call.solo_label}")
+                    if call.failed:
+                        lines.append(f"  ⎿  {call.detail}")
+                    elif call.permission_notice:
+                        lines.append(f"  ⎿  {call.permission_notice}")
+                if suffix:
+                    lines[-1] += suffix
                 return
             lines.append(title)
             for call in entry.exploration_calls:
                 suffix = " — failed" if call.failed else ""
                 lines.append(f"  └ {call.label}{suffix}")
+                if call.failed or call.permission_notice:
+                    lines.append(f"  ⎿  {call.detail}")
             if show_tool_collapse and entry.exploration_calls:
                 lines[-1] += " (ctrl+o to collapse)"
         elif entry.role in {"", "tool-detail"}:
@@ -579,8 +602,13 @@ class _TuiState:
         suffix = (
             " (ctrl+o to expand)" if self.tool_collapsed and show_tool_expand else ""
         )
-        lines.append(f"● {call.solo_label}{suffix}")
-        if self.tool_collapsed or not call.complete:
+        marker = "✗" if call.failed else "●"
+        lines.append(f"{marker} {call.solo_label}{suffix}")
+        if not call.complete:
+            return
+        if self.tool_collapsed and not call.failed:
+            if call.permission_notice:
+                lines.append(f"  ⎿  {call.permission_notice}")
             return
         detail = call.detail or ("failed" if call.failed else "done")
         detail_lines = detail.splitlines() or [""]
@@ -692,7 +720,7 @@ class _TuiState:
         self.tool_names[tool_id] = name
         label = self._tool_label(name, raw_input)
 
-        self.log.append(_LogEntry("tool", f"● {label}"))
+        self.log.append(_LogEntry("tool", f"● {label}", tool_id=tool_id))
         if name in {"todowrite", "subagent"}:
             text = tool_call_text(name, label, raw_input).plain
             self.log.append(_LogEntry("tool-detail", f"  ⎿  {text.strip()}"))
@@ -704,16 +732,24 @@ class _TuiState:
             path = Path(str(raw_input.get("path", ".")))
             if self.project_root is not None and not path.is_absolute():
                 path = self.project_root / path
-            label = f"ListDir({path.as_posix()})"
+            label = f"List {self._display_path(path)}"
         elif name == "read_file":
             path = Path(str(raw_input.get("path", "")))
             if self.project_root is not None and not path.is_absolute():
                 path = self.project_root / path
-            limit = raw_input.get("limit")
-            label = f"Read({path.as_posix()})" + (f" ({limit} lines)" if limit else "")
+            label = f"Read {self._display_path(path)}"
         else:
             label = label[:1].upper() + label[1:]
         return label
+
+    def _display_path(self, path: Path) -> str:
+        """优先显示项目相对路径，避免每行工具标题重复项目根。"""
+        if self.project_root is not None:
+            try:
+                return path.relative_to(self.project_root).as_posix()
+            except ValueError:
+                pass
+        return compact_path(path)
 
     def _record_tool_result(
         self,
@@ -727,22 +763,35 @@ class _TuiState:
         if exploration is not None:
             exploration.complete = True
             exploration.failed = status != "ok"
+            if exploration.name == "read_file" and status == "ok":
+                count = sum(
+                    bool(re.match(r"^\d+: ", line)) for line in content.splitlines()
+                )
+                exploration.solo_label += f" ({count} lines)"
             detail = (
                 _successful_tool_detail(exploration.name, content, render_intent)
                 if status == "ok"
                 else f"✗ {single_line_preview(content)}"
             )
             exploration.detail = _append_permission_notice(detail, permission_notice)
+            exploration.permission_notice = permission_notice
             return
         name = self.tool_names.pop(tool_id, "")
         if status == "ok":
             detail = _successful_tool_detail(name, content, render_intent)
-            detail = _append_permission_notice(detail, permission_notice)
             self.log.append(_LogEntry("tool-detail", f"  ⎿  {detail}"))
+            if permission_notice:
+                self.log.append(_LogEntry("tool-notice", f"  ⎿  {permission_notice}"))
             return
+        for entry in reversed(self.log):
+            if entry.tool_id == tool_id:
+                entry.text = "✗ " + entry.text.removeprefix("● ")
+                break
         self.log.append(
-            _LogEntry("tool-detail", f"  ⎿  ✗ {single_line_preview(content)}")
+            _LogEntry("tool-error", f"  ⎿  ✗ {single_line_preview(content)}")
         )
+        if permission_notice:
+            self.log.append(_LogEntry("tool-notice", f"  ⎿  {permission_notice}"))
 
     def _record_exploration_call(self, call: _ExplorationCall) -> None:
         if self.log and self.log[-1].role == "exploration":

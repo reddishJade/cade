@@ -117,6 +117,10 @@ def render_line_fragments(line: str) -> StyleAndTextTuples:
 def line_style(line: str) -> str:
     """Determine the prompt_toolkit style class for a rendered content line."""
     stripped = line.strip()
+    if "✗" in stripped:
+        return "class:error"
+    if stripped.startswith("✦ cade"):
+        return "class:welcome"
     if stripped.startswith("> /"):
         return "class:command"
     if stripped.startswith("> "):
@@ -131,8 +135,6 @@ def line_style(line: str) -> str:
         return "class:tool"
     if stripped.startswith("─"):
         return "class:border"
-    if "✗" in stripped:
-        return "class:error"
     return ""
 
 
