@@ -50,7 +50,7 @@ cade --session ID       # 恢复指定会话
 
 没有历史任务时，`cade -c` 会提示你开始新任务。在界面内也可以使用 `/resume` 选择会话、`/new` 开始新会话。输入 `/exit` 退出，或在空闲且输入为空时，三秒内连续按两次 Ctrl+C。
 
-会话默认保存在项目的 `.cade/sessions/`。详细恢复、分支和上下文管理见 [会话说明](docs/guide/sessions.md)。
+退出后会显示耗时和可复制的恢复命令。会话默认保存在项目的 `.cade/sessions/`。详细恢复、分支和上下文管理见 [会话说明](docs/guide/sessions.md)。
 
 ## 更多入口和配置
 

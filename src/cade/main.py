@@ -418,6 +418,7 @@ def _run(args, runtime_config) -> int:
                 auto_continue=args.continue_,
                 resume_latest=args.resume,
                 project_root=args.project_root,
+                config_path=args.config,
             )
         if args.command == "cli":
             if args.session:
@@ -438,6 +439,7 @@ def _run(args, runtime_config) -> int:
             session_id=args.session,
             auto_continue=args.continue_,
             resume_latest=args.resume,
+            config_path=args.config,
         )
     finally:
         close = getattr(app, "close", None)

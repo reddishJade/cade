@@ -70,7 +70,6 @@ from ..repl_hitl import (
     tool_preview_lines,
 )
 from ..repl_sessions import (
-    print_saved_conversation,
     select_session_interactively,
 )
 from ..repl_skills import activate_skill, available_skill_names, parse_skill_invocation
@@ -80,6 +79,7 @@ from ..repl_tools import (
 )
 from ..shared.working import working_status_text
 from .chrome import TUI_STYLES, compact_path, fit_text, status_line, welcome_text
+from .exit_summary import print_exit_summary
 from .state import (
     _CommandChoiceRequest,
     _CommandTextRequest,
@@ -133,6 +133,7 @@ def run_tui(
     resume_latest: bool = False,
     auto_continue: bool = False,
     session_id: str | None = None,
+    config_path: Path | None = None,
 ) -> int:
     try:
         return _CadeTui(
@@ -141,6 +142,7 @@ def run_tui(
             resume_latest=resume_latest,
             auto_continue=auto_continue,
             session_id=session_id,
+            config_path=config_path,
         ).run()
     except KeyboardInterrupt:
         return 0
@@ -163,9 +165,11 @@ class _CadeTui:
         resume_latest: bool = False,
         auto_continue: bool = False,
         session_id: str | None = None,
+        config_path: Path | None = None,
     ) -> None:
         self._agent_app = app
         self._project_root = project_root
+        self._config_path = config_path
         self._store = app.session_store
         self._welcome_version = version("cade-agent")
         self._welcome_tools = tuple(tool.name for tool in app.registry)
@@ -400,6 +404,7 @@ class _CadeTui:
             ),
             key_bindings=self._bindings(),
             full_screen=False,
+            erase_when_done=True,
             mouse_support=Condition(self._should_capture_mouse),
             enable_page_navigation_bindings=False,
             before_render=lambda _app: self._prepare_frame(),
@@ -445,7 +450,16 @@ class _CadeTui:
         self._refresh()
 
     def run(self) -> int:
-        self._application.run()
+        started_at = perf_counter()
+        try:
+            self._application.run()
+        finally:
+            print_exit_summary(
+                self._store,
+                perf_counter() - started_at,
+                self._project_root,
+                self._config_path,
+            )
         return 0
 
     # ── 辅助 ──
@@ -839,7 +853,6 @@ class _CadeTui:
 
     def _finish_exit(self) -> None:
         """保存当前会话并退出 TUI。"""
-        print_saved_conversation(self._store)
         self._application.exit()
 
     # ── 提交 ──
@@ -1345,7 +1358,6 @@ class _CadeTui:
         self._state.running = False
         self._refresh()
         if should_exit:
-            print_saved_conversation(self._store)
             self._application.exit()
         self._submit_pending_input()
 
