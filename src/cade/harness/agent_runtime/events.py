@@ -143,6 +143,7 @@ class ToolResultBlock:
     exit_code: int | None = None
     render_intent: ToolRenderIntent | None = None
     type: str = "tool_result"
+    metadata: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -397,6 +398,7 @@ def _translate_tool_execution_end(
             approval_denied=approval_denied,
             exit_code=exit_code,
             render_intent=(event.result.render_intent if event.result else None),
+            metadata=(event.result.metadata if event.result else None),
         ),
         state.correlation.snapshot(event.tool_call_id),
     )

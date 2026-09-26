@@ -74,6 +74,7 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             "permission_notice": event.data.permission_notice,
             "approval_denied": event.data.approval_denied,
             "exit_code": event.data.exit_code,
+            "metadata": event.data.metadata,
             "render_intent": (
                 event.data.render_intent.model_dump()
                 if event.data.render_intent is not None

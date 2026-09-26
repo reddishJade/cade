@@ -328,6 +328,9 @@ def _tool_result(data: object) -> ToolResultMessage | None:
         tool_call_id=tool_call_id,
         content=[TextContent(text=str(data.get("content", "")))],
         is_error=status != "ok",
+        metadata=(
+            dict(data["metadata"]) if isinstance(data.get("metadata"), dict) else None
+        ),
         render_intent=parse_tool_render_intent(data.get("render_intent")),
     )
 
