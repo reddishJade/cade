@@ -254,6 +254,7 @@ async def _run_loop(
                 else:
                     current_context.messages = next_window
                     current_context.context_state.reset()
+                _refresh_request_prefix(current_context, config)
                 _reset_provider_conversation_state(state.active_provider)
                 metrics.context_window_resets += 1
                 after = len(current_context.messages)
@@ -455,6 +456,12 @@ async def _run_loop(
     )
     emit(_agent_end_event(new_messages, result))
     return result
+
+
+def _refresh_request_prefix(context: AgentContext, config: AgentLoopConfig) -> None:
+    """新窗口重新采集运行时前缀，避免复用已消费的恢复通知。"""
+    if config.refresh_request_prefix is not None:
+        context.request_prefix = list(config.refresh_request_prefix())
 
 
 def _finish_loop(
