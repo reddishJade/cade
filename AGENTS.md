@@ -38,10 +38,18 @@ test modules. Write comments and docstrings in Simplified Chinese.
 
 ## Testing Guidelines
 
+Strongly prefer end-to-end (E2E) tests as the sole testing mechanism, especially
+for verifying complex features. Each E2E test must produce a verifiable,
+repeatable artifact, such as a saved execution trace with reproduction steps.
+If isolated testing is necessary, first document all the ways the system could
+fail, then write the tests before implementing the code. Never write unit tests
+after writing the implementation.
+
 Pytest is configured to discover `test_*.py` under `src/cade/tests`, with
-async tests handled automatically by `pytest-asyncio`. Add automated tests for
-pure logic; manually verify provider- or terminal-dependent behavior rather
-than mocking external I/O. Run a focused test during development, for example:
+async tests handled automatically by `pytest-asyncio`. Exercise real provider
+and terminal behavior in E2E tests rather than mocking external I/O; manually
+verify behavior when automation is impractical. Run a focused test during
+development, for example:
 
 ```sh
 uv run pytest src/cade/tests/test_tools_file_handlers.py -q --tb=short
