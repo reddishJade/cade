@@ -265,6 +265,8 @@ def _build_before_provider_request_closure(
                     ).hexdigest(),
                     "request_bytes": len(request_bytes),
                     "system_prompt_bytes": prompt_bytes,
+                    "budget_reminder_present": "<context-budget-reminder>"
+                    in system_prompt,
                 },
                 **hook_correlation_fields(current),
             )
@@ -373,20 +375,20 @@ def build_loop_config(
             active_correlation,
         )
 
-    def prepare_next_turn_fn() -> AgentLoopTurnUpdate | None:
+    def prepare_request_context_fn(estimated_tokens: int) -> bool:
         nonlocal budget_reminded
         prompt_tokens = (
             get_last_prompt_tokens()
             if get_last_prompt_tokens is not None
             else last_prompt_tokens
         )
+        prompt_tokens = max(prompt_tokens or 0, estimated_tokens)
         threshold = _rollover_token_threshold(composition, provider)
         if (
             context_rollover is not None
             and composition.config.automatic_rollover
             and not budget_reminded
-            and prompt_tokens is not None
-            and prompt_tokens >= int(threshold * 0.8)
+            and int(threshold * 0.8) <= prompt_tokens < threshold - 512
         ):
             budget_reminded = True
             steer(
@@ -403,6 +405,10 @@ def build_loop_config(
                     )
                 )
             )
+            return True
+        return False
+
+    def prepare_next_turn_fn() -> AgentLoopTurnUpdate | None:
         if gate.check_progress_reminder():
             steer(
                 UserMessage(
@@ -430,6 +436,7 @@ def build_loop_config(
         provider=provider,
         request_token_budget=_request_token_budget(provider, composition.config),
         request_assembler=composition.request_assembler,
+        prepare_request_context=prepare_request_context_fn,
         max_steps=composition.config.max_steps,
         max_llm_calls=composition.config.max_llm_calls,
         tool_workers=composition.config.tool_workers,

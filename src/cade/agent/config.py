@@ -184,6 +184,7 @@ class AgentLoopConfig(BaseModel):
     request_rollover_decision: RequestRolloverDecisionHook | None = None
     rollover_context: ContextWindowRolloverHook | None = None
     refresh_request_prefix: Callable[[], list[AgentMessage]] | None = None
+    prepare_request_context: Callable[[int], bool] | None = None
 
     is_tool_productive: IsToolProductiveHook | None = None
     before_provider_request: BeforeProviderRequestHook | None = None
