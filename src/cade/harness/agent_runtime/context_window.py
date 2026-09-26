@@ -35,7 +35,7 @@ class ContextWindowController:
 
 
 class ContextWindowRollover:
-    """关闭旧窗口，只把启动上下文、技能与当前工作回合带入新窗口。"""
+    """关闭旧窗口，只把启动上下文、技能与用户请求带入新窗口。"""
 
     def __init__(
         self,
@@ -64,7 +64,8 @@ class ContextWindowRollover:
         self,
         messages: list[dict[str, Any]],
         *,
-        preserve_active_turn: bool = True,
+        preserve_active_turn: bool = False,
+        preserve_user_request: bool = True,
     ) -> list[dict[str, Any]]:
         """执行无摘要换窗；原始历史由 session JSONL 保持不变。"""
         archived = deepcopy(messages)
@@ -90,10 +91,20 @@ class ContextWindowRollover:
         protected_skills = _activated_skill_context_messages(
             archived[leading_system_end:recent_start]
         )
+        user_request = []
+        if not preserve_active_turn and preserve_user_request:
+            for message in reversed(archived[leading_system_end:]):
+                if message.get("role") == "user" and not (
+                    _is_synthetic_user_message(message)
+                    or is_skill_activation_content(message.get("content", ""))
+                ):
+                    user_request = [deepcopy(message)]
+                    break
         active_window = [
             *initial_context,
             {"role": "system", "content": render_context_window_reset(window_id)},
             *protected_skills,
+            *user_request,
             *deepcopy(archived[recent_start:]),
         ]
         active_window = stale_snip_file_reads(active_window)
@@ -129,19 +140,13 @@ def build_new_context_tool(
     controller: ContextWindowController,
     project_root: Path,
 ) -> tuple[ToolSpec, ...]:
-    """构建模型主动换窗工具；NOTE.md 是强制交接点。"""
+    """构建模型主动换窗工具；笔记用于交接但不阻塞释放窗口。"""
 
     def request_new_context(
         data: ToolInput,
         _on_update: Callable[[str], None] | None = None,
     ) -> str:
         reason = str(data.get("reason", "")).strip()
-        if not has_working_note(project_root):
-            return (
-                "Context window not changed. Write NOTE.md with the current goal, "
-                "confirmed decisions, completed verification, unresolved issues, "
-                "and the exact next action; then call new_context again."
-            )
         controller.request("model")
         return (
             "Fresh context window scheduled before the next inference. No summary "
@@ -153,7 +158,7 @@ def build_new_context_tool(
             name="new_context",
             description=(
                 "Close the current model context and continue in a fresh window "
-                "without generating a summary. First update NOTE.md with the "
+                "without generating a summary. Update NOTE.md when possible with the "
                 "execution frontier; older exact details remain in history."
             ),
             input_hint='JSON: {"reason":"the active window is stale or noisy"}',
@@ -171,7 +176,7 @@ def build_new_context_tool(
             },
             prompt_snippet=(
                 "Use new_context when the current working set is stale or near its "
-                "token budget. Update NOTE.md first; no summary is generated."
+                "token budget. Save progress in NOTE.md before the budget is exhausted; no summary is generated."
             ),
         ),
     )
@@ -182,7 +187,8 @@ def render_context_window_reset(window_id: str) -> str:
     return (
         f'<context-window-reset id="{window_id}">\n'
         "The previous context window was closed without a summary. The current "
-        "user task and active turn are included in this window. Read NOTE.md when "
+        "task continues in this window; prior messages remain available in history. "
+        "Read NOTE.md when "
         "present for explicit working state. The lossless session transcript is "
         "authoritative; use history list_windows/search/read/around for older "
         "exact details.\n"

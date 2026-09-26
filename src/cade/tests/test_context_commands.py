@@ -72,7 +72,7 @@ def _render(messages: list[AgentMessage] | None) -> str:
     return "\n".join(message.model_dump_json() for message in messages)
 
 
-def test_compact_rolls_over_and_retains_latest_turn(
+def test_compact_rolls_over_and_retains_latest_request(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -84,9 +84,9 @@ def test_compact_rolls_over_and_retains_latest_turn(
     assert "old goal" not in rendered
     assert "old result" not in rendered
     assert "latest goal" in rendered
-    assert "latest result" in rendered
+    assert "latest result" not in rendered
     assert len(app.resets) == 1
-    assert "Retained the latest turn" in capsys.readouterr().out
+    assert "Retained the latest user request" in capsys.readouterr().out
 
 
 def test_rollover_requires_working_note(
