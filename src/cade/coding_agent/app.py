@@ -197,6 +197,31 @@ class CadeApp:
             info["reasoning_effort"] = active.reasoning_effort
         return info
 
+    def instruction_paths(self) -> tuple[Path, ...]:
+        """从当前指令收集器读取实际可用的文件来源，不改变上下文状态。"""
+        from cade.agent.context import (
+            ContextCollectionInput,
+            FrozenContextCollectorRegistry,
+        )
+        from cade.agent.request import DefaultRequestAssembler
+
+        assembler = self.agent.composition.request_assembler
+        if not isinstance(assembler, DefaultRequestAssembler):
+            return ()
+        collectors = assembler.context_collectors
+        if not isinstance(collectors, FrozenContextCollectorRegistry):
+            return ()
+        paths: list[Path] = []
+        for section in collectors.sections:
+            if section.section_id == "agents":
+                snapshot = section.snapshot(ContextCollectionInput())
+                for block in section.render_full(snapshot):
+                    if block.provenance and block.provenance != "inline instruction":
+                        path = Path(block.provenance)
+                        if path not in paths:
+                            paths.append(path)
+        return tuple(paths)
+
     def ask(self, question: str) -> str:
         answer = ""
         for event in self.ask_stream(question):

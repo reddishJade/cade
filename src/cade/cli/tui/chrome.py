@@ -11,6 +11,8 @@ from prompt_toolkit.utils import get_cwidth
 TUI_STYLES: dict[str, str] = {
     "": "#c9d1d9",
     "welcome": "#58a6ff bold",
+    "welcome-hint": "#8b949e",
+    "resource-heading": "#d29922",
     "user": "bg:#21262d #c9d1d9",
     "command": "#58a6ff",
     "thinking": "#8b949e italic",
@@ -29,7 +31,7 @@ TUI_STYLES: dict[str, str] = {
     "status": "#8b949e",
     "status-accent": "#58a6ff",
     "status-mode": "#bc8cff",
-    "input-border": "#484f58",
+    "input": "bg:#21262d #c9d1d9",
     "prompt-marker": "#58a6ff bold",
     "scrollbar.background": "",
     "scrollbar.button": "",
@@ -37,15 +39,72 @@ TUI_STYLES: dict[str, str] = {
 }
 
 
-def welcome_text() -> str:
-    return (
-        "✦ cade\n\n"
-        "Describe a task to get started.\n"
-        "/ commands   @ files   ! shell   $ skills\n"
-        "Enter send / queue   Alt+Enter steer   Ctrl+J newline\n"
-        "Ctrl+T thinking   Ctrl+O tool details   ? help\n"
-        "Continue later with cade -c; choose history with /resume."
-    )
+_CADE_LOGO = (
+    "█▀▀▀ █▀▀█ █▀▀▄ █▀▀▀",
+    "█    █▄▄█ █  █ █▀▀ ",
+    "█▄▄▄ █  █ █▄▄▀ █▄▄▄",
+)
+
+
+def welcome_text(
+    *,
+    version: str,
+    tools: tuple[str, ...],
+    instructions: tuple[Path, ...],
+    skills: tuple[str, ...],
+    width: int,
+    compact: bool = False,
+) -> str:
+    """欢迎区展示当前运行时资源；短终端减少装饰和快捷键行数。"""
+    if compact:
+        lines = [f"cade v{version}", "/ commands · @ files · Ctrl+J newline"]
+    else:
+        lines = [*_CADE_LOGO]
+        lines[-1] += f"  v{version}"
+        lines.extend(
+            [
+                "",
+                "Describe a task to get started.",
+                "/ commands · @ files · ! shell · $ skills · ↑/↓ history",
+                "Enter send / queue · Alt+Enter steer · Ctrl+J newline",
+                "Ctrl+T thinking · Ctrl+O tool details · ? help",
+                "cade -c continue · /resume choose history",
+            ]
+        )
+    resources = [
+        ("Tools", ", ".join(tools)),
+        ("Context", ", ".join(compact_path(path) for path in instructions)),
+        ("Skills", ", ".join(skills)),
+    ]
+    for name, value in resources:
+        if not value:
+            continue
+        if compact:
+            lines.append(f"[{name}] {value}")
+        else:
+            detail = fit_text(value, width - 2, keep_end=name == "Context")
+            lines.extend(["", f"[{name}]", f"  {detail}"])
+    return "\n".join(fit_text(line, width) for line in lines)
+
+
+def welcome_ansi_lines(text: str) -> list[str]:
+    """欢迎区按字标、资源标题和辅助说明分别着色。"""
+    result: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(("█", "cade v")):
+            logo, separator, version = line.partition("  v")
+            rendered = f"\x1b[38;2;88;166;255;1m{logo}"
+            if separator:
+                rendered += f"\x1b[0;38;2;139;148;158m  v{version}"
+        elif line.startswith("["):
+            heading, separator, detail = line.partition("]")
+            rendered = f"\x1b[38;2;210;153;34m{heading}{separator}"
+            if detail:
+                rendered += f"\x1b[38;2;139;148;158m{detail}"
+        else:
+            rendered = f"\x1b[38;2;139;148;158m{line}"
+        result.append(f"{rendered}\x1b[0m")
+    return result
 
 
 def compact_path(path: Path) -> str:
