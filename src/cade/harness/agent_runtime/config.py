@@ -393,11 +393,13 @@ def build_loop_config(
                 SystemMessage(
                     content=(
                         "<context-budget-reminder>Context is nearing its rollover "
-                        "budget. Save the current goal, decisions, verification, "
-                        "unresolved issues and next action in NOTE.md now. A fresh "
+                        "budget. Before further investigation, update the beginning "
+                        "of NOTE.md with the current status, next action, constraints, "
+                        "completed and remaining work, and verification evidence. "
+                        "Replace obsolete progress; keep this frontier concise. "
+                        "If the task is already verified complete, finish now. A fresh "
                         "window will discard the tool conversation; exact evidence "
-                        "remains available through history. Use new_context when "
-                        "ready.</context-budget-reminder>"
+                        "remains available through history.</context-budget-reminder>"
                     )
                 )
             )
