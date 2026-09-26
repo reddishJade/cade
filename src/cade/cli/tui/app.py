@@ -76,6 +76,7 @@ from ..repl_tools import (
     run_shell_shortcut,
 )
 from ..shared.working import working_status_text
+from .chrome import TUI_STYLES, compact_path, status_line, welcome_text
 from .state import (
     _CommandChoiceRequest,
     _CommandTextRequest,
@@ -167,6 +168,7 @@ class _CadeTui:
         self._permanent_grant_store = FileGrantStore.for_project_root(project_root)
         self._restore_startup_session(resume_latest, auto_continue, session_id)
         self._sync_mode_from_agent()
+        self._workspace_branch = git_branch_name(project_root)
         self._scrollback = 0
         self._committing = False
         self._grant_store_manager: SessionGrantStoreManager | None = None
@@ -197,7 +199,7 @@ class _CadeTui:
             self._output_control,
             wrap_lines=True,
             always_hide_cursor=True,
-            dont_extend_height=True,
+            height=lambda: Dimension.exact(self._output_height()),
         )
         completer = self._make_completer()
         self._input = TextArea(
@@ -209,7 +211,7 @@ class _CadeTui:
             complete_while_typing=True,
             auto_suggest=CommandArgsSuggester(completer.command_args),
             history=_tui_history(project_root),
-            scrollbar=True,
+            scrollbar=False,
         )
         self._input.buffer.on_text_insert += self._on_input_text_inserted
         self._approval_choices = RadioList(
@@ -329,7 +331,7 @@ class _CadeTui:
         )
         self._status = Window(
             FormattedTextControl(text=self._status_text),
-            height=1,
+            height=2,
             style="class:status",
         )
         # ── Application ──
@@ -359,33 +361,7 @@ class _CadeTui:
             full_screen=False,
             mouse_support=Condition(self._should_capture_mouse),
             enable_page_navigation_bindings=False,
-            style=Style.from_dict(
-                {
-                    "": "",
-                    "user": "ansicyan bold",
-                    "command": "ansiyellow bold",
-                    "thinking": "#808080",
-                    "tool": "ansibrightblack",
-                    "tool-title": "ansigreen bold",
-                    "error": "ansired",
-                    "border": "ansibrightblack",
-                    "completion-menu": "bg:default",
-                    "completion-menu.completion": "bg:default fg:default",
-                    "completion-menu.completion.current": (
-                        "bg:default fg:default bold underline"
-                    ),
-                    "completion-menu.meta.completion": "bg:default fg:default",
-                    "completion-menu.meta.completion.current": (
-                        "bg:default fg:default bold underline"
-                    ),
-                    "radio-selected": "ansicyan bold",
-                    "model-current": "ansicyan bold",
-                    "choice-desc": "#808080",
-                    "status": "ansibrightblack",
-                    "input-border": "ansibrightblack",
-                    "prompt-marker": "ansiyellow bold",
-                }
-            ),
+            style=Style.from_dict(TUI_STYLES),
             input=input,
             output=output,
         )
@@ -419,7 +395,8 @@ class _CadeTui:
                 set_question_prompt_handler(tool, self._question_prompt_callback)
                 break
 
-        self._state.log.append(_LogEntry("system", self._header_text()))
+        if not self._state.log:
+            self._state.log.append(_LogEntry("welcome", welcome_text()))
         self._application.layout.focus(self._input)
         self._refresh()
 
@@ -1571,6 +1548,21 @@ class _CadeTui:
         self._committing = False
         self._refresh()
         self._submit_pending_input()
+        self._refresh_workspace_branch()
+
+    def _refresh_workspace_branch(self) -> None:
+        """回合结束后在后台读取分支，避免渲染时阻塞终端。"""
+
+        def update() -> None:
+            branch = git_branch_name(self._project_root)
+
+            def apply() -> None:
+                self._workspace_branch = branch
+                self._refresh()
+
+            self._call_in_ui_thread(apply)
+
+        threading.Thread(target=update, daemon=True).start()
 
     def _save_partial_answer(self, turn_log_start: int) -> None:
         """将中断前已经流式显示的回答写入会话，供恢复和后续注入使用。"""
@@ -1676,8 +1668,9 @@ class _CadeTui:
         return max(
             1,
             self._application.output.get_size().rows
-            - input_area_height
             - 1
+            - input_area_height
+            - 2
             - approval_height
             - command_height
             - question_height,
@@ -1794,21 +1787,42 @@ class _CadeTui:
         self._last_stream_refresh = perf_counter()
         self._refresh()
 
-    def _status_text(self) -> str:
-        left = f"mode: {self._repl_state.mode}"
-        if self._state.working:
-            left = f"{working_status_text()}  {left}"
-        parts: list[str] = []
-        if self._repl_state.context_usage:
-            parts.append(f"context: {self._repl_state.context_usage}")
-        if self._repl_state.usage_stats:
-            parts.append(f"usage: {self._repl_state.usage_stats}")
-        if not parts:
-            return left
-        right = "  ".join(parts)
+    def _status_text(self) -> FormattedText:
         width = self._application.output.get_size().columns
-        padding = max(2, width - len(left) - len(right))
-        return f"{left}{' ' * padding}{right}"
+        project = compact_path(self._project_root)
+        if self._workspace_branch:
+            project += f" ({self._workspace_branch})"
+        context = (
+            f"context: {self._repl_state.context_usage}"
+            if self._repl_state.context_usage
+            else ""
+        )
+        if self._repl_state.usage_stats and width >= 90:
+            context += f"  {self._repl_state.usage_stats}"
+        first = status_line(project, context, width, keep_left_end=True)
+        mode = f"mode: {self._repl_state.mode}"
+        if self._state.working:
+            mode = f"{working_status_text()}  {mode}"
+        elif self._scrollback:
+            mode += "  ↑ history · End latest"
+        elif self._state.pending_hitl is not None:
+            mode = "Awaiting approval"
+        second = status_line(
+            mode,
+            self._model_status(),
+            width,
+            left_style="class:status-mode",
+            right_style="class:status-accent",
+        )
+        return FormattedText([*first, ("", "\n"), *second])
+
+    def _model_status(self) -> str:
+        get_model_info = getattr(self._agent_app, "get_model_info", None)
+        raw_info = get_model_info() if callable(get_model_info) else None
+        info = raw_info if isinstance(raw_info, dict) else {}
+        model = str(info.get("model") or self._repl_state.model_name or "unknown")
+        effort = str(info.get("reasoning_effort") or "")
+        return f"{model} · {effort}" if effort else model
 
     def _header_text(self) -> str:
         get_model_info = getattr(self._agent_app, "get_model_info", None)
@@ -1817,7 +1831,7 @@ class _CadeTui:
         model = str(info.get("model") or self._repl_state.model_name or "unknown")
         effort = str(info.get("reasoning_effort") or "")
         model_display = f"{model} ({effort})" if effort else model
-        branch = git_branch_name(self._project_root)
+        branch = self._workspace_branch
         branch_line = f"\n⌘ {branch}" if branch else ""
         return f"✦ Cade\n· {model_display}\n: {self._project_root}{branch_line}"
 
