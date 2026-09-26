@@ -27,14 +27,12 @@ from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import (
     ConditionalContainer,
     Dimension,
-    Float,
-    FloatContainer,
     HSplit,
     Layout,
+    ScrollOffsets,
     Window,
 )
 from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.output.base import Output
 from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
@@ -86,6 +84,7 @@ from .state import (
     _TuiState,
 )
 from .widgets import (
+    TuiCompletionControl,
     TuiInputLexer,
     TuiOutputControl,
     TuiPromptSession,
@@ -218,6 +217,17 @@ class _CadeTui:
             scrollbar=False,
         )
         self._input.buffer.on_text_insert += self._on_input_text_inserted
+        self._input.buffer.on_text_changed += self._on_input_layout_changed
+        self._input.buffer.on_completions_changed += self._on_input_layout_changed
+        self._completion_container = ConditionalContainer(
+            Window(
+                TuiCompletionControl(),
+                height=lambda: Dimension.exact(self._completion_height()),
+                scroll_offsets=ScrollOffsets(top=1, bottom=1),
+                style="class:completion-menu",
+            ),
+            filter=Condition(lambda: self._completion_height() > 0),
+        )
         self._approval_choices = RadioList(
             [(choice, choice) for choice in HITL_CHOICES],
             default=HITL_CHOICES[0],
@@ -274,7 +284,10 @@ class _CadeTui:
         )
         checkbox_bindings.add("enter")(lambda _event: self._accept_question_choice())
         self._approval_container = ConditionalContainer(
-            self._approval_choices,
+            HSplit(
+                [self._approval_choices],
+                height=lambda: Dimension.exact(self._approval_panel_height()),
+            ),
             filter=Condition(
                 lambda: (
                     self._state.pending_hitl is not None
@@ -288,9 +301,10 @@ class _CadeTui:
                     self._command_choices,
                     Window(
                         FormattedTextControl(text=self._command_choice_hint_text),
-                        dont_extend_height=True,
+                        height=1,
                     ),
-                ]
+                ],
+                height=lambda: Dimension.exact(self._command_panel_height()),
             ),
             filter=Condition(lambda: self._state.pending_command_choice is not None),
         )
@@ -341,23 +355,15 @@ class _CadeTui:
         # ── Application ──
         self._application = Application(
             layout=Layout(
-                FloatContainer(
-                    HSplit(
-                        [
-                            self._output,
-                            self._approval_container,
-                            self._command_container,
-                            self._question_container,
-                            self._input_container,
-                            self._status,
-                        ]
-                    ),
-                    floats=[
-                        Float(
-                            content=CompletionsMenu(max_height=8, scroll_offset=2),
-                            xcursor=True,
-                            ycursor=True,
-                        ),
+                HSplit(
+                    [
+                        self._output,
+                        self._approval_container,
+                        self._command_container,
+                        self._question_container,
+                        self._completion_container,
+                        self._input_container,
+                        self._status,
                     ],
                 ),
             ),
@@ -365,6 +371,7 @@ class _CadeTui:
             full_screen=False,
             mouse_support=Condition(self._should_capture_mouse),
             enable_page_navigation_bindings=False,
+            before_render=lambda _app: self._prepare_frame(),
             style=Style.from_dict(TUI_STYLES),
             input=input,
             output=output,
@@ -456,8 +463,32 @@ class _CadeTui:
         request = self._state.pending_question_choice
         if request is None:
             return 0
-        available = max(2, self._application.output.get_size().rows - 2)
+        available = max(2, self._application.output.get_size().rows - 5)
         return min(len(request.choices) + 1, available)
+
+    def _approval_panel_height(self) -> int:
+        if self._state.pending_hitl is None or self._awaiting_denial_suggestion:
+            return 0
+        return min(
+            len(self._approval_choices.values),
+            max(1, self._application.output.get_size().rows - 5),
+        )
+
+    def _command_panel_height(self) -> int:
+        request = self._state.pending_command_choice
+        if request is None:
+            return 0
+        return min(
+            len(request.choices) + 1,
+            max(2, self._application.output.get_size().rows - 5),
+        )
+
+    def _completion_height(self) -> int:
+        state = self._input.buffer.complete_state
+        if state is None or self._has_pending_interaction():
+            return 0
+        available = self._application.output.get_size().rows - self._input_height() - 8
+        return min(8, len(state.completions), max(0, available))
 
     # ── 键绑定 ──
 
@@ -481,16 +512,31 @@ class _CadeTui:
         bindings.add("c-q")(self._quit_key)
         bindings.add("c-c")(self._cancel_key)
         bindings.add("c-d")(self._eof_key)
-        # 应用级只挂"文本表单激活时"的 Esc（eager + filter）：空闲输入不消费
-        # escape，方向键的 esc 序列解析和 esc,enter 换行都不受影响。
+        # 菜单或表单中的 Esc 立即取消；普通输入保留 Esc Enter 换行。
         bindings.add(
             "escape",
             eager=True,
-            filter=Condition(lambda: self._state.pending_command_text is not None),
+            filter=Condition(
+                lambda: (
+                    self._state.pending_command_text is not None
+                    or self._input.buffer.complete_state is not None
+                )
+            ),
         )(self._escape_key)
         return bindings
 
     def _submit_key(self, _event: object) -> None:
+        buffer = self._input.buffer
+        completion = buffer.complete_state
+        if (
+            completion is not None
+            and completion.completions
+            and self._completion_height() > 0
+        ):
+            buffer.go_to_completion(completion.complete_index or 0)
+            buffer.complete_state = None
+            self._refresh()
+            return
         text = self._input.text.strip()
         if self._state.pending_command_text is not None:
             self._input.text = ""
@@ -589,9 +635,14 @@ class _CadeTui:
         self._refresh()
 
     def _escape_key(self, _event: object) -> None:
-        """Esc：仅在文本表单挂起时到达这里（菜单的 Esc 由控件自身消费）。"""
+        """Esc 关闭补全或文本表单，不改变待提交的输入。"""
         if self._state.pending_command_text is not None:
             self._cancel_pending_command_text()
+            return
+        if self._input.buffer.complete_state is not None:
+            self._input.buffer.cancel_completion()
+            self._refresh()
+            return
 
     def _cancel_pending_command_text(self) -> None:
         """关闭文本表单并执行其取消回调。"""
@@ -621,6 +672,11 @@ class _CadeTui:
         self._input.buffer.complete_state = None
         self._exit_pending = 0.0
         self._exit_pending_key = ""
+
+    def _on_input_layout_changed(self, _buffer: object) -> None:
+        """输入和异步补全改变占用高度后同步重算历史视口。"""
+        if hasattr(self, "_application"):
+            self._refresh()
 
     def _cancel_key(self, _event: object) -> None:
         if self._state.pending_question_choice is not None:
@@ -1651,23 +1707,14 @@ class _CadeTui:
         return max(1, self._application.output.get_size().columns)
 
     def _output_height(self) -> int:
-        approval_height = (
-            len(self._approval_choices.values)
-            if self._state.pending_hitl is not None
-            and not self._awaiting_denial_suggestion
-            else 0
-        )
+        approval_height = self._approval_panel_height()
         input_visible = (
             self._state.pending_command_choice is None
             and (self._state.pending_question_choice is None)
             and (self._state.pending_hitl is None or self._awaiting_denial_suggestion)
         )
         input_area_height = self._input_height() + 2 if input_visible else 0
-        command_height = (
-            len(self._state.pending_command_choice.choices)
-            if self._state.pending_command_choice is not None
-            else 0
-        )
+        command_height = self._command_panel_height()
         question_height = self._question_panel_height()
         return max(
             1,
@@ -1677,7 +1724,8 @@ class _CadeTui:
             - 2
             - approval_height
             - command_height
-            - question_height,
+            - question_height
+            - self._completion_height(),
         )
 
     def _input_height(self) -> int:
@@ -1711,6 +1759,9 @@ class _CadeTui:
 
     def _update_preserving_viewport(self, update: Callable[[], None]) -> None:
         """更新会改变行数的显示状态，并保持当前视口的顶部位置。"""
+        if self._scrollback == 0:
+            update()
+            return
         top_line = max(
             0,
             self._state.line_count(self._output_width())
@@ -1759,9 +1810,13 @@ class _CadeTui:
         self._schedule_working_refresh()
 
     def _refresh(self) -> None:
+        self._prepare_frame()
+        self._application.invalidate()
+
+    def _prepare_frame(self) -> None:
+        """在绘制前按当前尺寸重算视口，缩放后仍跟随最新输出。"""
         self._scrollback = min(self._scrollback, self._max_scrollback())
         self._output_control.text = self._fragments()
-        self._application.invalidate()
 
     def _refresh_streaming(self) -> None:
         """限制流式输出重绘频率，避免每个 delta 都触发完整布局。"""
