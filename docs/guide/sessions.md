@@ -91,7 +91,7 @@ cade --session ID  # 恢复指定会话
 
 ## 6. 换窗的持久化语义
 
-换窗结果作为新的 `context_window_reset` event 追加，原始账本不改写。replacement 保存完整当前 surface、generation、source entry ids 和 SHA-256 digest；恢复时加载最新 replacement，再沿账本继续构建。
+换窗结果作为新的 `context_window_reset` event 追加，原始账本不改写。replacement 保存完整当前 surface、generation 和 source entry ids；恢复时加载最新 replacement，再沿账本继续构建。
 
 `history` 工具可列出窗口边界、搜索当前 branch、分页读取某条原始记录，或查看其邻近记录。因此模型的当前 context 是可丢弃工作集，session transcript 才是可检索的无损事实源。
 
@@ -139,3 +139,17 @@ cade session interrupt <session-id> --json
 `status` 返回路径、大小、entry 计数、是否已有结果和 active run 状态。`result` 优先返回 `cade exec` 写入的完整 result envelope，旧 session 则回退到最后一条 `final` 事件。`export` 使用权限为 `0600` 的原子写入生成单一 JSON 文件。
 
 `interrupt` 不根据 PID 向进程发送信号；它在 session 目录写入协作式中断请求，正在运行的 `cade exec` 会监听该请求并调用自身的流中断路径。不存在 active run 时，命令返回非零状态且 `accepted` 为 `false`。
+
+## 8. 写入与恢复边界
+
+新 JSONL 记录同时保存提交后的 `head_id`。日志先 flush/fsync，索引再通过
+临时文件和原子替换提交；索引落后或丢失时，恢复和 `history` 使用日志中的
+活动分支。主动回退追加 `head` 记录，因此索引丢失不会重新激活已放弃的尾部。
+
+没有日志 head 字段的旧会话仍优先使用原索引指针，兼容过去的主动回退；
+索引也丢失时只能恢复最后写入的分支，无法推断旧的导航意图。下一次追加或
+回退即开始使用新的日志提交规则。索引丢失后的标题等展示元数据无法凭空恢复。
+
+只有损坏且未以换行结尾的末条记录被视为未完成写入，恢复完整前缀后可以
+继续追加。中间坏行、重复 ID、缺失父节点和循环不再静默忽略。恢复读取和
+历史检索共用日志解析及分支选择规则，不任意截取最后 200 条记录。
