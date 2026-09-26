@@ -226,6 +226,14 @@ async def _run_loop(
                     current_step=step,
                     options=config.options,
                 )
+                prepared_assembly = _prepare_request_context(
+                    current_context,
+                    config,
+                    new_messages,
+                    steer_queue,
+                    prepared_assembly,
+                    step,
+                )
             if config.request_rollover_decision is not None:
                 reset_reason = config.request_rollover_decision(
                     current_context.messages,
@@ -456,6 +464,25 @@ async def _run_loop(
     )
     emit(_agent_end_event(new_messages, result))
     return result
+
+
+def _prepare_request_context(
+    context: AgentContext,
+    config: AgentLoopConfig,
+    new_messages: list[AgentMessage],
+    steer_queue: Callable[[], list[AgentMessage]] | None,
+    assembly: RequestAssembly,
+    step: int,
+) -> RequestAssembly:
+    """把按当前预算生成的运行时输入交付到同一次请求。"""
+    if config.prepare_request_context is None:
+        return assembly
+    if not config.prepare_request_context(assembly.estimated_tokens):
+        return assembly
+    _append_steering_messages(context, new_messages, steer_queue)
+    return config.request_assembler.assemble(
+        context, current_step=step, options=config.options
+    )
 
 
 def _refresh_request_prefix(context: AgentContext, config: AgentLoopConfig) -> None:

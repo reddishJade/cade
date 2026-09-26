@@ -44,6 +44,7 @@ _DURABLE_PROVIDER_REQUEST_FIELDS = (
     "request_digest",
     "request_bytes",
     "system_prompt_bytes",
+    "budget_reminder_present",
 )
 
 
