@@ -1795,15 +1795,14 @@ class _CadeTui:
     # ── 刷新 ──
 
     def _fragments(self) -> StyleAndTextTuples:
-        """短对话贴近输入区；空白留在上方，长对话继续使用滚动视口。"""
+        """只绘制实际内容，长对话使用受终端高度限制的滚动视口。"""
         height = self._output_height()
         width = self._output_width()
         count = self._state.line_count(width)
         fragments = self._state.fragments(height, self._scrollback, width)
         if count >= height and fragments and fragments[-1] == ("", "\n"):
             fragments.pop()
-        padding = max(0, height - count - 1)
-        return [("", "\n" * padding), *fragments]
+        return fragments
 
     def _output_width(self) -> int:
         return max(1, self._application.output.get_size().columns)
@@ -1818,7 +1817,7 @@ class _CadeTui:
         input_area_height = self._input_height() + 2 if input_visible else 0
         command_height = self._command_panel_height()
         question_height = self._question_panel_height()
-        return max(
+        available = max(
             1,
             self._application.output.get_size().rows
             - 1
@@ -1830,6 +1829,7 @@ class _CadeTui:
             - question_height
             - self._completion_height(),
         )
+        return min(available, self._state.line_count(self._output_width()) + 1)
 
     def _input_height(self) -> int:
         # 输入内容可能没有换行符，但会因终端宽度产生视觉折行。
