@@ -107,6 +107,7 @@ def ux_terminal(tmp_path: Path) -> Iterator[TuiTerminal]:
             str(tmp_path),
             "--config",
             str(config),
+            "-c",
         ]
     )
     terminal = TuiTerminal(tmp_path)
@@ -155,6 +156,8 @@ def test_real_terminal_completion_and_responsive_layout(
     screen = terminal.save("01-welcome")
     assert "Describe a task" in screen
     assert "Ctrl+O tool details" in screen
+    assert "No previous task in this project" in screen
+    assert "Enter send · Ctrl+J newline" in screen
     assert_footer_and_input(screen, width=120)
 
     terminal.keys("/")
@@ -176,7 +179,9 @@ def test_real_terminal_completion_and_responsive_layout(
     terminal.wait("> @READ", absent="README.md")
     terminal.keys("C-c")
     terminal.wait("\n>\n", absent="@READ")
-    terminal.paste("first line\n第二行")
+    terminal.paste("first line")
+    terminal.keys("C-j")
+    terminal.paste("第二行")
     screen = terminal.save("05-multiline")
     assert "first line" in screen and "第二行" in screen
     assert "terminal-ux-model" in screen
