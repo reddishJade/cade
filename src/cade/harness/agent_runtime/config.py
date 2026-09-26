@@ -496,11 +496,16 @@ def _rollover_decision(
         return "token_limit"
     from .agent_helpers import to_dict
 
-    measured_tokens = estimated_tokens
-    if measured_tokens is None:
-        measured_tokens = last_prompt_tokens
-    if measured_tokens is None:
-        measured_tokens = estimate_message_tokens([to_dict(m) for m in messages])
+    known_tokens = [
+        tokens
+        for tokens in (estimated_tokens, last_prompt_tokens)
+        if tokens is not None
+    ]
+    measured_tokens = (
+        max(known_tokens)
+        if known_tokens
+        else estimate_message_tokens([to_dict(m) for m in messages])
+    )
     return (
         "token_limit"
         if measured_tokens >= _rollover_token_threshold(composition, provider)
