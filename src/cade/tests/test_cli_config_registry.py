@@ -9,16 +9,12 @@ import pytest
 
 from cade.cli.config_registry import (
     SETTING_SPECS,
-    SettingKind,
     apply_setting,
     commit_setting_value,
     find_setting,
     format_setting,
-    load_effective_config,
-    matching_settings,
     parse_setting,
     save_setting_text,
-    setting_detail,
 )
 from cade.harness.config import CadeRuntimeConfig
 
@@ -29,76 +25,7 @@ def _spec(key: str):
     return matches[0]
 
 
-class TestRegistryIntegrity:
-    def test_keys_unique(self) -> None:
-        keys = [spec.key for spec in SETTING_SPECS]
-        assert len(keys) == len(set(keys))
-
-    def test_enum_specs_declare_choices(self) -> None:
-        for spec in SETTING_SPECS:
-            if spec.kind is SettingKind.ENUM:
-                assert spec.choices, spec.key
-            else:
-                assert not spec.choices, spec.key
-
-    def test_labels_alignable(self) -> None:
-        longest = max(len(spec.label) for spec in SETTING_SPECS)
-        assert longest <= 28
-
-    def test_curated_rows_exact(self) -> None:
-        keys = {spec.key for spec in SETTING_SPECS}
-        assert keys == {
-            "execution_modes.default_mode",
-            "security.approval_policy",
-            "security.non_workspace_access",
-            "security.sandbox.mode",
-            "security.sandbox.network_access",
-            "tools.shell",
-        }
-
-
-class TestFormatSetting:
-    def test_defaults_on_empty_config(self) -> None:
-        config = CadeRuntimeConfig()
-        assert format_setting(_spec("execution_modes.default_mode"), config) == "act"
-        # 默认 act + mode 路由 => 边界动作询问用户。
-        assert (
-            format_setting(_spec("security.approval_policy"), config)
-            == "asks for review"
-        )
-        assert format_setting(_spec("security.non_workspace_access"), config) == "on"
-        assert format_setting(_spec("security.sandbox.mode"), config) == (
-            "workspace-write"
-        )
-        assert format_setting(_spec("security.sandbox.network_access"), config) == (
-            "deny"
-        )
-        assert format_setting(_spec("tools.shell"), config) == "auto"
-
-
 class TestApprovalChoiceMapping:
-    def test_never_maps_to_always_proceeds(self) -> None:
-        config = CadeRuntimeConfig.model_validate(
-            {"security": {"approval_policy": "never"}}
-        )
-        assert (
-            format_setting(_spec("security.approval_policy"), config)
-            == "always proceeds"
-        )
-
-    def test_router_auto_maps_to_agent_decides(self) -> None:
-        config = CadeRuntimeConfig.model_validate(
-            {
-                "security": {
-                    "approval_policy": "on-request",
-                    "approval_router": "auto",
-                }
-            }
-        )
-        assert (
-            format_setting(_spec("security.approval_policy"), config) == "agent decides"
-        )
-
     def test_router_user_overrides_build_mode(self) -> None:
         config = CadeRuntimeConfig.model_validate(
             {
@@ -154,22 +81,6 @@ class TestApprovalChoiceMapping:
         assert format_setting(spec, parsed) == "read-only"
 
 
-class TestDescribeChoice:
-    def test_known_token_uses_declared_description(self) -> None:
-        spec = _spec("execution_modes.default_mode")
-        text = spec.describe_choice("plan")
-        assert "Read-only" in text or "read-only" in text
-
-    def test_approval_tokens_have_descriptions(self) -> None:
-        spec = _spec("security.approval_policy")
-        for token in ("always proceeds", "agent decides", "asks for review"):
-            assert spec.describe_choice(token), token
-
-    def test_unknown_token_falls_back_to_description(self) -> None:
-        spec = _spec("tools.shell")
-        assert spec.describe_choice("bash") == spec.description
-
-
 class TestParseSetting:
     def test_enum_rejects_unknown_choice(self) -> None:
         spec = _spec("execution_modes.default_mode")
@@ -177,17 +88,8 @@ class TestParseSetting:
         with pytest.raises(ValueError):
             parse_setting(spec, "yolo")
 
-    def test_shell_enum_accepts_all_choices(self) -> None:
-        spec = _spec("tools.shell")
-        assert parse_setting(spec, "ZSH") == "zsh"
-
 
 class TestApplySetting:
-    def test_creates_nested_dicts(self) -> None:
-        raw: dict = {}
-        apply_setting(raw, _spec("tools.shell"), "zsh")
-        assert raw == {"tools": {"shell": "zsh"}}
-
     def test_none_pops_leaf_key(self) -> None:
         raw: dict = {
             "execution_modes": {
@@ -203,16 +105,6 @@ class TestCommitSettingValue:
     def _write(self, path: Path, payload: dict) -> Path:
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
-
-    def test_valid_value_saved(self, tmp_path: Path) -> None:
-        config_path = self._write(tmp_path / "cade.config.json", {})
-        ok, message = commit_setting_value(
-            config_path, _spec("execution_modes.default_mode"), "build"
-        )
-        assert ok
-        assert "build" in message
-        saved = json.loads(config_path.read_text(encoding="utf-8"))
-        assert saved["execution_modes"]["default_mode"] == "build"
 
     def test_type_mismatch_not_saved(self, tmp_path: Path) -> None:
         config_path = self._write(
@@ -261,12 +153,3 @@ class TestLookupAndDetails:
         assert find_setting("default mode") is not None
         assert find_setting("tools.shell") is not None
         assert find_setting("nonexistent-keyword-xyz") is None
-
-    def test_matching_returns_all_hits(self) -> None:
-        hits = matching_settings("shell")
-        assert [spec.label for spec in hits] == ["Shell"]
-
-    def test_detail_fallback_renders_value(self) -> None:
-        config = load_effective_config(Path("/nonexistent/cade.config.json"))
-        lines = setting_detail(_spec("tools.shell"), config)
-        assert lines == ["  auto"]

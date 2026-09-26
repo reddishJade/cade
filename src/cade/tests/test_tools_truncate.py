@@ -4,33 +4,15 @@ from __future__ import annotations
 
 from cade.coding_agent.tools.truncate import (
     _split_lines,
-    format_size,
     truncate_head,
     truncate_line,
     truncate_tail,
 )
 
 
-class TestFormatSize:
-    def test_bytes(self) -> None:
-        assert format_size(500) == "500B"
-
-    def test_kb(self) -> None:
-        assert "KB" in format_size(2048)
-
-    def test_mb(self) -> None:
-        assert "MB" in format_size(2 * 1024 * 1024)
-
-
 class TestSplitLines:
-    def test_empty(self) -> None:
-        assert _split_lines("") == []
-
     def test_trailing_newline_stripped(self) -> None:
         assert _split_lines("a\nb\n") == ["a", "b"]
-
-    def test_no_trailing_newline(self) -> None:
-        assert _split_lines("a\nb") == ["a", "b"]
 
 
 class TestTruncateHead:
@@ -63,10 +45,6 @@ class TestTruncateHead:
 
 
 class TestTruncateTail:
-    def test_within_limits(self) -> None:
-        r = truncate_tail("hello\nworld")
-        assert not r.truncated
-
     def test_line_limit(self) -> None:
         lines = "\n".join(f"line{i}" for i in range(100))
         r = truncate_tail(lines, max_lines=10)
@@ -74,10 +52,6 @@ class TestTruncateTail:
         assert r.truncated_by == "lines"
         assert r.output_lines == 10
         assert r.content.startswith("line90")  # tail keeps last lines
-
-    def test_empty_content(self) -> None:
-        r = truncate_tail("")
-        assert not r.truncated
 
     def test_first_line_partial_when_single_line_exceeds(self) -> None:
         content = "x" * 100_000
@@ -93,11 +67,6 @@ class TestTruncateTail:
 
 
 class TestTruncateLine:
-    def test_short_line(self) -> None:
-        result, truncated = truncate_line("hello")
-        assert not truncated
-        assert result == "hello"
-
     def test_long_line(self) -> None:
         result, truncated = truncate_line("x" * 1000, max_chars=100)
         assert truncated

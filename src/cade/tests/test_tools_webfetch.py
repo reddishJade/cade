@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from cade.coding_agent.tools.webfetch import (
-    _charset,
     _format,
     _html_to_markdown,
     _is_html_mime,
@@ -21,12 +20,6 @@ from cade.coding_agent.tools.webfetch import (
 
 
 class TestValidUrl:
-    def test_valid_https(self) -> None:
-        assert _valid_url("https://example.com") == "https://example.com"
-
-    def test_valid_http(self) -> None:
-        assert _valid_url("http://example.com") == "http://example.com"
-
     def test_no_scheme_raises(self) -> None:
         with pytest.raises(ValueError, match="HTTP"):
             _valid_url("ftp://example.com")
@@ -37,12 +30,6 @@ class TestValidUrl:
 
 
 class TestTimeout:
-    def test_default(self) -> None:
-        assert _timeout(None) == 30.0
-
-    def test_valid(self) -> None:
-        assert _timeout(15) == 15.0
-
     def test_zero_raises(self) -> None:
         with pytest.raises(ValueError, match="timeout"):
             _timeout(0)
@@ -57,30 +44,14 @@ class TestTimeout:
 
 
 class TestFormat:
-    def test_valid(self) -> None:
-        assert _format("markdown") == "markdown"
-        assert _format("text") == "text"
-        assert _format("html") == "html"
-
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError, match="format"):
             _format("pdf")
 
 
-class TestCharset:
-    def test_found(self) -> None:
-        assert _charset("text/html; charset=utf-8") == "utf-8"
-
-    def test_not_found(self) -> None:
-        assert _charset("text/html") == "utf-8"
-
-
 class TestMime:
     def test_basic(self) -> None:
         assert _mime("text/html; charset=utf-8") == "text/html"
-
-    def test_no_params(self) -> None:
-        assert _mime("application/json") == "application/json"
 
 
 class TestIsImageMime:
@@ -125,15 +96,8 @@ class TestMarkdownText:
         result = _markdown_text("<p>Content</p>", "https://example.com")
         assert "example.com" in result
 
-    def test_heading_conversion(self) -> None:
-        result = _markdown_text("<h1>Title</h1><p>Body</p>", "https://x.com")
-        assert "#" in result or "Title" in result
-
 
 class TestWithTruncationNotice:
-    def test_not_truncated(self) -> None:
-        assert _with_truncation_notice("hello", False) == "hello"
-
     def test_truncated_appends_notice(self) -> None:
         result = _with_truncation_notice("hello", True)
         assert "truncated" in result

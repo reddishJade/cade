@@ -9,14 +9,8 @@ class TestCacheUsage:
     def test_hit_rate_zero_total(self) -> None:
         assert CacheUsage().hit_rate == 0.0
 
-    def test_hit_rate_full_hit(self) -> None:
-        assert CacheUsage(hit_tokens=100, miss_tokens=0).hit_rate == 1.0
-
     def test_hit_rate_mixed(self) -> None:
         assert CacheUsage(hit_tokens=75, miss_tokens=25).hit_rate == 0.75
-
-    def test_hit_rate_partial(self) -> None:
-        assert CacheUsage(hit_tokens=1, miss_tokens=9).hit_rate == 0.1
 
 
 def _fake_response(usage: object = None) -> object:

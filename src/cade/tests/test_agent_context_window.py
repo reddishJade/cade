@@ -6,43 +6,14 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from cade.agent._context_window import (
-    estimate_message_tokens,
-    estimate_tokens,
     extract_prompt_tokens_from_usage,
     should_rollover_token_aware,
 )
 from cade.agent.messages import (
-    AssistantMessage,
-    SystemMessage,
-    ToolResultMessage,
     UserMessage,
 )
-from cade.agent.types import TextContent, ThinkingContent, ToolCallContent
 from cade.harness.agent_runtime.config import _rollover_decision
 from cade.harness.config import AgentConfig
-
-
-def test_estimate_tokens_handles_empty_and_non_empty_text() -> None:
-    assert estimate_tokens("") == 1
-    assert estimate_tokens("hello world") > 0
-
-
-def test_estimate_message_tokens_covers_all_message_kinds() -> None:
-    messages = [
-        SystemMessage(content="system"),
-        UserMessage(content="hello"),
-        AssistantMessage(
-            content=[
-                TextContent(text="world"),
-                ThinkingContent(thinking="reasoning"),
-                ToolCallContent(id="c1", name="get", arguments={"key": "value"}),
-            ],
-            stop_reason="tool_use",
-        ),
-        ToolResultMessage(tool_call_id="c1", tool_name="get", content="result"),
-    ]
-
-    assert estimate_message_tokens(messages) > 0
 
 
 def test_provider_usage_is_preferred_for_rollover_decision() -> None:

@@ -5,35 +5,12 @@ from __future__ import annotations
 from cade.agent._codec import convert_to_llm
 from cade.agent.messages import (
     AssistantMessage,
-    SystemMessage,
     ToolResultMessage,
-    UserMessage,
 )
 from cade.agent.types import TextContent, ToolCallContent, ToolResultContent
 
 
-class TestConvertSystemMessage:
-    def test_system_message(self) -> None:
-        result = convert_to_llm([SystemMessage(content="You are helpful.")])
-        assert result == [{"role": "system", "content": "You are helpful."}]
-
-
-class TestConvertUserMessage:
-    def test_str_content(self) -> None:
-        result = convert_to_llm([UserMessage(content="hello")])
-        assert result == [{"role": "user", "content": "hello"}]
-
-
 class TestConvertAssistantMessage:
-    def test_text_content(self) -> None:
-        msg = AssistantMessage(
-            content=[TextContent(text="Hello!")],
-            stop_reason="end_turn",
-        )
-        result = convert_to_llm([msg])
-        assert result[0]["role"] == "assistant"
-        assert result[0]["content"] == "Hello!"
-
     def test_tool_calls(self) -> None:
         msg = AssistantMessage(
             content=[

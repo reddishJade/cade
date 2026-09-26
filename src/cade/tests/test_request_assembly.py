@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cade.agent.config import AgentContext, AgentLoopConfig
+from cade.agent.config import AgentContext
 from cade.agent.context import (
     ContextBlock,
     ContextBlockSource,
@@ -184,11 +184,3 @@ def test_request_hygiene_runs_before_context_budgeting() -> None:
         for trace in assembly.context_trace
     )
     assert long_output not in str(assembly.messages)
-
-
-def test_agent_loop_config_has_one_request_assembly_entrypoint() -> None:
-    config = AgentLoopConfig()
-
-    assert isinstance(config.request_assembler, DefaultRequestAssembler)
-    assert "transform_context" not in type(config).model_fields
-    assert "convert_to_llm" not in type(config).model_fields

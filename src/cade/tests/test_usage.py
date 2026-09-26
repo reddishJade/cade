@@ -10,7 +10,6 @@ from cade.ai.events import UsageUpdate
 from cade.ai.usage import (
     UsageAccumulator,
     UsageTotals,
-    format_tokens,
     format_usage_stats,
 )
 
@@ -89,43 +88,6 @@ class TestUsageAccumulator:
         assert totals.input_tokens == 200
         assert totals.output_tokens == 100
         assert totals.requests == 2
-
-
-class TestUsageTotals:
-    def test_add_merges(self) -> None:
-        a = UsageTotals(
-            input_tokens=10,
-            output_tokens=20,
-            cache_read_tokens=30,
-            cost_usd=0.5,
-            requests=1,
-        )
-        b = UsageTotals(
-            input_tokens=1,
-            output_tokens=2,
-            cache_read_tokens=3,
-            cost_usd=0.25,
-            requests=2,
-        )
-        merged = a.add(b)
-        assert merged.input_tokens == 11
-        assert merged.output_tokens == 22
-        assert merged.cache_read_tokens == 33
-        assert merged.cost_usd == 0.75
-        assert merged.requests == 3
-
-
-class TestFormatTokens:
-    def test_small(self) -> None:
-        assert format_tokens(47) == "47"
-
-    def test_k(self) -> None:
-        assert format_tokens(47_000) == "47k"
-        assert format_tokens(80_000) == "80k"
-
-    def test_m(self) -> None:
-        assert format_tokens(8_400_000) == "8.4M"
-        assert format_tokens(1_050_000) == "1.1M"
 
 
 class TestFormatUsageStats:

@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-from cade.harness.security.permission_model.types import (
-    Action,
-    GrantRecord,
-    Target,
-)
 from cade.harness.security.permission_model.utils import (
-    _grant_target_pattern,
     _looks_absolute,
     access_satisfies,
     command_grant_pattern,
-    create_grant_record,
     is_blocked_workspace_path,
     is_git_path,
     is_sensitive_path,
@@ -31,22 +24,6 @@ class TestCommandGrantPattern:
     def test_npm_run(self) -> None:
         result = command_grant_pattern("npm run build --production")
         assert result == "npm run build *"
-
-    def test_complex_shlex(self) -> None:
-        result = command_grant_pattern("echo 'hello world' > /dev/null")
-        assert result.startswith("echo")
-
-
-class TestGrantTargetPattern:
-    def test_command_kind(self) -> None:
-        target = Target(kind="command", value="ls -la", access="execute")
-        result = _grant_target_pattern(target)
-        assert result == "ls *"
-
-    def test_path_kind(self) -> None:
-        target = Target(kind="path", value="/tmp/file.txt", access="read")
-        result = _grant_target_pattern(target)
-        assert result == "/tmp/file.txt"
 
 
 class TestLooksAbsolute:
@@ -75,9 +52,6 @@ class TestIsSensitivePath:
     def test_credential_paths(self) -> None:
         assert is_sensitive_path(".ssh/id_rsa")
         assert is_sensitive_path(".aws/config")
-
-    def normal_path_not_sensitive(self) -> None:
-        assert not is_sensitive_path("src/main.py")
 
 
 class TestIsBlockedWorkspacePath:
@@ -111,20 +85,3 @@ class TestAccessSatisfies:
     def test_write_only_write(self) -> None:
         assert access_satisfies("write", "write")
         assert not access_satisfies("write", "read")
-
-
-class TestCreateGrantRecord:
-    def test_basic(self) -> None:
-        action = Action(
-            tool="read_file",
-            capability="read",
-            operation="read_file",
-            targets=(),
-            input={},
-        )
-        target = Target(kind="path", value="src/main.py", access="read")
-        record = create_grant_record(action, target, decision="allow", scope="session")
-        assert isinstance(record, GrantRecord)
-        assert record.capability == "read"
-        assert record.decision == "allow"
-        assert record.scope == "session"

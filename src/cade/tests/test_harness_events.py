@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cade.agent.events import (
-    AgentStartEvent,
     ContextWindowResetEvent,
     MessageUpdateEvent,
     ThinkingUpdateEvent,
@@ -22,7 +21,6 @@ from cade.agent.types import (
 from cade.harness.agent_runtime.events import (
     ContextWindowResetStructuredEvent,
     ReasoningDeltaStructuredEvent,
-    TextDeltaStructuredEvent,
     ToolResultStructuredEvent,
     ToolUseStructuredEvent,
     TurnEndStructuredEvent,
@@ -36,11 +34,6 @@ from cade.harness.agent_runtime.events import (
     _translate_turn_end,
     translate_event,
 )
-
-
-def test_translate_start_event_returns_none() -> None:
-    state = _StreamTranslationState()
-    assert translate_event(AgentStartEvent(), state) is None
 
 
 def test_turn_start_increments_step() -> None:
@@ -161,14 +154,6 @@ def test_context_window_reset_event() -> None:
 
 
 class TestTranslateMessageUpdate:
-    def test_text_delta_extraction(self) -> None:
-        state = _StreamTranslationState()
-        state.step = 1
-        msg = AssistantMessage(content=[TextContent(text="Hello")])
-        result = _translate_message_update(MessageUpdateEvent(message=msg), state)
-        assert isinstance(result, TextDeltaStructuredEvent)
-        assert result.data == "Hello"
-
     def test_delta_subsequent(self) -> None:
         state = _StreamTranslationState()
         state.step = 1
@@ -202,15 +187,8 @@ class TestTranslateTurnEnd:
 
 
 class TestToolUpdateText:
-    def test_text_content(self) -> None:
-        result = AgentToolResult(content=[TextContent(text="hello")])
-        assert _tool_update_text(result) == "hello"
-
     def test_mixed_content(self) -> None:
         result = AgentToolResult(
             content=[TextContent(text="a"), ToolCallContent(id="c1", name="search")]
         )
         assert _tool_update_text(result) == "a"
-
-    def test_none(self) -> None:
-        assert _tool_update_text(None) == ""

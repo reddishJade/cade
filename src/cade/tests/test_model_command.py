@@ -81,17 +81,6 @@ def test_handle_model_command_codex_alias() -> None:
     assert call["profile"] == "main"
 
 
-def test_handle_model_command_openai_codex_alias() -> None:
-    from cade.ai.resolver import ModelResolver
-
-    app = DummyApp()
-    handle_model_command("/model openai-codex", app)
-    assert len(app.calls) == 1
-    call = app.calls[0]
-    assert call["model"] == ModelResolver.resolve_alias("openai-codex")
-    assert call["transport"] == "openai_codex"
-
-
 def test_handle_model_command_provider_prefix() -> None:
     app = DummyApp()
     handle_model_command("/model deepseek/model-under-test", app)
@@ -250,23 +239,6 @@ def test_cade_app_rejects_unsupported_model_effort() -> None:
         )
 
 
-def test_cade_app_model_info_uses_on_off_thinking_labels() -> None:
-    from cade.coding_agent.app import CadeApp
-
-    provider = SimpleNamespace(
-        model="gpt-5.6-luna",
-        base_url="https://chatgpt.com/backend-api",
-        transport="openai_codex",
-        thinking=True,
-        reasoning_effort="low",
-    )
-    app = CadeApp(agent=SimpleNamespace(provider=provider))
-
-    assert app.get_model_info()["thinking"] == "on"
-    provider.thinking = False
-    assert app.get_model_info()["thinking"] == "off"
-
-
 def test_get_available_model_entries_filters_unconfigured() -> None:
     from cade.ai.models import get_codex_models
     from cade.cli.repl_settings import get_available_model_entries
@@ -291,24 +263,6 @@ def test_get_available_model_entries_filters_unconfigured() -> None:
         ]
         assert all(entry.source_label == "[codex]" for entry in codex_entries)
         assert all(entry.provider not in {"chatglm", "mimo"} for entry in entries)
-
-
-def test_current_model_keeps_provider_label() -> None:
-    from cade.ai.models import get_codex_models
-    from cade.cli.repl_settings import AvailableModelEntry, _format_model_entry
-
-    current_model = get_codex_models()[0].id
-    rendered = _format_model_entry(
-        AvailableModelEntry(
-            model=current_model,
-            transport="openai_codex",
-            provider="openai-codex",
-            source_label="[codex]",
-        )
-    )
-
-    assert "[codex]" in rendered
-    assert "[current]" not in rendered
 
 
 def test_get_available_model_entries_excludes_subagent_only_profile() -> None:

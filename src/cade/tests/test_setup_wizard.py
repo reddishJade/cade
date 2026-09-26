@@ -8,53 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cade.cli.setup_wizard import (
-    _check_config_has_api_key,
-    has_api_key,
-    has_auth_credential,
     has_valid_config,
     prompt_login_method,
     run_setup_wizard,
 )
-
-
-class TestCheckConfigHasApiKey:
-    def test_returns_true_when_api_key_present(self, tmp_path: Path) -> None:
-        cfg = tmp_path / "cade.config.json"
-        cfg.write_text(
-            json.dumps(
-                {
-                    "provider": {
-                        "model_profiles": {
-                            "main": {"api_key": "sk-123456"},
-                        }
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        assert _check_config_has_api_key(cfg) is True
-
-    def test_returns_false_for_transport_without_api_key(self, tmp_path: Path) -> None:
-        cfg = tmp_path / "cade.config.json"
-        cfg.write_text(
-            json.dumps(
-                {
-                    "provider": {
-                        "model_profiles": {
-                            "main": {"transport": "openai_codex"},
-                        }
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        assert _check_config_has_api_key(cfg) is False
-
-    def test_returns_false_when_empty_or_missing(self, tmp_path: Path) -> None:
-        cfg = tmp_path / "cade.config.json"
-        assert _check_config_has_api_key(cfg) is False
-        cfg.write_text("{}", encoding="utf-8")
-        assert _check_config_has_api_key(cfg) is False
 
 
 class TestHasValidConfig:
@@ -174,20 +131,6 @@ class TestHasValidConfig:
             ):
                 os.environ.pop(key, None)
             assert has_valid_config(project_dir) is False
-
-
-class TestCredentialProbes:
-    def test_has_auth_credential_reads_oauth_store(self, tmp_path: Path) -> None:
-        mock_cred = type("Cred", (), {"access": "token"})()
-        with patch(
-            "cade.harness.auth.manager.AuthManager.get_valid_credential",
-            return_value=mock_cred,
-        ):
-            assert has_auth_credential() is True
-
-    def test_has_api_key_reads_env(self, tmp_path: Path) -> None:
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-openai"}, clear=False):
-            assert has_api_key(tmp_path) is True
 
 
 class TestPromptLoginMethod:

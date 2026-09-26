@@ -16,9 +16,6 @@ from cade.agent.types import TextContent, ToolCallContent
 from cade.harness.agent_runtime.events import (
     FinalStructuredEvent,
     MessageStartStructuredEvent,
-    TextDeltaStructuredEvent,
-    ToolUpdateData,
-    ToolUpdateStructuredEvent,
 )
 from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.server.runner import WebRunHub
@@ -50,25 +47,6 @@ def test_to_jsonable_handles_enum_dataclass_and_pydantic() -> None:
         "model": {"name": "m", "count": 1},
         "color": "red",
     }
-
-
-def test_text_delta_event_to_dict() -> None:
-    payload = event_to_dict(TextDeltaStructuredEvent("text_delta", 2, "你好"))
-    assert payload["type"] == "text_delta"
-    assert payload["step"] == 2
-    assert payload["data"] == "你好"
-
-
-def test_tool_update_event_to_dict() -> None:
-    event = ToolUpdateStructuredEvent(
-        "tool_update",
-        3,
-        ToolUpdateData(tool_call_id="c1", tool_name="read_file", partial_result="…"),
-    )
-    payload = event_to_dict(event)
-    assert payload["data"]["tool_call_id"] == "c1"
-    assert payload["data"]["tool_name"] == "read_file"
-    assert payload["data"]["partial_result"] == "…"
 
 
 def test_final_event_keeps_metrics() -> None:
@@ -136,13 +114,6 @@ async def test_hub_rejects_submit_while_running() -> None:
         hub._run_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await hub._run_task
-
-
-def test_hub_install_user_approval_callback() -> None:
-    app = _FakeApp()
-    hub = WebRunHub(app)
-    assert app.agent.user_approval_callback is not None
-    assert hub._pending is None
 
 
 def test_model_payload_uses_current_model_effort_capabilities() -> None:

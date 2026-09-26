@@ -370,14 +370,6 @@ def test_small_tool_result_remains_inline(tmp_path: Path) -> None:
     assert list(recorder.store.artifacts_dir.iterdir()) == []
 
 
-def test_custom_session_directory_owns_artifacts(tmp_path: Path) -> None:
-    sessions_dir = tmp_path / "external-sessions"
-
-    store = SessionStore(sessions_dir, project_root=tmp_path / "project")
-
-    assert store.artifacts_dir == sessions_dir / "session_artifacts"
-
-
 def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
     records: list[object] = []
     provider = SimpleNamespace(

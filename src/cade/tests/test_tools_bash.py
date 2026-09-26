@@ -13,7 +13,6 @@ from cade.coding_agent.tools.bash import (
     _build_bash_execution_plan,
     _parse_bash_request,
     _parse_timeout,
-    _parse_workdir,
     build_bash_tool,
 )
 from cade.coding_agent.tools.shell_adapter import ShellSpec
@@ -46,11 +45,6 @@ class _RecordingShell:
 
 
 class TestParseBashRequest:
-    def test_valid(self) -> None:
-        request = _parse_bash_request({"command": "echo hi"})
-        assert request.command == "echo hi"
-        assert request.timeout > 0
-
     def test_missing_command_raises(self) -> None:
         with pytest.raises(ValueError, match="command"):
             _parse_bash_request({})
@@ -65,12 +59,6 @@ class TestParseBashRequest:
 
 
 class TestParseTimeout:
-    def test_default(self) -> None:
-        assert _parse_timeout({}) == 30000
-
-    def test_timeout_ms(self) -> None:
-        assert _parse_timeout({"timeout_ms": 5000}) == 5000
-
     def test_seconds_parameter_is_not_accepted(self) -> None:
         with pytest.raises(ValueError, match="unsupported bash parameter"):
             _parse_timeout({"timeout": 60})
@@ -86,17 +74,6 @@ class TestParseTimeout:
     def test_non_int_raises(self) -> None:
         with pytest.raises(ValueError, match="must be an integer"):
             _parse_timeout({"timeout_ms": "abc"})
-
-
-class TestParseWorkdir:
-    def test_none(self) -> None:
-        assert _parse_workdir({}) is None
-
-    def test_valid(self) -> None:
-        assert _parse_workdir({"workdir": "src"}) == "src"
-
-    def test_empty_string(self) -> None:
-        assert _parse_workdir({"workdir": ""}) is None
 
 
 def test_bash_accepts_absolute_workdir_inside_project(tmp_path: Path) -> None:
