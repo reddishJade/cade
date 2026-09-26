@@ -80,11 +80,14 @@ cade --session ID  # 恢复指定会话
 
 窗口大小优先取 provider profile 的 `context_window` 覆盖；未覆盖时读取当前模型注册值。默认触发线为窗口的 95%，并且不得高于“窗口 - `reserve_tokens`”。
 
-`ContextWindowRollover` 不生成摘要。它重新注入启动上下文，保留已激活 skill 和当前 user 回合，并仅在新工作 surface 中裁剪过期文件读取与大工具输出。项目根 `NOTE.md` 保存执行前沿；模型主动换窗前必须先写入非空 `NOTE.md`。
+`ContextWindowRollover` 不生成摘要。自动换窗、模型 `new_context` 和 `/compact`
+重新注入启动上下文、已激活 skill 与最近的真实用户请求，释放整个 assistant/tool
+轨迹。同一个运行继续执行；环境和持久化历史保持不变。达到换窗预算的 80% 时，
+根据 provider 用量提醒模型把执行前沿写入项目根 `NOTE.md`。没有笔记也允许模型
+换窗，避免窗口已满时无法继续；这时需要通过 `history` 找回进度。
 
-`/compact` 复用自动换窗的保留策略：它执行硬换窗，但将最近一个 user
-回合及其后续 assistant/tool 消息带入新窗口。`/rollover` 不携带普通对话，
-默认要求非空 `NOTE.md`；`/rollover --force` 可显式跳过这项保护。
+`/rollover` 不携带普通对话，默认要求非空 `NOTE.md`；
+`/rollover --force` 可显式跳过这项保护。
 
 ## 6. 换窗的持久化语义
 

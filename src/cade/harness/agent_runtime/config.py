@@ -354,7 +354,11 @@ def build_loop_config(
             estimated_tokens=estimated_tokens,
         )
 
+    budget_reminded = False
+
     def rollover_fn(loop_messages: list[AgentMessage]) -> list[AgentMessage]:
+        nonlocal budget_reminded
+        budget_reminded = False
         return _rollover_and_emit(
             loop_messages,
             context_rollover,
@@ -363,6 +367,33 @@ def build_loop_config(
         )
 
     def prepare_next_turn_fn() -> AgentLoopTurnUpdate | None:
+        nonlocal budget_reminded
+        prompt_tokens = (
+            get_last_prompt_tokens()
+            if get_last_prompt_tokens is not None
+            else last_prompt_tokens
+        )
+        threshold = _rollover_token_threshold(composition, provider)
+        if (
+            context_rollover is not None
+            and composition.config.automatic_rollover
+            and not budget_reminded
+            and prompt_tokens is not None
+            and prompt_tokens >= int(threshold * 0.8)
+        ):
+            budget_reminded = True
+            steer(
+                SystemMessage(
+                    content=(
+                        "<context-budget-reminder>Context is nearing its rollover "
+                        "budget. Save the current goal, decisions, verification, "
+                        "unresolved issues and next action in NOTE.md now. A fresh "
+                        "window will discard the tool conversation; exact evidence "
+                        "remains available through history. Use new_context when "
+                        "ready.</context-budget-reminder>"
+                    )
+                )
+            )
         if gate.check_progress_reminder():
             steer(
                 UserMessage(
@@ -463,6 +494,17 @@ def _rollover_decision(
         measured_tokens = last_prompt_tokens
     if measured_tokens is None:
         measured_tokens = estimate_message_tokens([to_dict(m) for m in messages])
+    return (
+        "token_limit"
+        if measured_tokens >= _rollover_token_threshold(composition, provider)
+        else None
+    )
+
+
+def _rollover_token_threshold(
+    composition: AgentComposition, provider: ModelProvider
+) -> int:
+    """统一自动换窗及提前交接提醒的预算边界。"""
     trigger = effective_rollover_threshold(
         provider.model,
         reserve_tokens=composition.config.reserve_tokens,
@@ -470,10 +512,9 @@ def _rollover_decision(
         context_window_override=getattr(provider, "context_window", None),
         transport=getattr(provider, "transport", None),
     )
-    thresholds = [trigger]
     if composition.config.rollover_token_threshold > 0:
-        thresholds.append(composition.config.rollover_token_threshold)
-    return "token_limit" if measured_tokens >= min(thresholds) else None
+        return min(trigger, composition.config.rollover_token_threshold)
+    return trigger
 
 
 def tool_definition_to_dict(tool: Any) -> dict[str, Any]:

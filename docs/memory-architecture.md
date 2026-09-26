@@ -37,7 +37,10 @@ Cade uses the provider profile's `context_window` override when present;
 otherwise it reads the active model's registered context window. Automatic
 rollover begins at 95% or at the output-reserve boundary, whichever comes
 first. The old window is closed without a summary. Startup context, activated
-skills, and the active user turn form the new working set. The typed event
+skills, and the latest real user request form the new working set. The full
+assistant/tool trajectory is released even inside a running task. At 80% of
+the rollover budget, provider usage triggers a reminder to save NOTE.md;
+missing notes do not block model-requested or automatic rollover. The typed event
 records the replacement, source entry IDs, a monotonic generation, and a stable
 fingerprint.
 

@@ -473,7 +473,7 @@ def cmd_queue(cmd: str, ctx: CommandContext) -> bool:
 def _replace_context_window(
     ctx: CommandContext,
     *,
-    preserve_active_turn: bool,
+    preserve_user_request: bool,
     action: str,
 ) -> bool:
     """立即执行无摘要硬换窗并持久化新的 surface。"""
@@ -514,7 +514,7 @@ def _replace_context_window(
     next_window = cast(
         Callable[..., list[dict[str, object]]],
         rollover,
-    )(dict_messages, preserve_active_turn=preserve_active_turn)
+    )(dict_messages, preserve_user_request=preserve_user_request)
     after_msgs = messages_from_provider_dicts(next_window)
     after_tokens = estimate_message_tokens(after_msgs)
 
@@ -531,8 +531,8 @@ def _replace_context_window(
     )
 
     retention = (
-        "Retained the latest turn."
-        if preserve_active_turn
+        "Retained the latest user request."
+        if preserve_user_request
         else "Previous turns remain available through history."
     )
     print(
@@ -545,10 +545,10 @@ def _replace_context_window(
 
 
 def cmd_compact(cmd: str, ctx: CommandContext) -> bool:
-    """通过硬换窗压缩上下文，并保留最近一个工作回合。"""
+    """通过硬换窗压缩上下文，并保留最近一个用户请求。"""
     return _replace_context_window(
         ctx,
-        preserve_active_turn=True,
+        preserve_user_request=True,
         action="Compacted into fresh context",
     )
 
@@ -574,7 +574,7 @@ def cmd_rollover(cmd: str, ctx: CommandContext) -> bool:
 
     return _replace_context_window(
         ctx,
-        preserve_active_turn=False,
+        preserve_user_request=False,
         action="Rolled over to fresh context",
     )
 

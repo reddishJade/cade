@@ -30,7 +30,7 @@ def test_rollover_uses_latest_user_turn_without_summary() -> None:
         _message("assistant", "current work"),
     ]
 
-    window = ContextWindowRollover()(messages)
+    window = ContextWindowRollover()(messages, preserve_active_turn=True)
     rendered = "\n".join(str(message["content"]) for message in window)
 
     assert "old goal" not in rendered
@@ -49,7 +49,7 @@ def test_rollover_does_not_treat_runtime_reminder_as_user_task() -> None:
         _message("user", "<reminder>Update task progress.</reminder>"),
     ]
 
-    window = ContextWindowRollover()(messages)
+    window = ContextWindowRollover()(messages, preserve_active_turn=True)
     rendered = "\n".join(str(message["content"]) for message in window)
 
     assert "fix the SSE watchdog" in rendered
@@ -100,6 +100,7 @@ def test_manual_idle_rollover_starts_without_previous_turn() -> None:
             _message("assistant", "finished answer"),
         ],
         preserve_active_turn=False,
+        preserve_user_request=False,
     )
 
     rendered = "\n".join(str(message["content"]) for message in window)
@@ -115,14 +116,14 @@ def test_controller_consumes_reason_once() -> None:
     assert controller.consume() is None
 
 
-def test_new_context_tool_requires_explicit_working_note(tmp_path: Path) -> None:
+def test_new_context_tool_does_not_block_without_working_note(tmp_path: Path) -> None:
     controller = ContextWindowController()
     (tool,) = build_new_context_tool(controller, tmp_path)
 
     result = tool.handler({"reason": "window is noisy"})
 
-    assert "Write NOTE.md" in result
-    assert controller.consume() is None
+    assert "No summary" in result
+    assert controller.consume() == "model"
 
 
 def test_new_context_tool_schedules_model_rollover(tmp_path: Path) -> None:
@@ -260,3 +261,58 @@ def test_old_tool_result_trim_only_changes_copy() -> None:
 
     assert "available through history" in str(window[0]["content"])
     assert "a" * 100 in str(messages[0]["content"])
+
+
+def test_runtime_rollover_releases_large_active_turn(tmp_path: Path) -> None:
+    import json
+
+    from cade.harness.agent_runtime.context_window import estimate_message_tokens
+
+    messages = [
+        _message("system", "startup"),
+        _message("user", "finish the long task"),
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "read-1",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": {"path": "large.py"},
+                    },
+                }
+            ],
+        },
+        _message(
+            "tool",
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "read-1",
+                    "content": "long file contents\n" * 25_000,
+                }
+            ],
+        ),
+    ]
+    original = deepcopy(messages)
+    rollover = ContextWindowRollover()
+    fresh = rollover(messages)
+    second = rollover(fresh)
+    (tmp_path / "rollover-trace.json").write_text(
+        json.dumps(
+            {
+                "before_tokens": estimate_message_tokens(messages),
+                "after_tokens": estimate_message_tokens(fresh),
+                "fresh": fresh,
+                "second": second,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    assert estimate_message_tokens(fresh) < 1_000
+    assert "finish the long task" in str(fresh)
+    assert not any(message.get("role") in {"assistant", "tool"} for message in fresh)
+    assert messages == original
+    assert len(fresh) == len(second)
+    assert "active turn are included" not in str(fresh)
