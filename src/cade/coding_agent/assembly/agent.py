@@ -12,7 +12,6 @@ from cade.agent.context import (
     DefaultContextAssembler,
     InstructionCollector,
     NotesCollector,
-    RecentValidationCollector,
     make_collector_section,
     make_state_section,
 )
@@ -57,6 +56,7 @@ from cade.harness.session_todo import SessionTodoState
 
 from ..prompting import CORE_IDENTITY
 from ..runtime import CodingAgentRuntimeConfig
+from ..validation import ValidationCollector
 from .security import (
     external_directories_from_security,
     mode_rulesets_from_runtime_config,
@@ -163,7 +163,10 @@ def build_agent(
         )
     )
     context_collectors.register_section(
-        make_collector_section("recent_validation", RecentValidationCollector())
+        make_collector_section(
+            "recent_validation",
+            ValidationCollector(project_root, session_recorder.store),
+        )
     )
     context_collectors.register_section(
         make_collector_section("notes", NotesCollector(project_root))
