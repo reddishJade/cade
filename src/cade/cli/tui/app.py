@@ -163,6 +163,10 @@ class _CadeTui:
         self._repl_state = ReplState()
         self._snapshot_store = _init_snapshot_store(project_root)
         self._state = _TuiState(mode=self._repl_state.mode, project_root=project_root)
+        self._state.thinking_collapsed = True
+        self._state.tool_collapsed = True
+        self._repl_state.thinking_collapsed = True
+        self._repl_state.tool_collapsed = True
         from cade.harness.security.permission_model import FileGrantStore
 
         self._permanent_grant_store = FileGrantStore.for_project_root(project_root)
