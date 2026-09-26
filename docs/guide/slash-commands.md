@@ -17,7 +17,7 @@ REPL 和 TUI 使用统一命令注册表。输入 `/` 后按 Tab 可以补全命
 | `/rollover` | `/rollover [--force]` | 使用 `NOTE.md` 交接并开启干净窗口；`--force` 跳过交接检查 |
 | `/goal` | `/goal CONDITION\|pause\|resume\|clear` | 设置、暂停、恢复或清除独立验收目标 |
 
-`/steer` 适合当前 run 的即时纠偏；`/queue` 的 follow-up 在当前 run 完成后启动新的 run。忙时普通输入默认按 `busy_mode` 处理。
+`/steer` 适合当前 run 的即时纠偏；`/queue` 的 follow-up 在当前 run 完成后启动新的 run。TUI 忙时 Enter 默认排队，Alt+Enter 纠偏；传统 REPL 忙时普通输入默认纠偏。`/queue steer|followup|interrupt` 可以改变忙时普通输入策略。Ctrl+J 用于换行；Esc、Enter 在空闲时换行，在忙时纠偏。
 
 ## 2. Session 生命周期
 

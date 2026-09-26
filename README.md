@@ -1,231 +1,93 @@
-<div align="center">
-  <br/>
-  <h1>
-    <code style="color:#141413; background:#e8e6dc; padding:0 12px; border-radius:4px;">cade</code>
-  </h1>
-  <p style="font-size:1.2em; color:#141413;">
-    <strong>可扩展的 Python Coding Agent 运行时骨架</strong>
-  </p>
-  <p>
-    <img src="https://img.shields.io/badge/python-3.12-%23141413?style=flat-square" alt="Python 3.12"/>&nbsp;
-    <img src="https://img.shields.io/badge/version-0.1.2-%23d97757?style=flat-square" alt="Version 0.1.2"/>&nbsp;
-    <img src="https://img.shields.io/badge/license-MIT-%23788c5d?style=flat-square" alt="License MIT"/>&nbsp;
-    <img src="https://img.shields.io/badge/status-active-%236a9bcc?style=flat-square" alt="Status Active"/>
-  </p>
-  <p>
-    <a href="https://reddishjade.github.io/cade/">项目主页</a> ·
-    <a href="CONFIG.md">配置参考</a> ·
-    <a href="benchmarks/README.md">Benchmark</a>
-  </p>
-  <br/>
-</div>
+# Cade
 
-围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文压缩、REPL/TUI 会话和记忆系统构建的可测试 Coding Agent 运行时骨架。
+Cade 是在你的项目目录中工作的终端编码 Agent：输入任务、查看进度、审批操作，退出后继续上次工作。
 
----
+## 安装和启动
 
-## 安装
+需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)。
 
-### 前置条件
+```bash
+uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
+cd /path/to/your/project
+cade
+```
 
-- Python **3.12** 或更高
-- [uv](https://docs.astral.sh/uv/)（推荐）或 pip
-- Linux 默认 shell sandbox 需要 `bubblewrap`（可执行文件名 `bwrap`）
+首次启动会引导你选择账户登录或 API key，并配置模型。推荐保存为个人默认配置，以便在其他项目中直接启动；也可以选择仅保存到当前项目。之后使用 `cade login` 更换登录方式，或 `cade setup` 重新配置 provider。[安装与环境准备](docs/guide/install.md) 包含 Linux Shell sandbox 的依赖说明。
 
-### 从源码安装（开发模式）
+输入第一条任务，例如：
 
-```powershell
+```text
+阅读 README 和项目入口，用三点说明这个项目如何运行。
+```
+
+默认 Act 模式允许读取和搜索；写文件和执行 Shell 时按权限规则申请批准。准备让 Cade 实现修改时，可以输入 `/build`；只想先调查方案时，可以输入 `/plan`。[模式与权限](docs/guide/modes.md) 解释各模式的自动执行范围和切换规则。
+
+## 每天使用
+
+| 操作 | 使用方式 |
+| --- | --- |
+| 提交任务 | 输入文本，按 Enter |
+| 引用文件 | 输入 `@` 查找项目文件 |
+| 查找命令 | 输入 `/`；↑/↓ 选择，Enter 接受，再按 Enter 执行 |
+| 输入多行 | Ctrl+J 换行 |
+| 任务进行时追加任务 | Enter 排队，当前任务完成后执行 |
+| 任务进行时纠偏 | Alt+Enter 把指导送入当前任务 |
+| 停止任务 | 输入为空时按 Ctrl+C；有内容时先清空输入 |
+| 展开思考 / 工具结果 | Ctrl+T / Ctrl+O |
+| 执行 Shell | `!git status`，仍经过权限审批 |
+
+输入框下方会显示当前可用操作。Alt+Enter 在一些终端中通过 Esc、Enter 实现；空闲时这个组合用于换行。如果终端不传递该组合，使用 `/steer 你的指导`。纠偏在下一次模型请求前生效，不会撤销已执行的工具。
+
+上述忙时默认行为适用于 TUI。传统 REPL（`cade cli`）默认把忙时输入作为纠偏；两种界面均支持 `/queue 消息` 显式排队。`/queue steer|followup|interrupt` 可以调整忙时 Enter 的行为。
+
+## 继续上次工作
+
+```bash
+cade -c                 # 继续当前项目最近的任务
+cade --resume           # 从历史会话中选择
+cade --session ID       # 恢复指定会话
+```
+
+没有历史任务时，`cade -c` 会提示你开始新任务。在界面内也可以使用 `/resume` 选择会话、`/new` 开始新会话。输入 `/exit` 退出，或在空闲且输入为空时，三秒内连续按两次 Ctrl+C。
+
+会话默认保存在项目的 `.cade/sessions/`。详细恢复、分支和上下文管理见 [会话说明](docs/guide/sessions.md)。
+
+## 更多入口和配置
+
+```bash
+cade -p "检查最近修改"       # 单次任务
+cade cli                     # 传统 REPL
+cade web --open              # 浏览器工作台
+```
+
+- [第一次任务到继续上次工作](docs/guide/quickstart.md)
+- [命令与快捷操作](docs/guide/slash-commands.md) · [启动参数与自动化 exec](docs/guide/cli.md)
+- [模型与 provider](docs/guide/providers.md) · [配置](docs/guide/configuration.md)
+- [技能](docs/guide/skills.md) · [MCP](docs/guide/mcp.md) · [Hooks](docs/guide/hooks.md)
+- [完整使用指南](docs/guide/README.md) · [运行时架构](docs/guide/architecture.md)
+
+## 开发与 Python 调用
+
+```bash
 git clone https://github.com/reddishJade/cade.git
 cd cade
-uv pip install -e .
+uv sync --extra dev
+uv run cade
 ```
 
-以 editable 模式安装到当前项目虚拟环境，源码修改即时生效。
-
-### 全局安装（uv tool）
-
-```powershell
-uv tool install --python 3.12 <path-to-cade>
-```
-
-安装后 `cade` 成为系统级 CLI 命令，任意目录下均可调用。升级：
-
-```powershell
-uv tool upgrade cade --no-cache
-```
-
-### 安装开发环境
-
-```powershell
-uv pip install -e ".[dev]"
-```
-
-开发依赖包括：ruff（格式化/lint）、pyright（类型检查）、pytest（测试框架）。
-
----
-
-## 快速开始
-
-### 编程式调用
+所有包代码位于 `src/cade/`。开发检查和提交规范见 [AGENTS.md](AGENTS.md)。Python 集成可以直接调用 `build_app`；运行时入口和生命周期见 [架构说明](docs/guide/architecture.md)。
 
 ```python
 from pathlib import Path
 from cade.coding_agent.app import build_app
 
 app = build_app(project_root=Path.cwd())
-
-answer = app.ask("列出当前目录所有 Python 文件。")
-print(answer)
+try:
+    print(app.ask("列出当前目录的 Python 文件。"))
+finally:
+    app.close()
 ```
 
-应用配置通过 `build_app()` 参数、配置文件或环境变量注入。详细配置见 [CONFIG.md](CONFIG.md)。
+## License
 
-### CLI 子命令
-
-```powershell
-# 直接提问（单轮，自动退出）
-cade -p "列出当前目录所有 Python 文件。"
-
-# TUI 全屏终端界面（默认启动方式）
-cade
-
-# 显式启动 TUI
-cade tui
-
-# CLI / REPL 模式（多轮对话，支持 /slash 命令）
-cade cli
-
-# 浏览器工作台（FastAPI + WebSocket 实时事件流）
-cade web            # 默认 http://127.0.0.1:8787
-cade web --open     # 启动后自动打开浏览器
-cade web --port 9000
-
-# 连接账户或 API provider（会先选择认证方式）
-cade login
-# `connect` 是同义命令
-cade connect
-
-# Provider 配置向导（可重复运行）
-cade setup
-
-# 打开交互式配置浏览器（调整执行模式、审批策略、Shell 等）
-cade config
-cade config approval
-
-# 自定义配置
-cade --config .cade/settings.json
-
-# 恢复最近会话
-cade --resume
-```
-
-### REPL 命令概览
-
-| 命令 | 组 | 功能 |
-|---|---|---|
-| `/plan [目标]` | 模式控制 | 进入 Plan 模式（只读） |
-| `/build` | 模式控制 | 进入 Build 模式 |
-| `/act [需求]` | 模式控制 | plan + build 二合一 |
-| `/verbose` | 模式控制 | 设置日志详细度 |
-| `/debug` | 模式控制 | 切换 debug 模式 |
-| `/steer` | 模式控制 | 注入实时引导 |
-| `/queue` | 模式控制 | 设置忙时消息策略，或在当前 run 后排队新 run |
-| `/help` | 信息工具 | 显示帮助 |
-| `/compact` | 上下文窗口 | 硬换窗并保留最近工作回合，不生成摘要 |
-| `/rollover [--force]` | 上下文窗口 | 使用 `NOTE.md` 交接并开启干净窗口 |
-| `/rewind [N]` | 会话回滚 | 撤销最近 N 轮交互 |
-| `/undo [N\|--list]` | 会话回滚 | 文件级撤销（快照恢复） |
-| `/clear` | 会话生命周期 | 开始新会话 |
-| `/continue` | 会话生命周期 | 恢复本项目最近会话 |
-| `/new` | 会话生命周期 | `/clear` 别名 |
-| `/resume` | 会话生命周期 | 选择历史会话恢复 |
-| `/sessions` | 会话生命周期 | 列出历史会话 |
-| `/rename` | 会话生命周期 | 重命名当前会话 |
-| `/fork [消息序号]` | 会话分支 | 从指定消息分支新会话 |
-| `/clone` | 会话分支 | 克隆当前会话为新文件 |
-| `/tree` | 会话分支 | 查看会话分叉树 |
-| `/model` | 模型配置 | 显示/切换当前模型 |
-| `/effort <level>` | 模型配置 | 设置推理 effort |
-| `/thinking on/off` | 模型配置 | 切换可见的推理摘要；不改变 effort |
-| `/login`、`/connect` | 认证 | 选择账户 OAuth 或 API key provider |
-| `/config` | 模型配置 | 管理运行行为设置；provider 使用 `/login` 或 `cade setup` |
-| `/tool [list\|NAME INPUT]` | 信息工具 | 查看/调用工具 |
-| `/skill NAME` | 信息工具 | 显式激活技能 |
-| `/memory` | 信息工具 | 列出、检索或显式添加长期记忆 |
-| `/permissions [list\|clear]` | 信息工具 | 查看或清除权限授权 |
-| `/hooks` | 信息工具 | 查看外部 hook 状态 |
-| `/mcp status\|reload` | 信息工具 | 查看 MCP 状态或重载 |
-| `/context` | 信息工具 | 查看上下文 token 占用 |
-| `/btw` | 信息工具 | 侧问题快速问答 |
-| `/exit` | 退出 | 退出 REPL |
-| `$skill-name ...` | — | 行首 `$` 激活技能并传递任务 |
-| `!COMMAND` | — | 执行 shell 命令 |
-| `@file` | — | 引用并读取文件内容 |
-
----
-
-## 核心能力
-
-- **结构化 Agent 循环** — `CodingAgentHarness` 消费 provider 流式事件，统一处理 text、reasoning、tool_use、tool_result 和 final answer。
-- **可回放事实账本** — session 以 append-only 事件记录用户输入、provider 实际请求、工具语义、换窗边界、子代理生命周期和最终回答。
-- **三执行模式** — `plan`（只读）、`build`（自动执行并由独立 reviewer 审批边界动作）、`act`（边界动作询问用户），规则引擎按 findLast 覆盖权限。
-- **核心工具闭环** — 内置文件读写编辑、glob/grep/bash/subagent/webfetch/websearch/question/todowrite 等工具。`edit_file` 依赖 read-before-edit SHA256 指纹校验。
-- **工具并发分区** — 只读且并发安全的工具并行执行；写操作、高风险命令保持串行。
-- **权限与审计** — `PermissionEngine` 统一执行工具权限判定、自动/人工审批和输出脱敏；`JsonlAuditLogger` 记录审计日志；Build 中需要 review 的 shell 动作不会暂停询问用户。
-- **Linux shell sandbox** — Agent 的 `bash` 默认在 bubblewrap 中运行：项目与 `/tmp` 可写、宿主其余路径只读、凭据路径不可读、网络隔离；审批策略与隔离策略彼此独立。
-- **上下文换窗与恢复** — `ContextWindowRollover` 直接开启无摘要的新工作窗口；`history` 检索无损 session 账本，项目根 `NOTE.md` 保存当前执行前沿。
-- **REPL 会话管理** — `/slash` 命令支持 plan/build/act、会话分支、回退、undo（快照恢复）、模型切换、config 管理、session transcript 落盘。
-- **TUI 全屏终端** — 基于 `prompt-toolkit` 的类 VSCode 全屏交互界面。
-- **浏览器工作台** — `cade web` 启动 FastAPI + WebSocket 服务，单页面前端实时渲染结构化事件流：步骤脊柱、thinking、工具卡片与审批弹窗；会话账本可通过 REST 回放。
-- **Subagent 委托** — `subagent` 单入口委派子任务，持久化 batch/run 谱系与终态；子 agent 共享项目目录，并继承父 agent 的权限门控。
-- **类型化工具呈现** — terminal、diff、location 和 subagent 由工具产生结构化 intent，REPL/TUI 共享投影逻辑。
-- **MCP 协议** — 基于官方 Python SDK 连接本地 stdio server，自动发现 `.cade/mcp_config.json` 并注册 `mcp__{server}__{tool}` 动态工具。
-- **记忆系统** — `MEMORY.md` 与用户级 memory 保存稳定长期事实，`NOTE.md` 保存短期工作状态，无损 session history 是最终事实源。
-- **外部 Hook** — 可配置事件驱动的外部命令 hooks（git 前置检查、自定义通知等）。
-
----
-
-## 配置
-
-配置发现栈（优先级从低到高）：
-
-```
-~/.cade/settings.json          ← 全局默认
-     ↓
-cade.config.json               ← 项目级
-     ↓
-.cade/settings.json            ← 本地覆盖
-     ↓
-环境变量                          ← 最高优先级
-```
-
-**配置分层覆盖**：全局 → 项目 → 本地 → 环境变量。
-
-Cade 只执行本地 filesystem 和本地 shell，不提供容器、远程环境或远程执行
-provider。权限提示和 shell 效果分析用于帮助用户了解并确认操作，不构成 OS
-级安全隔离；需要隔离时必须由运行 Cade 的外部环境提供。
-
-所有字段默认值及完整参考见 [CONFIG.md](CONFIG.md)。
-
----
-
-## 架构
-
-五层架构，自底向上：
-
-| Layer | 路径 | 职责 |
-|---|---|---|
-| `ai/` | `src/cade/ai/` | 多 provider LLM API：OpenAI-compatible 基类 + DeepSeek/ChatGLM/MiMo 适配器，流式传输、缓存、thinking |
-| `agent/` | `src/cade/agent/` | Agent loop 合约：消息/事件类型、上下文换窗、工具执行分区、watchdog、provider 抽象 |
-| `harness/` | `src/cade/harness/` | 运行时配置、session 事实账本、权限/审计、MCP、skill、记忆、hooks 和本地执行协议 |
-| `coding_agent/` | `src/cade/coding_agent/` | 产品工具装配：文件读写编辑、glob/grep/bash/subagent/webfetch/websearch 等 |
-| `cli/` | `src/cade/cli/` | REPL UI、TUI、slash command 系统、setup wizard、配置管理 |
-| `server/` | `src/cade/server/` | 浏览器工作台：FastAPI + WebSocket 实时事件流 + 零构建前端 |
-
-运行路径：`main.py` → `build_app()` → `CodingAgentHarness` → `Agent` loop → provider stream → tool execution。
-
----
-
-## 许可
-
-[MIT](LICENSE) © 2026 Cade Contributors
+MIT

@@ -1,100 +1,73 @@
-# 快速上手与交互模式
+# 从第一条任务到继续上次工作
 
-## 1. 第一次运行
+## 1. 在项目目录启动
 
-在项目根目录完成 provider 配置后：
+按照 [安装说明](install.md) 安装后：
 
 ```bash
+cd /path/to/your/project
 cade
 ```
 
-默认进入终端 TUI。输入任务并按 Enter 提交，Shift+Enter 插入换行；部分终端可以使用 Esc、Enter 作为换行组合键。
+第一次启动时选择账户登录或 API key，按向导选择模型和保存位置。个人默认配置适合多个项目共用；项目配置适合这个项目使用不同模型。以后可以用 `cade login` 或 `cade setup` 修改。
 
-常见的第一条任务：
+不在项目目录时，使用 `cade --project-root /path/to/project`。
+
+## 2. 提交第一条任务
 
 ```text
-先浏览项目结构，说明入口、核心模块和当前 Git 状态。
+阅读 README 和项目入口，用三点说明这个项目如何运行。
 ```
 
-Agent 通常先使用读取与搜索工具建立上下文，再根据任务需要编辑文件、运行命令和返回验证结果。
+Enter 发送，Ctrl+J 插入换行。输入 `@` 查找并引用文件，输入 `/` 查看可用命令。补全菜单出现时，↑/↓ 选择、Enter 接受；菜单关闭后再按 Enter 提交。
 
-## 2. 三种常用运行方式
+## 3. 看懂进度
 
-### 单次 prompt
+你的消息有独立背景；工具调用显示名称、项目内相对路径和结果摘要。Read 的行数来自实际返回内容。思考和工具详情默认折叠，失败和审批提示仍然可见。
 
-```bash
-cade -p "解释 src/cade/harness/agent_runtime 的运行流程"
-cade -p "检查当前修改并给出风险摘要"
-```
+- Ctrl+T 展开或折叠思考。
+- Ctrl+O 展开或折叠工具详情。
+- 输入框下方显示当前可用按键；底部显示项目、分支、上下文用量、模式和模型。
+- 输出会跟随最新进度。向上滚动查看历史后，可回到底部继续跟随。
 
-单次模式消费事件流，打印文本结果后退出。它适合快速分析和脚本化调用。
+## 4. 追加任务和中途纠偏
 
-### 终端 CLI / REPL
+当前任务运行时，你仍然可以输入：
 
-```bash
-cade cli
-```
-
-CLI 保留多轮 session，并提供命令补全、Markdown 输出、推理摘要和工具摘要。详细命令位于 [slash-commands.md](slash-commands.md)。
-
-### TUI
-
-```bash
-cade
-cade tui
-```
-
-TUI 在当前终端中显示 inline transcript，包含输入、步骤、推理、工具卡片、授权面板、滚动历史和状态栏。
-
-## 3. 输入语法
-
-| 语法 | 行为 | 示例 |
+| 目的 | 操作 | 生效时间 |
 | --- | --- | --- |
-| `@path` | 读取项目内文件并附加为 `<file-reference>` | `@src/cade/main.py 解释参数解析` |
-| `!command` | 直接调用注册的 `bash` 工具 | `!git status --short` |
-| `$skill task` | 激活指定技能，再提交剩余任务 | `$code-review 检查这个补丁` |
-| `/command` | 执行 session、模式、模型等控制命令 | `/plan 分析实现路径` |
+| 稍后执行另一条任务 | Enter | 当前任务结束后 |
+| 调整当前任务方向 | Alt+Enter | 下一次模型请求前 |
+| 停止当前任务 | 输入为空时 Ctrl+C | 请求取消当前运行 |
 
-`@file` 使用项目文件读取路径，`!command` 仍然经过工具门控和当前执行模式。
+例如，Enter 发送“完成后检查 README 是否需要更新”，或 Alt+Enter 发送“先不要修改文件，给出方案”。界面会确认消息已排队或已加入当前任务。任务已进入结束阶段时，来不及采用的纠偏会作为下一条任务执行。
 
-## 4. 会话恢复
+纠偏不会撤销已执行的工具。Alt+Enter 在部分终端中是 Esc、Enter；空闲时该组合用于换行。不能使用该组合时，输入 `/steer 先不要修改文件，给出方案`。
+
+有输入内容时，Ctrl+C 先清空输入；再次按下才会请求停止。忙时不支持的控制命令会保留在输入框，并提示任务结束后执行。
+
+以上是默认 TUI 行为。`/queue steer|followup|interrupt` 可改变忙时 Enter 的行为。传统 REPL（`cade cli`）默认将忙时普通输入用于纠偏；在两种界面中都可以用 `/queue 消息` 显式排队。
+
+## 5. 开始修改
+
+| 需求 | 操作 |
+| --- | --- |
+| 按操作逐项批准修改 | 保持默认 Act |
+| 自动执行项目内文件修改 | `/build`；Shell 等操作仍受权限规则和审批约束 |
+| 先调查、讨论实现方案 | `/plan`；默认调查轮次达到上限后转入 Build |
+
+具体规则、Plan 文档写入例外和自动切换配置见 [模式说明](modes.md)。批准提示出现时，按屏幕说明选择；无需先理解运行时内部概念。
+
+## 6. 下次继续
+
+退出时输入 `/exit`，或在空闲且输入为空时三秒内连续按两次 Ctrl+C。
 
 ```bash
-# 当前项目最近会话
-cade --continue
-
-# 打开会话选择器
-cade --resume
-
-# 恢复指定 session
-cade --session SESSION_ID
+cade -c            # 当前项目最近的任务
+cade --resume      # 选择历史任务
+cade --session ID  # 指定任务
 ```
 
-进入 CLI 后也可以使用 `/continue`、`/resume`、`/sessions`。恢复过程从 session branch 重建模型历史、运行模式、Goal、todo、技能激活和相关上下文。
+恢复后界面会显示恢复提示和历史消息；直接输入下一步即可。没有历史时，`cade -c` 提示开始新任务。界面中 `/resume` 选择历史，`/new` 开始新会话。
 
-## 5. 一个稳妥的编码流程
-
-1. `/plan`：读取结构、搜索相关符号、确认修改范围。
-2. `/build`：让项目内结构化写入自动进行，边界动作交给自动 reviewer。
-3. 先使用 `edit_file` 做局部修改；多文件关联变更使用 `apply_patch`。
-4. 使用 `bash` 运行聚焦验证。
-5. `/context` 查看上下文与用量；`/compact` 在硬换窗时保留最近工作回合，
-   `/rollover` 通过 `NOTE.md` 交接后开启干净窗口。
-6. `/undo` 回退文件快照，或 `/rewind` 回退当前 session branch。
-7. `/act` 回到每项写入和 Shell 的人工审批模式。
-
-## 6. Python 调用
-
-```python
-from pathlib import Path
-from cade.coding_agent.app import build_app
-
-app = build_app(project_root=Path.cwd())
-try:
-    answer = app.ask("检查当前项目的配置和工具注册，输出结构化摘要。")
-    print(answer)
-finally:
-    app.close()
-```
-
-异步环境使用 `await app.aask(...)`。持续消费事件时使用 `ask_stream` 或 `aask_stream`，前端可以直接消费 `AgentHarnessEvent`。
+需要更多控制时，查阅 [命令参考](slash-commands.md)、[会话说明](sessions.md) 和 [配置说明](configuration.md)。

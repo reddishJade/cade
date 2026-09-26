@@ -1,37 +1,33 @@
-# Cade CLI TUI — 全屏终端工作台
+# Cade 终端工作台
 
-TUI 模块是基于 `prompt-toolkit` 构建的全屏字符终端交互系统，专注于解决：**如何在纯终端环境中提供多窗口、侧边栏会话树、实时思考展开与低视觉噪声的沉浸式编码工作台体验。**
+基于 `prompt-toolkit` 的 inline transcript 工作台，使用 `full_screen=False`。界面围绕连续对话、任务进度和输入组织；选择器与审批表单嵌入当前布局。
 
----
-
-## 1. 核心架构与界面状态机
-
-```
-                      ┌──────────────────────┐
-                      │    run_tui(app)      │
-                      └──────────┬───────────┘
-                                 │ 初始化 Application & 布局
-                                 ▼
-                 ┌────────────────────────────────┐
-                 │       TuiState (state.py)      │
-                 │ (消息流 / 激活视口 / 模态审批)   │
-                 └───────────────┬────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-    [侧边栏]                 [主对话区]              [状态与底栏]
- (会话列表/历史树)       (流式消息/思考折叠/Diff)     (模式/Token用量/输入框)
+```text
+欢迎提示 / 历史对话 / 流式输出
+补全菜单或交互选择器
+输入框
+当前操作提示
+项目与分支                         上下文与用量
+执行模式                          模型与 effort
 ```
 
-### 核心文件分工
-- **应用生命周期 ([app.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tui/app.py))**：TUI 主入口 `run_tui`、多窗格布局定义、键盘事件分发器（KeyBindings）与后台任务协程。
-- **响应式状态容器 ([state.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tui/state.py))**：`TuiState` 集中管理当前分支消息树、自动滚动策略、模态确认窗口及输入缓冲区。
-- **字符排版与渲染 ([rendering.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tui/rendering.py))**：Markdown 终端格式化、Token 统计指示条及状态徽章着色。
-- **复用小部件 ([widgets.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tui/widgets.py))**：状态栏、边界框、滚动容器与侧边栏渲染部件。
+## 文件分工
 
----
+| 文件 | 职责 |
+| --- | --- |
+| [app.py](app.py) | 生命周期、布局、按键、后台运行和恢复 |
+| [state.py](state.py) | 消息、流式状态、折叠和可见输出 |
+| [rendering.py](rendering.py) | Markdown 与消息格式化 |
+| [widgets.py](widgets.py) | 输出视口与补全控件 |
+| [chrome.py](chrome.py) | 欢迎信息、状态排版与配色 |
 
-## 2. 架构不变量与设计禁忌
+## 交互约定
 
-- **状态单一真实源**：界面的一切视觉变化必须经由 `TuiState` 驱动，小部件不得持有相互矛盾的局部状态。
-- **渲染异常隔离**：格式化异常或过宽终端输出必须在渲染层内部被裁剪，严禁抛出异常破坏 `prompt-toolkit` 的全屏模式恢复。
+- 空闲 Enter 提交；忙时 Enter 默认排队，Alt+Enter 纠偏，Ctrl+J 换行。
+- 输入提示随运行、补全和审批状态变化；补全 Enter 只接受选项。
+- 忙时输入通过共享运行控制器写入 session inbox，在对应模型或任务边界消费。
+- 选择器、补全和状态栏共同参与高度计算；窄终端按显示宽度裁剪。
+- 思考和工具详情默认折叠，错误与权限提示保持可见。
+- 恢复加载共享 session 状态，并显示恢复提示；`cade -c` 无历史时可以直接开始。
+
+用户操作见 [快速开始](../../../../docs/guide/quickstart.md)。

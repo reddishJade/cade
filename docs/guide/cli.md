@@ -28,7 +28,7 @@ cade [OPTIONS] [COMMAND]
 | `--config PATH` | 空 | 指定运行时配置文件 |
 | `--sessions-dir PATH` | `.cade/sessions` | 指定 session 账本目录 |
 | `--resume` | 关闭 | 启动历史 session 选择器 |
-| `--continue` | 关闭 | 恢复当前项目最近的有意义 session |
+| `-c`, `--continue` | 关闭 | 恢复当前项目最近的有意义 session |
 | `--session ID` | 空 | 恢复指定 session |
 
 示例：
@@ -114,7 +114,7 @@ API key 方式会配置 `main` profile，已有配置可重复运行，不会删
 cade setup
 ```
 
-向导交互式配置 provider、API key、base URL、模型、thinking 和 reasoning effort。配置写入项目根目录的 `cade.config.json`；用户取消保存时可以使用临时配置运行当前进程。该向导也可以在首次运行后重复使用。
+向导交互式配置 provider、API key、base URL、模型、thinking 和 reasoning effort。保存时可选择个人默认配置 `~/.cade/settings.json`、当前项目 `cade.config.json` 或仅在当前进程使用临时配置。该向导也可以在首次运行后重复使用。
 
 ## 6. `cade config`
 
@@ -156,4 +156,4 @@ cade web --project-root ./backend
 - `/` 进入控制命令。
 - Tab 补全命令、工具、技能和文件。
 
-CLI 使用 Rich 输出 Markdown；TUI 使用 inline transcript、步骤灯、工具卡片和滚动视口。
+CLI 使用 Rich 输出 Markdown；TUI 使用 inline transcript 工作台，提供折叠详情、滚动视口和输入提示。TUI 忙时 Enter 默认排队、Alt+Enter 纠偏；CLI 忙时普通输入默认纠偏。两者都支持 `/queue 消息` 和 `/steer 消息`。

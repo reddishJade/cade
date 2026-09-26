@@ -603,22 +603,22 @@
           <div class="step reveal">
             <div class="step-num">1</div>
             <div>
-              <h4><span class="lz">克隆并安装</span><span class="le">Clone & install</span></h4>
-              <p><span class="lz">使用 uv 以 editable 模式安装（Linux 默认沙箱需要 bubblewrap / bwrap）。</span><span class="le">Install in editable mode with uv (Linux default sandbox requires bubblewrap / bwrap).</span></p>
+              <h4><span class="lz">安装 Cade</span><span class="le">Install Cade</span></h4>
+              <p><span class="lz">使用 uv tool install 安装（Linux 默认沙箱需要 bubblewrap / bwrap）。</span><span class="le">Install the command-line tool with uv (Linux default sandbox requires bubblewrap / bwrap).</span></p>
             </div>
           </div>
           <div class="step reveal">
             <div class="step-num">2</div>
             <div>
               <h4><span class="lz">配置 Provider</span><span class="le">Configure a provider</span></h4>
-              <p><span class="lz">运行 cade setup 交互向导，或配置 OpenAI / DeepSeek / ChatGLM / MiMo profile。</span><span class="le">Run the interactive cade setup wizard, or configure an OpenAI / DeepSeek / ChatGLM / MiMo profile.</span></p>
+              <p><span class="lz">首次运行 cade，选择账户登录或 API key 并配置模型。</span><span class="le">Run cade to choose account sign-in or an API key and configure a model.</span></p>
             </div>
           </div>
           <div class="step reveal">
             <div class="step-num">3</div>
             <div>
               <h4><span class="lz">启动会话</span><span class="le">Launch a session</span></h4>
-              <p><span class="lz">默认进入 TUI；cli 进入 REPL；-p 直接提问。--resume 可恢复历史会话。</span><span class="le">Default launches TUI; cli enters REPL; -p asks a single question. --resume picks a previous session.</span></p>
+              <p><span class="lz">默认进入 TUI；cli 进入 REPL；-p 直接提问。cade -c 继续最近任务；--resume 选择历史会话。</span><span class="le">Default launches TUI; cli enters REPL; -p asks a single question. cade -c continues the latest task; --resume picks a previous session.</span></p>
             </div>
           </div>
           <p class="sandbox-note reveal">
@@ -633,21 +633,18 @@
               <span class="code-lang">Shell</span>
               <button class="copy-btn" data-copy="#install-code" aria-label="复制"><span class="lz">复制</span><span class="le">Copy</span></button>
             </div>
-            <pre><code id="install-code">git clone https://github.com/reddishJade/cade.git
-cd cade
-uv pip install -e .
+            <pre><code id="install-code">uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
+cd /path/to/your/project
 
-cade setup          <span class="code-comment"># 首次配置向导 (Provider & API Key)</span>
-cade config         <span class="code-comment"># 交互式设置浏览器 (执行模式/审批策略/Shell)</span>
-
-cade                <span class="code-comment"># 进入 TUI</span>
-cade cli            <span class="code-comment"># REPL 模式</span>
-cade -p "..."       <span class="code-comment"># 单发提问</span></code></pre>
+cade                <span class="code-comment"># 首次启动引导配置，然后输入任务</span>
+cade -c             <span class="code-comment"># 下次继续最近的任务</span>
+cade --resume       <span class="code-comment"># 选择历史会话</span></code></pre>
           </div>
           <div class="cli-chips">
             <span class="chip">cade -p "..."</span>
             <span class="chip">cade tui</span>
             <span class="chip">cade cli</span>
+            <span class="chip">cade -c</span>
             <span class="chip">cade --resume</span>
             <span class="chip">cade config</span>
           </div>

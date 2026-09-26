@@ -16,45 +16,22 @@ Cade 是运行在本地工作区中的编码 Agent。它把模型推理、工具
 | 使用子代理 | [subagents.md](subagents.md) |
 | 查阅命令和界面 | [slash-commands.md](slash-commands.md) → [cli.md](cli.md) → [web.md](web.md) |
 
-## 三个核心概念
-
-### Turn
-
-用户输入进入一个 turn。Agent 可以在同一个 turn 内多次调用模型和工具，直到模型完成回答、达到步骤限制、触发看门狗、被取消或遇到 provider error。
-
-### Session
-
-Session 以 JSONL entry 保存事实。输入、工具调用、工具结果、压缩替换、provider request 和最终结果都可以从账本恢复。当前模型上下文是账本的 branch projection。
-
-### Tool gate
-
-模型产生工具调用后，Cade 先解析工具意图、目标路径和未决效果，再执行权限规则、执行模式、已有授权和审批流程。工具 handler 在 gate 放行后运行。
-
-## 最小工作流
+## 日常工作流
 
 ```bash
-# 在项目根目录完成配置
-cade setup
-
-# 默认启动终端 TUI
-cade
-
-# 或使用传统 REPL
-cade cli
-
-# 单次任务
-cade -p "检查当前项目的 provider 配置，并给出改进建议"
+cd /path/to/project
+cade               # 首次启动会引导配置，随后输入任务
+cade -c            # 下次继续最近的任务
+cade --resume      # 选择其他历史任务
 ```
 
-常用输入入口：
+`@` 引用文件，`/` 查找命令，Ctrl+J 换行。任务运行时 Enter 排队，Alt+Enter 纠偏。操作提示就在输入框下方；详细示例见 [快速开始](quickstart.md)。
 
-- `@path/to/file`：读取项目内文件并附加到当前用户消息。
-- `!command`：通过注册的 `bash` 工具直接执行 Shell 命令。
-- `$skill-name task`：显式激活技能并继续任务。
-- `/command`：控制模式、会话、模型、权限和运行状态。
+运行时的 turn、session 和工具审批机制见 [架构说明](architecture.md)，不影响你直接开始使用。
 
 ## 配置与数据位置
 
+- 个人默认配置：`~/.cade/settings.json`
 - 项目配置：`cade.config.json`
 - 项目本地配置：`.cade/settings.json`
 - 会话账本：`.cade/sessions/`

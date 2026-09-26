@@ -38,15 +38,15 @@ CLI 层基于 `prompt-toolkit` 驱动，单向消费底层的 `AgentHarnessEvent
 ```
 
 ### 核心模块职责
-- **REPL 主循环 ([repl.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/repl.py))**：多轮对话生命周期控制、快捷键与终端事件驱动。
-- **Slash 命令体系 ([repl_commands.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/repl_commands.py))**：
+- **REPL 主循环 ([repl.py](repl.py))**：多轮对话生命周期控制、快捷键与终端事件驱动。
+- **Slash 命令体系 ([repl_commands.py](repl_commands.py))**：
   - 模式控制：`/plan`、`/build`、`/act`。
   - 会话分支与历史：`/fork`、`/resume`、`/clear`、`/undo`、`/rewind`。
   - 运行时调整：`/model`、`/effort`、`/thinking`、`/config`、`/tool`。
-- **人机审批交互 ([repl_hitl.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/repl_hitl.py))**：在敏感工具调用或跨边界写操作时中断，弹出选择菜单（单次允许、拒绝、会话持久记忆）。
-- **实时渲染引擎 ([repl_rendering.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/repl_rendering.py) / [tool_rendering.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tool_rendering.py))**：流式 Markdown 渲染、思考流折叠、语法高亮与执行状态指示。
-- **智能补全与辅助 ([completion.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/completion.py) / [file_refs.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/file_refs.py))**：命令自动补全、模型选项过滤与 `@path` 语法文件内容即时内联。
-- **连接与配置向导 ([setup_wizard.py](file:///C:/Users/dwei/workspace/cade/src/cade/cli/setup_wizard.py))**：`login`/`connect` 先选择账户 OAuth 或 API key；API key 方式进入 Provider 设置流程。
+- **人机审批交互 ([repl_hitl.py](repl_hitl.py))**：在敏感工具调用或跨边界写操作时中断，弹出选择菜单（单次允许、拒绝、会话持久记忆）。
+- **实时渲染引擎 ([repl_rendering.py](repl_rendering.py) / [tool_rendering.py](tool_rendering.py))**：流式 Markdown 渲染、思考流折叠、语法高亮与执行状态指示。
+- **智能补全与辅助 ([completion.py](completion.py) / [file_refs.py](file_refs.py))**：命令自动补全、模型选项过滤与 `@path` 语法文件内容即时内联。
+- **连接与配置向导 ([setup_wizard.py](setup_wizard.py))**：`login`/`connect` 先选择账户 OAuth 或 API key；API key 方式进入 Provider 设置流程。
 
 ---
 
@@ -60,5 +60,5 @@ CLI 层基于 `prompt-toolkit` 驱动，单向消费底层的 `AgentHarnessEvent
 
 ## 3. 子模块分工
 
-- **[shared/](file:///C:/Users/dwei/workspace/cade/src/cade/cli/shared/README.md)**：REPL 与 TUI 共享的数据累加与思考流追踪组件（`ReasoningCore`）。
-- **[tui/](file:///C:/Users/dwei/workspace/cade/src/cade/cli/tui/README.md)**：基于 `prompt-toolkit` 构建的全屏类 IDE 终端工作台。
+- **[shared/](shared/README.md)**：REPL 与 TUI 共享的数据累加与思考流追踪组件（`ReasoningCore`）。
+- **[tui/](tui/README.md)**：基于 `prompt-toolkit` 构建的 inline transcript 终端工作台。

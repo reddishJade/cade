@@ -2,6 +2,16 @@
 
 Cade 需要 Python 3.12 或更高版本。运行时依赖 OpenAI-compatible provider、终端交互、文件处理、MCP、FastAPI Web 服务和 Linux bubblewrap sandbox。
 
+## 快速安装
+
+```bash
+uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
+cd /path/to/your/project
+cade
+```
+
+首次启动自动引导账户登录或 API key 配置。完成后即可输入任务，下一次使用 `cade -c` 继续。[快速开始](quickstart.md) 介绍完整操作路径。
+
 ## 1. 前置条件
 
 - **Python**：3.12+。
@@ -59,7 +69,7 @@ uv run cade --help
 cade setup
 ```
 
-向导会收集 provider、API key、base URL、模型、thinking 和可用的 reasoning effort，并把配置写入项目根目录的 `cade.config.json`。取消保存时，当前进程可以使用临时配置继续运行。
+向导会收集 provider、API key、base URL、模型、thinking 和可用的 reasoning effort，保存时可选择个人默认配置 `~/.cade/settings.json`、当前项目的 `cade.config.json` 或临时配置。个人默认配置便于多个项目共用。
 
 也可以使用环境变量。常用 key 包括：
 
@@ -82,7 +92,8 @@ API key 也可以写入 provider profile。敏感配置适合放在个人配置�
 
 ```bash
 cade --help
-cade setup
+cade
+# 完成首次配置后，也可以执行单次任务
 cade -p "输出一句安装成功"
 ```
 
