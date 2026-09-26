@@ -155,6 +155,7 @@ class ValidationCollector:
                 "Git tracked/non-ignored files (untracked .cade excluded); ignored inputs, external "
                 "dependencies and environment changes are not covered. Reuse unchanged "
                 "evidence; rerun checks for changed code or a specific unresolved uncertainty. "
+                "Use history for original full commands; previews are not runnable scripts. "
                 "If NOTE.md disagrees with these facts, update its frontier before more "
                 "investigation. If the task's required checks are already complete for "
                 "unchanged files, finish instead of running them again."
@@ -179,7 +180,7 @@ class ValidationCollector:
             output = str(data.get("content", ""))
             lines.append(
                 f"entry_id={entry_id} exit_code={code} status={data.get('status', 'unknown')} file_state={freshness}\n"
-                f"cwd={cwd}\ncommand={command[:256]}\noutput_tail={output[-512:]}"
+                f"cwd={cwd}\ncommand_preview={command[:256]}\noutput_tail={output[-512:]}"
             )
         full = "\n\n".join(lines)
         body = full.encode("utf-8")[:4096].decode("utf-8", errors="ignore")

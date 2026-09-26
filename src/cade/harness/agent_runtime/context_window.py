@@ -186,21 +186,21 @@ def _render_completed_actions(messages: list[AgentMessage]) -> str:
             continue
         seen.add(call.id)
         record: dict[str, object] = {
-            "tool_call_id": call.id[:96],
-            "tool": call.name[:80],
+            "tool_call_id": call.id,
+            "tool": call.name,
             "status": "error" if message.is_error else "returned",
         }
         args = call.arguments or {}
         path = args.get("path")
         if isinstance(path, str):
-            record["path"] = path.encode()[:160].decode(errors="ignore")
+            record["path"] = path
         metadata = message.metadata or {}
         code = metadata.get("exit_code")
         if isinstance(code, int) and not isinstance(code, bool):
             record["exit_code"] = code
         line = json.dumps(record, ensure_ascii=False)
         if len(("\n".join([*lines, line])).encode()) > 1536:
-            break
+            continue
         lines.append(line)
         if len(lines) == 6:
             break

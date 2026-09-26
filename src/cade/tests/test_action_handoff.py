@@ -73,3 +73,26 @@ def test_rollover_indexes_completed_actions_without_outputs(tmp_path: Path) -> N
             indent=2,
         )
     )
+
+
+def test_action_reference_is_exact_under_the_shared_byte_budget(tmp_path: Path) -> None:
+    call_id = "read-" + "x" * 150
+    path = "directory/" * 20 + "module.py"
+    source: list[AgentMessage] = [
+        UserMessage(content="continue"),
+        AssistantMessage(
+            content=[
+                ToolCallContent(
+                    id=call_id,
+                    name="read_file",
+                    arguments={"path": path},
+                )
+            ]
+        ),
+        ToolResultMessage(tool_call_id=call_id, tool_name="read_file", content="done"),
+    ]
+    window = ContextWindowRollover().rollover_messages(source)
+    text = "\n".join(m.content for m in window if isinstance(m, SystemMessage))
+    assert call_id in text and path in text
+    assert len(text.split("<recent-tool-actions>", 1)[1].encode()) < 2048
+    (tmp_path / "exact-reference.txt").write_text(text)
