@@ -131,7 +131,7 @@ def _build_auth_parser(subparsers) -> None:
 
 
 def _build_tui_parser(subparsers) -> None:
-    subparsers.add_parser("tui", help="Run the full-screen terminal UI")
+    subparsers.add_parser("tui", help="Run the terminal workbench")
 
 
 def _build_web_parser(subparsers) -> None:
@@ -208,6 +208,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Open the session resume picker on startup.",
     )
     parser.add_argument(
+        "-c",
         "--continue",
         action="store_true",
         dest="continue_",
