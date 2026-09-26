@@ -1,6 +1,16 @@
 # 会话、恢复与上下文换窗
 
-Cade 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch 投影出模型历史、界面历史和运行状态。
+先记住三个恢复入口：
+
+```bash
+cade -c            # 直接继续当前项目最近的任务
+cade --resume      # 从历史会话中选择
+cade --session ID  # 恢复指定会话
+```
+
+在界面内使用 `/resume` 选择历史，`/new` 开始新会话。恢复后直接输入下一步；`cade -c` 没有历史时会提示开始新任务。会话默认位于项目的 `.cade/sessions/`。
+
+以下介绍会话存储和高级操作。Cade 将 session 组织为可追加的 JSONL 事实账本，并从当前 branch 投影出模型历史、界面历史和运行状态。
 
 ## 1. Session 文件
 

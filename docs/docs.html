@@ -481,7 +481,7 @@
           </div>
           <div class="card-box">
             <h4><span>5. 分层上下文压缩</span> <span class="badge badge-green">70% Threshold</span></h4>
-            <p><span class="lz">达到 70% 水位线触发；分层裁剪过期文件全文；保留滚动 Checkpoint；通过快照与增量尾部实现毫秒级恢复。</span><span class="le">70% trigger: prunes stale reads, maintains rolling checkpoints, and enables instant resume via Checkpoint + Tail.</span></p>
+            <p><span class="lz">默认达到上下文预算的 95% 时换窗；裁剪过期文件读取与大工具输出，并从会话账本恢复工作历史。</span><span class="le">By default, rollover starts at 95% of the context budget, prunes stale reads and large tool output, and restores work from the session ledger.</span></p>
           </div>
           <div class="card-box">
             <h4><span>6. Durable 子代理谱系</span> <span class="badge badge-accent">Session-backed</span></h4>
@@ -584,7 +584,7 @@
               <tr>
                 <td><strong>CLI / TUI</strong></td>
                 <td><code>src/cade/cli/</code></td>
-                <td><span class="lz">全屏 TUI 渲染、标准 REPL、Slash 指令解析、键盘交互与配置浏览器</span><span class="le">Fullscreen TUI, REPL, slash parser, keybinds, settings browser</span></td>
+                <td><span class="lz">终端工作台渲染、标准 REPL、Slash 指令解析、键盘交互与配置浏览器</span><span class="le">Terminal workbench, REPL, slash parser, keybinds, settings browser</span></td>
               </tr>
               <tr>
                 <td><strong>Coding Agent</strong></td>
@@ -649,27 +649,19 @@ sudo pacman -S bubblewrap</code></pre>
         <h2><span class="lz">安装 Cade</span><span class="le">Installing Cade</span></h2>
         <div class="code-box">
           <div class="code-header"><span>Terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <pre><code><span class="c"># 克隆仓库</span>
-git clone https://github.com/reddishJade/cade.git
-cd cade
-
-<span class="c"># 推荐：通过 uv 创建虚拟环境并可编辑安装</span>
-uv venv
-source .venv/bin/activate
-uv pip install -e .
-
-<span class="c"># 安装开发与评测依赖</span>
-uv pip install -e ".[dev]"</code></pre>
+          <pre><code><span class="c"># 安装命令行工具，然后进入你的项目</span>
+uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
+cd /path/to/your/project</code></pre>
         </div>
 
         <h2><span class="lz">首次配置向导</span><span class="le">First-run Configuration Wizard</span></h2>
         <div class="code-box">
           <div class="code-header"><span>Terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <pre><code><span class="c"># 启动交互式引导，一键选择 Provider 并配置 API Key</span>
-cade setup
+          <pre><code><span class="c"># 首次启动自动引导账户登录或 API key 配置</span>
+cade
 
-<span class="c"># 启动全屏终端 (TUI)</span>
-cade</code></pre>
+<span class="c"># 下次继续最近的任务</span>
+cade -c</code></pre>
         </div>
 
         <div class="docs-pager">
@@ -789,8 +781,8 @@ cade</code></pre>
         <div class="breadcrumb"><span class="lz">文档</span><span class="le">Docs</span> / <span class="lz">快速上手</span><span class="le">Get Started</span> / <span>Quickstart</span></div>
         <h1><span class="lz">快速上手与交互模式</span><span class="le">Interactive Use & Quickstart</span></h1>
         <p class="lead-text">
-          <span class="lz">Cade 支持全屏终端 (TUI)、标准 REPL (CLI) 与单轮提问 (-p) 模式，并提供强大的 REPL 增强语法。</span>
-          <span class="le">Cade offers Fullscreen TUI, standard REPL CLI, and single-turn prompt mode with rich prefix syntax.</span>
+          <span class="lz">Cade 支持终端工作台 (TUI)、标准 REPL (CLI) 与单轮提问 (-p) 模式，并提供强大的 REPL 增强语法。</span>
+          <span class="le">Cade offers Terminal workbench, standard REPL CLI, and single-turn prompt mode with rich prefix syntax.</span>
         </p>
 
         <h2><span class="lz">REPL 增强输入语法</span><span class="le">Enhanced REPL Prefix Syntax</span></h2>
@@ -1145,7 +1137,7 @@ cade</code></pre>
             <div class="step-num">01</div>
             <div class="step-body">
               <h4><span class="lz">命令行参数 (CLI Arguments)</span><span class="le">CLI Arguments</span></h4>
-              <p><code>cade --mode plan --model deepseek_chat/deepseek-flash</code></p>
+              <p><code>cade exec --mode plan --model deepseek-flash --prompt-file task.md</code></p>
             </div>
           </div>
           <div class="step-item">
@@ -1159,14 +1151,14 @@ cade</code></pre>
             <div class="step-num">03</div>
             <div class="step-body">
               <h4><span class="lz">项目级配置 (Project Configuration)</span><span class="le">Project Configuration</span></h4>
-              <p><code>./.cade/cade.config.json</code> 或 <code>./cade.config.json</code></p>
+              <p><code>./.cade/settings.json</code> 覆盖 <code>./cade.config.json</code></p>
             </div>
           </div>
           <div class="step-item">
             <div class="step-num">04</div>
             <div class="step-body">
               <h4><span class="lz">用户全局配置 (Global Configuration)</span><span class="le">Global Configuration</span></h4>
-              <p><code>~/.cade/cade.config.json</code></p>
+              <p><code>~/.cade/settings.json</code></p>
             </div>
           </div>
         </div>
@@ -1550,7 +1542,7 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
           <table>
             <thead><tr><th><span class="lz">子命令</span><span class="le">Subcommand</span></th><th><span class="lz">语法</span><span class="le">Syntax</span></th><th><span class="lz">功能说明</span><span class="le">Description</span></th></tr></thead>
             <tbody>
-              <tr><td><code>tui</code> (默认)</td><td><code>cade [tui]</code></td><td><span class="lz">启动全屏终端交互界面</span><span class="le">Launch fullscreen Textual TUI</span></td></tr>
+              <tr><td><code>tui</code> (默认)</td><td><code>cade [tui]</code></td><td><span class="lz">启动终端工作台交互界面</span><span class="le">Launch the prompt-toolkit terminal workbench</span></td></tr>
               <tr><td><code>cli</code></td><td><code>cade cli</code></td><td><span class="lz">启动标准 REPL 命令行模式</span><span class="le">Launch standard REPL interface</span></td></tr>
               <tr><td><code>setup</code></td><td><code>cade setup</code></td><td><span class="lz">启动交互式首次配置向导</span><span class="le">Launch first-run setup wizard</span></td></tr>
               <tr><td><code>config</code></td><td><code>cade config</code></td><td><span class="lz">打开交互式设置浏览器</span><span class="le">Launch interactive settings browser</span></td></tr>
@@ -1564,7 +1556,8 @@ description: 专门用于执行大型代码库重构的指导规范与架构检�
             <thead><tr><th><span class="lz">Flag 参数</span><span class="le">Flag</span></th><th><span class="lz">类型</span><span class="le">Type</span></th><th><span class="lz">说明</span><span class="le">Description</span></th></tr></thead>
             <tbody>
               <tr><td><code>-p, --prompt</code></td><td><span class="type-tag">string</span></td><td><span class="lz">单轮提问模式，执行完成后直接退出</span><span class="le">Single prompt execution mode</span></td></tr>
-              <tr><td><code>--resume</code></td><td><span class="type-tag">boolean</span></td><td><span class="lz">恢复当前项目最近一次会话</span><span class="le">Resume the most recent session</span></td></tr>
+              <tr><td><code>-c, --continue</code></td><td><span class="type-tag">boolean</span></td><td><span class="lz">继续当前项目最近的任务</span><span class="le">Continue the latest task in this project</span></td></tr>
+              <tr><td><code>--resume</code></td><td><span class="type-tag">boolean</span></td><td><span class="lz">选择当前项目的历史会话</span><span class="le">Choose a previous session</span></td></tr>
               <tr><td><code>--mode</code></td><td><span class="type-tag">enum</span></td><td><span class="lz">指定启动执行模式：<code>plan</code> / <code>build</code> / <code>act</code></span><span class="le">Execution mode: plan / build / act</span></td></tr>
               <tr><td><code>--project-root</code></td><td><span class="type-tag">path</span></td><td><span class="lz">指定项目工作区根目录路径</span><span class="le">Override project root directory</span></td></tr>
               <tr><td><code>--debug</code></td><td><span class="type-tag">boolean</span></td><td><span class="lz">输出详细调试日志与网络事件</span><span class="le">Enable verbose debug logging</span></td></tr>
