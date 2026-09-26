@@ -10,6 +10,7 @@ import threading
 from asyncio import TimerHandle
 from collections.abc import Callable, Sequence
 from contextlib import redirect_stdout
+from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
 from queue import Empty, Queue
@@ -19,7 +20,11 @@ from typing import TYPE_CHECKING, cast
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText
+from prompt_toolkit.formatted_text import (
+    AnyFormattedText,
+    FormattedText,
+    StyleAndTextTuples,
+)
 from prompt_toolkit.formatted_text.utils import fragment_list_width
 from prompt_toolkit.input.base import Input
 from prompt_toolkit.key_binding import KeyBindings
@@ -162,6 +167,16 @@ class _CadeTui:
         self._agent_app = app
         self._project_root = project_root
         self._store = app.session_store
+        self._welcome_version = version("cade-agent")
+        self._welcome_tools = tuple(tool.name for tool in app.registry)
+        self._welcome_skills = available_skill_names(app)
+        instruction_paths = getattr(app, "instruction_paths", None)
+        paths = instruction_paths() if callable(instruction_paths) else ()
+        self._welcome_instructions: tuple[Path, ...] = (
+            tuple(path for path in paths if isinstance(path, Path))
+            if isinstance(paths, tuple)
+            else ()
+        )
         self._repl_state = ReplState()
         self._repl_state.busy_mode = BusyMessageMode.FOLLOW_UP
         self._startup_notice = ""
@@ -220,6 +235,7 @@ class _CadeTui:
             auto_suggest=CommandArgsSuggester(completer.command_args),
             history=_tui_history(project_root),
             scrollbar=False,
+            style="class:input",
         )
         self._input.buffer.on_text_insert += self._on_input_text_inserted
         self._input.buffer.on_text_changed += self._on_input_layout_changed
@@ -345,10 +361,11 @@ class _CadeTui:
         self._input_container = ConditionalContainer(
             HSplit(
                 [
-                    Window(height=1, char="─", style="class:input-border"),
+                    Window(height=1),
                     self._input,
-                    Window(height=1, char="─", style="class:input-border"),
-                ]
+                    Window(height=1),
+                ],
+                style="class:input",
             ),
             filter=input_visible,
         )
@@ -373,7 +390,10 @@ class _CadeTui:
                         self._question_container,
                         self._completion_container,
                         self._input_container,
-                        self._input_hint,
+                        ConditionalContainer(
+                            self._input_hint,
+                            filter=Condition(lambda: self._input_hint_height() > 0),
+                        ),
                         self._status,
                     ],
                 ),
@@ -418,7 +438,7 @@ class _CadeTui:
                 break
 
         if not self._state.log:
-            self._state.log.append(_LogEntry("welcome", welcome_text()))
+            self._state.log.append(_LogEntry("welcome", self._welcome_text()))
         if self._startup_notice:
             self._state.log.append(_LogEntry("system", self._startup_notice))
         self._application.layout.focus(self._input)
@@ -653,6 +673,14 @@ class _CadeTui:
         else:
             text = "Enter send · Ctrl+J newline · @ files · / commands · cade -c resume"
         return fit_text(text, self._output_width())
+
+    def _input_hint_height(self) -> int:
+        """欢迎区已经说明空闲操作，底部只在交互状态变化时补充提示。"""
+        return int(
+            self._state.running
+            or self._has_pending_interaction()
+            or self._input.buffer.complete_state is not None
+        )
 
     def _insert_newline(self, event: object) -> None:
         buffer = getattr(event, "current_buffer", None)
@@ -1326,7 +1354,7 @@ class _CadeTui:
         self._store.clear()
         self._agent_app.restore_session()
         self._state.restore_history([])
-        self._state.log.append(_LogEntry("system", self._header_text()))
+        self._state.log.append(_LogEntry("welcome", self._welcome_text()))
         self._scrollback = 0
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
@@ -1766,10 +1794,16 @@ class _CadeTui:
 
     # ── 刷新 ──
 
-    def _fragments(self):
-        return self._state.fragments(
-            self._output_height(), self._scrollback, self._output_width()
-        )
+    def _fragments(self) -> StyleAndTextTuples:
+        """短对话贴近输入区；空白留在上方，长对话继续使用滚动视口。"""
+        height = self._output_height()
+        width = self._output_width()
+        count = self._state.line_count(width)
+        fragments = self._state.fragments(height, self._scrollback, width)
+        if count >= height and fragments and fragments[-1] == ("", "\n"):
+            fragments.pop()
+        padding = max(0, height - count - 1)
+        return [("", "\n" * padding), *fragments]
 
     def _output_width(self) -> int:
         return max(1, self._application.output.get_size().columns)
@@ -1790,7 +1824,7 @@ class _CadeTui:
             - 1
             - input_area_height
             - 2
-            - 1
+            - self._input_hint_height()
             - approval_height
             - command_height
             - question_height
@@ -1884,6 +1918,8 @@ class _CadeTui:
 
     def _prepare_frame(self) -> None:
         """在绘制前按当前尺寸重算视口，缩放后仍跟随最新输出。"""
+        if self._state.log and self._state.log[0].role == "welcome":
+            self._state.log[0].text = self._welcome_text()
         self._scrollback = min(self._scrollback, self._max_scrollback())
         self._output_control.text = self._fragments()
 
@@ -1927,8 +1963,21 @@ class _CadeTui:
         )
         if self._repl_state.usage_stats and width >= 90:
             context += f"  {self._repl_state.usage_stats}"
-        first = status_line(project, context, width, keep_left_end=True)
-        mode = f"mode: {self._repl_state.mode}"
+        first = status_line(
+            project,
+            context,
+            width,
+            keep_left_end=True,
+            left_style="class:status-accent",
+        )
+        if self._workspace_branch:
+            path, separator, branch = first[0][1].rpartition(" (")
+            if separator:
+                first[:1] = [
+                    ("class:status-accent", path),
+                    ("class:status", separator + branch),
+                ]
+        mode = f"● {self._repl_state.mode}"
         if self._state.working:
             mode = f"{working_status_text()}  {mode}"
         elif self._scrollback:
@@ -1940,7 +1989,7 @@ class _CadeTui:
             self._model_status(),
             width,
             left_style="class:status-mode",
-            right_style="class:status-accent",
+            right_style="class:status",
         )
         return FormattedText([*first, ("", "\n"), *second])
 
@@ -1952,16 +2001,15 @@ class _CadeTui:
         effort = str(info.get("reasoning_effort") or "")
         return f"{model} · {effort}" if effort else model
 
-    def _header_text(self) -> str:
-        get_model_info = getattr(self._agent_app, "get_model_info", None)
-        raw_info = get_model_info() if callable(get_model_info) else None
-        info: dict[str, object] = raw_info if isinstance(raw_info, dict) else {}
-        model = str(info.get("model") or self._repl_state.model_name or "unknown")
-        effort = str(info.get("reasoning_effort") or "")
-        model_display = f"{model} ({effort})" if effort else model
-        branch = self._workspace_branch
-        branch_line = f"\n⌘ {branch}" if branch else ""
-        return f"✦ Cade\n· {model_display}\n: {self._project_root}{branch_line}"
+    def _welcome_text(self) -> str:
+        return welcome_text(
+            version=self._welcome_version,
+            tools=self._welcome_tools,
+            instructions=self._welcome_instructions,
+            skills=self._welcome_skills,
+            width=self._output_width(),
+            compact=self._application.output.get_size().rows < 28,
+        )
 
 
 # ── 模块级工具函数 ──

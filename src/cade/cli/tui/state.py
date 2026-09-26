@@ -19,7 +19,7 @@ from ..repl_rendering import _render_citations
 from ..repl_tools import brief_input, final_stop_reason, tool_call_text
 from ..shared.thinking import ReasoningCore, format_elapsed, single_line_preview
 from ..tool_rendering import render_intent_summary
-from .chrome import compact_path
+from .chrome import compact_path, welcome_ansi_lines
 from .rendering import (
     markdown_ansi_lines,
     render_line_fragments,
@@ -478,6 +478,12 @@ class _TuiState:
         width: int | None,
     ) -> list[str]:
         def render() -> list[str]:
+            if entry.role == "welcome":
+                return (
+                    welcome_ansi_lines(entry.content())
+                    if color
+                    else entry.content().splitlines()
+                )
             lines: list[str] = []
             self._append_entry_lines(
                 entry,

@@ -110,10 +110,10 @@ def tui_input_prompt(
     awaiting_denial_suggestion: bool, is_shell_command: bool
 ) -> StyleAndTextTuples:
     """返回输入提示符；shell 命令模式时强调输入标记。"""
-    marker_style = "class:prompt-marker" if is_shell_command else ""
+    marker_style = "class:prompt-marker"
     if awaiting_denial_suggestion:
         return [("", "Tell model what to do "), (marker_style, "> ")]
-    return [(marker_style, "> ")]
+    return [(marker_style, "$ " if is_shell_command else "> ")]
 
 
 class TuiPromptSession:
