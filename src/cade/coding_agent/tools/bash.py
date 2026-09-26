@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cade.agent.types import TerminalRenderIntent, ToolInput, ToolOutput, ToolSpec
+from cade.coding_agent.validation import workspace_fingerprint
 from cade.harness.execution_env import (
     ExecutionResult,
     Shell,
@@ -79,6 +80,9 @@ def build_bash_tool(
             cmd_env = env_hook(plan.command, plan.cwd, dict(**os.environ))
 
         acc = OutputAccumulator(on_progress=on_progress)
+        before = (
+            workspace_fingerprint(root) if request.purpose == "validation" else None
+        )
         try:
             result = shell.run(
                 build_shell_argv(spec, plan.command),
@@ -108,6 +112,16 @@ def build_bash_tool(
                 "timed_out": result.timed_out,
                 "cancelled": result.cancelled,
                 **({"purpose": request.purpose} if request.purpose is not None else {}),
+                **(
+                    {
+                        "validation_state": {
+                            "before": before,
+                            "after": workspace_fingerprint(root),
+                        }
+                    }
+                    if request.purpose == "validation"
+                    else {}
+                ),
             },
             is_error=result.returncode != 0 or result.timed_out or result.cancelled,
             render_intent=TerminalRenderIntent(
