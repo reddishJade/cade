@@ -53,7 +53,11 @@ from ..security.permission_model import (
 from ..session.inbox import SessionInbox
 from ._mode_protocol import RuntimeModeState
 from .cancellation import CancellationToken
-from .context_window import ContextWindowController, estimate_message_tokens
+from .context_window import (
+    ContextWindowController,
+    ContextWindowRollover,
+    estimate_message_tokens,
+)
 from .message_codec import messages_from_provider_dicts
 from .prompting.citations import decorate_citable_messages
 from .tool_gate import ToolGate
@@ -154,8 +158,11 @@ def _rollover_and_emit(
     """切换上下文窗口并发射 Hook。"""
     if context_rollover is None:
         return loop_messages
-    dict_messages = [_to_dict_safe(message) for message in loop_messages]
-    next_window = context_rollover(dict_messages)
+    if isinstance(context_rollover, ContextWindowRollover):
+        next_window = context_rollover.rollover_messages(loop_messages)
+    else:
+        dict_messages = [_to_dict_safe(message) for message in loop_messages]
+        next_window = messages_from_provider_dicts(context_rollover(dict_messages))
     current = correlation.snapshot()
     emit_hook(
         HookRecord(
@@ -167,7 +174,7 @@ def _rollover_and_emit(
             **hook_correlation_fields(current),
         )
     )
-    return messages_from_provider_dicts(next_window)
+    return next_window
 
 
 def _to_dict_safe(message: AgentMessage) -> dict[str, Any]:
