@@ -40,7 +40,7 @@ from prompt_toolkit.widgets import CheckboxList, RadioList, TextArea
 
 from cade.agent.messages import UserMessage
 from cade.coding_agent.tools.question import CUSTOM_OPTION_LABEL
-from cade.harness.agent_runtime import AgentHarnessEvent, SubmitStatus
+from cade.harness.agent_runtime import AgentHarnessEvent, BusyMessageMode, SubmitStatus
 from cade.harness.agent_runtime.events import (
     FinalStructuredEvent,
     ToolUseStructuredEvent,
@@ -74,7 +74,7 @@ from ..repl_tools import (
     run_shell_shortcut,
 )
 from ..shared.working import working_status_text
-from .chrome import TUI_STYLES, compact_path, status_line, welcome_text
+from .chrome import TUI_STYLES, compact_path, fit_text, status_line, welcome_text
 from .state import (
     _CommandChoiceRequest,
     _CommandTextRequest,
@@ -104,7 +104,10 @@ _SHORTCUT_HELP = """Shortcuts
   $skill [task]  invoke a skill
   /command       run a slash command
   Tab            complete commands, skills, and @file references
-  Shift+Enter    insert a newline (Esc Enter also works)
+  Enter          send; queue the next task while running
+  Alt+Enter      steer the current task while running
+  Ctrl+J         insert a newline (Shift+Enter where supported)
+  Esc Enter      newline when idle; steer while running
   PageUp/Down    scroll history; End returns to the latest output"""
 
 if TYPE_CHECKING:
@@ -160,6 +163,8 @@ class _CadeTui:
         self._project_root = project_root
         self._store = app.session_store
         self._repl_state = ReplState()
+        self._repl_state.busy_mode = BusyMessageMode.FOLLOW_UP
+        self._startup_notice = ""
         self._snapshot_store = _init_snapshot_store(project_root)
         self._state = _TuiState(mode=self._repl_state.mode, project_root=project_root)
         self._state.thinking_collapsed = True
@@ -352,6 +357,11 @@ class _CadeTui:
             height=2,
             style="class:status",
         )
+        self._input_hint = Window(
+            FormattedTextControl(text=self._input_hint_text),
+            height=1,
+            style="class:status",
+        )
         # ── Application ──
         self._application = Application(
             layout=Layout(
@@ -363,6 +373,7 @@ class _CadeTui:
                         self._question_container,
                         self._completion_container,
                         self._input_container,
+                        self._input_hint,
                         self._status,
                     ],
                 ),
@@ -408,6 +419,8 @@ class _CadeTui:
 
         if not self._state.log:
             self._state.log.append(_LogEntry("welcome", welcome_text()))
+        if self._startup_notice:
+            self._state.log.append(_LogEntry("system", self._startup_notice))
         self._application.layout.focus(self._input)
         self._refresh()
 
@@ -463,7 +476,7 @@ class _CadeTui:
         request = self._state.pending_question_choice
         if request is None:
             return 0
-        available = max(2, self._application.output.get_size().rows - 5)
+        available = max(2, self._application.output.get_size().rows - 6)
         return min(len(request.choices) + 1, available)
 
     def _approval_panel_height(self) -> int:
@@ -471,7 +484,7 @@ class _CadeTui:
             return 0
         return min(
             len(self._approval_choices.values),
-            max(1, self._application.output.get_size().rows - 5),
+            max(1, self._application.output.get_size().rows - 6),
         )
 
     def _command_panel_height(self) -> int:
@@ -480,14 +493,14 @@ class _CadeTui:
             return 0
         return min(
             len(request.choices) + 1,
-            max(2, self._application.output.get_size().rows - 5),
+            max(2, self._application.output.get_size().rows - 6),
         )
 
     def _completion_height(self) -> int:
         state = self._input.buffer.complete_state
         if state is None or self._has_pending_interaction():
             return 0
-        available = self._application.output.get_size().rows - self._input_height() - 8
+        available = self._application.output.get_size().rows - self._input_height() - 9
         return min(8, len(state.completions), max(0, available))
 
     # ── 键绑定 ──
@@ -499,7 +512,12 @@ class _CadeTui:
             bindings.add("s-enter")(self._insert_newline)
         except ValueError:
             pass
-        bindings.add("escape", "enter")(self._insert_newline)
+        steering = Condition(
+            lambda: self._state.running and not self._has_pending_interaction()
+        )
+        bindings.add("escape", "enter", filter=steering)(self._steer_key)
+        bindings.add("escape", "enter", filter=~steering)(self._insert_newline)
+        bindings.add("c-j")(self._insert_newline)
         bindings.add(Keys.PageUp, eager=True)(self._page_up_key)
         bindings.add(Keys.PageDown, eager=True)(self._page_down_key)
         bindings.add(Keys.End, eager=True)(self._end_key)
@@ -558,15 +576,40 @@ class _CadeTui:
                 self._run_command(text, preserve_running=True)
             elif self._state.running and not text.startswith(("/", "!", "$")):
                 self._submit_busy_message(text)
+            else:
+                self._input.text = text
+                self._state.log.append(
+                    _LogEntry(
+                        "system", "Run this command after the current task finishes."
+                    )
+                )
+                self._refresh()
             return
         self._submit(text)
 
-    def _submit_busy_message(self, text: str) -> None:
-        """将忙时普通输入按默认 steer policy 交给 session controller。"""
+    def _steer_key(self, _event: object) -> None:
+        """Alt Enter 将普通输入注入当前任务，不启动新的任务。"""
+        text = self._input.text.strip()
+        if not text:
+            return
+        if text.startswith(("/", "!", "$")):
+            self._state.log.append(
+                _LogEntry("system", "Type a message to steer the current task.")
+            )
+            self._refresh()
+            return
+        self._input.text = ""
+        self._scrollback = 0
+        self._submit_busy_message(text, BusyMessageMode.STEER)
+
+    def _submit_busy_message(
+        self, text: str, mode: BusyMessageMode | None = None
+    ) -> None:
+        """普通 Enter 使用排队策略，Alt Enter 显式引导当前任务。"""
         expanded_text, references = expand_file_references(text, self._project_root)
         outcome = self._agent_app.agent.submit_busy_message(
             UserMessage(content=expanded_text),
-            self._repl_state.busy_mode,
+            mode or self._repl_state.busy_mode,
             display_text=text,
         )
         self._state.add_user(text)
@@ -574,24 +617,42 @@ class _CadeTui:
             self._store.append("event", file_reference_event(references))
         if outcome.status is SubmitStatus.STEER_ACCEPTED:
             self._state.log.append(
-                _LogEntry("system", f"[steer] accepted by {outcome.run_id}")
+                _LogEntry("system", "Added guidance to the current task.")
             )
         elif outcome.status is SubmitStatus.FOLLOW_UP_QUEUED:
             self._state.log.append(
                 _LogEntry(
                     "system",
-                    f"[{self._repl_state.busy_mode.value}] queued for the next run",
+                    "Queued for the next task.",
                 )
             )
         elif outcome.status is SubmitStatus.INTERRUPT_REQUESTED:
             self._state.log.append(
-                _LogEntry("system", "[interrupt] cancelling before replacement run")
+                _LogEntry(
+                    "system", "Stopping the current task; your message runs next."
+                )
             )
         elif outcome.status is SubmitStatus.INJECT_QUEUED:
             self._state.log.append(
-                _LogEntry("system", "[steer] queued for the next run")
+                _LogEntry("system", "The task is finishing; your guidance runs next.")
             )
         self._refresh()
+
+    def _input_hint_text(self) -> str:
+        if self._has_pending_interaction():
+            text = "Enter confirm · Esc back · Ctrl+C cancel"
+        elif self._completion_height():
+            text = "↑/↓ choose · Enter accept · Esc close"
+        elif self._state.running:
+            action = {
+                BusyMessageMode.FOLLOW_UP: "queue",
+                BusyMessageMode.STEER: "steer",
+                BusyMessageMode.INTERRUPT: "replace",
+            }[self._repl_state.busy_mode]
+            text = f"Enter {action} · Alt+Enter steer · Ctrl+J newline · Ctrl+C stop"
+        else:
+            text = "Enter send · Ctrl+J newline · @ files · / commands · cade -c resume"
+        return fit_text(text, self._output_width())
 
     def _insert_newline(self, event: object) -> None:
         buffer = getattr(event, "current_buffer", None)
@@ -1298,7 +1359,7 @@ class _CadeTui:
                 )
             finally:
                 self._state.running = False
-                self._refresh()
+                self._call_in_ui_thread(self._schedule_turn_commit)
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -1343,6 +1404,10 @@ class _CadeTui:
                 )
         elif auto_continue:
             selected = self._store.find_latest_for_project(self._project_root)
+            if selected is None:
+                self._startup_notice = (
+                    "No previous task in this project. Start a new task below."
+                )
         elif resume_latest:
             selected = select_session_interactively(
                 self._store.list_infos(), "Select session to resume:"
@@ -1352,6 +1417,9 @@ class _CadeTui:
         self._store.resume(selected.id)
         self._agent_app.restore_session()
         self._state.restore_history(self._store.build_branch())
+        self._startup_notice = (
+            f"Resumed {selected.title} ({selected.id}). Continue your task below."
+        )
 
     # ── HITL ──
 
@@ -1722,6 +1790,7 @@ class _CadeTui:
             - 1
             - input_area_height
             - 2
+            - 1
             - approval_height
             - command_height
             - question_height

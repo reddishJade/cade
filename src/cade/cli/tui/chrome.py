@@ -42,8 +42,9 @@ def welcome_text() -> str:
         "✦ cade\n\n"
         "Describe a task to get started.\n"
         "/ commands   @ files   ! shell   $ skills\n"
-        "Enter send   Esc Enter newline   Ctrl+C interrupt\n"
-        "Ctrl+T thinking   Ctrl+O tool details   ? help"
+        "Enter send / queue   Alt+Enter steer   Ctrl+J newline\n"
+        "Ctrl+T thinking   Ctrl+O tool details   ? help\n"
+        "Continue later with cade -c; choose history with /resume."
     )
 
 
