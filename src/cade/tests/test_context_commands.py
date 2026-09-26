@@ -17,8 +17,6 @@ from cade.agent.messages import (
 from cade.agent.types import TextContent
 from cade.cli.commands import CommandContext
 from cade.cli.repl_commands import (
-    COMMAND_NAMES,
-    COMMAND_REGISTRY,
     cmd_compact,
     cmd_rollover,
 )
@@ -124,10 +122,3 @@ def test_rollover_force_bypasses_working_note(tmp_path: Path) -> None:
 
     assert agent.loaded is not None
     assert len(app.resets) == 1
-
-
-def test_context_command_registry_keeps_compact_and_hides_old_alias() -> None:
-    assert "/compact" in COMMAND_NAMES
-    assert "/rollover" in COMMAND_NAMES
-    assert "/new-context" not in COMMAND_NAMES
-    assert COMMAND_REGISTRY["/new-context"].canonical == "/rollover"

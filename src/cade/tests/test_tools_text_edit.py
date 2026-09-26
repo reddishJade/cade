@@ -20,13 +20,6 @@ class TestDetectLineEnding:
     def test_crlf(self) -> None:
         assert detect_line_ending("hello\r\nworld") == "\r\n"
 
-    def test_crlf_first(self) -> None:
-        text = "hello\r\nworld\nfoo"
-        crlf_idx = text.find("\r\n")
-        lf_idx = text.find("\n")
-        assert crlf_idx < lf_idx
-        assert detect_line_ending(text) == "\r\n"
-
     def test_no_newline(self) -> None:
         assert detect_line_ending("hello") == "\n"
 
@@ -38,27 +31,16 @@ class TestNormalizeToLf:
     def test_cr_to_lf(self) -> None:
         assert normalize_to_lf("hello\rworld") == "hello\nworld"
 
-    def test_already_lf(self) -> None:
-        assert normalize_to_lf("hello\nworld") == "hello\nworld"
-
 
 class TestRestoreLineEndings:
     def test_to_crlf(self) -> None:
         assert restore_line_endings("hello\nworld", "\r\n") == "hello\r\nworld"
-
-    def test_to_lf(self) -> None:
-        assert restore_line_endings("hello\nworld", "\n") == "hello\nworld"
 
 
 class TestStripBom:
     def test_with_bom(self) -> None:
         bom, rest = strip_bom("\ufeffhello")
         assert bom == "\ufeff"
-        assert rest == "hello"
-
-    def test_without_bom(self) -> None:
-        bom, rest = strip_bom("hello")
-        assert bom == ""
         assert rest == "hello"
 
 

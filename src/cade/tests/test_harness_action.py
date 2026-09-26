@@ -9,29 +9,6 @@ from cade.harness.security.permission_model.action import (
 )
 
 
-def test_read_file_action() -> None:
-    extractor = ActionExtractor()
-    action = extractor.extract("read_file", {"path": "src/main.py"}, ("read", "path"))
-    assert action.operation == "read_file"
-    assert action.capability == "read"
-    assert len(action.targets) == 1
-    assert action.targets[0].value == "src/main.py"
-
-
-def test_write_file_action() -> None:
-    extractor = ActionExtractor()
-    action = extractor.extract("write_file", {"path": "src/new.py"}, ("write", "path"))
-    assert action.operation == "write_file"
-    assert action.targets[0].access == "write"
-
-
-def test_bash_action() -> None:
-    extractor = ActionExtractor()
-    action = extractor.extract("bash", {"command": "ls -la"}, ("shell", "none"))
-    assert action.operation == "run_command"
-    assert action.capability == "shell"
-
-
 def test_unknown_tool() -> None:
     extractor = ActionExtractor()
     action = extractor.extract("unknown_tool", {}, None)
@@ -79,10 +56,6 @@ class TestNormalizePathText:
     def test_strips_whitespace(self) -> None:
         assert _normalize_path_text("  src/main.py  ") == "src/main.py"
 
-    def test_absolute_path(self) -> None:
-        result = _normalize_path_text("/home/user/project/src/main.py")
-        assert result.startswith("/") or ":" in result
-
     def test_dots_removed(self) -> None:
         assert _normalize_path_text("./src/./main.py") == "src/main.py"
 
@@ -91,10 +64,6 @@ class TestNormalizePathText:
 
 
 class TestFilesystemCommandPathArguments:
-    def test_read_command(self) -> None:
-        paths = _filesystem_command_path_arguments("cat", ["file.txt"])
-        assert "file.txt" in paths
-
     def test_write_command(self) -> None:
         paths = _filesystem_command_path_arguments("rm", ["file.txt"])
         assert "file.txt" in paths

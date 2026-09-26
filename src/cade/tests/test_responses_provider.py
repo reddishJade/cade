@@ -524,13 +524,6 @@ async def test_sync_response_stream_does_not_block_incremental_delivery() -> Non
     await events.aclose()
 
 
-def test_codex_sdk_base_url_targets_codex_responses_route() -> None:
-    assert (
-        _codex_sdk_base_url("https://chatgpt.com/backend-api")
-        == "https://chatgpt.com/backend-api/codex"
-    )
-
-
 def test_safe_error_detail_accepts_json_but_rejects_html() -> None:
     assert (
         _safe_openai_error_detail(

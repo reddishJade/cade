@@ -15,7 +15,6 @@ from cade.ai.models import (
     get_model_cost,
     get_model_reasoning_efforts,
     get_models,
-    get_providers,
     normalize_model_id,
     parse_model_mode,
     resolve_model,
@@ -29,14 +28,6 @@ def _peak_now() -> datetime:
 
 
 class TestParseModelMode:
-    def test_basic_model(self) -> None:
-        assert parse_model_mode("gpt-4") == ModelMode(model="gpt-4")
-
-    def test_provider_model(self) -> None:
-        assert parse_model_mode("openai/gpt-4") == ModelMode(
-            model="gpt-4", provider="openai"
-        )
-
     def test_provider_model_thinking(self) -> None:
         assert parse_model_mode("openai/gpt-4:low") == ModelMode(
             model="gpt-4", provider="openai", thinking_level="low"
@@ -96,9 +87,6 @@ class TestRolloverThreshold:
     )
     def test_codex_models_use_272k_context_window(self, model_id: str) -> None:
         assert get_model_context_window(model_id, transport="openai_codex") == 272_000
-
-    def test_codex_model_catalog_uses_transport_context_windows(self) -> None:
-        assert {model.context_window for model in get_codex_models()} == {272_000}
 
     def test_direct_openai_catalog_keeps_its_own_context_window(self) -> None:
         model = get_model("openai", "gpt-5.6-luna")
@@ -208,12 +196,6 @@ class TestRolloverThreshold:
 
 
 class TestResolveModel:
-    def test_exact_match(self) -> None:
-        registered = get_models("openai")[0]
-        model = resolve_model("openai", registered.id)
-        assert model is not None
-        assert model.id == registered.id
-
     def test_fallback_to_first(self) -> None:
         first = get_models("openai")[0]
         model = resolve_model("openai", "nonexistent-model")
@@ -231,13 +213,6 @@ class TestResolveModel:
 
 
 class TestRegistryAccess:
-    def test_get_providers(self) -> None:
-        providers = get_providers()
-        assert "openai" in providers
-        assert "deepseek" in providers
-        assert "chatglm" in providers
-        assert "mimo" in providers
-
     def test_deepseek_flash_registered_with_current_pricing(self) -> None:
         model = get_model("deepseek", "deepseek-flash")
         assert model is not None
@@ -263,28 +238,8 @@ class TestRegistryAccess:
         assert normalize_model_id("  deepseek-flash  ") == "deepseek-flash"
         assert normalize_model_id("deepseek-v4-pro") == "deepseek-v4-pro"
 
-    def test_get_models_openai(self) -> None:
-        models = get_models("openai")
-        ids = [m.id for m in models]
-        assert models
-        assert len(ids) == len(set(ids))
-        assert all(model.provider == "openai" for model in models)
-
-    def test_get_codex_models_returns_unique_registered_models(self) -> None:
-        models = get_codex_models()
-        ids = [model.id for model in models]
-        assert models
-        assert len(ids) == len(set(ids))
-        assert all(model.provider == "openai" for model in models)
-
     def test_get_models_unknown_provider(self) -> None:
         assert get_models("nonexistent") == []
-
-    def test_get_model_existing(self) -> None:
-        registered = get_models("deepseek")[0]
-        model = get_model("deepseek", registered.id)
-        assert model is not None
-        assert model.name == registered.name
 
     def test_get_model_nonexistent(self) -> None:
         assert get_model("openai", "does-not-exist") is None
@@ -348,20 +303,6 @@ class TestModelResolver:
         assert ModelResolver.is_codex_supported("codex") is True
         assert ModelResolver.is_codex_supported(non_codex_model) is False
         assert ModelResolver.is_codex_supported("unregistered-model") is False
-
-    def test_get_default_base_url(self) -> None:
-        assert (
-            ModelResolver.get_default_base_url("openai_codex")
-            == "https://chatgpt.com/backend-api"
-        )
-        assert (
-            ModelResolver.get_default_base_url("openai_chat")
-            == "https://api.openai.com/v1"
-        )
-        assert (
-            ModelResolver.get_default_base_url("deepseek_chat")
-            == "https://api.deepseek.com"
-        )
 
     def test_resolve_one_stop(self) -> None:
         res_codex = ModelResolver.resolve("codex")

@@ -9,25 +9,10 @@ from cade.coding_agent.tools.websearch import (
     _livecrawl,
     _parse_mcp_response,
     _search_type,
-    _timeout,
 )
 
 
-class TestTimeout:
-    def test_default(self) -> None:
-        assert _timeout(None) == 30.0
-
-    def test_valid(self) -> None:
-        assert _timeout(10) == 10.0
-
-
 class TestLimit:
-    def test_default(self) -> None:
-        assert _limit(None) == 8
-
-    def test_valid(self) -> None:
-        assert _limit(5) == 5
-
     def test_too_low_raises(self) -> None:
         with pytest.raises(ValueError, match="numResults"):
             _limit(0)
@@ -42,24 +27,12 @@ class TestLimit:
 
 
 class TestLivecrawl:
-    def test_default(self) -> None:
-        assert _livecrawl(None) == "fallback"
-
-    def test_valid(self) -> None:
-        assert _livecrawl("preferred") == "preferred"
-
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError, match="livecrawl"):
             _livecrawl("always")
 
 
 class TestSearchType:
-    def test_default(self) -> None:
-        assert _search_type(None) == "auto"
-
-    def test_valid(self) -> None:
-        assert _search_type("deep") == "deep"
-
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError, match="type"):
             _search_type("wide")

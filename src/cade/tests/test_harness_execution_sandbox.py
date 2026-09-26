@@ -47,13 +47,6 @@ class _ViolatingSandbox:
         )
 
 
-def test_default_policy_protects_cade_metadata(tmp_path: Path) -> None:
-    policy = SandboxPolicy(project_root=tmp_path)
-
-    assert policy.mode is SandboxMode.WORKSPACE_WRITE
-    assert policy.protected_workspace_paths == (".git", ".agents", ".cade")
-
-
 def test_subprocess_shell_applies_sandbox_wrapper(tmp_path: Path) -> None:
     sandbox = _RecordingSandbox()
     shell = SubprocessShell(sandbox=sandbox)

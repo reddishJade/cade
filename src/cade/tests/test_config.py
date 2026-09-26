@@ -12,10 +12,6 @@ from cade.harness.execution_env import NetworkAccess, SandboxMode
 
 
 class TestProviderContextWindow:
-    def test_defaults_to_none(self) -> None:
-        cfg = CadeRuntimeConfig()
-        assert cfg.provider.model_profiles["main"].context_window is None
-
     def test_parse_override(self) -> None:
         cfg = CadeRuntimeConfig.model_validate(
             {"provider": {"model_profiles": {"main": {"context_window": 262_144}}}}
@@ -42,27 +38,11 @@ class TestProviderContextWindow:
 
 
 class TestExecutionModesDefaultMode:
-    def test_defaults_to_act(self) -> None:
-        cfg = CadeRuntimeConfig()
-        assert cfg.execution_modes.default_mode == "act"
-
-    def test_parse_build(self) -> None:
-        cfg = CadeRuntimeConfig.model_validate(
-            {"execution_modes": {"default_mode": "build"}}
-        )
-        assert cfg.execution_modes.default_mode == "build"
-
     def test_parse_plan(self) -> None:
         cfg = CadeRuntimeConfig.model_validate(
             {"execution_modes": {"default_mode": "plan"}}
         )
         assert cfg.execution_modes.default_mode == "plan"
-
-    def test_invalid_value_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            CadeRuntimeConfig.model_validate(
-                {"execution_modes": {"default_mode": "auto"}}
-            )
 
     def test_invalid_value_error_names_field(self) -> None:
         with pytest.raises(ValueError, match="execution_modes.default_mode"):

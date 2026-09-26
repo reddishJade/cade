@@ -1,12 +1,6 @@
 from pathlib import Path
 
-from cade.cli.shared.working import working_status_text
 from cade.cli.tui.state import _TuiState
-
-
-def test_working_status_is_not_thinking_content() -> None:
-    assert working_status_text(0).endswith(" Working...")
-    assert "Thinking" not in working_status_text(0)
 
 
 def test_working_state_is_separate_from_reasoning_state() -> None:

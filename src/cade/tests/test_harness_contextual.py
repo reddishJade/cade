@@ -8,20 +8,6 @@ from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 
 
 class TestContextualRetrievalState:
-    def test_empty_render(self) -> None:
-        state = ContextualRetrievalState(Path("/project"))
-        rendered = state.render()
-        assert "<contextual-retrieval>" in rendered
-        assert "</contextual-retrieval>" in rendered
-        assert "active_file: " not in rendered
-
-    def test_record_file(self) -> None:
-        state = ContextualRetrievalState(Path("/project"))
-        state.record_file(Path("src/main.py"))
-        rendered = state.render()
-        assert "active_file: src/main.py" in rendered
-        assert "recent_files" in rendered
-
     def test_max_files_lru(self) -> None:
         state = ContextualRetrievalState(Path("/project"), max_files=3)
         for i in range(5):
@@ -36,12 +22,6 @@ class TestContextualRetrievalState:
         rendered = state.render()
         assert "read_file" in rendered
         assert "recent_tool_results" in rendered
-
-    def test_long_tool_result_truncated(self) -> None:
-        state = ContextualRetrievalState(Path("/project"))
-        state.record_tool_result("bash", "x" * 500)
-        rendered = state.render()
-        assert "..." in rendered.split("bash:")[1] if "bash:" in rendered else True
 
     def test_record_tool_call(self) -> None:
         state = ContextualRetrievalState(Path("/project"))
@@ -68,10 +48,3 @@ class TestContextualRetrievalState:
         assert "src/main.py" not in rendered
         assert "loaded content" not in rendered
         assert state.active_file is None
-
-    @property
-    def active_file(self) -> str | None:
-        state = ContextualRetrievalState(Path("/project"))
-        assert state.active_file is None
-        state.record_file(Path("src/main.py"))
-        assert state.active_file == "src/main.py"

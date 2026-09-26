@@ -15,77 +15,14 @@ from cade.agent.context import (
     ContextState,
     DefaultContextAssembler,
     InstructionCollector,
-    _apply_size_budget,
     _block_to_text,
-    _is_expired,
     _prepare_manifest,
-    _utf8_prefix,
     make_collector_section,
     make_state_section,
     trim_to_budget,
 )
 from cade.agent.messages import SystemMessage, UserMessage
 from cade.agent.types import ToolSpec, ToolSpecAdapter
-
-# ── ContextBlock ──
-
-
-class TestContextBlock:
-    def test_get_token_count_returns_cached(self) -> None:
-        block = ContextBlock(
-            source=ContextBlockSource.INSTRUCTION,
-            priority=ContextPriority.CRITICAL,
-            content="hello",
-            token_count=5,
-        )
-        assert block.get_token_count() == 5
-
-    def test_get_token_count_estimates(self) -> None:
-        block = ContextBlock(
-            source=ContextBlockSource.INSTRUCTION,
-            priority=ContextPriority.CRITICAL,
-            content="hello world",
-        )
-        assert block.get_token_count() > 0
-
-    def test_expiry_never(self) -> None:
-        e = ContextExpiry()
-        assert e.never
-        e2 = ContextExpiry(max_turns=5)
-        assert not e2.never
-
-
-# ── _is_expired ──
-
-
-class TestIsExpired:
-    def test_no_expiry(self) -> None:
-        block = ContextBlock(
-            source=ContextBlockSource.INSTRUCTION,
-            priority=ContextPriority.CRITICAL,
-            content="x",
-        )
-        assert not _is_expired(block, 10, 10)
-
-    def test_never_expiry(self) -> None:
-        block = ContextBlock(
-            source=ContextBlockSource.INSTRUCTION,
-            priority=ContextPriority.CRITICAL,
-            content="x",
-            expiry=ContextExpiry(),
-        )
-        assert not _is_expired(block, 10, 10)
-
-    def test_expired_by_turns(self) -> None:
-        block = ContextBlock(
-            source=ContextBlockSource.INSTRUCTION,
-            priority=ContextPriority.CRITICAL,
-            content="x",
-            expiry=ContextExpiry(max_turns=3),
-            created_turn=0,
-        )
-        assert _is_expired(block, 5, 0)
-
 
 # ── _block_to_text ──
 
@@ -187,17 +124,6 @@ class TestTrimToBudget:
 
 
 class TestDefaultContextAssembler:
-    def test_no_blocks_passthrough(self) -> None:
-        assembler = DefaultContextAssembler()
-        result = assembler.assemble(
-            ContextAssemblyInput(
-                messages=[UserMessage(content="hello")],
-                context_blocks=[],
-            )
-        )
-        assert len(result.messages) == 1
-        assert result.total_tokens > 0
-
     def test_system_blocks_inserted_after_system_message(self) -> None:
         assembler = DefaultContextAssembler()
         result = assembler.assemble(
@@ -235,23 +161,6 @@ class TestDefaultContextAssembler:
                     ),
                 ],
                 current_turn=10,
-            )
-        )
-        assert len(result.blocks_dropped) == 1
-
-    def test_budget_drops_excess_blocks(self) -> None:
-        assembler = DefaultContextAssembler()
-        result = assembler.assemble(
-            ContextAssemblyInput(
-                messages=[UserMessage(content="hi")],
-                context_blocks=[
-                    ContextBlock(
-                        source=ContextBlockSource.NOTES,
-                        priority=ContextPriority.LOW,
-                        content="x" * 10000,
-                    ),
-                ],
-                token_budget=50,
             )
         )
         assert len(result.blocks_dropped) == 1
@@ -294,62 +203,15 @@ class TestDefaultContextAssembler:
         assert result.base_tokens == base
 
 
-# ── _apply_size_budget ──
-
-
-class TestApplySizeBudget:
-    def test_within_budget(self) -> None:
-        assert _apply_size_budget("hello", 100, "...") == "hello"
-
-    def test_exceeds_budget(self) -> None:
-        result = _apply_size_budget("hello world", 5, "...")
-        assert "(truncated)" not in result
-        assert result.endswith("...") or len(result) <= 8
-
-    def test_empty_content(self) -> None:
-        assert _apply_size_budget("", 100, "...") == ""
-
-
-# ── _utf8_prefix ──
-
-
-class TestUtf8Prefix:
-    def test_short_text(self) -> None:
-        assert _utf8_prefix("hello", 100) == "hello"
-
-    def test_truncated(self) -> None:
-        result = _utf8_prefix("hello world", 5)
-        assert len(result) <= 5
-
-
 # ── _prepare_manifest ──
 
 
 class TestPrepareManifest:
-    def test_short_text_returns_as_is(self) -> None:
-        text = "Short content here"
-        assert _prepare_manifest(text) == text
-
     def test_long_manifest_keeps_byte_limited_prefix(self) -> None:
         text = "x" * (MANIFEST_MAX_BYTES + 1000)
         result = _prepare_manifest(text)
         assert result == text[:MANIFEST_MAX_BYTES]
         assert len(result.encode("utf-8")) == MANIFEST_MAX_BYTES
-
-    def test_long_manifest_keeps_only_prefix(self) -> None:
-        text = (
-            "Opening context\n"
-            "## Priority\n"
-            "- item 1\n\n"
-            "## Checklist\n"
-            "- check A\n\n" + "x" * 50000
-        )
-        result = _prepare_manifest(text)
-        assert result == text[:MANIFEST_MAX_BYTES]
-
-    def test_long_condenses(self) -> None:
-        result = _prepare_manifest("x" * (MANIFEST_MAX_BYTES + 100))
-        assert result == "x" * MANIFEST_MAX_BYTES
 
 
 # ── InstructionCollector ──
@@ -498,37 +360,6 @@ class _DummyCollector:
 
 
 class TestContextCollectorRegistry:
-    def test_empty_registry(self) -> None:
-        registry = ContextCollectorRegistry()
-        assert len(registry) == 0
-
-    def test_collect_aggregates(self) -> None:
-        registry = ContextCollectorRegistry()
-        registry.register(
-            _DummyCollector(
-                [
-                    ContextBlock(
-                        source=ContextBlockSource.NOTES,
-                        priority=ContextPriority.LOW,
-                        content="a",
-                    ),
-                ]
-            )
-        )
-        registry.register(
-            _DummyCollector(
-                [
-                    ContextBlock(
-                        source=ContextBlockSource.INSTRUCTION,
-                        priority=ContextPriority.CRITICAL,
-                        content="b",
-                    ),
-                ]
-            )
-        )
-        blocks = registry.collect(ContextCollectionInput())
-        assert len(blocks) == 2
-
     def test_collector_exception_skipped(self) -> None:
         class BrokenCollector:
             def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:

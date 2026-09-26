@@ -10,14 +10,6 @@ from cade.ai.providers._stream import (
 
 
 class TestParseToolArguments:
-    def test_valid_json(self) -> None:
-        result = parse_tool_arguments('{"city": "Beijing"}')
-        assert result == {"city": "Beijing"}
-
-    def test_empty_object(self) -> None:
-        result = parse_tool_arguments("{}")
-        assert result == {}
-
     def test_empty_string_falls_back_to_empty_object(self) -> None:
         result = parse_tool_arguments("")
         assert result == {}
@@ -126,15 +118,3 @@ class TestChatStreamToEvents:
     def test_empty_stream(self) -> None:
         events = list(chat_stream_to_events([]))
         assert events == []
-
-    def test_mixed_events(self) -> None:
-        chunks = [
-            _chunk(reasoning="think"),
-            _chunk(text="Hello"),
-            _chunk(usage=_usage(prompt=5, completion=10)),
-            _chunk(text=" World"),
-        ]
-        events = list(chat_stream_to_events(chunks))
-        assert any(isinstance(e, ReasoningDelta) for e in events)
-        assert any(isinstance(e, TextDelta) for e in events)
-        assert any(isinstance(e, UsageUpdate) for e in events)

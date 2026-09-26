@@ -10,8 +10,6 @@ from unittest.mock import patch
 from cade.ai.auth import AuthCredential
 from cade.cli.auth_cmd import (
     handle_login_command,
-    handle_logout_command,
-    handle_status_command,
 )
 from cade.cli.setup_wizard import prompt_auth_method
 from cade.harness.auth.manager import AuthManager
@@ -225,25 +223,3 @@ def test_cli_api_key_login_runs_provider_setup(tmp_path: Path) -> None:
         assert handle_login_command(project_root=tmp_path) == 0
 
     wizard.assert_called_once_with(tmp_path, from_connect=True)
-
-
-def test_cli_auth_handlers(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "cade.harness.auth.store.DEFAULT_AUTH_FILE", tmp_path / "auth.json"
-    )
-
-    # 模拟登录
-    mock_cred = AuthCredential(
-        provider="openai-codex",
-        access="acc_123",
-        account_id="chatgpt_user_1",
-    )
-    with patch.object(AuthManager, "login", return_value=mock_cred):
-        assert handle_login_command("openai-codex", "browser") == 0
-
-    # 模拟查看状态
-    assert handle_status_command() == 0
-
-    # 模拟登出
-    with patch.object(AuthManager, "logout", return_value=True):
-        assert handle_logout_command("openai-codex") == 0

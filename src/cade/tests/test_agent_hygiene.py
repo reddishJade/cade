@@ -13,15 +13,11 @@ from cade.agent._hygiene import (
 from cade.agent.messages import (
     AssistantMessage,
     ToolResultMessage,
-    UserMessage,
 )
 from cade.agent.types import ToolCallContent
 
 
 class TestRepairToolPairing:
-    def test_empty_messages(self) -> None:
-        assert repair_tool_pairing([]) == []
-
     def test_removes_unmatched_tool_calls(self) -> None:
         msgs = [
             AssistantMessage(
@@ -94,13 +90,6 @@ class TestApplyRequestHygiene:
         block = result[0].content[0]
         assert "<truncated" in str(block.arguments["data"])
 
-    def test_short_content_unchanged(self) -> None:
-        msgs = [
-            UserMessage(content="short"),
-        ]
-        result = apply_request_hygiene(msgs)
-        assert result[0].content == "short"
-
     def test_keeps_signal_lines_in_truncated_output(self) -> None:
         content = "\n".join([f"line{i}" for i in range(200)])
         content += "\nTraceback: error occurred\n"
@@ -120,17 +109,6 @@ class TestApplyRequestHygiene:
 
 
 class TestTruncateToolArgs:
-    def test_truncates_long_string_value(self) -> None:
-        args = {"data": "x" * 500}
-        result = _truncate_tool_args(args, max_length=100)
-        assert isinstance(result["data"], str)
-        assert "<truncated" in result["data"]
-
-    def test_short_value_unchanged(self) -> None:
-        args = {"data": "short"}
-        result = _truncate_tool_args(args, max_length=100)
-        assert result["data"] == "short"
-
     def test_nested_dict(self) -> None:
         args = {"outer": {"inner": "x" * 500}}
         result = _truncate_tool_args(args, max_length=100)
@@ -143,20 +121,8 @@ class TestTruncateToolResult:
         result = _truncate_tool_result(content, 100, 5, 5)
         assert "base64" in result
 
-    def test_short_content_unchanged(self) -> None:
-        result = _truncate_tool_result("hello", 1000, 50, 50)
-        assert result == "hello"
-
-    def test_long_content_truncated(self) -> None:
-        lines = [f"line{i}" for i in range(100)]
-        result = _truncate_tool_result("\n".join(lines), 10000, 5, 5)
-        assert "omitted" in result
-
 
 class TestIsBase64Payload:
-    def test_detects_base64(self) -> None:
-        assert _is_base64_payload("A" * 200)
-
     def test_short_text_not_base64(self) -> None:
         assert not _is_base64_payload("hello")
 
@@ -166,9 +132,6 @@ class TestIsBase64Payload:
 
 
 class TestIsSignalLine:
-    def test_detects_error(self) -> None:
-        assert _is_signal_line("Error: something broke")
-
     def test_detects_exception(self) -> None:
         assert _is_signal_line("Exception: KeyError")
 

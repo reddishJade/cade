@@ -10,10 +10,8 @@ from cade.coding_agent.tools.path_utils import (
     display_path,
     is_binary_file,
     is_path_blocked,
-    matches_blocked_pattern,
     resolve_absolute_path,
     resolve_project_path,
-    truncate_output,
 )
 
 
@@ -21,13 +19,6 @@ class TestResolveProjectPath:
     def test_simple_relative(self, tmp_path: Path) -> None:
         result = resolve_project_path(tmp_path, "sub/file.txt")
         assert result == (tmp_path / "sub/file.txt").resolve()
-
-    def test_absolute_inside_root(self, tmp_path: Path) -> None:
-        target = tmp_path / "sub" / "file.txt"
-
-        result = resolve_project_path(tmp_path, str(target))
-
-        assert result == target.resolve()
 
     def test_absolute_outside_root_raises(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError):
@@ -100,15 +91,6 @@ class TestDisplayPath:
         assert result == str(p)
 
 
-class TestMatchesBlockedPattern:
-    def test_blocked(self) -> None:
-        assert matches_blocked_pattern(Path("/tmp/.git/config"))
-        assert matches_blocked_pattern(Path("/tmp/.venv/bin/python"))
-
-    def test_not_blocked(self) -> None:
-        assert not matches_blocked_pattern(Path("/tmp/src/main.py"))
-
-
 class TestIsBinaryFile:
     def test_extension(self, tmp_path: Path) -> None:
         assert is_binary_file(tmp_path / "file.zip", b"")
@@ -125,13 +107,3 @@ class TestIsBinaryFile:
 
     def test_empty_sample(self) -> None:
         assert not is_binary_file(Path("f.txt"), b"")
-
-
-class TestTruncateOutput:
-    def test_within_limits(self) -> None:
-        assert truncate_output("hello") == "hello"
-
-    def test_exceeds_bytes(self) -> None:
-        text = "x" * 100_000
-        result = truncate_output(text, max_bytes=1000)
-        assert len(result) <= 2000

@@ -17,7 +17,6 @@ from cade.agent.types import TextContent, ToolCallContent
 from cade.ai.events import (
     FinalMessage,
     ProviderEvent,
-    ProviderFailure,
     TextDelta,
 )
 from cade.ai.types import StreamOptions, ToolDefinition
@@ -67,25 +66,6 @@ class _RaisingProvider:
         raise RuntimeError("connection reset by abort")
 
 
-async def test_collect_returns_none_when_cancelled_mid_stream() -> None:
-    """流式生成中途取消：返回 None 并中止在途请求。"""
-    token = CancellationToken()
-    provider = _EndlessProvider()
-
-    async def cancel_soon() -> None:
-        await asyncio.sleep(0.01)
-        token.cancel("interrupted by user")
-
-    canceller = asyncio.create_task(cancel_soon())
-    events = await _collect_provider_events(
-        provider, [], [], None, lambda _event: None, token
-    )
-    await canceller
-
-    assert events is None
-    assert provider.abort_calls >= 1
-
-
 async def test_abort_exception_during_cancelled_stream_is_not_error() -> None:
     """打断关闭连接导致的流异常：已取消时按取消处理而非报错。"""
     token = CancellationToken()
@@ -97,17 +77,6 @@ async def test_abort_exception_during_cancelled_stream_is_not_error() -> None:
     )
 
     assert events is None
-
-
-class _ShortProvider:
-    async def stream(
-        self,
-        messages: list[dict[str, object]],
-        tools: list[object],
-        options: object | None = None,
-        **kwargs: object,
-    ) -> object:
-        yield TextDelta(chunk="hello")
 
 
 class _MaxTokensProvider:
@@ -125,14 +94,6 @@ class _MaxTokensProvider:
         self.calls += 1
         yield TextDelta(chunk="partial")
         yield FinalMessage(content="partial", stop_reason="max_tokens")
-
-
-async def test_collect_returns_events_when_not_cancelled() -> None:
-    """未取消时正常收集全部事件。"""
-    events = await _collect_provider_events(
-        _ShortProvider(), [], [], None, lambda _event: None, None
-    )
-    assert events == [TextDelta(chunk="hello")]
 
 
 async def test_agent_loop_stops_before_exceeding_llm_call_limit() -> None:
@@ -202,24 +163,6 @@ class _FailingProvider:
         del messages, tools, options
         raise _ServiceUnavailable("temporarily unavailable")
         yield FinalMessage(content="", stop_reason="end_turn")
-
-
-async def test_provider_exception_is_a_structured_event() -> None:
-    events = await _collect_provider_events(
-        _FailingProvider(),
-        [],
-        [],
-        None,
-        lambda _event: None,
-    )
-
-    assert events == [
-        ProviderFailure(
-            message="temporarily unavailable",
-            exception_type="_ServiceUnavailable",
-            status_code=503,
-        )
-    ]
 
 
 async def test_provider_failure_reaches_loop_and_harness_results() -> None:

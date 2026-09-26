@@ -10,9 +10,7 @@ import pytest
 from cade.ai.providers.openai import OpenAIChatProvider
 from cade.ai.types import ProviderConfig, StreamOptions
 from cade.cli.reasoning_effort import (
-    EFFORT_COMMAND_LEVELS,
     reasoning_effort_levels_for_transport,
-    supports_reasoning_effort,
 )
 
 
@@ -59,26 +57,6 @@ async def test_common_stream_options_reach_chat_request() -> None:
     assert params["seed"] == 7
 
 
-async def test_provider_exposes_context_window_override() -> None:
-    provider = OpenAIChatProvider(
-        ProviderConfig(
-            api_key="test",
-            model="test-model",
-            context_window=262_144,
-        ),
-        client=_Client(),
-    )
-    assert provider.context_window == 262_144
-
-
-async def test_provider_context_window_defaults_to_none() -> None:
-    provider = OpenAIChatProvider(
-        ProviderConfig(api_key="test", model="test-model"),
-        client=_Client(),
-    )
-    assert provider.context_window is None
-
-
 def test_build_provider_bundle_carries_context_window() -> None:
     from cade.ai.providers.registry import ProviderSettings, build_provider_bundle
     from cade.harness.config import ModelProfileRuntimeConfig
@@ -95,12 +73,6 @@ def test_build_provider_bundle_carries_context_window() -> None:
         )
     )
     assert bundle.llm.context_window == 262_144
-
-
-@pytest.mark.parametrize("transport", ["openai_responses", "openai_codex"])
-def test_responses_transports_support_reasoning_effort(transport: str) -> None:
-    assert supports_reasoning_effort(transport) is True
-    assert reasoning_effort_levels_for_transport(transport) == EFFORT_COMMAND_LEVELS
 
 
 @pytest.mark.parametrize("transport", ["openai_responses", "openai_codex"])

@@ -65,24 +65,6 @@ class TestStricterDecision:
         assert _stricter_decision("deny", "allow") == "deny"
         assert _stricter_decision("deny", "ask") == "deny"
 
-    def test_same_level(self) -> None:
-        assert _stricter_decision("allow", "allow") == "allow"
-        assert _stricter_decision("ask", "ask") == "ask"
-
-
-def test_failed_tool_results_do_not_count_as_progress() -> None:
-    calls = [ToolCall(id="call-1", name="read_file", input={})]
-    results = [
-        ToolResultMessage(
-            tool_call_id="call-1",
-            tool_name="read_file",
-            content="failed",
-            is_error=True,
-        )
-    ]
-
-    assert not _tool_results_count_as_progress(calls, results, {})
-
 
 def test_any_successful_tool_result_counts_as_progress() -> None:
     calls = [

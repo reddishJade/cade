@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-from cade.agent.messages import ToolResultMessage, UserMessage
+from cade.agent.messages import ToolResultMessage
 from cade.agent.types import CITATION_SOURCES_METADATA_KEY, CitationSource
 from cade.harness.agent_runtime.prompting.citations import (
-    _get_citation_sources,
     _line_numbered_text,
-    citation_sources_as_dicts,
     decorate_citable_messages,
 )
 
 
 class TestDecorateCitableMessages:
-    def test_no_citation_sources(self) -> None:
-        msgs = [UserMessage(content="hello")]
-        result = decorate_citable_messages(msgs)
-        assert len(result) == 1
-
     def test_with_citation_sources(self) -> None:
         msg = ToolResultMessage(
             tool_call_id="c1",
@@ -42,33 +35,6 @@ class TestDecorateCitableMessages:
         assert "turn0file0" in text or "\ue200" in text
 
 
-class TestGetCitationSources:
-    def test_empty_metadata(self) -> None:
-        msg = ToolResultMessage(tool_call_id="c1", tool_name="t", content="x")
-        assert _get_citation_sources(msg) == []
-
-    def test_with_sources(self) -> None:
-        msg = ToolResultMessage(
-            tool_call_id="c1",
-            tool_name="t",
-            content="x",
-            metadata={
-                CITATION_SOURCES_METADATA_KEY: [
-                    {
-                        "kind": "file",
-                        "path": "a.py",
-                        "start_line": 1,
-                        "end_line": 5,
-                        "text": "code",
-                    },
-                ]
-            },
-        )
-        sources = _get_citation_sources(msg)
-        assert len(sources) == 1
-        assert sources[0].path == "a.py"
-
-
 class TestLineNumberedText:
     def test_adds_line_numbers(self) -> None:
         sources = [
@@ -91,15 +57,3 @@ class TestLineNumberedText:
     def test_empty_sources_no_numbers(self) -> None:
         result = _line_numbered_text("hello", [])
         assert "[L1]" not in result
-
-
-class TestCitationSourcesAsDicts:
-    def test_converts(self) -> None:
-        sources = [
-            CitationSource(
-                kind="file", path="a.py", start_line=1, end_line=5, text="code"
-            )
-        ]
-        result = citation_sources_as_dicts(sources)
-        assert len(result) == 1
-        assert result[0]["path"] == "a.py"

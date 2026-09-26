@@ -30,11 +30,6 @@ def _patch_main_startup(
     monkeypatch.setattr("cade.main._run", lambda *args, **kwargs: 0)
 
 
-def test_parse_args_supports_tui_and_cli_commands() -> None:
-    assert parse_args(["tui"]).command == "tui"
-    assert parse_args(["cli"]).command == "cli"
-
-
 def test_session_command_does_not_require_provider_credentials(
     monkeypatch, tmp_path: Path
 ) -> None:

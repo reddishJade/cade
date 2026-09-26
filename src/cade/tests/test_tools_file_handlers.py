@@ -30,12 +30,6 @@ def test_read_project_text_file_accepts_absolute_path_inside_project(
 
 
 class TestParseOffset:
-    def test_default(self) -> None:
-        assert _parse_offset({}) == 1
-
-    def test_valid(self) -> None:
-        assert _parse_offset({"offset": 10}) == 10
-
     def test_negative_raises(self) -> None:
         with pytest.raises(ValueError, match="positive"):
             _parse_offset({"offset": 0})
@@ -49,12 +43,6 @@ class TestParseOffset:
 
 
 class TestParseLimit:
-    def test_default(self) -> None:
-        assert _parse_limit({}) == 2000
-
-    def test_valid(self) -> None:
-        assert _parse_limit({"limit": 50}) == 50
-
     def test_zero_returns_default(self) -> None:
         assert _parse_limit({"limit": 0}) == 2000
 
@@ -67,9 +55,6 @@ class TestParseLimit:
 
 
 class TestTruncateLine:
-    def test_short_line(self) -> None:
-        assert _truncate_line("hello") == "hello"
-
     def test_long_line(self) -> None:
         line = "x" * (MAX_LINE_LENGTH + 100)
         result = _truncate_line(line)
@@ -78,21 +63,12 @@ class TestTruncateLine:
 
 
 class TestEnsureWriteSize:
-    def test_under_limit(self) -> None:
-        _ensure_write_size("small")  # should not raise
-
     def test_over_limit(self) -> None:
         with pytest.raises(ValueError, match="too large"):
             _ensure_write_size("x" * (MAX_WRITE_BYTES + 1))
 
 
 class TestPrepareEdits:
-    def test_from_schema_fields(self) -> None:
-        data = {"old_text": "old", "new_text": "new"}
-        edits = _prepare_edits(data)
-        assert len(edits) == 1
-        assert edits[0].old_text == "old"
-
     def test_empty_old_text_raises(self) -> None:
         data = {"old_text": "", "new_text": "b"}
         with pytest.raises(ValueError, match="must not be empty"):

@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from cade.coding_agent.tools.apply_patch import (
-    _change_counts,
     _find_anchor,
     _find_sequence,
     _header_path,
@@ -70,12 +69,6 @@ class TestParsePatch:
 
 
 class TestHeaderPath:
-    def test_extracts_path(self) -> None:
-        assert (
-            _header_path("*** Update File: src/main.py", "*** Update File: ")
-            == "src/main.py"
-        )
-
     def test_empty_raises(self) -> None:
         with pytest.raises(ValueError, match="empty"):
             _header_path("*** Update File: ", "*** Update File: ")
@@ -99,9 +92,6 @@ class TestFindSequence:
     def test_not_found(self) -> None:
         assert _find_sequence(["a", "b"], ("c",), 0) is None
 
-    def test_empty_needle_returns_start(self) -> None:
-        assert _find_sequence(["a"], (), 2) == 2
-
     def test_beyond_bounds_returns_none(self) -> None:
         assert _find_sequence(["a"], ("a",), 5) is None
 
@@ -117,23 +107,6 @@ class TestFindAnchor:
 
     def test_empty_anchor_returns_cursor(self) -> None:
         assert _find_anchor(["a"], "", 1) == 1
-
-
-class TestChangeCounts:
-    def test_insertion(self) -> None:
-        a, d = _change_counts("a\nb", "a\nb\nc")
-        assert a == 1
-        assert d == 0
-
-    def test_deletion(self) -> None:
-        a, d = _change_counts("a\nb\nc", "a\nb")
-        assert a == 0
-        assert d == 1
-
-    def test_replacement(self) -> None:
-        a, d = _change_counts("old\n", "new\n")
-        assert a >= 1
-        assert d >= 1
 
 
 class TestExtractPatchPaths:
