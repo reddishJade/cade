@@ -32,3 +32,12 @@ dist/
 diff.log
 docs/notes/
 tmp/
+
+# --- 本地验证产物与临时报告 ---
+docs/validation/
+docs/reports/
+docs/context-session-reliability.md
+docs/tui-ux-validation.md
+docs/codebase-status-report.md
+docs/source-review.md
+docs/evaluation-legacy-audit.md

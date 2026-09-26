@@ -274,7 +274,6 @@ uv run pyright src/
 | [AGENTS.md](AGENTS.md) | Agent 开发入口和 Python 编码规范 |
 | [CONFIG.md](CONFIG.md) | 运行时配置参考 |
 | [docs/code-organization.md](docs/code-organization.md) | 模块职责与工具组映射 |
-| [docs/source-review.md](docs/source-review.md) | 源码级架构审查 |
 | [docs/evaluation-guide.md](docs/evaluation-guide.md) | 测试和 eval 工作流 |
 
 ---
