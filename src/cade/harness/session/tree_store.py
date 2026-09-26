@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import shutil
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
@@ -457,41 +458,44 @@ class TreeSessionRepo:
         self, entry_id: str, title: str = "", summary: str = ""
     ) -> TreeSessionRepo:
         """从指定 entry 分叉：新建会话，只保留从该 entry 到 head 的路径。"""
-        entries = self.read_entries()
-        by_id = {e.id: e for e in entries}
-        if entry_id not in by_id:
-            raise ValueError(f"entry {entry_id} not found")
-
-        # 从 head 回溯到 entry_id，收集路径
-        branch_ids: set[str] = set()
-        current: str | None = self._load_head_id() or entry_id
-        while current and current in by_id:
-            branch_ids.add(current)
-            if current == entry_id:
-                break
-            current = by_id[current].parent_id
-
-        if entry_id not in branch_ids:
+        branch = self.build_branch()
+        start = next(
+            (index for index, entry in enumerate(branch) if entry.id == entry_id), None
+        )
+        if start is None:
             raise ValueError(f"entry {entry_id} not on current branch")
-
+        copied = branch[start:]
         parent = self.ensure_metadata()
         fork_path = self._new_path()
         with _open_private_text(fork_path, append=False) as f:
-            for e in entries:
-                if e.id in branch_ids:
-                    pid = None if e.id == entry_id else e.parent_id
-                    f.write(
-                        _dump_tree_entry(
-                            TreeEntryModel(
-                                id=e.id,
-                                parent_id=pid,
-                                type=e.type,
-                                content=e.content,
-                                created_at=e.created_at,
-                            )
+            for index, entry in enumerate(copied):
+                content = deepcopy(entry.content)
+                if (
+                    isinstance(content, dict)
+                    and content.get("type") == "context_window_reset"
+                ):
+                    data = content.get("data")
+                    expected = [item.id for item in branch[: start + index]]
+                    if (
+                        not isinstance(data, dict)
+                        or data.get("source_entry_ids") != expected
+                    ):
+                        raise ValueError(
+                            "cannot fork an invalid context window source prefix"
                         )
-                        + "\n"
+                    data["source_entry_ids"] = [item.id for item in copied[:index]]
+                f.write(
+                    _dump_tree_entry(
+                        TreeEntryModel(
+                            id=entry.id,
+                            parent_id=None if index == 0 else entry.parent_id,
+                            type=entry.type,
+                            content=content,
+                            created_at=entry.created_at,
+                        )
                     )
+                    + "\n"
+                )
         now = datetime.now(UTC).isoformat(timespec="seconds")
         meta = TreeMetadata(
             id=self._session_id(fork_path),
