@@ -138,13 +138,20 @@ def _safe_openai_error_detail(body: object) -> str | None:
     error = body.get("error", body)
     if not isinstance(error, dict):
         return None
+    code = error.get("code")
+    context_code = None
+    if isinstance(code, str) and code in {
+        "context_length_exceeded",
+        "context_window_exceeded",
+    }:
+        context_code = code
     detail = error.get("message")
     if not isinstance(detail, str):
-        return None
+        return context_code
     normalized = " ".join(detail.split())
     if not normalized or "<html" in normalized.lower():
-        return None
-    return normalized[:500]
+        return context_code
+    return f"{context_code}: {normalized[:450]}" if context_code else normalized[:500]
 
 
 # ── 消息转换工具 ──

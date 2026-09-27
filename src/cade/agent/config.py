@@ -148,6 +148,7 @@ class AgentLoopConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
     provider: Annotated[StreamProvider | None, SkipValidation] = None
     request_token_budget: Annotated[int, Field(ge=0)] = 0
+    recover_context_overflow: bool = True
     tool_execution: ToolExecutionMode = "parallel"
     tool_workers: int = 4
     tool_timeout_seconds: float = 120.0
