@@ -192,6 +192,7 @@ def test_history_tool_exposes_window_search_read_and_around(tmp_path: Path) -> N
         "message_id",
         "limit",
         "include_artifacts",
+        "include_derived",
         "before",
         "after",
         "offset",

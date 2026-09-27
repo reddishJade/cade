@@ -97,6 +97,7 @@ class SessionHistory:
         *,
         limit: int = 5,
         include_artifacts: bool = False,
+        include_derived: bool = False,
     ) -> list[HistoryEntry]:
         """按关键词相关性搜索当前 branch。"""
         terms = _tokens(query)
@@ -104,7 +105,13 @@ class SessionHistory:
             return []
         phrase = query.strip().casefold()
         scored: list[tuple[int, int, HistoryEntry]] = []
-        for index, entry in enumerate(self._branch()):
+        branch = self._branch()
+        retrieval_calls = _retrieval_call_ids(branch)
+        for index, entry in enumerate(branch):
+            if not include_derived and not _primary_search_entry(
+                entry, retrieval_calls
+            ):
+                continue
             text = (entry.text if include_artifacts else entry.search_text).casefold()
             matches = sum(min(text.count(term), 3) for term in terms)
             if matches == 0:
@@ -251,6 +258,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                 query,
                 limit=_bounded(data.get("limit"), 5, 20),
                 include_artifacts=data.get("include_artifacts") is True,
+                include_derived=data.get("include_derived") is True,
             )
         elif operation == "read":
             message_id = str(data.get("message_id", "")).strip()
@@ -292,6 +300,8 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                 "transcript, page through one exact record, or inspect neighbors. "
                 "Search returns bounded excerpts and match offsets when an exact term "
                 "occurs in a large record; use those offsets for targeted reads."
+                " Default search excludes retrieval echoes, runtime reminders and "
+                "audit/reset copies; include_derived=true searches all records."
             ),
             input_hint=(
                 'JSON: {"operation":"list_windows"}, '
@@ -312,6 +322,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                     "message_id": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                     "include_artifacts": {"type": "boolean"},
+                    "include_derived": {"type": "boolean"},
                     "before": {"type": "integer", "minimum": 0, "maximum": 20},
                     "after": {"type": "integer", "minimum": 0, "maximum": 20},
                     "offset": {"type": "integer", "minimum": 0},
@@ -380,6 +391,55 @@ def _tokens(text: str) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(re.findall(r"[a-z0-9_./:-]+|[\u3400-\u9fff]", text.casefold()))
     )
+
+
+def _retrieval_call_ids(branch: list[HistoryEntry]) -> set[str]:
+    """先识别检索调用，再过滤其回显；不能依赖事件落盘顺序。"""
+    calls: set[str] = set()
+    for entry in branch:
+        content = entry.content
+        if not isinstance(content, dict) or content.get("type") != "tool_use":
+            continue
+        data = content.get("data")
+        if isinstance(data, dict) and data.get("name") == "history":
+            calls.add(str(data.get("id", "")))
+    return calls
+
+
+def _primary_search_entry(entry: HistoryEntry, retrieval_calls: set[str]) -> bool:
+    """搜索默认只召回原始对话和工具事实，派生复制可显式查询。"""
+    if entry.type in {"user", "assistant"}:
+        return True
+    content = entry.content
+    if entry.type != "event" or not isinstance(content, dict):
+        return False
+    kind = content.get("type")
+    data = content.get("data")
+    if kind == "inbox/claimed" and isinstance(data, dict):
+        messages = data.get("message")
+        text = _claimed_display_text(content) or ""
+        return (
+            isinstance(messages, list)
+            and any(isinstance(m, dict) and m.get("kind") == "user" for m in messages)
+            and not text.lstrip().startswith(("<reminder>", "<plan-timeout>"))
+        )
+    if kind == "tool_result" and isinstance(data, dict):
+        return str(data.get("tool_use_id", "")) not in retrieval_calls
+    if kind == "tool_use" and isinstance(data, dict):
+        return data.get("name") != "history"
+    if kind == "assistant" and isinstance(data, list):
+        return any(
+            isinstance(block, dict)
+            and (
+                (
+                    block.get("type") == "text"
+                    and bool(str(block.get("text", "")).strip())
+                )
+                or (block.get("type") == "tool_use" and block.get("name") != "history")
+            )
+            for block in data
+        )
+    return kind == "final"
 
 
 def _entry_priority(entry: HistoryEntry) -> int:
