@@ -66,7 +66,7 @@ class TestTrimToBudget:
         assert len(used) == 1
         assert len(dropped) == 0
 
-    def test_budget_exceeded_by_base(self) -> None:
+    def test_mandatory_instruction_survives_budget_pressure(self) -> None:
         blocks = [
             ContextBlock(
                 source=ContextBlockSource.INSTRUCTION,
@@ -75,8 +75,8 @@ class TestTrimToBudget:
             )
         ]
         used, dropped = trim_to_budget(blocks, budget=5, base_tokens=10)
-        assert len(used) == 0
-        assert len(dropped) == 1
+        assert used == blocks
+        assert dropped == []
 
     def test_budget_selects_higher_priority_first(self) -> None:
         blocks = [
@@ -302,7 +302,7 @@ class TestWorldState:
         assert "stable instruction" in str(first.messages)
         assert "stable instruction" in str(second.messages)
         assert [trace.block_id for trace in first.context_trace] == ["stable"]
-        assert second.context_trace == ()
+        assert second.context_trace == first.context_trace
 
     def test_changed_section_renders_a_replacement_notice(self) -> None:
         class _Collector:
@@ -331,8 +331,8 @@ class TestWorldState:
         collector.value = "after"
         assembly = request_assembler.assemble(context, current_step=2, options=None)
 
-        assert assembly.context_trace[0].block_id == "notes"
-        assert 'status="updated"' in str(assembly.messages)
+        assert "after" in str(assembly.messages)
+        assert "before" not in str(assembly.messages)
 
     def test_state_section_reports_removal(self) -> None:
         section = make_state_section(

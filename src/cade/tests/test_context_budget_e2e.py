@@ -24,6 +24,11 @@ import pytest
 import cade.agent.context as context_module
 from cade.agent.agent import Agent
 from cade.agent.config import AgentLoopConfig, ContextWindowResetReason
+from cade.agent.context import (
+    ContextCollectorRegistry,
+    NotesCollector,
+    make_collector_section,
+)
 from cade.agent.context_manager import ContextManager
 from cade.agent.context_policy import ContextPolicy
 from cade.agent.events import AgentEvent, ToolExecutionEndEvent
@@ -529,12 +534,18 @@ async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -
 
 
 async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
-    """真实请求覆盖零用量、失败、前缀追加、工具/模型变化和投影替换。"""
+    """真实请求覆盖零用量、失败、最新笔记/前缀、工具/模型变化和投影替换。"""
     manager = ContextManager()
     assemblies: list[dict[str, object]] = []
     results: list[AgentLoopResult] = []
     events: list[AgentEvent] = []
     prefix = [SystemMessage(content="original instructions")]
+    note = tmp_path / "NOTE.md"
+    note.write_text("old frontier: investigate", encoding="utf-8")
+    collectors = ContextCollectorRegistry()
+    collectors.register_section(
+        make_collector_section("notes", NotesCollector(tmp_path))
+    )
     with _http_provider("lifecycle") as (provider, http_requests):
         agent = Agent(tools=[], model=provider)
         config = AgentLoopConfig(
@@ -542,6 +553,7 @@ async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
             context_policy=ContextPolicy(
                 physical_window=5000, output_reserve=512, headroom_tokens=256
             ),
+            request_assembler=DefaultRequestAssembler(context_collectors=collectors),
             max_llm_calls=1,
             before_provider_request=lambda assembly: assemblies.append(
                 _trace(assembly)
@@ -566,7 +578,9 @@ async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
         await run()  # 普通 HTTP 400 失败，不更新有效锚点。
         await run()
         prefix = [SystemMessage(content="revised instructions")]
+        note.write_text("new frontier: verify", encoding="utf-8")
         await run()
+        note.unlink()
         agent.update_tools(
             [
                 ToolSpecAdapter(
@@ -597,12 +611,18 @@ async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
         "provider_anchor",
         "provider_anchor",
         "provider_anchor",
-        "provider_anchor",
+        "local",
         "local",
         "local",
         "local",
         "local",
     ]
+    changed_request = json.dumps(http_requests[5])
+    assert "new frontier: verify" in changed_request
+    assert "old frontier" not in changed_request
+    assert "original instructions" not in changed_request
+    assert "revised instructions" in changed_request
+    assert "frontier:" not in json.dumps(http_requests[6])
     assert int(assemblies[2]["tokens"]) >= 100
     assert results[3].termination_reason is TerminationReason.PROVIDER_ERROR
     assert all(
