@@ -40,6 +40,9 @@ class ContextSnapshot:
     total_input_source: str
     output_reserve_tokens: int
     operational_headroom_tokens: int
+    next_turn_input_tokens: int
+    admission_target: int
+    projected_next_input_tokens: int
     remaining_input_budget: int
     current_window_id: str | None
     last_rotation_reason: str | None
@@ -60,12 +63,15 @@ class ContextPolicy:
     evidence_token_budget: int | None = None
     output_limit_supported: bool = True
     working_set_token_budget: int | None = None
+    next_turn_input_tokens: int = 1024
 
     def __post_init__(self) -> None:
         if self.output_reserve < 0 or not 0 < self.trigger_ratio <= 1:
             raise ValueError("Invalid output reserve or rollover trigger ratio")
         if self.headroom_tokens is not None and self.headroom_tokens < 0:
             raise ValueError("Context headroom must be nonnegative")
+        if self.next_turn_input_tokens < 0:
+            raise ValueError("Next-turn input allowance must be nonnegative")
         if self.evidence_token_budget is not None and self.evidence_token_budget < 0:
             raise ValueError("Evidence token budget must be nonnegative")
         if (
@@ -80,15 +86,12 @@ class ContextPolicy:
 
     @property
     def headroom(self) -> int:
-        """默认把旧比例阈值留下的空间拆成输出预留与额外余量，避免重复扣减。"""
+        """独立预留窗口的百分之二，最多 8192；不从输出预留中抵扣。"""
         if self.headroom_tokens is not None:
             return self.headroom_tokens
         if self.physical_window is None:
-            return 0
-        ratio_reserve = self.physical_window - int(
-            self.physical_window * self.trigger_ratio
-        )
-        return max(0, ratio_reserve - self.output_reserve)
+            return 1024
+        return min(8192, max(1, self.physical_window // 50))
 
     @property
     def input_budget(self) -> int:
@@ -110,6 +113,15 @@ class ContextPolicy:
         if self.evidence_token_budget is not None:
             return self.evidence_token_budget
         return min(32000, self.input_budget or 32000)
+
+    @property
+    def next_input_allowance(self) -> int:
+        """为下一轮新增调用及证据预留有界 allowance，不重复计入输出和余量。"""
+        return min(self.next_turn_input_tokens, self.rotation_threshold // 8)
+
+    @property
+    def admission_target(self) -> int:
+        return max(1, self.rotation_threshold - self.next_input_allowance)
 
     @property
     def working_budget(self) -> int:
@@ -186,13 +198,18 @@ class ContextPolicy:
         return replace(options or StreamOptions(), max_tokens=self.output_reserve)
 
     def should_rotate(self, predicted_input: int) -> bool:
-        return self.automatic_rollover and predicted_input >= self.rotation_threshold
+        return (
+            self.automatic_rollover
+            and predicted_input + self.next_input_allowance >= self.rotation_threshold
+        )
 
     def project_working_set(
         self,
         messages: list[AgentMessage],
         protected_ids: frozenset[str],
         reclaim_tokens: int,
+        *,
+        eligible_ids: frozenset[str] | None = None,
     ) -> tuple[list[AgentMessage], tuple[str, ...]]:
         """正文回收后仍不足时，把旧的完整工具交互替换为事实索引。"""
         recent = latest_working_group(messages)
@@ -208,7 +225,11 @@ class ContextPolicy:
                 continue
             calls = [b for b in message.content if isinstance(b, ToolCallContent)]
             ids = {b.id for b in calls}
-            if not ids or ids.intersection(protected_ids):
+            if (
+                not ids
+                or ids.intersection(protected_ids)
+                or (eligible_ids is not None and not ids.issubset(eligible_ids))
+            ):
                 continue
             result_indices = [
                 i
@@ -308,6 +329,33 @@ class ContextPolicy:
             omitted.append(message.tool_call_id)
         return projected, tuple(reversed(omitted))
 
+    def project_durable_state(
+        self, messages: list[AgentMessage], protected_ids: frozenset[str]
+    ) -> tuple[list[AgentMessage], tuple[str, ...]]:
+        """相同状态键只保留最新版本，旧事实留下明确的原文恢复引用。"""
+        obsolete = superseded_state_ids(messages)
+        projected, omitted = self.project_working_set(
+            messages,
+            protected_ids,
+            estimate_message_tokens(messages),
+            eligible_ids=obsolete,
+        )
+        return [
+            message.model_copy(
+                update={
+                    "content": (
+                        "[Superseded task-state version; do not use as current state.] "
+                        + evidence_reference(message)
+                    )
+                }
+            )
+            if isinstance(message, ToolResultMessage)
+            and message.tool_call_id in obsolete
+            and message.tool_call_id not in protected_ids
+            else message
+            for message in projected
+        ], omitted
+
 
 def _evidence_preview(text: str, token_budget: int) -> str:
     """预览只保留短头尾；引用和状态的开销由完整输入预算计量。"""
@@ -325,12 +373,44 @@ def latest_task_message(messages: list[AgentMessage]) -> UserMessage | None:
     for message in reversed(messages):
         if not isinstance(message, UserMessage):
             continue
-        if isinstance(message.content, str) and message.content.lstrip().startswith(
-            ("<reminder>", "<plan-timeout>")
-        ):
-            continue
+        if isinstance(message.content, str):
+            if message.content.lstrip().startswith(("<reminder>", "<plan-timeout>")):
+                continue
+            if "<skill-activation-state>" in message.content:
+                continue
         return message
     return None
+
+
+def superseded_state_ids(messages: list[AgentMessage]) -> frozenset[str]:
+    """状态键表示替换关系；普通工具输出不靠工具名猜测生命周期。"""
+    seen: set[str] = set()
+    obsolete: set[str] = set()
+    for message in reversed(messages):
+        if not isinstance(message, ToolResultMessage) or message.is_error:
+            continue
+        metadata = message.metadata or {}
+        if metadata.get("context_lifetime") != "durable":
+            continue
+        key = metadata.get("context_key")
+        if not isinstance(key, str) or not key:
+            continue
+        if key in seen:
+            obsolete.add(message.tool_call_id)
+        seen.add(key)
+    return frozenset(obsolete)
+
+
+def current_durable_ids(messages: list[AgentMessage]) -> frozenset[str]:
+    obsolete = superseded_state_ids(messages)
+    return frozenset(
+        m.tool_call_id
+        for m in messages
+        if isinstance(m, ToolResultMessage)
+        and (m.metadata or {}).get("context_lifetime") == "durable"
+        and m.tool_call_id not in obsolete
+        and not m.is_error
+    )
 
 
 def latest_working_group(messages: list[AgentMessage]) -> list[AgentMessage]:
@@ -341,8 +421,15 @@ def latest_working_group(messages: list[AgentMessage]) -> list[AgentMessage]:
         if message is latest_user:
             break
         if isinstance(message, AssistantMessage):
-            group = list(messages[index:])
             calls = {b.id for b in message.content if isinstance(b, ToolCallContent)}
+            group: list[AgentMessage] = [
+                message,
+                *[
+                    m
+                    for m in messages[index + 1 :]
+                    if isinstance(m, ToolResultMessage) and m.tool_call_id in calls
+                ],
+            ]
             results = {
                 m.tool_call_id for m in group if isinstance(m, ToolResultMessage)
             }

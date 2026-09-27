@@ -16,10 +16,6 @@ from ...agent.messages import AgentMessage, ToolResultMessage
 from ...agent.types import ShellCallOutputContent, TextContent
 from .async_worker import IsolatedAsyncWorker
 from .cancellation import CancellationToken
-from .context_window import (
-    budget_large_tool_outputs,
-    latest_read_file_tool_result_ids,
-)
 
 if TYPE_CHECKING:
     from .events import AgentHarnessEvent
@@ -118,25 +114,6 @@ def text_from_blocks(blocks: list[Mapping[str, object]]) -> str:
             if text is not None:
                 parts.append(str(text))
     return "".join(parts).strip()
-
-
-# ── 预算 ──
-
-
-def budget_messages_for_provider(
-    messages: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """发送模型前裁剪过大的非文件读取工具结果。"""
-    preserved_tool_results = latest_read_file_tool_result_ids(messages)
-    return budget_large_tool_outputs(
-        messages,
-        large_tool_output_chars=8_000,
-        large_tool_output_head_chars=4_000,
-        large_tool_output_tail_chars=4_000,
-        active_window_token_threshold=1,
-        tool_trim_trigger_ratio=0,
-        preserve_tool_result_ids=preserved_tool_results,
-    )
 
 
 def run_coro_sync[T](coro: Coroutine[Any, Any, T]) -> T:

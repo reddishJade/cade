@@ -55,10 +55,7 @@ def build_shared_infra(
     else:
         transcript_dir = project_root / ".cade" / "sessions"
 
-    context_rollover = ContextWindowRollover(
-        fallback_recent_messages=runtime_config.agent.fallback_recent_messages,
-        fallback_recent_tokens=runtime_config.agent.fallback_recent_tokens,
-    )
+    context_rollover = ContextWindowRollover()
     session_recorder = SessionRecorder(
         SessionStore(transcript_dir, project_root=project_root),
         context_window_state_provider=lambda: capture_working_note(project_root),

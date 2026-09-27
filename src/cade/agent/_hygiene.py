@@ -35,14 +35,7 @@ def repair_tool_pairing(messages: list[AgentMessage]) -> list[AgentMessage]:
                 else:
                     filtered_content.append(block)
             if filtered_content:
-                repaired.append(
-                    AssistantMessage(
-                        content=filtered_content,
-                        stop_reason=msg.stop_reason,
-                        model=msg.model,
-                        usage=msg.usage,
-                    )
-                )
+                repaired.append(msg.model_copy(update={"content": filtered_content}))
         elif isinstance(msg, ToolResultMessage):
             if msg.tool_call_id in tool_call_ids:
                 repaired.append(msg)
@@ -75,6 +68,7 @@ def apply_request_hygiene(
                 if (
                     isinstance(block, ToolCallContent)
                     and block.id in completed_tool_ids
+                    and block.id not in protected_tool_result_ids
                 ):
                     cleaned_args = _truncate_tool_args(
                         block.arguments or {}, max_tool_arg_length
@@ -88,14 +82,7 @@ def apply_request_hygiene(
                     )
                 else:
                     cleaned_content.append(block)
-            cleaned.append(
-                AssistantMessage(
-                    content=cleaned_content,
-                    stop_reason=msg.stop_reason,
-                    model=msg.model,
-                    usage=msg.usage,
-                )
-            )
+            cleaned.append(msg.model_copy(update={"content": cleaned_content}))
         elif isinstance(msg, ToolResultMessage):
             if msg.tool_call_id in protected_tool_result_ids:
                 cleaned.append(msg)

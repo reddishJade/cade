@@ -33,10 +33,12 @@ from .context_manager import history_fingerprints
 from .context_policy import (
     ContextPolicy,
     ContextSnapshot,
+    current_durable_ids,
     evidence_reference,
     latest_task_message,
     mandatory_history,
     protected_working_set,
+    superseded_state_ids,
 )
 from .messages import AgentMessage, SystemMessage, ToolResultMessage, UserMessage
 from .types import AgentTool, materialize_json_mapping
@@ -165,6 +167,9 @@ class DefaultRequestAssembler:
         token_budget = (
             policy.input_budget if policy is not None else context.request_token_budget
         )
+        admission_budget = (
+            policy.admission_target if policy and token_budget > 0 else token_budget
+        )
         if context.context_manager is not None:
             context.messages[:] = context.context_manager.normalize_messages(
                 context.messages
@@ -184,26 +189,24 @@ class DefaultRequestAssembler:
             *context_state.persistent_messages,
             *context.messages,
         ]
-        protected_ids = frozenset(
+        obsolete_ids = superseded_state_ids(base_messages)
+        protected_ids = current_durable_ids(base_messages) | frozenset(
             message.tool_call_id
             for message in base_messages
             if isinstance(message, ToolResultMessage)
             and (
-                (message.metadata or {}).get("context_lifetime") == "durable"
-                or (
-                    self.preserve_tool_result is not None
-                    and self.preserve_tool_result(message)
-                )
+                self.preserve_tool_result is not None
+                and self.preserve_tool_result(message)
+                and message.tool_call_id not in obsolete_ids
             )
         )
-        request_messages = self.hygiene.apply(base_messages, protected_ids)
-        evidence_omitted = tuple(
-            original.tool_call_id
-            for original, projected in zip(base_messages, request_messages, strict=True)
-            if isinstance(original, ToolResultMessage)
-            and isinstance(projected, ToolResultMessage)
-            and original.content != projected.content
+        current_messages, state_omitted = (
+            policy.project_durable_state(base_messages, protected_ids)
+            if policy is not None
+            else (base_messages, ())
         )
+        request_messages = self.hygiene.apply(current_messages, protected_ids)
+        evidence_omitted: tuple[str, ...] = ()
         if policy is not None:
             request_messages, omitted = policy.project_evidence(
                 request_messages, protected_ids
@@ -236,15 +239,15 @@ class DefaultRequestAssembler:
             tools=list(context.tools),
             context_blocks=[*world_blocks, *legacy_blocks],
             current_step=current_step,
-            token_budget=token_budget,
+            token_budget=admission_budget,
             calibrate_tokens=calibrate_tokens,
         )
         result = self.context_assembler.assemble(assembly_input)
         evidence_reclaimed_tokens = 0
         if (
             policy is not None
-            and token_budget > 0
-            and result.total_tokens > token_budget
+            and admission_budget > 0
+            and result.total_tokens > admission_budget
         ):
             # 用实际请求压力收紧证据配额；状态只收集一次，所有裁剪均为临时投影。
             original_messages = request_messages
@@ -258,7 +261,7 @@ class DefaultRequestAssembler:
             )
             evidence_budget = min(policy.evidence_budget, original_evidence_tokens)
             for _attempt in range(3):
-                deficit = result.total_tokens - token_budget
+                deficit = result.total_tokens - admission_budget
                 if deficit <= 0 or evidence_budget <= 0:
                     break
                 evidence_budget = max(0, evidence_budget - deficit)
@@ -268,10 +271,10 @@ class DefaultRequestAssembler:
                 assembly_input.messages = reduced
                 result = self.context_assembler.assemble(assembly_input)
                 evidence_omitted = tuple(dict.fromkeys((*evidence_omitted, *omitted)))
-        working_omitted: tuple[str, ...] = ()
-        if policy is not None and token_budget > 0:
+        working_omitted: tuple[str, ...] = state_omitted
+        if policy is not None and admission_budget > 0:
             for _attempt in range(3):
-                deficit = result.total_tokens - token_budget
+                deficit = result.total_tokens - admission_budget
                 if deficit <= 0:
                     break
                 reduced, omitted = policy.project_working_set(
@@ -282,7 +285,7 @@ class DefaultRequestAssembler:
                 working_omitted = (*working_omitted, *omitted)
                 assembly_input.messages = reduced
                 result = self.context_assembler.assemble(assembly_input)
-        if working_omitted and token_budget > result.total_tokens:
+        if working_omitted and admission_budget > result.total_tokens:
             # 旧交互释放空间后，优先恢复近期原文，避免先裁正文导致优先级倒置。
             originals = {
                 m.tool_call_id: m
@@ -291,7 +294,7 @@ class DefaultRequestAssembler:
             }
             before_restore = assembly_input.messages
             restored = list(before_restore)
-            remaining = token_budget - result.total_tokens
+            remaining = admission_budget - result.total_tokens
             for index in range(len(restored) - 1, -1, -1):
                 message = restored[index]
                 if not isinstance(message, ToolResultMessage):
@@ -307,7 +310,7 @@ class DefaultRequestAssembler:
                     remaining -= cost
             assembly_input.messages = restored
             candidate = self.context_assembler.assemble(assembly_input)
-            if candidate.total_tokens > token_budget:
+            if candidate.total_tokens > admission_budget:
                 assembly_input.messages = before_restore
                 result = self.context_assembler.assemble(assembly_input)
             else:
@@ -352,7 +355,7 @@ class DefaultRequestAssembler:
         )
         rotation_blocked_reason = None
         if policy is not None:
-            if token_budget > 0 and mandatory_tokens >= token_budget:
+            if admission_budget > 0 and mandatory_tokens >= admission_budget:
                 rotation_blocked_reason = "mandatory_input_exceeds_budget"
             elif not policy.can_reclaim_history(context.messages, protected_ids):
                 rotation_blocked_reason = "no_reclaimable_history"
@@ -372,8 +375,10 @@ class DefaultRequestAssembler:
             current_step=current_step,
             hygiene_applied=self.hygiene.enabled,
             estimated_tokens=result.total_tokens,
-            token_budget=result.token_budget,
-            budget_remaining=result.budget_remaining,
+            token_budget=token_budget,
+            budget_remaining=token_budget - result.total_tokens
+            if token_budget > 0
+            else 0,
             options=options,
             local_estimated_tokens=local_tokens or result.total_tokens,
             token_estimate_source=estimate_source,
@@ -509,6 +514,10 @@ def _context_snapshot(
         total_input_source=estimate_source,
         output_reserve_tokens=policy.output_reserve if policy else 0,
         operational_headroom_tokens=policy.headroom if policy else 0,
+        next_turn_input_tokens=policy.next_input_allowance if policy else 0,
+        admission_target=policy.admission_target if policy else token_budget,
+        projected_next_input_tokens=predicted_tokens
+        + (policy.next_input_allowance if policy else 0),
         remaining_input_budget=token_budget - predicted_tokens
         if token_budget > 0
         else 0,
