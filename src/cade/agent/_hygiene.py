@@ -59,6 +59,7 @@ def apply_request_hygiene(
     max_tool_arg_length: int = 1000,
     keep_head_lines: int = 50,
     keep_tail_lines: int = 50,
+    protected_tool_result_ids: frozenset[str] = frozenset(),
 ) -> list[AgentMessage]:
     cleaned: list[AgentMessage] = []
 
@@ -96,18 +97,14 @@ def apply_request_hygiene(
                 )
             )
         elif isinstance(msg, ToolResultMessage):
+            if msg.tool_call_id in protected_tool_result_ids:
+                cleaned.append(msg)
+                continue
             if isinstance(msg.content, str):
                 truncated = _truncate_tool_result(
                     msg.content, max_tool_result_bytes, keep_head_lines, keep_tail_lines
                 )
-                cleaned.append(
-                    ToolResultMessage(
-                        tool_call_id=msg.tool_call_id,
-                        tool_name=msg.tool_name,
-                        content=truncated,
-                        is_error=msg.is_error,
-                    )
-                )
+                cleaned.append(msg.model_copy(update={"content": truncated}))
             else:
                 from cade.agent.types import TextContent
 
@@ -126,14 +123,7 @@ def apply_request_hygiene(
                         )
                     else:
                         cleaned_blocks.append(block)
-                cleaned.append(
-                    ToolResultMessage(
-                        tool_call_id=msg.tool_call_id,
-                        tool_name=msg.tool_name,
-                        content=cleaned_blocks,
-                        is_error=msg.is_error,
-                    )
-                )
+                cleaned.append(msg.model_copy(update={"content": cleaned_blocks}))
         else:
             cleaned.append(msg)
 
