@@ -144,7 +144,13 @@ def _http_provider(
                 release_idle.wait(timeout=15)
                 return
             tool_call = (scenario == "tool-overflow" and index == 0) or (
-                scenario in {"evidence", "evidence-pressure", "working-pressure"}
+                scenario
+                in {
+                    "evidence",
+                    "evidence-pressure",
+                    "working-pressure",
+                    "state-versions",
+                }
                 and index < 3
             )
             fail = (
@@ -153,6 +159,7 @@ def _http_provider(
                 or (scenario == "recover" and index == 0)
                 or (scenario == "lifecycle" and index == 3)
                 or (scenario == "responses-code" and index == 0)
+                or (scenario == "state-versions" and index == 3)
             )
             if fail:
                 detail = (
@@ -179,18 +186,42 @@ def _http_provider(
                         {
                             "index": 0,
                             "id": (
-                                ["evidence-old", "evidence-new", "evidence-durable"][
-                                    index
-                                ]
+                                f"state-{index}"
+                                if scenario == "state-versions"
+                                else [
+                                    "evidence-old",
+                                    "evidence-new",
+                                    "evidence-durable",
+                                ][index]
                                 if scenario
                                 in {"evidence", "evidence-pressure", "working-pressure"}
                                 else "read-evidence-1"
                             ),
                             "type": "function",
                             "function": {
-                                "name": "read_evidence",
+                                "name": "todowrite"
+                                if scenario == "state-versions"
+                                else "read_evidence",
                                 "arguments": (
                                     json.dumps(
+                                        {
+                                            "todos": [
+                                                {
+                                                    "id": "repair",
+                                                    "content": "OLD_TASK_STATE"
+                                                    if index == 0
+                                                    else "CURRENT_TASK_STATE",
+                                                    "status": "pending"
+                                                    if index == 0
+                                                    else "completed",
+                                                }
+                                            ]
+                                            if index < 2
+                                            else []
+                                        }
+                                    )
+                                    if scenario == "state-versions"
+                                    else json.dumps(
                                         {"context": "WORKING_RAW_ARGUMENT_" * 1200}
                                     )
                                     if scenario == "working-pressure"
@@ -597,6 +628,95 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
     assert json.loads(recovered_text)["data"]["content"] == texts[0]
     (tmp_path / "recovered-history.txt").write_text(recovered_text, encoding="utf-8")
     assert list(reopened.artifacts_dir.rglob("*.txt"))
+
+
+def test_durable_state_replacement_rotation_restart_cli_e2e(tmp_path: Path) -> None:
+    """真实 CLI 运行 todo 更新和清空；换窗、重开后只保留当前状态，旧版本可查。"""
+    from cade.harness.session.surface import (
+        project_session_surface,
+        validate_tool_pairing,
+    )
+
+    with _http_provider("state-versions") as (provider, requests):
+        config = tmp_path / "config.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "provider": {
+                        "model_profiles": {
+                            "main": {
+                                "transport": "openai_chat",
+                                "chat_model": "protocol-fixture",
+                                "api_key": "local-test-only",
+                                "base_url": provider.config.base_url,
+                                "thinking": False,
+                                "context_window": 16000,
+                            }
+                        }
+                    },
+                    "agent": {"reserve_tokens": 512},
+                }
+            )
+        )
+        command = [
+            sys.executable,
+            "-m",
+            "cade.main",
+            "exec",
+            "--project-root",
+            str(tmp_path),
+            "--config",
+            str(config),
+            "--sessions-dir",
+            str(tmp_path / "sessions"),
+            "--approval",
+            "never",
+            "--max-steps",
+            "6",
+            "--max-llm-calls",
+            "6",
+            "--event-detail",
+            "full",
+            "Update task progress, clear the finished list, then finish.",
+        ]
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=30, check=False
+        )
+    (tmp_path / "stdout.jsonl").write_text(result.stdout)
+    (tmp_path / "stderr.txt").write_text(result.stderr)
+    (tmp_path / "reproduce.json").write_text(json.dumps(command, indent=2))
+    (tmp_path / "http-requests.json").write_text(json.dumps(requests, indent=2))
+    assert result.returncode == 0, result.stderr
+    rows = [json.loads(line) for line in result.stdout.splitlines()]
+    assert any(row["type"] == "context_window_reset" for row in rows)
+    before_reset = requests[3]["messages"]
+    assert not any(
+        m.get("tool_call_id") in {"state-0", "state-1"} for m in before_reset
+    )
+    assert "tool_call_id" in json.dumps(before_reset) and "state-0" in json.dumps(
+        before_reset
+    )
+    final_messages = requests[-1]["messages"]
+    tool_results = [m for m in final_messages if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in tool_results] == ["state-2"]
+    assert json.loads(tool_results[0]["content"]) == {"todos": []}
+    completed = next(row for row in rows if row["type"] == "run.completed")
+    store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    store.resume(completed["session_id"])
+    surface = project_session_surface(store.build_branch())
+    validate_tool_pairing(list(surface.messages))
+    history = SessionHistory(store.sessions_dir, artifacts_dir=store.artifacts_dir)
+    history.set_session_id(store.session_id)
+    matches = history.search("OLD_TASK_STATE")
+    assert matches
+    (tmp_path / "recovered-state.json").write_text(
+        json.dumps([entry.text for entry in matches], indent=2)
+    )
+    current = [m for m in surface.messages if isinstance(m, ToolResultMessage)]
+    assert len(current) == 1 and current[0].metadata == {
+        "context_lifetime": "durable",
+        "context_key": "session-todo",
+    }
 
 
 async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:

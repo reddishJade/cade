@@ -304,7 +304,7 @@ class TestWorldState:
         assert [trace.block_id for trace in first.context_trace] == ["stable"]
         assert second.context_trace == first.context_trace
 
-    def test_changed_section_renders_a_replacement_notice(self) -> None:
+    def test_changed_section_replaces_previous_snapshot(self) -> None:
         class _Collector:
             def __init__(self) -> None:
                 self.value = "before"
@@ -345,7 +345,8 @@ class TestWorldState:
         assert state.world_state.render((section,), input_with_mode)
         removed = state.world_state.render((section,), ContextCollectionInput())
 
-        assert removed[0].content == '<context-section id="mode" status="removed" />'
+        assert removed == []
+        assert state.world_state.current_blocks() == []
 
 
 # ── ContextCollectorRegistry ──

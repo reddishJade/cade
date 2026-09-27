@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict
 
+from cade.agent.types import ToolOutput
 from cade.agent.types import ToolSpec as CoreToolSpec
 from cade.harness.session_todo import SessionTodoState
 
@@ -18,10 +19,13 @@ def build_todowrite_tool(state: SessionTodoState | None = None) -> CoreToolSpec:
             items = todo_state.replace(data.get("todos"))
         except (TypeError, ValueError) as exc:
             return f"Error: {exc}"
-        return json.dumps(
-            {"todos": [asdict(item) for item in items]},
-            ensure_ascii=False,
-            indent=2,
+        return ToolOutput(
+            json.dumps(
+                {"todos": [asdict(item) for item in items]},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            metadata={"context_lifetime": "durable", "context_key": "session-todo"},
         )
 
     return CoreToolSpec(
