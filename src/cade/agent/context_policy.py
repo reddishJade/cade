@@ -69,7 +69,7 @@ class ContextPolicy:
     def evidence_budget(self) -> int:
         if self.evidence_token_budget is not None:
             return self.evidence_token_budget
-        return min(32000, max(256, (self.input_budget or 96000) // 3))
+        return min(32000, self.input_budget or 32000)
 
     def for_provider(self, provider: StreamProvider) -> ContextPolicy:
         """切换到较小窗口时收紧预算；不扩大调用方显式限制的窗口。"""
