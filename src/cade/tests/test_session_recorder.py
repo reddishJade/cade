@@ -406,6 +406,7 @@ def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
     }
     assert record.metadata["assembly"] == {
         "context_policy": None,
+        "evidence_omitted": [],
         "local_estimated_tokens": assembly.local_estimated_tokens,
         "token_estimate_source": assembly.token_estimate_source,
         "current_step": 1,

@@ -8,6 +8,10 @@ from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import StreamProvider
 from cade.ai.types import StreamOptions
 
+from ._context_window import estimate_tokens
+from .messages import AgentMessage, ToolResultMessage
+from .types import TextContent
+
 
 @dataclass(frozen=True)
 class ContextPolicy:
@@ -109,3 +113,65 @@ class ContextPolicy:
 
     def should_rotate(self, predicted_input: int) -> bool:
         return self.automatic_rollover and predicted_input >= self.rotation_threshold
+
+    def project_evidence(
+        self,
+        messages: list[AgentMessage],
+        protected_ids: frozenset[str] = frozenset(),
+    ) -> tuple[list[AgentMessage], tuple[str, ...]]:
+        """按新到旧分配工具正文预算，原文和执行状态仍保留在事实历史中。"""
+        projected = list(messages)
+        remaining = self.evidence_budget
+        omitted: list[str] = []
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
+            if (
+                not isinstance(message, ToolResultMessage)
+                or message.tool_call_id in protected_ids
+            ):
+                continue
+            if isinstance(message.content, str):
+                text = message.content
+            elif all(isinstance(block, TextContent) for block in message.content):
+                text = "\n".join(
+                    block.text
+                    for block in message.content
+                    if isinstance(block, TextContent)
+                )
+            else:
+                # 多模态结果由 provider 计量，不猜测图像或文件的 token 成本。
+                continue
+            tokens = estimate_tokens(text)
+            if tokens <= remaining:
+                remaining -= tokens
+                continue
+            preview = _evidence_preview(text, remaining)
+            remaining = (
+                max(0, remaining - estimate_tokens(preview)) if preview else remaining
+            )
+            reference = (
+                "[Tool output omitted from this request; exact output remains in history. "
+                f"tool_call_id={message.tool_call_id}; tool_name={message.tool_name}; "
+                f"is_error={str(message.is_error).lower()}. "
+                "Preview is incomplete; recover original commands and evidence from history.]"
+            )
+            content = f"{reference}\n{preview}" if preview else reference
+            replacement = (
+                content
+                if isinstance(message.content, str)
+                else [TextContent(text=content)]
+            )
+            projected[index] = message.model_copy(update={"content": replacement})
+            omitted.append(message.tool_call_id)
+        return projected, tuple(reversed(omitted))
+
+
+def _evidence_preview(text: str, token_budget: int) -> str:
+    """预览只保留短头尾；引用和状态的开销由完整输入预算计量。"""
+    width = min(240, len(text) // 2)
+    while width > 0 and token_budget > 0:
+        preview = f"{text[:width]}\n[... omitted ...]\n{text[-width:]}"
+        if estimate_tokens(preview) <= token_budget:
+            return preview
+        width //= 2
+    return ""

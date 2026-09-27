@@ -23,11 +23,16 @@ from cade.agent.agent import Agent
 from cade.agent.config import AgentLoopConfig, ContextWindowResetReason
 from cade.agent.context_manager import ContextManager
 from cade.agent.context_policy import ContextPolicy
-from cade.agent.events import AgentEvent
-from cade.agent.messages import AgentMessage, SystemMessage, UserMessage
-from cade.agent.request import RequestAssembly
+from cade.agent.events import AgentEvent, ToolExecutionEndEvent
+from cade.agent.messages import (
+    AgentMessage,
+    SystemMessage,
+    ToolResultMessage,
+    UserMessage,
+)
+from cade.agent.request import DefaultRequestAssembler, RequestAssembly, RequestHygiene
 from cade.agent.results import AgentLoopResult, TerminationReason
-from cade.agent.types import ToolInput, ToolSpec, ToolSpecAdapter
+from cade.agent.types import ToolInput, ToolOutput, ToolSpec, ToolSpecAdapter
 from cade.ai.providers.openai import OpenAIChatProvider
 from cade.ai.providers.responses import (
     OpenAICodexResponsesProvider,
@@ -35,7 +40,10 @@ from cade.ai.providers.responses import (
 )
 from cade.ai.types import ProviderConfig
 from cade.harness.agent_runtime.context_window import ContextWindowRollover
+from cade.harness.agent_runtime.events import ToolResultBlock, ToolResultStructuredEvent
 from cade.harness.auth.manager import AuthManager
+from cade.harness.session import SessionHistory, SessionStore
+from cade.harness.session.recorder import SessionRecorder
 
 
 def _trace(assembly: RequestAssembly) -> dict[str, object]:
@@ -45,6 +53,7 @@ def _trace(assembly: RequestAssembly) -> dict[str, object]:
         "local_tokens": assembly.local_estimated_tokens,
         "source": assembly.token_estimate_source,
         "budget": assembly.token_budget,
+        "evidence_omitted": list(assembly.evidence_omitted),
         "max_output_tokens": assembly.options.max_tokens if assembly.options else None,
         "policy": (
             {
@@ -101,7 +110,9 @@ def _http_provider(
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(payload)
             index = len(requests) - 1
-            tool_call = scenario == "tool-overflow" and index == 0
+            tool_call = (scenario == "tool-overflow" and index == 0) or (
+                scenario == "evidence" and index < 3
+            )
             fail = (
                 scenario in {"permanent", "ordinary-413", "disabled", "call-limit"}
                 or (scenario == "tool-overflow" and index == 1)
@@ -133,7 +144,13 @@ def _http_provider(
                     "tool_calls": [
                         {
                             "index": 0,
-                            "id": "read-evidence-1",
+                            "id": (
+                                ["evidence-old", "evidence-new", "evidence-durable"][
+                                    index
+                                ]
+                                if scenario == "evidence"
+                                else "read-evidence-1"
+                            ),
                             "type": "function",
                             "function": {"name": "read_evidence", "arguments": "{}"},
                         }
@@ -291,6 +308,140 @@ async def test_context_overflow_http_e2e(
         assert "EXACT_EVIDENCE" in json.dumps(http_requests[1])
         assert "EXACT_EVIDENCE" not in json.dumps(http_requests[2])
         assert "read-evidence-1" in json.dumps(http_requests[2])
+
+
+async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -> None:
+    """请求省略旧正文，真实文件原文可从重开的 session 完整找回。"""
+    texts = [
+        "OLD_EXACT_MARKER\n" * 2400,
+        "RECENT_EVIDENCE\n" * 12,
+        "DURABLE_INSTRUCTIONS\n" * 600,
+    ]
+    files = [tmp_path / f"evidence-{index}.txt" for index in range(3)]
+    for path, text in zip(files, texts, strict=True):
+        path.write_text(text, encoding="utf-8")
+    reads: list[str] = []
+
+    def read_evidence(_params: ToolInput, _update: Callable[[str], None] | None) -> str:
+        index = len(reads)
+        reads.append(str(files[index]))
+        return ToolOutput(
+            files[index].read_text(encoding="utf-8"),
+            metadata={"context_lifetime": "durable"}
+            if index == 2
+            else {"source": "file"},
+        )
+
+    recorder = SessionRecorder(
+        SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    )
+    events: list[AgentEvent] = []
+
+    def emit(event: AgentEvent) -> None:
+        events.append(event)
+        if isinstance(event, ToolExecutionEndEvent) and event.result is not None:
+            result = event.result
+            assert isinstance(result.content, str)
+            recorder.record_event(
+                ToolResultStructuredEvent(
+                    "tool_result",
+                    len(reads),
+                    ToolResultBlock(
+                        result.tool_call_id,
+                        result.content,
+                        status="error" if result.is_error else "ok",
+                        metadata=result.metadata,
+                    ),
+                )
+            )
+
+    manager = ContextManager()
+    assemblies: list[dict[str, object]] = []
+    with _http_provider("evidence") as (provider, http_requests):
+        result = await Agent(
+            tools=[
+                ToolSpecAdapter(
+                    ToolSpec(
+                        "read_evidence",
+                        "读取工作区证据文件",
+                        "{}",
+                        read_evidence,
+                        schema={"type": "object", "properties": {}},
+                    )
+                )
+            ],
+            model=provider,
+        ).run(
+            [UserMessage(content="Read all three evidence files and finish.")],
+            AgentLoopConfig(
+                provider=provider,
+                max_llm_calls=5,
+                context_policy=ContextPolicy(
+                    physical_window=16000,
+                    output_reserve=512,
+                    headroom_tokens=512,
+                    evidence_token_budget=400,
+                ),
+                request_assembler=DefaultRequestAssembler(
+                    hygiene=RequestHygiene(max_tool_result_bytes=60000)
+                ),
+                before_provider_request=lambda assembly: assemblies.append(
+                    _trace(assembly)
+                ),
+            ),
+            context_manager=manager,
+            emit=emit,
+        )
+    _save(tmp_path / "evidence-trace.json", assemblies, [result], events)
+    (tmp_path / "http-requests.json").write_text(
+        json.dumps(http_requests, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    assert result.termination_reason is TerminationReason.COMPLETED
+    assert reads == [str(path) for path in files]
+    last_request = http_requests[-1]
+    encoded = json.dumps(last_request)
+    assert "tool_call_id=evidence-old" in encoded
+    assert texts[0] not in encoded
+    messages = last_request["messages"]
+    assert isinstance(messages, list)
+    tool_bodies = {
+        message["tool_call_id"]: message["content"]
+        for message in messages
+        if message["role"] == "tool"
+    }
+    assert tool_bodies["evidence-new"] == texts[1]
+    assert tool_bodies["evidence-durable"] == texts[2]
+    assert assemblies[-1]["evidence_omitted"] == ["evidence-old"]
+    assert (
+        last_request.get("max_completion_tokens", last_request.get("max_tokens")) == 512
+    )
+    raw = [
+        message for message in manager.history if isinstance(message, ToolResultMessage)
+    ]
+    assert [message.content for message in raw] == texts
+    assert raw[0].metadata == {"source": "file"}
+
+    reopened = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    reopened.resume(recorder.store.session_id)
+    history = SessionHistory(
+        reopened.sessions_dir, artifacts_dir=reopened.artifacts_dir
+    )
+    history.set_session_id(reopened.session_id)
+    matches = history.search("evidence-old")
+    assert matches
+    recovered = history.read(matches[0].id, max_chars=20000)
+    assert recovered is not None
+    pages = [recovered.content]
+    while recovered.next_offset is not None:
+        recovered = history.read(
+            matches[0].id, offset=recovered.next_offset, max_chars=20000
+        )
+        assert recovered is not None
+        pages.append(recovered.content)
+    recovered_text = "".join(pages)
+    assert json.loads(recovered_text)["data"]["content"] == texts[0]
+    (tmp_path / "recovered-history.txt").write_text(recovered_text, encoding="utf-8")
+    assert list(reopened.artifacts_dir.rglob("*.txt"))
 
 
 async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:

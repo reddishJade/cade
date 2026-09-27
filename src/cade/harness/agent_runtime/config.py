@@ -52,6 +52,7 @@ from ..security.permission_model import (
     SensitivePathOverride,
 )
 from ..session.inbox import SessionInbox
+from ..skill_activation import is_skill_activation_content
 from ._mode_protocol import RuntimeModeState
 from .cancellation import CancellationToken
 from .context_window import (
@@ -256,6 +257,7 @@ def _build_before_provider_request_closure(
                             if assembly.context_policy is not None
                             else None
                         ),
+                        "evidence_omitted": list(assembly.evidence_omitted),
                         "token_budget": assembly.token_budget,
                         "budget_remaining": assembly.budget_remaining,
                         "context_trace": [
@@ -335,6 +337,9 @@ def build_request_assembler(
             max_tool_arg_length=request_hygiene.max_tool_arg_length,
             keep_head_lines=request_hygiene.keep_head_lines,
             keep_tail_lines=request_hygiene.keep_tail_lines,
+        ),
+        preserve_tool_result=lambda message: is_skill_activation_content(
+            message.content
         ),
     )
 

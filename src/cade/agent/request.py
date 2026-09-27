@@ -24,7 +24,7 @@ from .context import (
     DefaultContextAssembler,
 )
 from .context_policy import ContextPolicy
-from .messages import AgentMessage
+from .messages import AgentMessage, ToolResultMessage
 from .types import AgentTool, materialize_json_mapping
 
 if TYPE_CHECKING:
@@ -43,7 +43,9 @@ class RequestHygiene:
     keep_head_lines: int = 50
     keep_tail_lines: int = 50
 
-    def apply(self, messages: list[AgentMessage]) -> list[AgentMessage]:
+    def apply(
+        self, messages: list[AgentMessage], protected_ids: frozenset[str] = frozenset()
+    ) -> list[AgentMessage]:
         if not self.enabled:
             return list(messages)
         return apply_request_hygiene(
@@ -52,6 +54,7 @@ class RequestHygiene:
             max_tool_arg_length=self.max_tool_arg_length,
             keep_head_lines=self.keep_head_lines,
             keep_tail_lines=self.keep_tail_lines,
+            protected_tool_result_ids=protected_ids,
         )
 
 
@@ -88,6 +91,7 @@ class RequestAssembly:
     local_estimated_tokens: int = 0
     token_estimate_source: str = "local"
     context_policy: ContextPolicy | None = None
+    evidence_omitted: tuple[str, ...] = ()
 
 
 class RequestAssembler(Protocol):
@@ -110,6 +114,7 @@ class DefaultRequestAssembler:
     context_collectors: ContextCollectorSource | None = None
     context_assembler: ContextAssembler = field(default_factory=DefaultContextAssembler)
     hygiene: RequestHygiene = field(default_factory=RequestHygiene)
+    preserve_tool_result: Callable[[ToolResultMessage], bool] | None = None
 
     def assemble(
         self,
@@ -145,7 +150,24 @@ class DefaultRequestAssembler:
             *context_state.persistent_messages,
             *context.messages,
         ]
-        request_messages = self.hygiene.apply(base_messages)
+        protected_ids = frozenset(
+            message.tool_call_id
+            for message in base_messages
+            if isinstance(message, ToolResultMessage)
+            and (
+                (message.metadata or {}).get("context_lifetime") == "durable"
+                or (
+                    self.preserve_tool_result is not None
+                    and self.preserve_tool_result(message)
+                )
+            )
+        )
+        request_messages = self.hygiene.apply(base_messages, protected_ids)
+        evidence_omitted: tuple[str, ...] = ()
+        if policy is not None:
+            request_messages, evidence_omitted = policy.project_evidence(
+                request_messages, protected_ids
+            )
         tool_definitions = _tools_to_definitions(context.tools)
         local_tokens = 0
         estimate_source = "local"
@@ -194,6 +216,7 @@ class DefaultRequestAssembler:
             local_estimated_tokens=local_tokens or result.total_tokens,
             token_estimate_source=estimate_source,
             context_policy=policy,
+            evidence_omitted=evidence_omitted,
         )
         return assembly
 
