@@ -616,8 +616,10 @@ async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
             )
 
         await run()
+        note.write_text("updated frontier: a new decision", encoding="utf-8")
         await run()  # 服务端报告零输入，不更新有效锚点。
         await run()
+        note.write_text("updated frontier: verify the new decision", encoding="utf-8")
         await run()  # 普通 HTTP 400 失败，不更新有效锚点。
         await run()
         prefix = [SystemMessage(content="revised instructions")]
