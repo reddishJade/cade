@@ -143,15 +143,19 @@ def _http_provider(
                 self.wfile.flush()
                 release_idle.wait(timeout=15)
                 return
-            tool_call = (scenario == "tool-overflow" and index == 0) or (
-                scenario
-                in {
-                    "evidence",
-                    "evidence-pressure",
-                    "working-pressure",
-                    "state-versions",
-                }
-                and index < 3
+            tool_call = (
+                (scenario == "tool-overflow" and index == 0)
+                or (
+                    scenario
+                    in {
+                        "evidence",
+                        "evidence-pressure",
+                        "working-pressure",
+                        "state-versions",
+                    }
+                    and index < 3
+                )
+                or (scenario == "state-versions" and index in {5, 6})
             )
             fail = (
                 scenario in {"permanent", "ordinary-413", "disabled", "call-limit"}
@@ -199,11 +203,22 @@ def _http_provider(
                             ),
                             "type": "function",
                             "function": {
-                                "name": "todowrite"
+                                "name": "history"
+                                if scenario == "state-versions" and index in {5, 6}
+                                else "todowrite"
                                 if scenario == "state-versions"
                                 else "read_evidence",
                                 "arguments": (
                                     json.dumps(
+                                        {
+                                            "operation": "search",
+                                            "query": "OLD_TASK_STATE",
+                                            "include_artifacts": True,
+                                            "limit": 10,
+                                        }
+                                    )
+                                    if scenario == "state-versions" and index in {5, 6}
+                                    else json.dumps(
                                         {
                                             "todos": [
                                                 {
@@ -682,11 +697,27 @@ def test_durable_state_replacement_rotation_restart_cli_e2e(tmp_path: Path) -> N
         result = subprocess.run(
             command, capture_output=True, text=True, timeout=30, check=False
         )
+        first_rows = [json.loads(line) for line in result.stdout.splitlines()]
+        first_completed = next(
+            row for row in first_rows if row["type"] == "run.completed"
+        )
+        resumed_command = [
+            *command[:-1],
+            "--session",
+            first_completed["session_id"],
+            "Retrieve the superseded task-state version from history twice and finish.",
+        ]
+        resumed = subprocess.run(
+            resumed_command, capture_output=True, text=True, timeout=30, check=False
+        )
     (tmp_path / "stdout.jsonl").write_text(result.stdout)
     (tmp_path / "stderr.txt").write_text(result.stderr)
+    (tmp_path / "resumed-stdout.jsonl").write_text(resumed.stdout)
+    (tmp_path / "resumed-stderr.txt").write_text(resumed.stderr)
     (tmp_path / "reproduce.json").write_text(json.dumps(command, indent=2))
     (tmp_path / "http-requests.json").write_text(json.dumps(requests, indent=2))
     assert result.returncode == 0, result.stderr
+    assert resumed.returncode == 0, resumed.stderr
     rows = [json.loads(line) for line in result.stdout.splitlines()]
     assert any(row["type"] == "context_window_reset" for row in rows)
     before_reset = requests[3]["messages"]
@@ -696,7 +727,7 @@ def test_durable_state_replacement_rotation_restart_cli_e2e(tmp_path: Path) -> N
     assert "tool_call_id" in json.dumps(before_reset) and "state-0" in json.dumps(
         before_reset
     )
-    final_messages = requests[-1]["messages"]
+    final_messages = requests[4]["messages"]
     tool_results = [m for m in final_messages if m["role"] == "tool"]
     assert [m["tool_call_id"] for m in tool_results] == ["state-2"]
     assert json.loads(tool_results[0]["content"]) == {"todos": []}
@@ -712,11 +743,36 @@ def test_durable_state_replacement_rotation_restart_cli_e2e(tmp_path: Path) -> N
     (tmp_path / "recovered-state.json").write_text(
         json.dumps([entry.text for entry in matches], indent=2)
     )
-    current = [m for m in surface.messages if isinstance(m, ToolResultMessage)]
+    current = [
+        m
+        for m in surface.messages
+        if isinstance(m, ToolResultMessage) and m.tool_name == "todowrite"
+    ]
     assert len(current) == 1 and current[0].metadata == {
         "context_lifetime": "durable",
         "context_key": "session-todo",
     }
+    search_results = [
+        m["content"]
+        for m in requests[-1]["messages"]
+        if m.get("tool_call_id") in {"state-5", "state-6"}
+    ]
+    assert len(search_results) == 2 and search_results[0] == search_results[1]
+    assert "OLD_TASK_STATE" in search_results[0]
+    primary_ids = [
+        entry.id
+        for entry in history.search("OLD_TASK_STATE", include_artifacts=True, limit=20)
+    ]
+    all_ids = [
+        entry.id
+        for entry in history.search(
+            "OLD_TASK_STATE", include_artifacts=True, include_derived=True, limit=20
+        )
+    ]
+    assert len(all_ids) > len(primary_ids)
+    (tmp_path / "history-search-selection.json").write_text(
+        json.dumps({"primary": primary_ids, "all": all_ids}, indent=2)
+    )
 
 
 async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:

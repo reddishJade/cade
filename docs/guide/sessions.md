@@ -97,6 +97,8 @@ cade --session ID  # 恢复指定会话
 
 `history` 工具可列出窗口边界、搜索当前 branch、分页读取某条原始记录，或查看其邻近记录。因此模型的当前 context 是可丢弃工作集，session transcript 才是可检索的无损事实源。
 
+默认搜索优先返回原始任务和工具事实，排除检索自身的回显、运行时提醒和恢复/audit 复制，避免递归噪声。需要这些记录时可设置 `include_derived: true`；按 ID 的 `read` / `around` 不受此筛选限制。
+
 ## 7. 分支与回退
 
 ```text
