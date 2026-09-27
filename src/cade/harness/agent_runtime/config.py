@@ -29,10 +29,9 @@ from ...agent.messages import (
 from ...agent.request import (
     DefaultRequestAssembler,
     RequestAssembly,
-    RequestHygiene,
 )
 from ...agent.types import ApprovalCallback, ToolSpec
-from ..config import AgentConfig, RequestHygieneConfig
+from ..config import AgentConfig
 from ..observability import (
     AuditLogger,
     ExternalHookRunner,
@@ -240,7 +239,6 @@ def _build_before_provider_request_closure(
                     "composition_id": composition_id,
                     "assembly": {
                         "current_step": assembly.current_step,
-                        "hygiene_applied": assembly.hygiene_applied,
                         "estimated_tokens": assembly.estimated_tokens,
                         "local_estimated_tokens": assembly.local_estimated_tokens,
                         "token_estimate_source": assembly.token_estimate_source,
@@ -332,7 +330,6 @@ def _request_option_value(value: object) -> object:
 
 
 def build_request_assembler(
-    request_hygiene: RequestHygieneConfig,
     context_collectors: ContextCollectorRegistry | None,
     context_assembler: DefaultContextAssembler | None,
 ) -> DefaultRequestAssembler:
@@ -343,13 +340,6 @@ def build_request_assembler(
             context_collectors.freeze() if context_collectors is not None else None
         ),
         context_assembler=context_assembler or DefaultContextAssembler(),
-        hygiene=RequestHygiene(
-            enabled=request_hygiene.enabled,
-            max_tool_result_bytes=request_hygiene.max_tool_result_bytes,
-            max_tool_arg_length=request_hygiene.max_tool_arg_length,
-            keep_head_lines=request_hygiene.keep_head_lines,
-            keep_tail_lines=request_hygiene.keep_tail_lines,
-        ),
         preserve_tool_result=lambda message: is_skill_activation_content(
             message.content
         ),

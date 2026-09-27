@@ -14,7 +14,6 @@ from cade.ai.types import StreamOptions, ToolDefinition
 
 from ._codec import convert_to_llm
 from ._context_window import context_window_id, estimate_tokens
-from ._hygiene import apply_request_hygiene
 from .context import (
     ContextAssembler,
     ContextAssemblyInput,
@@ -34,7 +33,6 @@ from .context_policy import (
     ContextPolicy,
     ContextSnapshot,
     current_durable_ids,
-    evidence_reference,
     latest_task_message,
     mandatory_history,
     protected_working_set,
@@ -47,46 +45,6 @@ if TYPE_CHECKING:
     from .config import AgentContext
 
 type MessageConverter = Callable[[list[AgentMessage]], list[Message]]
-
-
-@dataclass(frozen=True)
-class RequestHygiene:
-    """请求组装阶段唯一允许的确定性消息裁剪策略。"""
-
-    enabled: bool = True
-    max_tool_result_bytes: int = 8000
-    max_tool_arg_length: int = 1000
-    keep_head_lines: int = 50
-    keep_tail_lines: int = 50
-
-    def apply(
-        self, messages: list[AgentMessage], protected_ids: frozenset[str] = frozenset()
-    ) -> list[AgentMessage]:
-        if not self.enabled:
-            return list(messages)
-        projected = apply_request_hygiene(
-            messages,
-            max_tool_result_bytes=self.max_tool_result_bytes,
-            max_tool_arg_length=self.max_tool_arg_length,
-            keep_head_lines=self.keep_head_lines,
-            keep_tail_lines=self.keep_tail_lines,
-            protected_tool_result_ids=protected_ids,
-        )
-        for index, (original, trimmed) in enumerate(
-            zip(messages, projected, strict=True)
-        ):
-            if (
-                isinstance(original, ToolResultMessage)
-                and isinstance(trimmed, ToolResultMessage)
-                and original.content != trimmed.content
-                and isinstance(trimmed.content, str)
-            ):
-                projected[index] = trimmed.model_copy(
-                    update={
-                        "content": f"{evidence_reference(original)}\n{trimmed.content}"
-                    }
-                )
-        return projected
 
 
 @dataclass(frozen=True)
@@ -114,7 +72,6 @@ class RequestAssembly:
     tools: tuple[ToolDefinition, ...]
     context_trace: tuple[RequestContextTrace, ...]
     current_step: int
-    hygiene_applied: bool
     estimated_tokens: int = 0
     token_budget: int = 0
     budget_remaining: int = 0
@@ -150,7 +107,6 @@ class DefaultRequestAssembler:
     converter: MessageConverter = convert_to_llm
     context_collectors: ContextCollectorSource | None = None
     context_assembler: ContextAssembler = field(default_factory=DefaultContextAssembler)
-    hygiene: RequestHygiene = field(default_factory=RequestHygiene)
     preserve_tool_result: Callable[[ToolResultMessage], bool] | None = None
 
     def assemble(
@@ -205,7 +161,7 @@ class DefaultRequestAssembler:
             if policy is not None
             else (base_messages, ())
         )
-        request_messages = self.hygiene.apply(current_messages, protected_ids)
+        request_messages = list(current_messages)
         evidence_omitted: tuple[str, ...] = ()
         if policy is not None:
             request_messages, omitted = policy.project_evidence(
@@ -373,7 +329,6 @@ class DefaultRequestAssembler:
                 + _tool_trace(tool_definitions)
             ),
             current_step=current_step,
-            hygiene_applied=self.hygiene.enabled,
             estimated_tokens=result.total_tokens,
             token_budget=token_budget,
             budget_remaining=token_budget - result.total_tokens

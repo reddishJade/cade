@@ -77,15 +77,6 @@ class AgentConfig(BaseModel):
     watchdog_repeated_tool_limit: StrictInt = 3
 
 
-class RequestHygieneConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    enabled: StrictBool = True
-    max_tool_result_bytes: StrictInt = 8000
-    max_tool_arg_length: StrictInt = 1000
-    keep_head_lines: StrictInt = 50
-    keep_tail_lines: StrictInt = 50
-
-
 # 未显式配置 provider 时的内置默认聊天模型（DeepSeek Flash）。
 DEFAULT_CHAT_MODEL: Final[str] = "deepseek-flash"
 
@@ -331,7 +322,6 @@ class CadeRuntimeConfig(BaseModel):
         default_factory=ObservabilityRuntimeConfig
     )
     hooks: HooksRuntimeConfig = Field(default_factory=HooksRuntimeConfig)
-    request_hygiene: RequestHygieneConfig = Field(default_factory=RequestHygieneConfig)
     security: SecurityRuntimeConfig = Field(default_factory=SecurityRuntimeConfig)
     execution_modes: ExecutionModesRuntimeConfig = Field(
         default_factory=ExecutionModesRuntimeConfig

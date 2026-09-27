@@ -13,13 +13,11 @@ from cade.agent.context import (
     ContextPriority,
 )
 from cade.agent.messages import (
-    AssistantMessage,
     SystemMessage,
-    ToolResultMessage,
     UserMessage,
 )
-from cade.agent.request import DefaultRequestAssembler, RequestHygiene
-from cade.agent.types import ToolCallContent, ToolSpec, ToolSpecAdapter
+from cade.agent.request import DefaultRequestAssembler
+from cade.agent.types import ToolSpec, ToolSpecAdapter
 
 
 class _Collector:
@@ -60,7 +58,6 @@ def test_request_assembly_is_the_complete_provider_envelope() -> None:
     )
     assembler = DefaultRequestAssembler(
         context_collectors=collectors,
-        hygiene=RequestHygiene(enabled=False),
     )
 
     assembly = assembler.assemble(
@@ -90,97 +87,3 @@ def test_request_assembly_is_the_complete_provider_envelope() -> None:
     assert assembly.context_trace[0].truncated
     assert assembly.context_trace[0].truncation_reason == "byte_budget"
     assert assembly.context_trace[2].source == "tool"
-
-
-def test_request_hygiene_changes_assembly_not_session_surface() -> None:
-    long_output = "ordinary output line\n" * 20
-    surface = [
-        AssistantMessage(
-            content=[
-                ToolCallContent(
-                    id="call-1",
-                    name="bash",
-                    arguments={"command": "y" * 100},
-                )
-            ]
-        ),
-        ToolResultMessage(
-            tool_call_id="call-1",
-            tool_name="bash",
-            content=long_output,
-        ),
-    ]
-    assembler = DefaultRequestAssembler(
-        hygiene=RequestHygiene(
-            max_tool_result_bytes=20,
-            max_tool_arg_length=10,
-            keep_head_lines=1,
-            keep_tail_lines=1,
-        )
-    )
-
-    assembly = assembler.assemble(
-        AgentContext(messages=surface),
-        current_step=1,
-        options=None,
-    )
-
-    request_call = assembly.messages[0]
-    assert isinstance(request_call, AssistantMessage)
-    block = request_call.content[0]
-    assert isinstance(block, ToolCallContent)
-    assert block.arguments == {"command": "<truncated, 100 chars>"}
-    request_result = assembly.messages[1]
-    assert isinstance(request_result, ToolResultMessage)
-    assert "lines omitted" in str(request_result.content)
-    assert surface[0].content[0].arguments == {"command": "y" * 100}
-    assert surface[1].content == long_output
-
-
-def test_request_hygiene_runs_before_context_budgeting() -> None:
-    collectors = ContextCollectorRegistry()
-    collectors.register(_Collector())
-    long_output = "x" * 20_000
-    assembler = DefaultRequestAssembler(
-        context_collectors=collectors,
-        hygiene=RequestHygiene(
-            max_tool_result_bytes=100,
-            max_tool_arg_length=100,
-            keep_head_lines=1,
-            keep_tail_lines=1,
-        ),
-    )
-
-    assembly = assembler.assemble(
-        AgentContext(
-            messages=[
-                AssistantMessage(
-                    content=[
-                        ToolCallContent(
-                            id="call-1",
-                            name="bash",
-                            arguments={"command": "print output"},
-                        )
-                    ]
-                ),
-                ToolResultMessage(
-                    tool_call_id="call-1",
-                    tool_name="bash",
-                    content=long_output,
-                ),
-            ],
-            request_token_budget=1_000,
-        ),
-        current_step=0,
-        options=None,
-    )
-
-    assert assembly.estimated_tokens <= assembly.token_budget
-    assert assembly.budget_remaining == (
-        assembly.token_budget - assembly.estimated_tokens
-    )
-    assert any(
-        trace.block_id == "note-current" and trace.included
-        for trace in assembly.context_trace
-    )
-    assert long_output not in str(assembly.messages)

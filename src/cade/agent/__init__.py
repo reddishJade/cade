@@ -49,7 +49,6 @@ from .request import (
     RequestAssembler,
     RequestAssembly,
     RequestContextTrace,
-    RequestHygiene,
 )
 from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 from .types import AgentTool, CancellationSignal
@@ -93,7 +92,6 @@ __all__ = [
     "RequestAssembler",
     "RequestAssembly",
     "RequestContextTrace",
-    "RequestHygiene",
     "SystemMessage",
     "TerminationReason",
     "ToolResultMessage",

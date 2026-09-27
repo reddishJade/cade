@@ -79,7 +79,6 @@ def test_record_request_and_provider_usage_updates_session_metadata() -> None:
         tools=(ToolDefinition(name="read", description="Read", parameters={}),),
         context_trace=(),
         current_step=1,
-        hygiene_applied=True,
         estimated_tokens=17,
         token_budget=100,
         budget_remaining=83,
