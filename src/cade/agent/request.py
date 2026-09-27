@@ -145,7 +145,6 @@ class DefaultRequestAssembler:
             list(context.messages),
             current_step,
         )
-        context_state.append_blocks(world_blocks)
         base_messages = [
             *context_state.persistent_messages,
             *context.messages,
@@ -188,7 +187,7 @@ class DefaultRequestAssembler:
                 system_prompt=context.system_prompt,
                 messages=request_messages,
                 tools=list(context.tools),
-                context_blocks=legacy_blocks,
+                context_blocks=[*world_blocks, *legacy_blocks],
                 current_step=current_step,
                 token_budget=token_budget,
                 calibrate_tokens=calibrate_tokens,
@@ -202,7 +201,7 @@ class DefaultRequestAssembler:
             tools=tuple(tool_definitions),
             context_trace=(
                 _context_trace(
-                    [*world_blocks, *result.blocks_used],
+                    result.blocks_used,
                     result.blocks_dropped,
                 )
                 + _tool_trace(tool_definitions)
@@ -250,9 +249,12 @@ class DefaultRequestAssembler:
                 ),
             )
             if isinstance(collected, list):
-                world_blocks = [
-                    block for block in collected if isinstance(block, ContextBlock)
-                ]
+                context_state = (
+                    context.context_manager.context_state
+                    if context.context_manager is not None
+                    else context.context_state
+                )
+                world_blocks = context_state.world_state.current_blocks()
         return legacy_blocks, world_blocks
 
 

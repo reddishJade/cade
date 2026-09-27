@@ -152,9 +152,14 @@ class ContextSection:
 
 @dataclass
 class WorldState:
-    """维护各 section 的上一次快照，避免每个 step 重复注入未变化内容。"""
+    """维护当前 section 投影与变化基线，不把过期状态叠加到模型请求。"""
 
     _snapshots: dict[str, tuple[object, object]] = field(default_factory=dict)
+    _current_blocks: dict[str, list[ContextBlock]] = field(default_factory=dict)
+
+    def current_blocks(self) -> list[ContextBlock]:
+        """返回全部有效状态，而非仅返回本轮发生变化的状态。"""
+        return [block for blocks in self._current_blocks.values() for block in blocks]
 
     def render(
         self,
@@ -175,6 +180,10 @@ class WorldState:
                     blocks = []
                 else:
                     blocks = section.render_diff(current, previous[1])
+                if previous is None or previous[0] != fingerprint:
+                    self._current_blocks[section.section_id] = (
+                        blocks if previous is None else section.render_full(current)
+                    )
                 self._snapshots[section.section_id] = (fingerprint, current)
                 rendered.extend(blocks)
             except Exception:
@@ -185,11 +194,13 @@ class WorldState:
 
         for section_id in set(self._snapshots) - active_ids:
             del self._snapshots[section_id]
+            self._current_blocks.pop(section_id, None)
         return rendered
 
     def reset(self) -> None:
         """清除 section baseline，使下一次请求重新注入完整状态。"""
         self._snapshots.clear()
+        self._current_blocks.clear()
 
 
 @dataclass
@@ -202,11 +213,8 @@ class ContextState:
 
     def sync_request_prefix(self, messages: list[AgentMessage]) -> None:
         current = tuple(_message_fingerprint(message) for message in messages)
-        if self._prefix_fingerprint is None:
-            self.persistent_messages.extend(messages)
-        elif current != self._prefix_fingerprint:
-            content = _render_prefix_replacement(messages)
-            self.persistent_messages.append(SystemMessage(content=content))
+        if current != self._prefix_fingerprint:
+            self.persistent_messages[:] = messages
         self._prefix_fingerprint = current
 
     def append_blocks(self, blocks: list[ContextBlock]) -> None:
@@ -266,20 +274,6 @@ def _message_fingerprint(message: AgentMessage) -> str:
         ensure_ascii=False,
         sort_keys=True,
         default=str,
-    )
-
-
-def _render_prefix_replacement(messages: list[AgentMessage]) -> str:
-    if not messages:
-        return '<context-section id="request_prefix" status="removed" />'
-    body = "\n\n".join(
-        str(getattr(message, "content", getattr(message, "summary", "")))
-        for message in messages
-    )
-    return (
-        '<context-section id="request_prefix" status="replaced">\n'
-        + body
-        + "\n</context-section>"
     )
 
 
@@ -519,12 +513,10 @@ def trim_to_budget(
     dropped: list[ContextBlock] = []
     remaining = budget - base_tokens
 
-    if remaining <= 0:
-        return [], sorted_blocks
-
     for block in sorted_blocks:
         tokens = block.get_token_count()
-        if tokens <= remaining:
+        # 核心规则与持久状态不能为了旧工具输出而被静默丢弃。
+        if block.priority <= ContextPriority.HIGH or tokens <= remaining:
             used.append(block)
             remaining -= tokens
         else:
