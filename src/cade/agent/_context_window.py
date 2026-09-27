@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import tiktoken
 
@@ -99,3 +99,44 @@ def context_window_id(messages: Sequence[AgentMessage]) -> str:
         if match is not None:
             return match.group(1)
     return ""
+
+
+def estimate_wire_message_tokens(
+    message: Mapping[str, object],
+    count_tokens: Callable[[str], int] = estimate_tokens,
+) -> int:
+    """按实际消息正文估算，避免把 JSON 转义与 Python repr 算成模型输入。"""
+    total = 4
+    content = message.get("content")
+    if isinstance(content, str):
+        total += count_tokens(content)
+    elif isinstance(content, list):
+        for block in content:
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ):
+                total += count_tokens(block["text"])
+            else:
+                total += count_tokens(
+                    json.dumps(block, ensure_ascii=False, default=str)
+                )
+    elif content:
+        total += count_tokens(json.dumps(content, ensure_ascii=False, default=str))
+    reasoning = message.get("reasoning_content")
+    if isinstance(reasoning, str):
+        total += count_tokens(reasoning)
+    calls = message.get("tool_calls")
+    if isinstance(calls, list):
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function", {})
+            if isinstance(function, dict):
+                for key in ("name", "arguments"):
+                    value = function.get(key)
+                    if isinstance(value, str):
+                        total += count_tokens(value)
+            total += 4
+    return total
