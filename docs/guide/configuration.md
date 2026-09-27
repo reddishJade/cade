@@ -51,7 +51,6 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
   "agent": {
     "max_steps": null,
     "max_llm_calls": null,
-    "rollover_message_threshold": 0,
     "rollover_token_threshold": 0,
     "automatic_rollover": true,
     "reserve_tokens": 16384,
@@ -81,6 +80,8 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
 `next_turn_input_tokens` 默认 1024（不超过触发预算的八分之一），为下一轮新增调用和证据留出 allowance。请求先回收旧证据和旧交互；预测输入加 allowance 达到触发预算时才换窗。`rollover_trigger_ratio` 默认 0.95，仅作额外 guardrail。本地估算超限不会直接拒绝请求。
 
 `evidence_token_budget` 默认最多 32000 tokens，且不超过输入预算；`working_set_token_budget` 默认最多 4096，且不超过输入预算的四分之一，控制换窗带走的近期完整交互。两者可设为零。旧 `fallback_recent_messages` / `fallback_recent_tokens` 配置已移除。
+
+旧 `rollover_message_threshold` 也已移除：消息数量不代表 token 成本，统一使用 ContextPolicy 的成本准入与显式 token guardrail。
 
 ## 4. 工具、技能与 prompt
 
