@@ -274,6 +274,12 @@ async def _run_loop(
                 )
             ):
                 reset_reason = reset_reason or "token_limit"
+            if (
+                reset_reason == "token_limit"
+                and prepared_assembly is not None
+                and prepared_assembly.rotation_blocked_reason is not None
+            ):
+                reset_reason = None
             if reset_reason is not None:
                 _rotate_context(
                     current_context,

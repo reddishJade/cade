@@ -345,6 +345,10 @@ def test_typed_rollover_preserves_user_content_and_metadata(tmp_path: Path) -> N
         encoding="utf-8",
     )
     assert fresh[0] == source[0]
-    assert fresh[-1] == user
-    assert fresh[-1] is not user
-    assert not any(isinstance(message, AssistantMessage) for message in fresh)
+    retained_user = next(
+        message for message in fresh if isinstance(message, UserMessage)
+    )
+    assert retained_user == user
+    assert retained_user is not user
+    assert fresh[-1] == source[-1]
+    assert fresh[-1] is not source[-1]

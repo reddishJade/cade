@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from cade.agent._context_window import estimate_tokens
 from cade.agent.config import ContextWindowResetReason
+from cade.agent.context_policy import ContextPolicy, protected_working_set
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -41,7 +42,7 @@ class ContextWindowController:
 
 
 class ContextWindowRollover:
-    """关闭旧窗口，只把启动上下文、技能与用户请求带入新窗口。"""
+    """关闭旧窗口，带走持久状态、用户请求与有界的近期完整交互。"""
 
     def __init__(
         self,
@@ -71,6 +72,7 @@ class ContextWindowRollover:
         messages: list[AgentMessage],
         *,
         preserve_user_request: bool = True,
+        policy: ContextPolicy | None = None,
     ) -> list[AgentMessage]:
         """直接保留内部消息，避免 provider 格式往返丢失内容与元数据。"""
         from .agent_helpers import to_dict
@@ -88,6 +90,44 @@ class ContextWindowRollover:
                 restored.append(messages[index].model_copy(deep=True))
             else:
                 restored.extend(messages_from_provider_dicts([item]))
+        active_policy = policy or ContextPolicy()
+        protected_ids = frozenset(
+            m.tool_call_id
+            for m in messages
+            if isinstance(m, ToolResultMessage)
+            and (
+                (m.metadata or {}).get("context_lifetime") == "durable"
+                or is_skill_activation_content(m.content)
+            )
+        )
+        retained_calls = {
+            block.id
+            for m in restored
+            if isinstance(m, AssistantMessage)
+            for block in m.content
+            if isinstance(block, ToolCallContent)
+        }
+        # 同一调用组只注入一次；持久工具状态不受普通近期工作集配额淘汰。
+        for group in (
+            protected_working_set(messages, protected_ids),
+            active_policy.recent_working_set(messages, protected_ids)
+            if preserve_user_request
+            else [],
+        ):
+            for m in group:
+                if isinstance(m, AssistantMessage):
+                    calls = {b.id for b in m.content if isinstance(b, ToolCallContent)}
+                    if calls and calls.issubset(retained_calls):
+                        continue
+                    retained_calls.update(calls)
+                elif isinstance(m, ToolResultMessage):
+                    if any(
+                        isinstance(r, ToolResultMessage)
+                        and r.tool_call_id == m.tool_call_id
+                        for r in restored
+                    ):
+                        continue
+                restored.append(m.model_copy(deep=True))
         actions = _render_completed_actions(messages)
         if actions:
             for position, message in enumerate(restored):
