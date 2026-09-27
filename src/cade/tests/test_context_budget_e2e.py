@@ -40,7 +40,7 @@ from cade.agent.messages import (
     ToolResultMessage,
     UserMessage,
 )
-from cade.agent.request import DefaultRequestAssembler, RequestAssembly, RequestHygiene
+from cade.agent.request import DefaultRequestAssembler, RequestAssembly
 from cade.agent.results import AgentLoopResult, TerminationReason
 from cade.agent.types import (
     TextContent,
@@ -404,8 +404,7 @@ async def test_context_overflow_http_e2e(
             for message in http_requests[2]["messages"]
             if message.get("tool_call_id") == "read-evidence-1"
         )
-        assert len(recovered_body) < len(evidence.read_text())
-        assert "exact output remains in history" in recovered_body
+        assert recovered_body == evidence.read_text()
         assert "read-evidence-1" in json.dumps(http_requests[2])
 
 
@@ -564,11 +563,6 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
                     output_reserve=512,
                     headroom_tokens=512,
                     evidence_token_budget=None if pressure else 400,
-                ),
-                request_assembler=DefaultRequestAssembler(
-                    hygiene=RequestHygiene(
-                        enabled=not pressure, max_tool_result_bytes=60000
-                    )
                 ),
                 before_provider_request=lambda assembly: assemblies.append(
                     _trace(assembly)

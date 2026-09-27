@@ -62,7 +62,7 @@ user input
   -> RequestAssembly
        - scoped prefix + session surface
        - context collection and injection
-       - request hygiene
+       - ContextPolicy admission
        - wire messages + tool schemas + options
   -> provider_request envelope
   -> provider stream
@@ -81,7 +81,7 @@ state；未 claim 的输入由 inbox 自身恢复。
 普通 agent 请求只有一个 `RequestAssembler` 入口。provider stream 与审计 hook
 消费同一个 `RequestAssembly`，其中包含最终 wire messages、tool schemas、options、
 step 和动态 context provenance。禁止在发送前通过通用 transformer 隐式改写
-messages；请求卫生是 assembly 内的显式确定性阶段，且不修改 session surface。
+messages；内容选择由 assembly 内的 ContextPolicy 决定，且不修改 session surface。
 
 ## Agent composition
 
@@ -138,7 +138,7 @@ NOTE 更新、状态替换与工具裁剪按消息增减估算差额，保留实
 对象表示使换行、引号等重复计费；结构化和多模态内容仍使用保守估算。
 
 工具正文按新到旧共享证据配额：默认最多 32K、不超过输入预算，
-`agent.evidence_token_budget` 可覆盖。单条卫生裁剪和总配额裁剪均给出
+`agent.evidence_token_budget` 可覆盖。证据准入裁剪均给出
 tool-call ID、执行状态和原文恢复提示。原始结果不变。技能正文和声明为
 durable 的工具状态受保护，多模态结果不猜测 token 成本；小正文比引用
 更短时保留原文。所有引用开销仍计入完整请求预算。
@@ -156,6 +156,8 @@ durable 的工具状态受保护，多模态结果不猜测 token 成本；小�
 旧的字典格式换窗、文件名专属保护、字符阈值裁剪及状态 diff 累积路径均已
 删除；展示格式适配器只转换消息，同一类型化策略完成选择与保留。
 消息数换窗 guardrail 也已移除，避免有界工作集仍被无关的消息计数反复重置。
+无条件的 request hygiene 字节、行数与工具参数截断也已删除。预算允许时
+工具调用参数和结果保持原文，预算不足时通过同一策略裁证据或回收完整旧交互。
 
 自动换窗带走启动上下文、当前用户请求、持久工具状态和最近一组完整交互。
 近期交互默认最多 4096 tokens、且不超过输入预算的四分之一，

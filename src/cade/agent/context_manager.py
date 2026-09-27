@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from ._context_window import estimate_message_tokens, estimate_wire_message_tokens
-from ._hygiene import repair_tool_pairing
+from ._tool_pairing import repair_tool_pairing
 from .context import ContextState
 from .context_policy import ContextSnapshot
 from .messages import AgentMessage

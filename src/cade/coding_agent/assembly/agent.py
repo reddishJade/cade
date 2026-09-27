@@ -247,7 +247,6 @@ def build_agent(
         config=config,
         gate=gate,
         request_assembler=build_request_assembler(
-            runtime_config.request_hygiene,
             context_collectors,
             DefaultContextAssembler(),
         ),

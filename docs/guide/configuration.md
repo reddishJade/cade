@@ -36,7 +36,6 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
   "paths": {},
   "observability": {},
   "hooks": {},
-  "request_hygiene": {},
   "security": {},
   "execution_modes": {}
 }
@@ -62,13 +61,6 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
     "tool_workers": 4,
     "tool_timeout_seconds": 120,
     "watchdog_repeated_tool_limit": 3
-  },
-  "request_hygiene": {
-    "enabled": true,
-    "max_tool_result_bytes": 8000,
-    "max_tool_arg_length": 1000,
-    "keep_head_lines": 50,
-    "keep_tail_lines": 50
   }
 }
 ```
@@ -82,6 +74,8 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
 `evidence_token_budget` 默认最多 32000 tokens，且不超过输入预算；`working_set_token_budget` 默认最多 4096，且不超过输入预算的四分之一，控制换窗带走的近期完整交互。两者可设为零。旧 `fallback_recent_messages` / `fallback_recent_tokens` 配置已移除。
 
 旧 `rollover_message_threshold` 也已移除：消息数量不代表 token 成本，统一使用 ContextPolicy 的成本准入与显式 token guardrail。
+
+旧 `request_hygiene` 配置和无条件的字节/行数/工具参数截断已移除。预算允许时保留原文；需要限制工具证据时配置 `agent.evidence_token_budget`，全部内容仍由 session 历史保存。
 
 ## 4. 工具、技能与 prompt
 
