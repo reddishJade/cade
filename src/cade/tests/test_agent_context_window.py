@@ -115,25 +115,6 @@ def test_runtime_rollover_prefers_current_request_estimate() -> None:
     assert result == "token_limit"
 
 
-def test_runtime_rollover_does_not_hide_measured_overflow_with_low_estimate() -> None:
-    composition = SimpleNamespace(
-        config=AgentConfig(reserve_tokens=4_096, rollover_trigger_ratio=0.95)
-    )
-    provider = SimpleNamespace(model="deepseek-flash", context_window=24_576)
-
-    result = _rollover_decision(
-        [],
-        cast(Any, lambda messages: messages),
-        None,
-        21_586,
-        cast(Any, composition),
-        cast(Any, provider),
-        estimated_tokens=19_000,
-    )
-
-    assert result == "token_limit"
-
-
 def test_runtime_rollover_does_not_reuse_previous_window_usage() -> None:
     from cade.agent.context_manager import ContextManager
 

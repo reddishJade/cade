@@ -11,12 +11,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ._context_window import estimate_message_tokens
+from ._context_window import estimate_message_tokens, estimate_tokens
 from ._hygiene import repair_tool_pairing
 from .context import ContextState
 from .messages import AgentMessage
 
 if TYPE_CHECKING:
+    from cade.ai.providers.base import StreamProvider
+    from cade.ai.types import StreamOptions, ToolDefinition
+
     from .request import RequestAssembly
 
 
@@ -54,6 +57,15 @@ class PromptCacheMetadata:
     request_count: int = 0
 
 
+@dataclass(frozen=True)
+class _RequestTokenAnchor:
+    """只保存请求指纹；实测输入已包含固定前缀和工具开销。"""
+
+    messages: tuple[str, ...]
+    configuration: str
+    prompt_tokens: int = 0
+
+
 @dataclass
 class ContextManager:
     """会话上下文的唯一可变状态边界。"""
@@ -65,6 +77,56 @@ class ContextManager:
     context_window: ContextWindowState = field(default_factory=ContextWindowState)
     prompt_cache: PromptCacheMetadata = field(default_factory=PromptCacheMetadata)
     provider_usage: dict[str, int] = field(default_factory=dict)
+    _provider_key: tuple[object, ...] | None = field(default=None, repr=False)
+    _pending_request: _RequestTokenAnchor | None = field(default=None, repr=False)
+    _token_anchor: _RequestTokenAnchor | None = field(default=None, repr=False)
+
+    def bind_provider(self, provider: StreamProvider) -> None:
+        """模型、连接或推理配置变化后丢弃旧请求锚点。"""
+        key = (
+            id(provider),
+            getattr(provider, "model", None),
+            getattr(provider, "transport", None),
+            getattr(provider, "base_url", None),
+            getattr(provider, "thinking", None),
+            getattr(provider, "reasoning_effort", None),
+        )
+        if key != self._provider_key:
+            self.invalidate_token_anchor()
+            self._provider_key = key
+
+    def invalidate_token_anchor(self) -> None:
+        """旧窗口或失败请求的统计不能成为新窗口的基线。"""
+        self._pending_request = None
+        self._token_anchor = None
+        self.token_usage.last_prompt_tokens = None
+
+    def estimate_request_tokens(
+        self,
+        messages: Sequence[Mapping[str, object]],
+        tools: Sequence[ToolDefinition],
+        options: StreamOptions | None,
+        local_tokens: int,
+    ) -> tuple[int, bool]:
+        """原请求完整保留时只估算新增消息；编辑或删除后回退全量估算。"""
+        anchor = self._token_anchor
+        if anchor is None or anchor.configuration != _request_configuration(
+            tools, options
+        ):
+            return local_tokens, False
+        position = 0
+        added_tokens = 0
+        for message in messages:
+            payload = _request_json(message)
+            digest = _digest(payload)
+            if position < len(anchor.messages) and digest == anchor.messages[position]:
+                position += 1
+            else:
+                # 给新增消息的角色和边界留少量开销；不重复估算已实测内容。
+                added_tokens += estimate_tokens(payload) + 4
+        if position != len(anchor.messages):
+            return local_tokens, False
+        return anchor.prompt_tokens + added_tokens, True
 
     def history_messages(self) -> list[AgentMessage]:
         return list(self.history)
@@ -110,7 +172,7 @@ class ContextManager:
         before = len(self.history) if before_messages is None else before_messages
         replacement = self.replace_history(messages)
         self.context_state.reset()
-        self.token_usage.last_prompt_tokens = None
+        self.invalidate_token_anchor()
         self.context_window.context_window_id += 1
         self.context_window.reset_count += 1
         self.context_window.last_reason = reason
@@ -128,8 +190,10 @@ class ContextManager:
         )
         self.provider_usage.clear()
         self.prompt_cache = PromptCacheMetadata()
+        self.invalidate_token_anchor()
 
     def set_last_prompt_tokens(self, value: int | None) -> None:
+        self.invalidate_token_anchor()
         self.token_usage.last_prompt_tokens = value
 
     def record_request(self, assembly: RequestAssembly) -> None:
@@ -138,6 +202,12 @@ class ContextManager:
         self.token_usage.context_budget = assembly.token_budget
         self.token_usage.budget_remaining = assembly.budget_remaining
         wire_messages = list(assembly.wire_messages)
+        self._pending_request = _RequestTokenAnchor(
+            messages=tuple(
+                _digest(_request_json(message)) for message in wire_messages
+            ),
+            configuration=_request_configuration(assembly.tools, assembly.options),
+        )
         system_prompt = "\n\n".join(
             str(message.get("content", ""))
             for message in wire_messages
@@ -162,9 +232,12 @@ class ContextManager:
             request_count=self.prompt_cache.request_count + 1,
         )
 
-    def record_provider_usage(self, usage: Mapping[str, object] | None) -> None:
+    def record_provider_usage(
+        self, usage: Mapping[str, object] | None, *, request_succeeded: bool = True
+    ) -> None:
         """累加 provider 返回的输入、输出和缓存统计。"""
         if not usage:
+            self._pending_request = None
             return
         numeric: dict[str, int] = {}
         for key, value in usage.items():
@@ -177,7 +250,18 @@ class ContextManager:
         completion_tokens = numeric.get("completion_tokens")
         if prompt_tokens is not None:
             self.token_usage.prompt_tokens += prompt_tokens
-            self.token_usage.last_prompt_tokens = prompt_tokens
+            if request_succeeded and prompt_tokens > 0:
+                self.token_usage.last_prompt_tokens = prompt_tokens
+            if (
+                request_succeeded
+                and prompt_tokens > 0
+                and self._pending_request is not None
+            ):
+                pending = self._pending_request
+                self._token_anchor = _RequestTokenAnchor(
+                    pending.messages, pending.configuration, prompt_tokens
+                )
+        self._pending_request = None
         if completion_tokens is not None:
             self.token_usage.completion_tokens += completion_tokens
         total_tokens = numeric.get("total_tokens")
@@ -186,6 +270,31 @@ class ContextManager:
         else:
             self.token_usage.total_tokens += prompt_tokens or 0
             self.token_usage.total_tokens += completion_tokens or 0
+
+
+def _request_json(value: object) -> str:
+    return json.dumps(
+        _json_value(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+
+
+def _digest(payload: str) -> str:
+    return hashlib.blake2b(payload.encode("utf-8"), digest_size=32).hexdigest()
+
+
+def _request_configuration(
+    tools: Sequence[ToolDefinition], options: StreamOptions | None
+) -> str:
+    return _digest(
+        _request_json(
+            {
+                "tools": list(tools),
+                "transport": options.transport if options else None,
+                "reasoning": options.reasoning if options else None,
+                "reasoning_summary": options.reasoning_summary if options else None,
+            }
+        )
+    )
 
 
 def _json_value(value: object) -> Any:

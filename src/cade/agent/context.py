@@ -123,6 +123,7 @@ class ContextAssemblyInput:
     current_step: int = 0
     token_budget: int = 0
     state: dict[str, object] = field(default_factory=dict)
+    calibrate_tokens: Callable[[list[AgentMessage], int], int] | None = None
 
 
 @dataclass
@@ -652,6 +653,8 @@ def _estimate_base_tokens(
     if input.system_prompt:
         total += estimate_tokens(input.system_prompt)
     total += _estimate_tools_tokens(input.tools)
+    if input.calibrate_tokens is not None:
+        return input.calibrate_tokens(messages, total)
     return total
 
 
