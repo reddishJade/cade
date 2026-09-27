@@ -96,6 +96,28 @@ context 入口。`AgentRuntimeConfig` 只保存 session inbox、取消、压缩�
 包装器原地换主和私有 gate 字段写入均不存在。`provider_request` 保存
 `composition_id`，因此一次实际请求可以回溯到完整装配代际。
 
+## 上下文预算
+
+`agent/context_policy.py` 的不可变 `ContextPolicy` 统一输入预算、输出预留、
+安全余量和换窗触发线。固定前缀、工具 schema、持久任务状态与活动消息共享
+输入预算，不为每类内容分配刚性配额。
+
+配置沿用 `agent.reserve_tokens` 与 `agent.rollover_trigger_ratio`。
+`agent.headroom_tokens` 可显式指定额外余量；未指定时从原比例阈值留下的
+空间中扣除输出预留，保持原有阈值并避免重复扣减。
+
+完整窗口满足 `physical_window = input_budget + output_reserve + headroom`。
+显式增大单次请求的输出上限会先增加输出预留，再缩小输入预算。
+支持输出上限的 transport 将预留下发为 `max_tokens` 或 `max_output_tokens`。
+ChatGPT Codex 后端不支持该参数，因此其预留是运行时预算，不是服务端输出
+硬上限；请求审计明确记录 `output_limit_supported=false`。
+
+预算计量以成功请求的 provider 输入用量为锚点，只估算尚未覆盖的新增内容。
+已有内容或工具定义改变后回退到本地估算；失败响应、零输入用量和旧窗口
+统计不作为新锚点。本地估算用于分配和提前换窗，不作为拒绝 provider 请求
+的硬依据。明确的服务端上下文超限最多触发一次换窗恢复，关闭自动换窗时
+也关闭该恢复路径。
+
 ## Session 事实模型
 
 稳定记录包括：

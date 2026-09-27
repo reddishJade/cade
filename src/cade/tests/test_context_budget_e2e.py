@@ -22,6 +22,7 @@ import cade.agent.context as context_module
 from cade.agent.agent import Agent
 from cade.agent.config import AgentLoopConfig, ContextWindowResetReason
 from cade.agent.context_manager import ContextManager
+from cade.agent.context_policy import ContextPolicy
 from cade.agent.events import AgentEvent
 from cade.agent.messages import AgentMessage, SystemMessage, UserMessage
 from cade.agent.request import RequestAssembly
@@ -44,6 +45,19 @@ def _trace(assembly: RequestAssembly) -> dict[str, object]:
         "local_tokens": assembly.local_estimated_tokens,
         "source": assembly.token_estimate_source,
         "budget": assembly.token_budget,
+        "max_output_tokens": assembly.options.max_tokens if assembly.options else None,
+        "policy": (
+            {
+                "physical_window": assembly.context_policy.physical_window,
+                "output_reserve": assembly.context_policy.output_reserve,
+                "headroom": assembly.context_policy.headroom,
+                "input_budget": assembly.context_policy.input_budget,
+                "evidence_budget": assembly.context_policy.evidence_budget,
+                "output_limit_supported": assembly.context_policy.output_limit_supported,
+            }
+            if assembly.context_policy is not None
+            else None
+        ),
     }
 
 
@@ -240,6 +254,12 @@ async def test_context_overflow_http_e2e(
                 provider=provider,
                 max_llm_calls=1 if scenario == "call-limit" else 5,
                 request_token_budget=1,
+                context_policy=ContextPolicy(
+                    physical_window=5000,
+                    output_reserve=512,
+                    headroom_tokens=256,
+                    automatic_rollover=scenario != "disabled",
+                ),
                 recover_context_overflow=scenario != "disabled",
                 before_provider_request=lambda assembly: assemblies.append(
                     _trace(assembly)
@@ -284,6 +304,9 @@ async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
         agent = Agent(tools=[], model=provider)
         config = AgentLoopConfig(
             provider=provider,
+            context_policy=ContextPolicy(
+                physical_window=5000, output_reserve=512, headroom_tokens=256
+            ),
             max_llm_calls=1,
             before_provider_request=lambda assembly: assemblies.append(
                 _trace(assembly)
@@ -396,6 +419,9 @@ async def test_luna_high_measured_budget_e2e(
                 provider=provider,
                 max_llm_calls=2,
                 request_token_budget=1000,
+                context_policy=ContextPolicy(
+                    physical_window=2000, output_reserve=1000, trigger_ratio=1.0
+                ),
                 before_provider_request=lambda assembly: requests.append(
                     _trace(assembly)
                 ),

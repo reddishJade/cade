@@ -54,6 +54,10 @@ class _FallbackSwitchingProvider:
         return str(self.active_provider.model)
 
     @property
+    def supports_output_token_limit(self) -> bool:
+        return bool(getattr(self.active_provider, "supports_output_token_limit", True))
+
+    @property
     def base_url(self) -> str:
         return self.active_provider.base_url
 

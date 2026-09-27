@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cade.ai.models import effective_rollover_threshold, get_model_context_window
+from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import ModelProvider
 
 from ...agent._codec import convert_to_llm as _convert_to_llm
@@ -19,6 +19,7 @@ from ...agent.config import (
     ContextWindowResetReason,
 )
 from ...agent.context import ContextCollectorRegistry, DefaultContextAssembler
+from ...agent.context_policy import ContextPolicy
 from ...agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -242,6 +243,19 @@ def _build_before_provider_request_closure(
                         "estimated_tokens": assembly.estimated_tokens,
                         "local_estimated_tokens": assembly.local_estimated_tokens,
                         "token_estimate_source": assembly.token_estimate_source,
+                        "context_policy": (
+                            {
+                                "physical_window": assembly.context_policy.physical_window,
+                                "output_reserve": assembly.context_policy.output_reserve,
+                                "headroom": assembly.context_policy.headroom,
+                                "input_budget": assembly.context_policy.input_budget,
+                                "rotation_threshold": assembly.context_policy.rotation_threshold,
+                                "evidence_budget": assembly.context_policy.evidence_budget,
+                                "output_limit_supported": assembly.context_policy.output_limit_supported,
+                            }
+                            if assembly.context_policy is not None
+                            else None
+                        ),
                         "token_budget": assembly.token_budget,
                         "budget_remaining": assembly.budget_remaining,
                         "context_trace": [
@@ -438,9 +452,11 @@ def build_loop_config(
             )
         return None
 
+    policy = _context_policy(provider, composition.config)
     return AgentLoopConfig(
         provider=provider,
-        request_token_budget=_request_token_budget(provider, composition.config),
+        request_token_budget=policy.input_budget,
+        context_policy=policy,
         recover_context_overflow=composition.config.automatic_rollover,
         request_assembler=composition.request_assembler,
         prepare_request_context=prepare_request_context_fn,
@@ -475,8 +491,8 @@ def build_loop_config(
     )
 
 
-def _request_token_budget(provider: ModelProvider, config: AgentConfig) -> int:
-    """计算留出输出空间后的 provider 输入预算。"""
+def _context_policy(provider: ModelProvider, config: AgentConfig) -> ContextPolicy:
+    """模型窗口与用户配置只在这里解析，不把本地估算当作物理上限。"""
     override = getattr(provider, "context_window", None)
     window = override if isinstance(override, int) and override > 0 else None
     if window is None:
@@ -484,9 +500,15 @@ def _request_token_budget(provider: ModelProvider, config: AgentConfig) -> int:
         window = get_model_context_window(
             str(model), transport=getattr(provider, "transport", None)
         )
-    if window is None:
-        return 0
-    return max(1, window - max(config.reserve_tokens, 0))
+    return ContextPolicy(
+        physical_window=window,
+        output_reserve=max(config.reserve_tokens, 0),
+        headroom_tokens=config.headroom_tokens,
+        trigger_ratio=config.rollover_trigger_ratio,
+        rollover_token_limit=config.rollover_token_threshold,
+        automatic_rollover=config.automatic_rollover,
+        evidence_token_budget=config.evidence_token_budget,
+    ).for_provider(provider)
 
 
 def _rollover_decision(
@@ -530,16 +552,7 @@ def _rollover_token_threshold(
     composition: AgentComposition, provider: ModelProvider
 ) -> int:
     """统一自动换窗及提前交接提醒的预算边界。"""
-    trigger = effective_rollover_threshold(
-        provider.model,
-        reserve_tokens=composition.config.reserve_tokens,
-        trigger_ratio=composition.config.rollover_trigger_ratio,
-        context_window_override=getattr(provider, "context_window", None),
-        transport=getattr(provider, "transport", None),
-    )
-    if composition.config.rollover_token_threshold > 0:
-        return min(trigger, composition.config.rollover_token_threshold)
-    return trigger
+    return _context_policy(provider, composition.config).rotation_threshold
 
 
 def tool_definition_to_dict(tool: Any) -> dict[str, Any]:

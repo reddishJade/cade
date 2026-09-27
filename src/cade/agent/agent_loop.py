@@ -138,6 +138,7 @@ async def run_agent_loop(
             if config.request_token_budget > 0
             else context.request_token_budget
         ),
+        context_policy=config.context_policy or context.context_policy,
     )
     if current_context.context_manager is not None:
         current_context.context_manager.token_usage.context_budget = (
@@ -218,15 +219,24 @@ async def _run_loop(
             and state.active_provider is not None
         ):
             current_context.context_manager.bind_provider(state.active_provider)
+        if (
+            current_context.context_policy is not None
+            and state.active_provider is not None
+        ):
+            current_context.context_policy = (
+                current_context.context_policy.for_provider(state.active_provider)
+            )
         prepared_assembly: RequestAssembly | None = None
         has_rollover_decision = bool(
-            config.request_rollover_decision or config.rollover_decision
+            config.request_rollover_decision
+            or config.rollover_decision
+            or current_context.context_policy is not None
         )
         if has_rollover_decision and config.rollover_context:
             if (
                 config.request_rollover_decision is not None
-                and state.active_provider is not None
-            ):
+                or current_context.context_policy is not None
+            ) and state.active_provider is not None:
                 prepared_assembly = config.request_assembler.assemble(
                     current_context,
                     current_step=step,
@@ -249,11 +259,21 @@ async def _run_loop(
                         else None
                     ),
                 )
-            else:
+            elif config.rollover_decision is not None:
                 rollover_decision = config.rollover_decision
                 if rollover_decision is None:
                     raise RuntimeError("context rollover decision is not configured")
                 reset_reason = rollover_decision(current_context.messages)
+            else:
+                reset_reason = None
+            if (
+                prepared_assembly is not None
+                and prepared_assembly.context_policy is not None
+                and prepared_assembly.context_policy.should_rotate(
+                    prepared_assembly.estimated_tokens
+                )
+            ):
+                reset_reason = reset_reason or "token_limit"
             if reset_reason is not None:
                 _rotate_context(
                     current_context,
@@ -659,6 +679,10 @@ async def _run_inner_loop(
                 _is_context_overflow(message)
                 and not overflow_recovered
                 and config.recover_context_overflow
+                and (
+                    context.context_policy is None
+                    or context.context_policy.automatic_rollover
+                )
                 and config.rollover_context is not None
             ):
                 overflow_recovered = True
