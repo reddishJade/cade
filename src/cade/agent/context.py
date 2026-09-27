@@ -10,10 +10,10 @@ from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Literal, Protocol
 
-from cade.agent._context_window import estimate_tokens
+from cade.agent._codec import convert_to_llm
+from cade.agent._context_window import estimate_tokens, estimate_wire_message_tokens
 from cade.agent.messages import (
     AgentMessage,
-    BranchSummaryMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
@@ -626,14 +626,10 @@ def _block_to_text(block: ContextBlock) -> str:
 
 
 def _estimate_messages_tokens(messages: list[AgentMessage]) -> int:
-    total = 0
-    for msg in messages:
-        if isinstance(msg, BranchSummaryMessage):
-            total += estimate_tokens(msg.summary)
-        else:
-            raw = msg.content if isinstance(msg.content, str) else str(msg.content)
-            total += estimate_tokens(raw)
-    return total
+    return sum(
+        estimate_wire_message_tokens(m, estimate_tokens)
+        for m in convert_to_llm(messages)
+    )
 
 
 def _estimate_base_tokens(

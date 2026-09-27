@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from ._context_window import estimate_message_tokens, estimate_tokens
+from ._context_window import estimate_message_tokens, estimate_wire_message_tokens
 from ._hygiene import repair_tool_pairing
 from .context import ContextState
 from .context_policy import ContextSnapshot
@@ -131,7 +131,7 @@ class ContextManager:
                 position += 1
             else:
                 # 给新增消息的角色和边界留少量开销；不重复估算已实测内容。
-                added_tokens += estimate_tokens(payload) + 4
+                added_tokens += estimate_wire_message_tokens(message)
         if position != len(anchor.messages):
             digests = tuple(_digest(_request_json(m)) for m in messages)
             if (
@@ -154,7 +154,7 @@ class ContextManager:
                     delta -= tokens
             for message, digest in zip(messages, digests, strict=True):
                 if remaining[digest] > 0:
-                    delta += estimate_tokens(_request_json(message)) + 4
+                    delta += estimate_wire_message_tokens(message)
                     remaining[digest] -= 1
             return max(1, anchor.prompt_tokens + delta), True
         return anchor.prompt_tokens + added_tokens, True
@@ -242,7 +242,7 @@ class ContextManager:
             ),
             configuration=_request_configuration(assembly.tools, assembly.options),
             message_tokens=tuple(
-                estimate_tokens(_request_json(m)) + 4 for m in wire_messages
+                estimate_wire_message_tokens(m) for m in wire_messages
             ),
             source_messages=assembly.source_message_digests,
         )
