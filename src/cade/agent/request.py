@@ -13,7 +13,7 @@ from cade.ai.providers._codec import provider_function_name
 from cade.ai.types import StreamOptions, ToolDefinition
 
 from ._codec import convert_to_llm
-from ._context_window import estimate_tokens
+from ._context_window import context_window_id, estimate_tokens
 from ._hygiene import apply_request_hygiene
 from .context import (
     ContextAssembler,
@@ -438,7 +438,7 @@ def _context_snapshot(
         remaining_input_budget=token_budget - predicted_tokens
         if token_budget > 0
         else 0,
-        current_window_id=window.context_window_id if window else None,
+        current_window_id=context_window_id(context.messages) or None,
         last_rotation_reason=window.last_reason if window else None,
         rotation_blocked_reason=blocked_reason,
     )

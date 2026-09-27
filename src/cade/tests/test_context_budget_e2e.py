@@ -35,13 +35,21 @@ from cade.agent.context_policy import ContextPolicy
 from cade.agent.events import AgentEvent, ToolExecutionEndEvent
 from cade.agent.messages import (
     AgentMessage,
+    AssistantMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
 )
 from cade.agent.request import DefaultRequestAssembler, RequestAssembly, RequestHygiene
 from cade.agent.results import AgentLoopResult, TerminationReason
-from cade.agent.types import ToolInput, ToolOutput, ToolSpec, ToolSpecAdapter
+from cade.agent.types import (
+    TextContent,
+    ToolCallContent,
+    ToolInput,
+    ToolOutput,
+    ToolSpec,
+    ToolSpecAdapter,
+)
 from cade.ai.providers.openai import OpenAIChatProvider
 from cade.ai.providers.responses import (
     OpenAICodexResponsesProvider,
@@ -52,6 +60,7 @@ from cade.harness.agent_runtime.context_window import ContextWindowRollover
 from cade.harness.agent_runtime.events import ToolResultBlock, ToolResultStructuredEvent
 from cade.harness.auth.manager import AuthManager
 from cade.harness.session import SessionHistory, SessionStore
+from cade.harness.session.history import build_history_tools
 from cade.harness.session.recorder import SessionRecorder
 
 
@@ -807,3 +816,129 @@ async def test_luna_high_measured_budget_e2e(
     )
     await run("Acknowledge revised task.")
     assert requests[-1]["source"] == "local"
+
+
+@pytest.mark.skipif(
+    os.environ.get("CADE_LIVE_CONTEXT_E2E") != "1",
+    reason="显式启用后调用真实 gpt-6-luna high，验证跨窗冷证据召回",
+)
+async def test_luna_high_recovers_omitted_evidence_after_reopen_e2e(
+    tmp_path: Path,
+) -> None:
+    """新窗口模型只能通过真实 history 工具取回旧 artifact 中被省略的随机值。"""
+    credential = AuthManager().get_valid_credential("openai-codex")
+    if credential is None or not credential.access:
+        pytest.fail("真实 E2E 需要已有 Codex 登录凭据")
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(
+            api_key=credential.access,
+            model="gpt-6-luna",
+            base_url="https://chatgpt.com/backend-api",
+            thinking=True,
+            reasoning_effort="high",
+            extra={"account_id": credential.account_id},
+        )
+    )
+    secret = os.urandom(12).hex()
+    body = (
+        "unrelated evidence row 0123456789\n" * 150
+        + f"RECOVERY_SECRET={secret}\n"
+        + "unrelated evidence row 9876543210\n" * 1200
+    )
+    recorder = SessionRecorder(
+        SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    )
+    recorder.record_event(
+        ToolResultStructuredEvent(
+            "tool_result", 1, ToolResultBlock("cold-evidence-call", body, status="ok")
+        )
+    )
+    policy = ContextPolicy(
+        physical_window=14048,
+        output_reserve=2048,
+        headroom_tokens=0,
+        evidence_token_budget=2000,
+    )
+    old: list[AgentMessage] = [
+        UserMessage(
+            content="Recover RECOVERY_SECRET from cold-evidence-call. Return the exact value."
+        ),
+        AssistantMessage(
+            content=[
+                ToolCallContent(
+                    id="cold-evidence-call", name="read_evidence", arguments={}
+                )
+            ]
+        ),
+        ToolResultMessage(
+            tool_call_id="cold-evidence-call", tool_name="read_evidence", content=body
+        ),
+    ]
+    rollover = ContextWindowRollover()
+    fresh = rollover.rollover_messages(old, policy=policy)
+    recorder.record_context_window_reset(
+        window_id=rollover.last_window_id or "cold-recovery",
+        messages_before=len(old),
+        messages_after=len(fresh),
+        replacement=fresh,
+    )
+    reopened = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    reopened.resume(recorder.store.session_id)
+    history = SessionHistory(
+        reopened.sessions_dir, artifacts_dir=reopened.artifacts_dir
+    )
+    history.set_session_id(reopened.session_id)
+    manager = ContextManager()
+    manager.complete_rollover(fresh, reason="manual")
+    requests: list[dict[str, object]] = []
+    events: list[AgentEvent] = []
+    result = await Agent(
+        tools=[ToolSpecAdapter(spec) for spec in build_history_tools(history)],
+        model=provider,
+    ).run(
+        [
+            UserMessage(
+                content=(
+                    "Continue the original recovery task after a window change and process restart. "
+                    "The exact value is omitted from your working context. Use history search "
+                    "for cold-evidence-call, then read exact pages with max_chars at most 2000. "
+                    "Do not guess. Return only the exact RECOVERY_SECRET value."
+                )
+            )
+        ],
+        AgentLoopConfig(
+            provider=provider,
+            context_policy=policy,
+            max_llm_calls=20,
+            before_provider_request=lambda assembly: requests.append(_trace(assembly)),
+            rollover_context=lambda messages: rollover.rollover_messages(
+                messages, policy=policy
+            ),
+        ),
+        context_manager=manager,
+        emit=events.append,
+    )
+    _save(tmp_path / "luna-cold-recovery.json", requests, [result], events)
+    assert result.termination_reason is TerminationReason.COMPLETED, result.error_detail
+    assert secret not in json.dumps(requests[0]["messages"])
+    assert (
+        requests[0]["context_snapshot"]["current_window_id"] == rollover.last_window_id
+    )
+    assert secret in "\n".join(
+        block.text
+        for message in result.messages
+        if isinstance(message, AssistantMessage)
+        for block in message.content
+        if isinstance(block, TextContent)
+    )
+    assert any(
+        isinstance(event, ToolExecutionEndEvent)
+        and event.result is not None
+        and event.result.tool_name == "history"
+        for event in events
+    )
+    recovered = history.search("cold-evidence-call")
+    assert any(
+        json.loads(entry.text).get("data", {}).get("content") == body
+        for entry in recovered
+    )

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 
 import tiktoken
 
-from cade.agent.messages import AgentMessage, AssistantMessage, BranchSummaryMessage
+from cade.agent.messages import (
+    AgentMessage,
+    AssistantMessage,
+    BranchSummaryMessage,
+    SystemMessage,
+)
 from cade.agent.types import TextContent, ThinkingContent, ToolCallContent
 
 _ENCODING_CACHE: dict[str, tiktoken.Encoding] = {}
@@ -79,3 +85,17 @@ def extract_prompt_tokens_from_usage(usage: Mapping[str, object] | None) -> int 
     if isinstance(prompt_tokens, int) and not isinstance(prompt_tokens, bool):
         return prompt_tokens
     return None
+
+
+_WINDOW_ID_PATTERN = re.compile(r'<context-window-reset id="([^"]+)">')
+
+
+def context_window_id(messages: Sequence[AgentMessage]) -> str:
+    """读取持久化换窗协议中的 ID，使重启后的诊断仍能关联同一窗口。"""
+    for message in reversed(messages):
+        if not isinstance(message, SystemMessage):
+            continue
+        match = _WINDOW_ID_PATTERN.search(message.content)
+        if match is not None:
+            return match.group(1)
+    return ""
