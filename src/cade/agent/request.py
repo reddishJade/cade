@@ -29,6 +29,7 @@ from .context import (
     _estimate_base_tokens,
     _estimate_messages_tokens,
 )
+from .context_manager import history_fingerprints
 from .context_policy import (
     ContextPolicy,
     ContextSnapshot,
@@ -124,6 +125,7 @@ class RequestAssembly:
     rotation_blocked_reason: str | None = None
     mandatory_estimated_tokens: int = 0
     context_snapshot: ContextSnapshot | None = None
+    source_message_digests: tuple[str, ...] = ()
 
 
 class RequestAssembler(Protocol):
@@ -207,6 +209,7 @@ class DefaultRequestAssembler:
             )
             evidence_omitted = tuple(dict.fromkeys((*evidence_omitted, *omitted)))
         tool_definitions = _tools_to_definitions(context.tools)
+        source_digests = history_fingerprints(context.messages)
         local_tokens = 0
         estimate_source = "local"
 
@@ -216,7 +219,12 @@ class DefaultRequestAssembler:
             if context.context_manager is None:
                 return tokens
             predicted, anchored = context.context_manager.estimate_request_tokens(
-                self.converter(messages), tool_definitions, options, tokens
+                self.converter(messages),
+                tool_definitions,
+                options,
+                tokens,
+                prefix_length=len(context_state.persistent_messages),
+                source_messages=source_digests,
             )
             estimate_source = "provider_anchor" if anchored else "local"
             return predicted
@@ -313,6 +321,7 @@ class DefaultRequestAssembler:
             evidence_reclaimed_tokens=evidence_reclaimed_tokens,
             rotation_blocked_reason=rotation_blocked_reason,
             mandatory_estimated_tokens=mandatory_tokens,
+            source_message_digests=source_digests,
             context_snapshot=_context_snapshot(
                 context,
                 assembly_input.messages,

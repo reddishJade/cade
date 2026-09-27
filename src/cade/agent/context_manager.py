@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from ._context_window import estimate_message_tokens, estimate_tokens
@@ -65,6 +66,8 @@ class _RequestTokenAnchor:
     messages: tuple[str, ...]
     configuration: str
     prompt_tokens: int = 0
+    message_tokens: tuple[int, ...] = ()
+    source_messages: tuple[str, ...] = ()
 
 
 @dataclass
@@ -109,8 +112,11 @@ class ContextManager:
         tools: Sequence[ToolDefinition],
         options: StreamOptions | None,
         local_tokens: int,
+        *,
+        prefix_length: int = 0,
+        source_messages: tuple[str, ...] = (),
     ) -> tuple[int, bool]:
-        """原请求完整保留时只估算新增消息；编辑或删除后回退全量估算。"""
+        """保留实测基线；固定前缀与事实历史未变时允许派生投影增减。"""
         anchor = self._token_anchor
         if anchor is None or anchor.configuration != _request_configuration(
             tools, options
@@ -127,7 +133,30 @@ class ContextManager:
                 # 给新增消息的角色和边界留少量开销；不重复估算已实测内容。
                 added_tokens += estimate_tokens(payload) + 4
         if position != len(anchor.messages):
-            return local_tokens, False
+            digests = tuple(_digest(_request_json(m)) for m in messages)
+            if (
+                prefix_length <= 0
+                or anchor.messages[:prefix_length] != digests[:prefix_length]
+                or not anchor.source_messages
+                or not _is_subsequence(anchor.source_messages, source_messages)
+                or len(anchor.message_tokens) != len(anchor.messages)
+            ):
+                return local_tokens, False
+            # 只估算投影改变的消息，不重新估算已实测的固定成本。
+            remaining = Counter(digests)
+            delta = 0
+            for digest, tokens in zip(
+                anchor.messages, anchor.message_tokens, strict=True
+            ):
+                if remaining[digest] > 0:
+                    remaining[digest] -= 1
+                else:
+                    delta -= tokens
+            for message, digest in zip(messages, digests, strict=True):
+                if remaining[digest] > 0:
+                    delta += estimate_tokens(_request_json(message)) + 4
+                    remaining[digest] -= 1
+            return max(1, anchor.prompt_tokens + delta), True
         return anchor.prompt_tokens + added_tokens, True
 
     def history_messages(self) -> list[AgentMessage]:
@@ -212,6 +241,10 @@ class ContextManager:
                 _digest(_request_json(message)) for message in wire_messages
             ),
             configuration=_request_configuration(assembly.tools, assembly.options),
+            message_tokens=tuple(
+                estimate_tokens(_request_json(m)) + 4 for m in wire_messages
+            ),
+            source_messages=assembly.source_message_digests,
         )
         system_prompt = "\n\n".join(
             str(message.get("content", ""))
@@ -263,9 +296,7 @@ class ContextManager:
                 and self._pending_request is not None
             ):
                 pending = self._pending_request
-                self._token_anchor = _RequestTokenAnchor(
-                    pending.messages, pending.configuration, prompt_tokens
-                )
+                self._token_anchor = replace(pending, prompt_tokens=prompt_tokens)
         self._pending_request = None
         if completion_tokens is not None:
             self.token_usage.completion_tokens += completion_tokens
@@ -314,3 +345,16 @@ def _json_value(value: object) -> Any:
     if isinstance(value, list | tuple):
         return [_json_value(item) for item in value]
     return value
+
+
+def history_fingerprints(messages: Sequence[AgentMessage]) -> tuple[str, ...]:
+    """事实消息指纹用于区分准入投影与 replay/fork/undo 等历史替换。"""
+    return tuple(_digest(_request_json(m.model_dump(mode="json"))) for m in messages)
+
+
+def _is_subsequence(previous: tuple[str, ...], current: tuple[str, ...]) -> bool:
+    position = 0
+    for digest in current:
+        if position < len(previous) and digest == previous[position]:
+            position += 1
+    return position == len(previous)
