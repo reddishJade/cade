@@ -240,6 +240,8 @@ def _build_before_provider_request_closure(
                         "current_step": assembly.current_step,
                         "hygiene_applied": assembly.hygiene_applied,
                         "estimated_tokens": assembly.estimated_tokens,
+                        "local_estimated_tokens": assembly.local_estimated_tokens,
+                        "token_estimate_source": assembly.token_estimate_source,
                         "token_budget": assembly.token_budget,
                         "budget_remaining": assembly.budget_remaining,
                         "context_trace": [
@@ -378,11 +380,15 @@ def build_loop_config(
     def prepare_request_context_fn(estimated_tokens: int) -> bool:
         nonlocal budget_reminded
         prompt_tokens = (
-            get_last_prompt_tokens()
-            if get_last_prompt_tokens is not None
-            else last_prompt_tokens
+            estimated_tokens
+            if estimated_tokens > 0
+            else (
+                get_last_prompt_tokens()
+                if get_last_prompt_tokens is not None
+                else last_prompt_tokens
+            )
         )
-        prompt_tokens = max(prompt_tokens or 0, estimated_tokens)
+        prompt_tokens = prompt_tokens or 0
         threshold = _rollover_token_threshold(composition, provider)
         if (
             context_rollover is not None
@@ -505,14 +511,11 @@ def _rollover_decision(
         return "token_limit"
     from .agent_helpers import to_dict
 
-    known_tokens = [
-        tokens
-        for tokens in (estimated_tokens, last_prompt_tokens)
-        if tokens is not None
-    ]
     measured_tokens = (
-        max(known_tokens)
-        if known_tokens
+        estimated_tokens
+        if estimated_tokens is not None
+        else last_prompt_tokens
+        if last_prompt_tokens is not None
         else estimate_message_tokens([to_dict(m) for m in messages])
     )
     return (

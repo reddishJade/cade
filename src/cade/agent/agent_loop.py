@@ -212,6 +212,11 @@ async def _run_loop(
             state.first_turn = False
 
         # ── 上下文窗口切换检查 ──
+        if (
+            current_context.context_manager is not None
+            and state.active_provider is not None
+        ):
+            current_context.context_manager.bind_provider(state.active_provider)
         prepared_assembly: RequestAssembly | None = None
         has_rollover_decision = bool(
             config.request_rollover_decision or config.rollover_decision

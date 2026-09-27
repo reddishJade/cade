@@ -405,6 +405,8 @@ def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
         "reasoning_effort": "low",
     }
     assert record.metadata["assembly"] == {
+        "local_estimated_tokens": assembly.local_estimated_tokens,
+        "token_estimate_source": assembly.token_estimate_source,
         "current_step": 1,
         "hygiene_applied": True,
         "estimated_tokens": 1,

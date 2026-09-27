@@ -84,6 +84,8 @@ class RequestAssembly:
     token_budget: int = 0
     budget_remaining: int = 0
     options: StreamOptions | None = None
+    local_estimated_tokens: int = 0
+    token_estimate_source: str = "local"
 
 
 class RequestAssembler(Protocol):
@@ -135,6 +137,21 @@ class DefaultRequestAssembler:
             *context.messages,
         ]
         request_messages = self.hygiene.apply(base_messages)
+        tool_definitions = _tools_to_definitions(context.tools)
+        local_tokens = 0
+        estimate_source = "local"
+
+        def calibrate_tokens(messages: list[AgentMessage], tokens: int) -> int:
+            nonlocal local_tokens, estimate_source
+            local_tokens = tokens
+            if context.context_manager is None:
+                return tokens
+            predicted, anchored = context.context_manager.estimate_request_tokens(
+                self.converter(messages), tool_definitions, options, tokens
+            )
+            estimate_source = "provider_anchor" if anchored else "local"
+            return predicted
+
         result = self.context_assembler.assemble(
             ContextAssemblyInput(
                 system_prompt=context.system_prompt,
@@ -143,11 +160,11 @@ class DefaultRequestAssembler:
                 context_blocks=legacy_blocks,
                 current_step=current_step,
                 token_budget=context.request_token_budget,
+                calibrate_tokens=calibrate_tokens,
             )
         )
         messages = result.messages
         wire_messages = self.converter(messages)
-        tool_definitions = _tools_to_definitions(context.tools)
         assembly = RequestAssembly(
             messages=tuple(messages),
             wire_messages=tuple(wire_messages),
@@ -165,6 +182,8 @@ class DefaultRequestAssembler:
             token_budget=result.token_budget,
             budget_remaining=result.budget_remaining,
             options=options,
+            local_estimated_tokens=local_tokens or result.total_tokens,
+            token_estimate_source=estimate_source,
         )
         return assembly
 
