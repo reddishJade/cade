@@ -149,25 +149,46 @@ async def _collect_provider_events(
         if options is not None:
             kwargs["options"] = options
         stream_iter = provider.stream(llm_messages, tool_definitions, **kwargs)
-        async for event in stream_iter:
-            if _is_cancelled(signal):
-                _abort_inflight_stream(provider)
-                await _aclose_stream(stream_iter)
-                return None
-            events.append(event)
-            if isinstance(event, TextDelta):
-                _append_text_delta(text_parts, event, emit)
-                await asyncio.sleep(0)
-            elif isinstance(event, ReasoningDelta):
-                emit(ThinkingUpdateEvent(reasoning_content=event.chunk))
-                await asyncio.sleep(0)
-            elif isinstance(event, UsageUpdate):
-                emit(
-                    UsageUpdateEvent(
-                        input_tokens=event.input_tokens,
-                        output_tokens=event.output_tokens,
+
+        async def consume() -> None:
+            async for event in stream_iter:
+                if _is_cancelled(signal):
+                    _abort_inflight_stream(provider)
+                    await _aclose_stream(stream_iter)
+                    return
+                events.append(event)
+                if isinstance(event, TextDelta):
+                    _append_text_delta(text_parts, event, emit)
+                    await asyncio.sleep(0)
+                elif isinstance(event, ReasoningDelta):
+                    emit(ThinkingUpdateEvent(reasoning_content=event.chunk))
+                    await asyncio.sleep(0)
+                elif isinstance(event, UsageUpdate):
+                    emit(
+                        UsageUpdateEvent(
+                            input_tokens=event.input_tokens,
+                            output_tokens=event.output_tokens,
+                        )
                     )
-                )
+
+        # 无事件的在途请求也必须响应取消，不能依赖下一条流事件唤醒。
+        pending = asyncio.create_task(consume())
+        try:
+            while not pending.done():
+                if _is_cancelled(signal):
+                    pending.cancel()
+                    _abort_inflight_stream(provider)
+                    await asyncio.gather(pending, return_exceptions=True)
+                    await _aclose_stream(stream_iter)
+                    return None
+                await asyncio.wait({pending}, timeout=0.1)
+            await pending
+            if _is_cancelled(signal):
+                return None
+        finally:
+            if not pending.done():
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
         return events
     except (
         LookupError,
