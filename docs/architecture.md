@@ -96,33 +96,70 @@ context 入口。`AgentRuntimeConfig` 只保存 session inbox、取消、压缩�
 包装器原地换主和私有 gate 字段写入均不存在。`provider_request` 保存
 `composition_id`，因此一次实际请求可以回溯到完整装配代际。
 
-## 上下文预算
+## Context Policy 与请求工作集
 
-`agent/context_policy.py` 的不可变 `ContextPolicy` 统一输入预算、输出预留、
-安全余量和换窗触发线。固定前缀、工具 schema、持久任务状态与活动消息共享
-输入预算，不为每类内容分配刚性配额。
+session 的 append-only 事件与外置 artifact 保存完整事实；模型请求是由
+`DefaultRequestAssembler` 生成的临时投影。沿用现有 `ContextBlock` 的来源与
+优先级表达生命周期，不另建历史库或平行的 Context Planner。
 
-配置沿用 `agent.reserve_tokens` 与 `agent.rollover_trigger_ratio`。
-`agent.headroom_tokens` 可显式指定额外余量；未指定时从原比例阈值留下的
-空间中扣除输出预留，保持原有阈值并避免重复扣减。
+`ContextState` 只保留当前请求前缀，`WorldState` 保存各 section 的最新完整
+快照。规则、NOTE、验证事实和运行状态更新后替换旧投影；删除的状态退出
+下一次请求。每次请求的 trace 覆盖全部实际纳入或丢弃的块，而非只记录变化。
 
-完整窗口满足 `physical_window = input_budget + output_reserve + headroom`。
-显式增大单次请求的输出上限会先增加输出预留，再缩小输入预算。
-支持输出上限的 transport 将预留下发为 `max_tokens` 或 `max_output_tokens`。
-ChatGPT Codex 后端不支持该参数，因此其预留是运行时预算，不是服务端输出
-硬上限；请求审计明确记录 `output_limit_supported=false`。
+不可变 `ContextPolicy` 统一物理窗口、输出预留、额外余量、证据准入与
+换窗工作集。固定前缀、工具 schema、持久状态和活动消息共享输入预算，
+不人为划分固定配额。CRITICAL/HIGH 块作为必需状态保留，其他块按优先级
+使用剩余预算；必需内容超限会显式出现在诊断中，不静默丢掉规则或笔记。
 
-预算计量以成功请求的 provider 输入用量为锚点，只估算尚未覆盖的新增内容。
-已有内容或工具定义改变后回退到本地估算；失败响应、零输入用量和旧窗口
-统计不作为新锚点。本地估算用于分配和提前换窗，不作为拒绝 provider 请求
-的硬依据。明确的服务端上下文超限最多触发一次换窗恢复，关闭自动换窗时
-也关闭该恢复路径。
+配置沿用 `agent.reserve_tokens`（默认 16384）与
+`agent.rollover_trigger_ratio`（默认 0.95）。
+`agent.headroom_tokens` 可指定额外余量；默认从原比例阈值留下的空间中
+扣除输出预留，避免重复扣减。物理窗口来自 model/provider 元数据，并尊重
+现有用户 override；fallback 到较小模型时收紧预算。
 
-工具正文按新到旧共享一个总预算，默认不超过输入预算、最多 32K；
-`agent.evidence_token_budget` 可覆盖。超出预算的正文在请求投影中变成带
-原始 tool-call ID、执行状态和短预览的引用，完整原文仍可通过 history 找回。
-技能指令与标记为持久内容的结果不参与裁剪，多模态结果不猜测 token 成本。
-正文预算不包含引用标记的开销，后者仍计入完整输入预算。
+`physical_window = input_budget + output_reserve + headroom`。
+增大单次输出上限先增加预留、再缩小输入预算。支持输出上限的 transport
+将预留下发；ChatGPT Codex 后端不支持该参数，其预留只作运行时预算，
+审计记录 `output_limit_supported=false`。
+
+整体输入预测以成功请求的 provider 用量为锚点，只估算新增内容。修改已有
+内容或配置后回退本地估算；失败、零输入用量与旧窗口统计不作为新锚点。
+本地预算用于准入与提前换窗，不能充当精确的服务端硬限制。
+
+工具正文按新到旧共享证据配额：默认最多 32K、不超过输入预算，
+`agent.evidence_token_budget` 可覆盖。单条卫生裁剪和总配额裁剪均给出
+tool-call ID、执行状态和原文恢复提示。原始结果不变。技能正文和声明为
+durable 的工具状态受保护，多模态结果不猜测 token 成本；小正文比引用
+更短时保留原文。所有引用开销仍计入完整请求预算。
+
+准入以最终请求为依据：若持久状态和新增证据使预测超预算，先收紧旧证据
+投影，再判断是否换窗。调整最多三次，避免无界计算；未知工具未来输出不
+作精确预测。输入预算已经扣除输出预留与 headroom，判断时不重复扣减。
+
+自动换窗带走启动上下文、当前用户请求、持久工具状态和最近一组完整交互。
+近期交互默认最多 4096 tokens、且不超过输入预算的四分之一，
+`agent.working_set_token_budget` 可覆盖或设为零。工具调用与结果整组保留；
+大正文改为历史引用，整组仍放不下则用有界操作索引和 history 恢复。
+新的窗口重新加载当前 NOTE、验证事实和运行状态，不递归总结旧对话。
+
+必需输入已经超过预算，或不存在可回收历史时，自动 token 换窗会被抑制，
+防止同一问题反复换窗。手动/模型请求换窗仍可执行；明确的 provider 上下文
+超限最多尝试一次恢复，关闭自动换窗也关闭这条恢复路径。不可容纳的请求
+最终保留明确的 provider 错误，而非无限循环。
+
+`RequestAssembly.context_snapshot` 和 `ContextManager.context_snapshot`
+提供物理/有效窗口、固定前缀、持久状态、工作消息、证据、输出预留、余量、
+剩余预算、窗口编号与换窗原因。分项统一复用请求的本地计量函数，标记
+`category_source=local`；其总量 `category_total_tokens` 与 provider 锚定的
+`total_input_tokens` 分开，不能把两者伪装成同一份精确账单。当前前缀中的
+混合运行状态按注入位置计入 fixed prefix，NOTE、验证事实、当前用户意图
+与受保护工具组计入 durable；这是一份预算归因，并非语义理解器。
+审计保存快照、纳入/丢弃 provenance、证据回收量与阻止无效换窗的原因，
+不依赖具体 UI。
+
+旧窗口通过现有 `history` 的窗口索引、搜索与分页原文读取恢复。history
+输出也受同一证据准入约束；它不是第二套长期记忆。原始事件、artifact、
+replay/fork/undo 的分支语义保持独立于请求裁剪。
 
 ## Session 事实模型
 
