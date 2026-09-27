@@ -54,9 +54,11 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
     "rollover_message_threshold": 0,
     "rollover_token_threshold": 0,
     "automatic_rollover": true,
-    "fallback_recent_messages": 10,
-    "fallback_recent_tokens": 20000,
     "reserve_tokens": 16384,
+    "headroom_tokens": null,
+    "next_turn_input_tokens": 1024,
+    "evidence_token_budget": null,
+    "working_set_token_budget": null,
     "rollover_trigger_ratio": 0.95,
     "tool_workers": 4,
     "tool_timeout_seconds": 120,
@@ -72,7 +74,13 @@ Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic �
 }
 ```
 
-`max_steps` 为空时不限制 agent 步数，`max_llm_calls` 为空时不限制实际 provider 调用数（包括重试与 max-token 续写）。Agent 仍会因完成、取消、provider error 和 watchdog 结束。`reserve_tokens` 为输出与运行余量保留空间。自动换窗优先使用 provider profile 的 `context_window` 覆盖，否则读取当前模型注册窗口，默认在 95% 处触发，且不超过窗口减去 reserve 的硬上限。
+`max_steps` 为空时不限制 agent 步数，`max_llm_calls` 为空时不限制实际 provider 调用数（包括重试与 max-token 续写）。Agent 仍会因完成、取消、provider error 和 watchdog 结束。
+
+`reserve_tokens` 只预留下一次模型输出；`headroom_tokens` 独立预留运行余量，默认窗口的 2%，最多 8192 tokens。窗口未知时默认余量为 1024。输入预算为窗口减去这两项。窗口优先使用 provider profile 的 `context_window`，否则读取模型元数据。
+
+`next_turn_input_tokens` 默认 1024（不超过触发预算的八分之一），为下一轮新增调用和证据留出 allowance。请求先回收旧证据和旧交互；预测输入加 allowance 达到触发预算时才换窗。`rollover_trigger_ratio` 默认 0.95，仅作额外 guardrail。本地估算超限不会直接拒绝请求。
+
+`evidence_token_budget` 默认最多 32000 tokens，且不超过输入预算；`working_set_token_budget` 默认最多 4096，且不超过输入预算的四分之一，控制换窗带走的近期完整交互。两者可设为零。旧 `fallback_recent_messages` / `fallback_recent_tokens` 配置已移除。
 
 ## 4. 工具、技能与 prompt
 

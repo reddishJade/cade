@@ -73,17 +73,19 @@ cade --session ID  # 恢复指定会话
 
 换窗触发来源：
 
-- provider usage 的 prompt token 达到当前模型窗口预算。
-- provider 未返回 usage 时的本地 token 估算。
+- 下一次请求的预测输入加有界 allowance 达到触发预算；成功 provider usage 校准预测，缺失时使用统一本地估算。
 - 配置的 message count 或绝对 token threshold。
 - 模型调用 `new_context`，或用户执行 `/compact`、`/rollover`。
 
-窗口大小优先取 provider profile 的 `context_window` 覆盖；未覆盖时读取当前模型注册值。默认触发线为窗口的 95%，并且不得高于“窗口 - `reserve_tokens`”。
+窗口大小优先取 provider profile 的 `context_window` 覆盖；未覆盖时读取模型元数据。
+输入预算扣除输出预留与独立运行余量，请求准入再给下一轮新增输入留 allowance。
+先回收旧证据与旧工具交互，预测成本仍无法安全容纳时换窗；95% 比例只是额外 guardrail。
 
 `ContextWindowRollover` 不生成摘要。自动换窗、模型 `new_context` 和 `/compact`
-重新注入启动上下文、已激活 skill 与最近的真实用户请求，释放整个 assistant/tool
-轨迹。同一个运行继续执行；环境和持久化历史保持不变。达到换窗预算的 80% 时，
-根据 provider 用量提醒模型把执行前沿写入项目根 `NOTE.md`。没有笔记也允许模型
+重新注入启动上下文、已激活 skill、当前持久工具状态、最近的真实用户请求和
+有界的近期完整工具组，其余轨迹通过 history 恢复。同一个运行继续执行；环境和
+持久化历史保持不变。接近换窗预算时，根据请求预测提醒模型把执行前沿写入
+项目根 `NOTE.md`。没有笔记也允许模型
 换窗，避免窗口已满时无法继续；这时需要通过 `history` 找回进度。
 
 `/rollover` 不携带普通对话，默认要求非空 `NOTE.md`；

@@ -113,14 +113,21 @@ session 的 append-only 事件与外置 artifact 保存完整事实；模型请�
 
 配置沿用 `agent.reserve_tokens`（默认 16384）与
 `agent.rollover_trigger_ratio`（默认 0.95）。
-`agent.headroom_tokens` 可指定额外余量；默认从原比例阈值留下的空间中
-扣除输出预留，避免重复扣减。物理窗口来自 model/provider 元数据，并尊重
+`agent.headroom_tokens` 可指定额外余量；默认独立预留窗口的 2%，最多 8192
+tokens，未知窗口时为 1024。物理窗口来自 model/provider 元数据，并尊重
 现有用户 override；fallback 到较小模型时收紧预算。
 
 `physical_window = input_budget + output_reserve + headroom`。
 增大单次输出上限先增加预留、再缩小输入预算。支持输出上限的 transport
 将预留下发；ChatGPT Codex 后端不支持该参数，其预留只作运行时预算，
 审计记录 `output_limit_supported=false`。
+
+`agent.next_turn_input_tokens` 默认 1024，并限制为触发预算的八分之一。
+这是下一轮新增调用与证据的有界 allowance，不是任意工具输出的精确预测。
+准入目标为 `rotation_threshold - next_input_allowance`，实际输入预算仍为
+物理窗口减去输出预留和 headroom；三者分别记录，输出与余量只扣一次。
+当本轮输入预测加 allowance 达到触发预算时提前换窗。比例阈值和显式
+token 阈值只作 guardrail；CLI 与运行时从同一个 policy 获取预算。
 
 整体输入预测以成功请求的 provider 用量为锚点，只估算新增内容。固定前缀和事实历史保持不变时，
 NOTE 更新、状态替换与工具裁剪按消息增减估算差额，保留实测基线。原始历史
@@ -136,11 +143,18 @@ tool-call ID、执行状态和原文恢复提示。原始结果不变。技能�
 durable 的工具状态受保护，多模态结果不猜测 token 成本；小正文比引用
 更短时保留原文。所有引用开销仍计入完整请求预算。
 
+`context_lifetime=durable` 的工具结果可通过 `context_key` 声明状态替换关系。
+同一键只有最新的成功版本受保护；旧版本改为 history 索引，混合并行组中
+不能整体移除的旧结果显式标记为过期。todowrite 使用 `session-todo` 键，
+清空清单也是有效的新状态。无键的持久结果保留为独立事实，不猜测其替换关系。
+
 准入以最终请求为依据：若持久状态和新增证据使预测超预算，先收紧旧证据
 投影，再将旧的完整工具交互替换为带调用 ID 的 history 索引；近期完整组和
 持久组受保护。释放空间后优先恢复近期证据原文，最后才判断是否换窗。
 各阶段调整最多三次，避免无界计算；未知工具未来输出不
 作精确预测。输入预算已经扣除输出预留与 headroom，判断时不重复扣减。
+旧的字典格式换窗、文件名专属保护、字符阈值裁剪及状态 diff 累积路径均已
+删除；展示格式适配器只转换消息，同一类型化策略完成选择与保留。
 
 自动换窗带走启动上下文、当前用户请求、持久工具状态和最近一组完整交互。
 近期交互默认最多 4096 tokens、且不超过输入预算的四分之一，
@@ -155,7 +169,8 @@ durable 的工具状态受保护，多模态结果不猜测 token 成本；小�
 
 `RequestAssembly.context_snapshot` 和 `ContextManager.context_snapshot`
 提供物理/有效窗口、固定前缀、持久状态、工作消息、证据、输出预留、余量、
-剩余预算、窗口编号与换窗原因。分项统一复用请求的本地计量函数，标记
+剩余预算、下一轮 allowance、准入目标、预测下一轮输入、窗口编号与换窗原因。
+分项统一复用请求的本地计量函数，标记
 `category_source=local`；其总量 `category_total_tokens` 与 provider 锚定的
 `total_input_tokens` 分开，不能把两者伪装成同一份精确账单。当前前缀中的
 混合运行状态按注入位置计入 fixed prefix，NOTE、验证事实、当前用户意图
