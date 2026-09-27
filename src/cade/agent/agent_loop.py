@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from collections.abc import Callable
 
 from cade.agent.types import CancellationSignal, TextContent, ToolCallContent
 from cade.ai.providers.base import StreamProvider
 
-from ._context_window import estimate_tokens
+from ._context_window import context_window_id, estimate_tokens
 from ._execution import (
     ExecutedToolBatch,
     cancel_reason,
@@ -57,25 +56,11 @@ from .messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMes
 from .request import RequestAssembly
 from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 
-_WINDOW_ID_PATTERN = re.compile(r'<context-window-reset id="([^"]+)">')
-
 # ── 事件辅助构造 ──
 
 
 def _agent_start_event() -> AgentStartEvent:
     return AgentStartEvent()
-
-
-def _context_window_id(messages: list[AgentMessage]) -> str:
-    """从换窗协议消息中读取窗口 ID。"""
-    for message in messages:
-        content = getattr(message, "content", "")
-        if not isinstance(content, str):
-            continue
-        match = _WINDOW_ID_PATTERN.search(content)
-        if match is not None:
-            return match.group(1)
-    return ""
 
 
 def _agent_end_event(
@@ -599,7 +584,7 @@ def _rotate_context(
     metrics.context_window_resets += 1
     emit(
         ContextWindowResetEvent(
-            window_id=_context_window_id(context.messages),
+            window_id=context_window_id(context.messages),
             messages_removed=max(before - len(context.messages), 0),
             messages_after=len(context.messages),
             trigger=reason,

@@ -35,7 +35,7 @@ class ContextSnapshot:
     output_reserve_tokens: int
     operational_headroom_tokens: int
     remaining_input_budget: int
-    current_window_id: int | None
+    current_window_id: str | None
     last_rotation_reason: str | None
     rotation_blocked_reason: str | None
     category_source: str = "local"
