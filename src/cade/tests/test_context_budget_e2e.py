@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 
 import pytest
 
@@ -101,6 +104,7 @@ def _http_provider(
 ]:
     """通过真实 HTTP 注入协议故障，并保留实际发送的消息。"""
     requests: list[dict[str, object]] = []
+    release_idle = Event()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -110,6 +114,13 @@ def _http_provider(
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(payload)
             index = len(requests) - 1
+            if scenario == "responses-idle":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                self.wfile.flush()
+                release_idle.wait(timeout=15)
+                return
             tool_call = (scenario == "tool-overflow" and index == 0) or (
                 scenario == "evidence" and index < 3
             )
@@ -197,7 +208,7 @@ def _http_provider(
     try:
         provider_class = (
             OpenAIResponsesProvider
-            if scenario == "responses-code"
+            if scenario in {"responses-code", "responses-idle"}
             else OpenAIChatProvider
         )
         provider = provider_class(
@@ -210,6 +221,7 @@ def _http_provider(
         )
         yield provider, requests
     finally:
+        release_idle.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
@@ -308,6 +320,78 @@ async def test_context_overflow_http_e2e(
         assert "EXACT_EVIDENCE" in json.dumps(http_requests[1])
         assert "EXACT_EVIDENCE" not in json.dumps(http_requests[2])
         assert "read-evidence-1" in json.dumps(http_requests[2])
+
+
+def test_exec_timeout_idle_responses_http_e2e(tmp_path: Path) -> None:
+    """真实 CLI 超时应中止未产生任何模型事件的 HTTP 请求。"""
+    with _http_provider("responses-idle") as (provider, requests):
+        config = tmp_path / "config.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "provider": {
+                        "model_profiles": {
+                            "main": {
+                                "transport": "openai_responses",
+                                "chat_model": "protocol-fixture",
+                                "api_key": "local-test-only",
+                                "base_url": provider.config.base_url,
+                                "thinking": False,
+                            }
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        command = [
+            sys.executable,
+            "-m",
+            "cade.main",
+            "exec",
+            "--project-root",
+            str(tmp_path),
+            "--config",
+            str(config),
+            "--sessions-dir",
+            str(tmp_path / "sessions"),
+            "--approval",
+            "never",
+            "--timeout",
+            "2s",
+            "--max-steps",
+            "2",
+            "--max-llm-calls",
+            "2",
+            "Reply OK.",
+        ]
+        started = time.monotonic()
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=10, check=False
+        )
+        elapsed = time.monotonic() - started
+    (tmp_path / "stdout.jsonl").write_text(result.stdout, encoding="utf-8")
+    (tmp_path / "stderr.txt").write_text(result.stderr, encoding="utf-8")
+    (tmp_path / "reproduce.json").write_text(
+        json.dumps(
+            {
+                "command": command,
+                "elapsed_seconds": elapsed,
+                "requests": requests,
+                "returncode": result.returncode,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    assert requests
+    assert result.returncode == 124, result.stderr
+    rows = [json.loads(line) for line in result.stdout.splitlines()]
+    completed = next(row for row in rows if row["type"] == "run.completed")
+    assert completed["status"] == "timed_out"
+    assert completed["termination_reason"] == "cancelled"
+    assert elapsed < 8
 
 
 async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -> None:
