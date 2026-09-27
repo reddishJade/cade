@@ -74,7 +74,7 @@ cade --session ID  # 恢复指定会话
 换窗触发来源：
 
 - 下一次请求的预测输入加有界 allowance 达到触发预算；成功 provider usage 校准预测，缺失时使用统一本地估算。
-- 配置的 message count 或绝对 token threshold。
+- 配置的绝对 token threshold guardrail。
 - 模型调用 `new_context`，或用户执行 `/compact`、`/rollover`。
 
 窗口大小优先取 provider profile 的 `context_window` 覆盖；未覆盖时读取模型元数据。

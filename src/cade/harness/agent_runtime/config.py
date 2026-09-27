@@ -549,11 +549,6 @@ def _rollover_decision(
         return requested
     if not composition.config.automatic_rollover:
         return None
-    if (
-        composition.config.rollover_message_threshold > 0
-        and len(messages) >= composition.config.rollover_message_threshold
-    ):
-        return "token_limit"
     from ...agent._context_window import estimate_message_tokens
 
     measured_tokens = (
