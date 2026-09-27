@@ -35,7 +35,7 @@ from .context_manager import (
     ContextWindowState,
     PromptCacheMetadata,
 )
-from .context_policy import ContextPolicy
+from .context_policy import ContextPolicy, ContextSnapshot
 from .events import AgentEvent
 from .messages import (
     AgentMessage,
@@ -78,6 +78,7 @@ __all__ = [
     "ContextPolicy",
     "ContextPriority",
     "ContextSection",
+    "ContextSnapshot",
     "ContextState",
     "ContextTokenUsage",
     "ContextWindowState",

@@ -20,6 +20,28 @@ from .types import TextContent, ToolCallContent
 
 
 @dataclass(frozen=True)
+class ContextSnapshot:
+    """请求预算与生命周期占用；分项只作本地估算，不伪装成 provider 实测。"""
+
+    physical_window: int | None
+    effective_input_budget: int
+    fixed_prefix_tokens: int
+    durable_tokens: int
+    working_tokens: int
+    evidence_tokens: int
+    category_total_tokens: int
+    total_input_tokens: int
+    total_input_source: str
+    output_reserve_tokens: int
+    operational_headroom_tokens: int
+    remaining_input_budget: int
+    current_window_id: int | None
+    last_rotation_reason: str | None
+    rotation_blocked_reason: str | None
+    category_source: str = "local"
+
+
+@dataclass(frozen=True)
 class ContextPolicy:
     """固定前缀、持久状态和工作消息共享输入预算，不人为分配固定配额。"""
 

@@ -19,6 +19,7 @@ from .context import (
     ContextAssembler,
     ContextAssemblyInput,
     ContextBlock,
+    ContextBlockSource,
     ContextBlockTarget,
     ContextCollectionInput,
     ContextCollectorSource,
@@ -28,7 +29,14 @@ from .context import (
     _estimate_base_tokens,
     _estimate_messages_tokens,
 )
-from .context_policy import ContextPolicy, evidence_reference, mandatory_history
+from .context_policy import (
+    ContextPolicy,
+    ContextSnapshot,
+    evidence_reference,
+    latest_task_message,
+    mandatory_history,
+    protected_working_set,
+)
 from .messages import AgentMessage, SystemMessage, ToolResultMessage, UserMessage
 from .types import AgentTool, materialize_json_mapping
 
@@ -115,6 +123,7 @@ class RequestAssembly:
     evidence_reclaimed_tokens: int = 0
     rotation_blocked_reason: str | None = None
     mandatory_estimated_tokens: int = 0
+    context_snapshot: ContextSnapshot | None = None
 
 
 class RequestAssembler(Protocol):
@@ -304,6 +313,17 @@ class DefaultRequestAssembler:
             evidence_reclaimed_tokens=evidence_reclaimed_tokens,
             rotation_blocked_reason=rotation_blocked_reason,
             mandatory_estimated_tokens=mandatory_tokens,
+            context_snapshot=_context_snapshot(
+                context,
+                assembly_input.messages,
+                result.blocks_used,
+                protected_ids,
+                policy,
+                result.total_tokens,
+                estimate_source,
+                token_budget,
+                rotation_blocked_reason,
+            ),
         )
         return assembly
 
@@ -344,6 +364,84 @@ class DefaultRequestAssembler:
                 )
                 world_blocks = context_state.world_state.current_blocks()
         return legacy_blocks, world_blocks
+
+
+def _context_snapshot(
+    context: AgentContext,
+    projected: list[AgentMessage],
+    blocks: list[ContextBlock],
+    protected_ids: frozenset[str],
+    policy: ContextPolicy | None,
+    predicted_tokens: int,
+    estimate_source: str,
+    token_budget: int,
+    blocked_reason: str | None,
+) -> ContextSnapshot:
+    """复用请求计量函数按生命周期归因，整体预测与本地分项分别标注来源。"""
+    prefix_length = len(context.request_prefix)
+    history = projected[prefix_length:]
+    latest_user = latest_task_message(history)
+    durable_ids = {id(m) for m in protected_working_set(history, protected_ids)}
+    if latest_user is not None:
+        durable_ids.add(id(latest_user))
+    fixed = list(projected[:prefix_length])
+    durable: list[AgentMessage] = []
+    working: list[AgentMessage] = []
+    evidence: list[AgentMessage] = []
+    for message in history:
+        if id(message) in durable_ids:
+            durable.append(message)
+        elif isinstance(message, SystemMessage):
+            fixed.append(message)
+        elif isinstance(message, ToolResultMessage):
+            evidence.append(message)
+        else:
+            working.append(message)
+    for block in blocks:
+        rendered = (
+            SystemMessage(content=block.content)
+            if block.target == ContextBlockTarget.SYSTEM
+            else UserMessage(content=_block_to_text(block))
+        )
+        if block.source in {
+            ContextBlockSource.NOTES,
+            ContextBlockSource.RECENT_VALIDATION,
+        }:
+            durable.append(rendered)
+        else:
+            fixed.append(rendered)
+    fixed_tokens = _estimate_base_tokens(
+        ContextAssemblyInput(
+            system_prompt=context.system_prompt, tools=list(context.tools)
+        ),
+        fixed,
+    )
+    durable_tokens = _estimate_messages_tokens(durable)
+    working_tokens = _estimate_messages_tokens(working)
+    evidence_tokens = _estimate_messages_tokens(evidence)
+    window = context.context_manager.context_window if context.context_manager else None
+    return ContextSnapshot(
+        physical_window=policy.physical_window if policy else None,
+        effective_input_budget=token_budget,
+        fixed_prefix_tokens=fixed_tokens,
+        durable_tokens=durable_tokens,
+        working_tokens=working_tokens,
+        evidence_tokens=evidence_tokens,
+        category_total_tokens=fixed_tokens
+        + durable_tokens
+        + working_tokens
+        + evidence_tokens,
+        total_input_tokens=predicted_tokens,
+        total_input_source=estimate_source,
+        output_reserve_tokens=policy.output_reserve if policy else 0,
+        operational_headroom_tokens=policy.headroom if policy else 0,
+        remaining_input_budget=token_budget - predicted_tokens
+        if token_budget > 0
+        else 0,
+        current_window_id=window.context_window_id if window else None,
+        last_rotation_reason=window.last_reason if window else None,
+        rotation_blocked_reason=blocked_reason,
+    )
 
 
 def _context_trace(

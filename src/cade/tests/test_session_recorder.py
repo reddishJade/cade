@@ -6,6 +6,7 @@ import json
 import os
 import stat
 from collections.abc import Iterator
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -410,6 +411,7 @@ def test_provider_request_hook_adds_provider_and_request_fingerprint() -> None:
         "evidence_reclaimed_tokens": 0,
         "rotation_blocked_reason": None,
         "mandatory_estimated_tokens": 1,
+        "context_snapshot": asdict(assembly.context_snapshot),
         "local_estimated_tokens": assembly.local_estimated_tokens,
         "token_estimate_source": assembly.token_estimate_source,
         "current_step": 1,

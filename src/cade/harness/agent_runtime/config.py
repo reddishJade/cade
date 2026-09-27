@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -263,6 +263,11 @@ def _build_before_provider_request_closure(
                         "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
                         "rotation_blocked_reason": assembly.rotation_blocked_reason,
                         "mandatory_estimated_tokens": assembly.mandatory_estimated_tokens,
+                        "context_snapshot": (
+                            asdict(assembly.context_snapshot)
+                            if assembly.context_snapshot is not None
+                            else None
+                        ),
                         "token_budget": assembly.token_budget,
                         "budget_remaining": assembly.budget_remaining,
                         "context_trace": [

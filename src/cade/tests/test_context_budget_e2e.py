@@ -14,7 +14,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import asdict, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event, Thread
@@ -66,6 +66,9 @@ def _trace(assembly: RequestAssembly) -> dict[str, object]:
         "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
         "rotation_blocked_reason": assembly.rotation_blocked_reason,
         "mandatory_tokens": assembly.mandatory_estimated_tokens,
+        "context_snapshot": asdict(assembly.context_snapshot)
+        if assembly.context_snapshot
+        else None,
         "max_output_tokens": assembly.options.max_tokens if assembly.options else None,
         "policy": (
             {

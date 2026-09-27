@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from ._context_window import estimate_message_tokens, estimate_tokens
 from ._hygiene import repair_tool_pairing
 from .context import ContextState
+from .context_policy import ContextSnapshot
 from .messages import AgentMessage
 
 if TYPE_CHECKING:
@@ -77,6 +78,7 @@ class ContextManager:
     context_window: ContextWindowState = field(default_factory=ContextWindowState)
     prompt_cache: PromptCacheMetadata = field(default_factory=PromptCacheMetadata)
     provider_usage: dict[str, int] = field(default_factory=dict)
+    context_snapshot: ContextSnapshot | None = None
     _provider_key: tuple[object, ...] | None = field(default=None, repr=False)
     _pending_request: _RequestTokenAnchor | None = field(default=None, repr=False)
     _token_anchor: _RequestTokenAnchor | None = field(default=None, repr=False)
@@ -172,6 +174,7 @@ class ContextManager:
         before = len(self.history) if before_messages is None else before_messages
         replacement = self.replace_history(messages)
         self.context_state.reset()
+        self.context_snapshot = None
         self.invalidate_token_anchor()
         self.context_window.context_window_id += 1
         self.context_window.reset_count += 1
@@ -182,6 +185,7 @@ class ContextManager:
 
     def clear(self) -> None:
         self.history.clear()
+        self.context_snapshot = None
         self.context_state.reset()
         self.history_version += 1
         self.token_usage = ContextTokenUsage()
@@ -198,6 +202,7 @@ class ContextManager:
 
     def record_request(self, assembly: RequestAssembly) -> None:
         """记录组装后的请求预算和 prompt/cache fingerprint。"""
+        self.context_snapshot = assembly.context_snapshot
         self.token_usage.estimated_prompt_tokens = assembly.estimated_tokens
         self.token_usage.context_budget = assembly.token_budget
         self.token_usage.budget_remaining = assembly.budget_remaining
