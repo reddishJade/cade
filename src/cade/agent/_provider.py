@@ -283,11 +283,16 @@ def _provider_events_to_response(
 
 
 def _exception_status_code(exc: BaseException) -> int | None:
-    """从常见 SDK 异常字段提取 HTTP 状态码。"""
-    for attribute in ("status_code", "status", "code"):
-        value = getattr(exc, attribute, None)
-        if isinstance(value, int) and 100 <= value <= 599:
-            return value
+    """沿显式异常链提取 SDK 状态码，避免包装后误重试永久错误。"""
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        for attribute in ("status_code", "status", "code"):
+            value = getattr(current, attribute, None)
+            if isinstance(value, int) and 100 <= value <= 599:
+                return value
+        current = current.__cause__
     return None
 
 
