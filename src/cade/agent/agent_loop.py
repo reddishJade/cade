@@ -39,6 +39,7 @@ from ._provider import LlmCallLimitReached, call_provider
 from .config import (
     AgentContext,
     AgentLoopConfig,
+    ContextWindowResetReason,
     LoopRunState,
     ShouldStopAfterTurnContext,
 )
@@ -254,31 +255,13 @@ async def _run_loop(
                     raise RuntimeError("context rollover decision is not configured")
                 reset_reason = rollover_decision(current_context.messages)
             if reset_reason is not None:
-                before = len(current_context.messages)
-                next_window = config.rollover_context(current_context.messages)
-                if current_context.context_manager is not None:
-                    current_context.messages = (
-                        current_context.context_manager.complete_rollover(
-                            next_window,
-                            reason=reset_reason,
-                            before_messages=before,
-                        )
-                    )
-                else:
-                    current_context.messages = next_window
-                    current_context.context_state.reset()
-                _refresh_request_prefix(current_context, config)
-                _reset_provider_conversation_state(state.active_provider)
-                metrics.context_window_resets += 1
-                after = len(current_context.messages)
-                emit(
-                    ContextWindowResetEvent(
-                        window_id=_context_window_id(current_context.messages),
-                        messages_removed=max(before - after, 0),
-                        messages_after=after,
-                        trigger=reset_reason,
-                        replacement=list(current_context.messages),
-                    )
+                _rotate_context(
+                    current_context,
+                    config,
+                    emit,
+                    metrics,
+                    state.active_provider,
+                    reset_reason,
                 )
                 if state.active_provider is not None:
                     prepared_assembly = config.request_assembler.assemble(
@@ -565,6 +548,61 @@ def _append_tool_results(
         metrics.tool_calls += 1
 
 
+def _rotate_context(
+    context: AgentContext,
+    config: AgentLoopConfig,
+    emit: Callable[[AgentEvent], None],
+    metrics: AgentLoopMetrics,
+    provider: StreamProvider | None,
+    reason: ContextWindowResetReason,
+) -> None:
+    """正常换窗和超限恢复共用同一套持久化、前缀刷新和事件流程。"""
+    if config.rollover_context is None:
+        raise RuntimeError("context rollover is not configured")
+    before = len(context.messages)
+    next_window = config.rollover_context(context.messages)
+    if context.context_manager is not None:
+        context.messages = context.context_manager.complete_rollover(
+            next_window, reason=reason, before_messages=before
+        )
+    else:
+        context.messages = next_window
+        context.context_state.reset()
+    _refresh_request_prefix(context, config)
+    _reset_provider_conversation_state(provider)
+    metrics.context_window_resets += 1
+    emit(
+        ContextWindowResetEvent(
+            window_id=_context_window_id(context.messages),
+            messages_removed=max(before - len(context.messages), 0),
+            messages_after=len(context.messages),
+            trigger=reason,
+            replacement=list(context.messages),
+        )
+    )
+
+
+def _is_context_overflow(message: AssistantMessage) -> bool:
+    """仅识别明确的上下文超限；普通 400/413 不触发换窗。"""
+    failure = message.provider_failure
+    if failure is None:
+        return False
+    detail = f"{failure.exception_type} {failure.message}".lower()
+    return any(
+        marker in detail
+        for marker in (
+            "context_length_exceeded",
+            "context_window_exceeded",
+            "maximum context length",
+            "exceeds the context window",
+            "exceed the context window",
+            "context window exceeded",
+            "context window is full",
+            "input is too long for",
+        )
+    )
+
+
 # ── 内层循环 ──
 
 
@@ -585,6 +623,7 @@ async def _run_inner_loop(
     返回 (message, stop_reason, provider)，或 None 表示应提前退出。
     """
     provider = state.active_provider
+    overflow_recovered = False
     while True:
         if is_cancelled(signal):
             return _cancelled_message(signal), "aborted", provider
@@ -616,6 +655,20 @@ async def _run_inner_loop(
 
         # ── 检查是否为 FinalMessage 的错误 ──
         if stop_reason == "error":
+            if (
+                _is_context_overflow(message)
+                and not overflow_recovered
+                and config.recover_context_overflow
+                and config.rollover_context is not None
+            ):
+                overflow_recovered = True
+                emit(_message_end_event(message))
+                _rotate_context(context, config, emit, metrics, provider, "token_limit")
+                prepared_assembly = None
+                continue
+            if _is_context_overflow(message):
+                emit(_message_end_event(message))
+                return message, stop_reason, provider
             state.step_retries += 1
             should_retry, fallback_message = await _handle_provider_error(
                 message, state.step_retries, config, emit

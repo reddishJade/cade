@@ -441,6 +441,7 @@ def build_loop_config(
     return AgentLoopConfig(
         provider=provider,
         request_token_budget=_request_token_budget(provider, composition.config),
+        recover_context_overflow=composition.config.automatic_rollover,
         request_assembler=composition.request_assembler,
         prepare_request_context=prepare_request_context_fn,
         max_steps=composition.config.max_steps,

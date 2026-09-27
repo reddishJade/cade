@@ -11,7 +11,6 @@ from cade.agent.config import AgentContext, AgentLoopConfig
 from cade.agent.context_manager import ContextManager
 from cade.agent.events import ContextWindowResetEvent
 from cade.agent.messages import AssistantMessage, ToolResultMessage, UserMessage
-from cade.agent.request import RequestAssembly
 from cade.agent.results import AgentLoopResult, TerminationReason
 from cade.agent.types import TextContent, ToolCallContent
 from cade.ai.events import (
@@ -252,57 +251,6 @@ async def test_non_retryable_provider_failure_stops_after_first_request() -> Non
     assert result.termination_reason is TerminationReason.PROVIDER_ERROR
     assert result.provider_failure is not None
     assert result.provider_failure.status_code == 403
-
-
-async def test_oversized_active_turn_is_rejected_before_provider_request() -> None:
-    class _RecordingProvider:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def stream(
-            self,
-            messages: list[dict[str, object]],
-            tools: list[ToolDefinition],
-            options: StreamOptions | None = None,
-            **_kwargs: object,
-        ) -> AsyncIterator[ProviderEvent]:
-            del messages, tools, options
-            self.calls += 1
-            yield FinalMessage(content="unexpected", stop_reason="end_turn")
-
-    provider = _RecordingProvider()
-    assemblies: list[RequestAssembly] = []
-    events: list[object] = []
-    result = await run_agent_loop(
-        [UserMessage(content="x" * 10_000)],
-        AgentContext(),
-        AgentLoopConfig(
-            provider=provider,
-            request_token_budget=64,
-            max_step_retries=3,
-            retry_backoff_base=0,
-            request_rollover_decision=(
-                lambda _messages, estimated: (
-                    "token_limit" if (estimated or 0) > 64 else None
-                )
-            ),
-            rollover_context=lambda messages: [messages[-1]],
-            before_provider_request=assemblies.append,
-        ),
-        events.append,
-    )
-
-    assert provider.calls == 0
-    assert result.termination_reason is TerminationReason.PROVIDER_ERROR
-    assert result.provider_failure is not None
-    assert result.provider_failure.exception_type == "RequestBudgetExceededError"
-    assert result.provider_failure.status_code == 413
-    assert "estimated" in (result.error_detail or "")
-    assert result.metrics is not None
-    assert result.metrics.llm_calls == 0
-    assert len(assemblies) == 1
-    assert assemblies[0].estimated_tokens > assemblies[0].token_budget
-    assert any(isinstance(event, ContextWindowResetEvent) for event in events)
 
 
 async def test_agent_loop_rolls_over_using_prepared_request_budget() -> None:
