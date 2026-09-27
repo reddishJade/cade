@@ -84,7 +84,7 @@ def test_compact_rolls_over_and_retains_latest_request(
     assert "old goal" not in rendered
     assert "old result" not in rendered
     assert "latest goal" in rendered
-    assert "latest result" not in rendered
+    assert "latest result" in rendered
     assert len(app.resets) == 1
     assert "Retained the latest user request" in capsys.readouterr().out
 

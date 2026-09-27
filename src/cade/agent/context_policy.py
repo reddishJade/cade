@@ -8,9 +8,15 @@ from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import StreamProvider
 from cade.ai.types import StreamOptions
 
-from ._context_window import estimate_tokens
-from .messages import AgentMessage, ToolResultMessage
-from .types import TextContent
+from ._context_window import estimate_message_tokens, estimate_tokens
+from .messages import (
+    AgentMessage,
+    AssistantMessage,
+    SystemMessage,
+    ToolResultMessage,
+    UserMessage,
+)
+from .types import TextContent, ToolCallContent
 
 
 @dataclass(frozen=True)
@@ -25,6 +31,7 @@ class ContextPolicy:
     automatic_rollover: bool = True
     evidence_token_budget: int | None = None
     output_limit_supported: bool = True
+    working_set_token_budget: int | None = None
 
     def __post_init__(self) -> None:
         if self.output_reserve < 0 or not 0 < self.trigger_ratio <= 1:
@@ -33,6 +40,11 @@ class ContextPolicy:
             raise ValueError("Context headroom must be nonnegative")
         if self.evidence_token_budget is not None and self.evidence_token_budget < 0:
             raise ValueError("Evidence token budget must be nonnegative")
+        if (
+            self.working_set_token_budget is not None
+            and self.working_set_token_budget < 0
+        ):
+            raise ValueError("Working-set token budget must be nonnegative")
         if self.physical_window is not None and (
             self.physical_window <= self.output_reserve + self.headroom
         ):
@@ -70,6 +82,40 @@ class ContextPolicy:
         if self.evidence_token_budget is not None:
             return self.evidence_token_budget
         return min(32000, self.input_budget or 32000)
+
+    @property
+    def working_budget(self) -> int:
+        """默认只带走一个有界的近期交互，给规则与任务状态留下空间。"""
+        if self.working_set_token_budget is not None:
+            return self.working_set_token_budget
+        return min(4096, self.input_budget // 4) if self.input_budget else 4096
+
+    def recent_working_set(
+        self, messages: list[AgentMessage], protected_ids: frozenset[str] = frozenset()
+    ) -> list[AgentMessage]:
+        """保留最后一组交互的协议完整性，大正文通过历史引用回收。"""
+        group = latest_working_group(messages)
+        if not group or self.working_budget <= 0:
+            return []
+        non_evidence = [m for m in group if not isinstance(m, ToolResultMessage)]
+        available = max(0, self.working_budget - estimate_message_tokens(non_evidence))
+        projected, _ = self.project_evidence(
+            group, protected_ids, token_budget=available
+        )
+        return (
+            projected
+            if estimate_message_tokens(projected) <= self.working_budget
+            else []
+        )
+
+    def can_reclaim_history(
+        self, messages: list[AgentMessage], protected_ids: frozenset[str] = frozenset()
+    ) -> bool:
+        """必需内容已经构成最小工作窗口时，自动换窗不能反复解决同一超限。"""
+        retained = {id(m) for m in mandatory_history(messages, protected_ids)}
+        if self.recent_working_set(messages, protected_ids):
+            retained.update(id(m) for m in latest_working_group(messages))
+        return any(id(m) not in retained for m in messages)
 
     def for_provider(self, provider: StreamProvider) -> ContextPolicy:
         """切换到较小窗口时收紧预算；不扩大调用方显式限制的窗口。"""
@@ -153,12 +199,7 @@ class ContextPolicy:
             remaining = (
                 max(0, remaining - estimate_tokens(preview)) if preview else remaining
             )
-            reference = (
-                "[Tool output omitted from this request; exact output remains in history. "
-                f"tool_call_id={message.tool_call_id}; tool_name={message.tool_name}; "
-                f"is_error={str(message.is_error).lower()}. "
-                "Preview is incomplete; recover original commands and evidence from history.]"
-            )
+            reference = evidence_reference(message)
             content = f"{reference}\n{preview}" if preview else reference
             # 小结果的原文比引用更省空间，不能越回收越大。
             if estimate_tokens(content) >= tokens:
@@ -183,3 +224,78 @@ def _evidence_preview(text: str, token_budget: int) -> str:
             return preview
         width //= 2
     return ""
+
+
+def latest_task_message(messages: list[AgentMessage]) -> UserMessage | None:
+    """跳过运行时提醒，保留真实用户任务边界。"""
+    for message in reversed(messages):
+        if not isinstance(message, UserMessage):
+            continue
+        if isinstance(message.content, str) and message.content.lstrip().startswith(
+            ("<reminder>", "<plan-timeout>")
+        ):
+            continue
+        return message
+    return None
+
+
+def latest_working_group(messages: list[AgentMessage]) -> list[AgentMessage]:
+    """最后一个用户请求之后的最近 assistant 及其完整工具结果组。"""
+    latest_user = latest_task_message(messages)
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if message is latest_user:
+            break
+        if isinstance(message, AssistantMessage):
+            group = list(messages[index:])
+            calls = {b.id for b in message.content if isinstance(b, ToolCallContent)}
+            results = {
+                m.tool_call_id for m in group if isinstance(m, ToolResultMessage)
+            }
+            return group if calls.issubset(results) else []
+    return []
+
+
+def protected_working_set(
+    messages: list[AgentMessage], protected_ids: frozenset[str]
+) -> list[AgentMessage]:
+    """持久工具状态保留整组调用和结果，避免拆散并行工具协议。"""
+    retained: list[AgentMessage] = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, AssistantMessage):
+            continue
+        call_ids = {b.id for b in message.content if isinstance(b, ToolCallContent)}
+        if not call_ids.intersection(protected_ids):
+            continue
+        retained.append(message)
+        retained.extend(
+            m
+            for m in messages[index + 1 :]
+            if isinstance(m, ToolResultMessage) and m.tool_call_id in call_ids
+        )
+    return retained
+
+
+def mandatory_history(
+    messages: list[AgentMessage], protected_ids: frozenset[str]
+) -> list[AgentMessage]:
+    """启动上下文、当前用户意图与持久工具状态构成不可淘汰的历史底线。"""
+    retained = {id(m) for m in protected_working_set(messages, protected_ids)}
+    latest_user = latest_task_message(messages)
+    if latest_user is not None:
+        retained.add(id(latest_user))
+    for m in messages:
+        if not isinstance(m, SystemMessage):
+            break
+        retained.add(id(m))
+    return [m for m in messages if id(m) in retained]
+
+
+def evidence_reference(message: ToolResultMessage) -> str:
+    """所有工具输出裁剪共用可检索的引用格式。"""
+    return (
+        "[Tool output omitted from this request; exact output remains in history. "
+        f"tool_call_id={message.tool_call_id}; tool_name={message.tool_name}; "
+        f"is_error={str(message.is_error).lower()}. "
+        "Preview is incomplete; recover original commands and evidence from history.]"
+    )

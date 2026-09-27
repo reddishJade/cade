@@ -19,13 +19,17 @@ from .context import (
     ContextAssembler,
     ContextAssemblyInput,
     ContextBlock,
+    ContextBlockTarget,
     ContextCollectionInput,
     ContextCollectorSource,
+    ContextPriority,
     DefaultContextAssembler,
+    _block_to_text,
+    _estimate_base_tokens,
     _estimate_messages_tokens,
 )
-from .context_policy import ContextPolicy
-from .messages import AgentMessage, ToolResultMessage
+from .context_policy import ContextPolicy, evidence_reference, mandatory_history
+from .messages import AgentMessage, SystemMessage, ToolResultMessage, UserMessage
 from .types import AgentTool, materialize_json_mapping
 
 if TYPE_CHECKING:
@@ -49,7 +53,7 @@ class RequestHygiene:
     ) -> list[AgentMessage]:
         if not self.enabled:
             return list(messages)
-        return apply_request_hygiene(
+        projected = apply_request_hygiene(
             messages,
             max_tool_result_bytes=self.max_tool_result_bytes,
             max_tool_arg_length=self.max_tool_arg_length,
@@ -57,6 +61,21 @@ class RequestHygiene:
             keep_tail_lines=self.keep_tail_lines,
             protected_tool_result_ids=protected_ids,
         )
+        for index, (original, trimmed) in enumerate(
+            zip(messages, projected, strict=True)
+        ):
+            if (
+                isinstance(original, ToolResultMessage)
+                and isinstance(trimmed, ToolResultMessage)
+                and original.content != trimmed.content
+                and isinstance(trimmed.content, str)
+            ):
+                projected[index] = trimmed.model_copy(
+                    update={
+                        "content": f"{evidence_reference(original)}\n{trimmed.content}"
+                    }
+                )
+        return projected
 
 
 @dataclass(frozen=True)
@@ -94,6 +113,8 @@ class RequestAssembly:
     context_policy: ContextPolicy | None = None
     evidence_omitted: tuple[str, ...] = ()
     evidence_reclaimed_tokens: int = 0
+    rotation_blocked_reason: str | None = None
+    mandatory_estimated_tokens: int = 0
 
 
 class RequestAssembler(Protocol):
@@ -164,11 +185,18 @@ class DefaultRequestAssembler:
             )
         )
         request_messages = self.hygiene.apply(base_messages, protected_ids)
-        evidence_omitted: tuple[str, ...] = ()
+        evidence_omitted = tuple(
+            original.tool_call_id
+            for original, projected in zip(base_messages, request_messages, strict=True)
+            if isinstance(original, ToolResultMessage)
+            and isinstance(projected, ToolResultMessage)
+            and original.content != projected.content
+        )
         if policy is not None:
-            request_messages, evidence_omitted = policy.project_evidence(
+            request_messages, omitted = policy.project_evidence(
                 request_messages, protected_ids
             )
+            evidence_omitted = tuple(dict.fromkeys((*evidence_omitted, *omitted)))
         tool_definitions = _tools_to_definitions(context.tools)
         local_tokens = 0
         estimate_source = "local"
@@ -227,6 +255,29 @@ class DefaultRequestAssembler:
                 _estimate_messages_tokens(original_messages)
                 - _estimate_messages_tokens(assembly_input.messages),
             )
+        mandatory_messages = [
+            *context_state.persistent_messages,
+            *mandatory_history(context.messages, protected_ids),
+            *[
+                SystemMessage(content=b.content)
+                if b.target == ContextBlockTarget.SYSTEM
+                else UserMessage(content=_block_to_text(b))
+                for b in result.blocks_used
+                if b.priority <= ContextPriority.HIGH
+            ],
+        ]
+        mandatory_tokens = _estimate_base_tokens(
+            ContextAssemblyInput(
+                system_prompt=context.system_prompt, tools=list(context.tools)
+            ),
+            mandatory_messages,
+        )
+        rotation_blocked_reason = None
+        if policy is not None:
+            if token_budget > 0 and mandatory_tokens >= token_budget:
+                rotation_blocked_reason = "mandatory_input_exceeds_budget"
+            elif not policy.can_reclaim_history(context.messages, protected_ids):
+                rotation_blocked_reason = "no_reclaimable_history"
         messages = result.messages
         wire_messages = self.converter(messages)
         assembly = RequestAssembly(
@@ -251,6 +302,8 @@ class DefaultRequestAssembler:
             context_policy=policy,
             evidence_omitted=evidence_omitted,
             evidence_reclaimed_tokens=evidence_reclaimed_tokens,
+            rotation_blocked_reason=rotation_blocked_reason,
+            mandatory_estimated_tokens=mandatory_tokens,
         )
         return assembly
 

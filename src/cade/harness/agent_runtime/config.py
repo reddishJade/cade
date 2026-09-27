@@ -156,12 +156,13 @@ def _rollover_and_emit(
     context_rollover: ContextRollover | None,
     emit_hook: Callable[[HookRecord], None],
     correlation: RuntimeCorrelation,
+    policy: ContextPolicy | None = None,
 ) -> list[AgentMessage]:
     """切换上下文窗口并发射 Hook。"""
     if context_rollover is None:
         return loop_messages
     if isinstance(context_rollover, ContextWindowRollover):
-        next_window = context_rollover.rollover_messages(loop_messages)
+        next_window = context_rollover.rollover_messages(loop_messages, policy=policy)
     else:
         dict_messages = [_to_dict_safe(message) for message in loop_messages]
         next_window = messages_from_provider_dicts(context_rollover(dict_messages))
@@ -252,6 +253,7 @@ def _build_before_provider_request_closure(
                                 "input_budget": assembly.context_policy.input_budget,
                                 "rotation_threshold": assembly.context_policy.rotation_threshold,
                                 "evidence_budget": assembly.context_policy.evidence_budget,
+                                "working_budget": assembly.context_policy.working_budget,
                                 "output_limit_supported": assembly.context_policy.output_limit_supported,
                             }
                             if assembly.context_policy is not None
@@ -259,6 +261,8 @@ def _build_before_provider_request_closure(
                         ),
                         "evidence_omitted": list(assembly.evidence_omitted),
                         "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
+                        "rotation_blocked_reason": assembly.rotation_blocked_reason,
+                        "mandatory_estimated_tokens": assembly.mandatory_estimated_tokens,
                         "token_budget": assembly.token_budget,
                         "budget_remaining": assembly.budget_remaining,
                         "context_trace": [
@@ -395,6 +399,7 @@ def build_loop_config(
             context_rollover,
             emit_hook,
             active_correlation,
+            policy,
         )
 
     def prepare_request_context_fn(estimated_tokens: int) -> bool:
@@ -514,6 +519,7 @@ def _context_policy(provider: ModelProvider, config: AgentConfig) -> ContextPoli
         rollover_token_limit=config.rollover_token_threshold,
         automatic_rollover=config.automatic_rollover,
         evidence_token_budget=config.evidence_token_budget,
+        working_set_token_budget=config.working_set_token_budget,
     ).for_provider(provider)
 
 

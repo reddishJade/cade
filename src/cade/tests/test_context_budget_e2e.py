@@ -64,6 +64,8 @@ def _trace(assembly: RequestAssembly) -> dict[str, object]:
         "budget": assembly.token_budget,
         "evidence_omitted": list(assembly.evidence_omitted),
         "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
+        "rotation_blocked_reason": assembly.rotation_blocked_reason,
+        "mandatory_tokens": assembly.mandatory_estimated_tokens,
         "max_output_tokens": assembly.options.max_tokens if assembly.options else None,
         "policy": (
             {
@@ -327,7 +329,13 @@ async def test_context_overflow_http_e2e(
     if scenario == "tool-overflow":
         assert reads == [str(evidence)]
         assert "EXACT_EVIDENCE" in json.dumps(http_requests[1])
-        assert "EXACT_EVIDENCE" not in json.dumps(http_requests[2])
+        recovered_body = next(
+            message["content"]
+            for message in http_requests[2]["messages"]
+            if message.get("tool_call_id") == "read-evidence-1"
+        )
+        assert len(recovered_body) < len(evidence.read_text())
+        assert "exact output remains in history" in recovered_body
         assert "read-evidence-1" in json.dumps(http_requests[2])
 
 
@@ -652,6 +660,53 @@ async def test_request_anchor_lifecycle_http_e2e(tmp_path: Path) -> None:
         result.termination_reason is TerminationReason.COMPLETED
         for index, result in enumerate(results)
         if index != 3
+    )
+
+
+async def test_irreducible_context_does_not_rotate_repeatedly_http_e2e(
+    tmp_path: Path,
+) -> None:
+    """必需前缀超出本地预算时仍可请求 provider，不随工具迭代反复换窗。"""
+    requests: list[dict[str, object]] = []
+    events: list[AgentEvent] = []
+    with _http_provider("evidence") as (provider, http_requests):
+        result = await Agent(
+            tools=[
+                ToolSpecAdapter(
+                    ToolSpec(
+                        "read_evidence",
+                        "读取短证据",
+                        "{}",
+                        lambda _params, _update: "short evidence",
+                        schema={"type": "object", "properties": {}},
+                    )
+                )
+            ],
+            model=provider,
+        ).run(
+            [UserMessage(content="Continue the task through three tool results.")],
+            AgentLoopConfig(
+                provider=provider,
+                context_policy=ContextPolicy(physical_window=2000, output_reserve=512),
+                rollover_context=ContextWindowRollover().rollover_messages,
+                before_provider_request=lambda assembly: requests.append(
+                    _trace(assembly)
+                ),
+                max_llm_calls=5,
+            ),
+            request_prefix=[SystemMessage(content="mandatory instructions\n" * 2000)],
+            emit=events.append,
+        )
+    _save(tmp_path / "irreducible-context.json", requests, [result], events)
+    (tmp_path / "http-requests.json").write_text(
+        json.dumps(http_requests, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    assert result.termination_reason is TerminationReason.COMPLETED
+    assert result.metrics is not None and result.metrics.context_window_resets == 0
+    assert len(http_requests) == 4
+    assert all(
+        r["rotation_blocked_reason"] == "mandatory_input_exceeds_budget"
+        for r in requests
     )
 
 
