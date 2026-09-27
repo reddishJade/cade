@@ -126,6 +126,7 @@ class RequestAssembly:
     mandatory_estimated_tokens: int = 0
     context_snapshot: ContextSnapshot | None = None
     source_message_digests: tuple[str, ...] = ()
+    working_omitted: tuple[str, ...] = ()
 
 
 class RequestAssembler(Protocol):
@@ -267,11 +268,71 @@ class DefaultRequestAssembler:
                 assembly_input.messages = reduced
                 result = self.context_assembler.assemble(assembly_input)
                 evidence_omitted = tuple(dict.fromkeys((*evidence_omitted, *omitted)))
-            evidence_reclaimed_tokens = max(
-                0,
-                _estimate_messages_tokens(original_messages)
-                - _estimate_messages_tokens(assembly_input.messages),
+        working_omitted: tuple[str, ...] = ()
+        if policy is not None and token_budget > 0:
+            for _attempt in range(3):
+                deficit = result.total_tokens - token_budget
+                if deficit <= 0:
+                    break
+                reduced, omitted = policy.project_working_set(
+                    assembly_input.messages, protected_ids, deficit
+                )
+                if not omitted:
+                    break
+                working_omitted = (*working_omitted, *omitted)
+                assembly_input.messages = reduced
+                result = self.context_assembler.assemble(assembly_input)
+        if working_omitted and token_budget > result.total_tokens:
+            # 旧交互释放空间后，优先恢复近期原文，避免先裁正文导致优先级倒置。
+            originals = {
+                m.tool_call_id: m
+                for m in request_messages
+                if isinstance(m, ToolResultMessage)
+            }
+            before_restore = assembly_input.messages
+            restored = list(before_restore)
+            remaining = token_budget - result.total_tokens
+            for index in range(len(restored) - 1, -1, -1):
+                message = restored[index]
+                if not isinstance(message, ToolResultMessage):
+                    continue
+                original = originals.get(message.tool_call_id)
+                if original is None or original.content == message.content:
+                    continue
+                cost = _estimate_messages_tokens(
+                    [original]
+                ) - _estimate_messages_tokens([message])
+                if cost <= remaining:
+                    restored[index] = original
+                    remaining -= cost
+            assembly_input.messages = restored
+            candidate = self.context_assembler.assemble(assembly_input)
+            if candidate.total_tokens > token_budget:
+                assembly_input.messages = before_restore
+                result = self.context_assembler.assemble(assembly_input)
+            else:
+                result = candidate
+        admitted = {
+            m.tool_call_id: m
+            for m in result.messages
+            if isinstance(m, ToolResultMessage)
+        }
+        evidence_reclaimed_tokens = max(
+            0,
+            _estimate_messages_tokens(
+                [m for m in request_messages if isinstance(m, ToolResultMessage)]
             )
+            - _estimate_messages_tokens(list(admitted.values())),
+        )
+        evidence_omitted = tuple(
+            m.tool_call_id
+            for m in base_messages
+            if isinstance(m, ToolResultMessage)
+            and (
+                m.tool_call_id not in admitted
+                or admitted[m.tool_call_id].content != m.content
+            )
+        )
         mandatory_messages = [
             *context_state.persistent_messages,
             *mandatory_history(context.messages, protected_ids),
@@ -322,6 +383,7 @@ class DefaultRequestAssembler:
             rotation_blocked_reason=rotation_blocked_reason,
             mandatory_estimated_tokens=mandatory_tokens,
             source_message_digests=source_digests,
+            working_omitted=working_omitted,
             context_snapshot=_context_snapshot(
                 context,
                 assembly_input.messages,
@@ -401,7 +463,10 @@ def _context_snapshot(
         if id(message) in durable_ids:
             durable.append(message)
         elif isinstance(message, SystemMessage):
-            fixed.append(message)
+            if message.content.startswith("<context-history-reference>"):
+                working.append(message)
+            else:
+                fixed.append(message)
         elif isinstance(message, ToolResultMessage):
             evidence.append(message)
         else:

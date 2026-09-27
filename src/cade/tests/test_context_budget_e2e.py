@@ -72,6 +72,7 @@ def _trace(assembly: RequestAssembly) -> dict[str, object]:
         "source": assembly.token_estimate_source,
         "budget": assembly.token_budget,
         "evidence_omitted": list(assembly.evidence_omitted),
+        "working_omitted": list(assembly.working_omitted),
         "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
         "rotation_blocked_reason": assembly.rotation_blocked_reason,
         "mandatory_tokens": assembly.mandatory_estimated_tokens,
@@ -143,7 +144,8 @@ def _http_provider(
                 release_idle.wait(timeout=15)
                 return
             tool_call = (scenario == "tool-overflow" and index == 0) or (
-                scenario in {"evidence", "evidence-pressure"} and index < 3
+                scenario in {"evidence", "evidence-pressure", "working-pressure"}
+                and index < 3
             )
             fail = (
                 scenario in {"permanent", "ordinary-413", "disabled", "call-limit"}
@@ -180,16 +182,26 @@ def _http_provider(
                                 ["evidence-old", "evidence-new", "evidence-durable"][
                                     index
                                 ]
-                                if scenario in {"evidence", "evidence-pressure"}
+                                if scenario
+                                in {"evidence", "evidence-pressure", "working-pressure"}
                                 else "read-evidence-1"
                             ),
                             "type": "function",
-                            "function": {"name": "read_evidence", "arguments": "{}"},
+                            "function": {
+                                "name": "read_evidence",
+                                "arguments": (
+                                    json.dumps(
+                                        {"context": "WORKING_RAW_ARGUMENT_" * 1200}
+                                    )
+                                    if scenario == "working-pressure"
+                                    else "{}"
+                                ),
+                            },
                         }
                     ]
                 }
             prompt_tokens = 0 if scenario == "lifecycle" and index == 1 else 100
-            if scenario == "evidence-pressure":
+            if scenario in {"evidence-pressure", "working-pressure"}:
                 prompt_tokens = estimate_tokens(json.dumps(payload))
             chunk = {
                 "id": f"reply-{index}",
@@ -423,9 +435,9 @@ def test_exec_timeout_idle_responses_http_e2e(tmp_path: Path) -> None:
     assert elapsed < 8
 
 
-@pytest.mark.parametrize("pressure", [False, True])
+@pytest.mark.parametrize("pressure", [False, True, "working"])
 async def test_evidence_projection_and_history_reopen_http_e2e(
-    tmp_path: Path, pressure: bool
+    tmp_path: Path, pressure: bool | str
 ) -> None:
     """请求省略旧正文，真实文件原文可从重开的 session 完整找回。"""
     texts = [
@@ -473,7 +485,13 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
 
     manager = ContextManager()
     assemblies: list[dict[str, object]] = []
-    with _http_provider("evidence-pressure" if pressure else "evidence") as (
+    with _http_provider(
+        "working-pressure"
+        if pressure == "working"
+        else "evidence-pressure"
+        if pressure
+        else "evidence"
+    ) as (
         provider,
         http_requests,
     ):
@@ -521,7 +539,10 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
     assert reads == [str(path) for path in files]
     last_request = http_requests[-1]
     encoded = json.dumps(last_request)
-    assert "tool_call_id=evidence-old" in encoded
+    if pressure != "working":
+        assert "tool_call_id=evidence-old" in encoded
+    else:
+        assert assemblies[-1]["working_omitted"] == ["evidence-old"]
     assert texts[0] not in encoded
     messages = last_request["messages"]
     assert isinstance(messages, list)
@@ -536,14 +557,16 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
     if pressure:
         assert int(assemblies[-1]["evidence_reclaimed_tokens"]) > 0
         assert int(assemblies[-1]["tokens"]) <= int(assemblies[-1]["budget"])
-        assert (
-            next(
-                message["content"]
-                for message in http_requests[1]["messages"]
-                if message.get("tool_call_id") == "evidence-old"
+        if pressure != "working":
+            first_messages = http_requests[1]["messages"]
+            assert (
+                next(
+                    m["content"]
+                    for m in first_messages
+                    if m.get("tool_call_id") == "evidence-old"
+                )
+                == texts[0]
             )
-            == texts[0]
-        )
     assert (
         last_request.get("max_completion_tokens", last_request.get("max_tokens")) == 512
     )

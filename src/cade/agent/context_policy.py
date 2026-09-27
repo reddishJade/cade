@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 
 from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import StreamProvider
 from cade.ai.types import StreamOptions
 
-from ._context_window import estimate_message_tokens, estimate_tokens
+from ._codec import convert_to_llm
+from ._context_window import (
+    estimate_message_tokens,
+    estimate_tokens,
+    estimate_wire_message_tokens,
+)
 from .messages import (
     AgentMessage,
     AssistantMessage,
@@ -181,6 +187,72 @@ class ContextPolicy:
 
     def should_rotate(self, predicted_input: int) -> bool:
         return self.automatic_rollover and predicted_input >= self.rotation_threshold
+
+    def project_working_set(
+        self,
+        messages: list[AgentMessage],
+        protected_ids: frozenset[str],
+        reclaim_tokens: int,
+    ) -> tuple[list[AgentMessage], tuple[str, ...]]:
+        """正文回收后仍不足时，把旧的完整工具交互替换为事实索引。"""
+        recent = latest_working_group(messages)
+        recent_assistant = recent[0] if recent else None
+        removed: set[int] = set()
+        references: dict[int, SystemMessage] = {}
+        omitted: list[str] = []
+        reclaimed = 0
+        for index, message in enumerate(messages):
+            if reclaimed >= reclaim_tokens:
+                break
+            if not isinstance(message, AssistantMessage) or message is recent_assistant:
+                continue
+            calls = [b for b in message.content if isinstance(b, ToolCallContent)]
+            ids = {b.id for b in calls}
+            if not ids or ids.intersection(protected_ids):
+                continue
+            result_indices = [
+                i
+                for i, result in enumerate(messages)
+                if i > index
+                and isinstance(result, ToolResultMessage)
+                and result.tool_call_id in ids
+            ]
+            results = [messages[i] for i in result_indices]
+            if {
+                m.tool_call_id for m in results if isinstance(m, ToolResultMessage)
+            } != ids:
+                continue
+            reference = SystemMessage(
+                content=(
+                    "<context-history-reference>Older completed tool interaction omitted "
+                    "from this request. Exact arguments, results and execution status remain "
+                    "in history; retrieve by tool_call_id when needed. Calls: "
+                    + json.dumps(
+                        [{"tool_call_id": b.id, "tool": b.name} for b in calls]
+                    )
+                    + "</context-history-reference>"
+                )
+            )
+            old_cost = sum(
+                estimate_wire_message_tokens(m)
+                for m in convert_to_llm([message, *results])
+            )
+            new_cost = sum(
+                estimate_wire_message_tokens(m) for m in convert_to_llm([reference])
+            )
+            if old_cost <= new_cost:
+                continue
+            removed.update([index, *result_indices])
+            references[index] = reference
+            omitted.extend(b.id for b in calls)
+            reclaimed += old_cost - new_cost
+        projected: list[AgentMessage] = []
+        for index, message in enumerate(messages):
+            if index in references:
+                projected.append(references[index])
+            elif index not in removed:
+                projected.append(message)
+        return projected, tuple(omitted)
 
     def project_evidence(
         self,
