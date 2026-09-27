@@ -22,6 +22,7 @@ from .context import (
     ContextCollectionInput,
     ContextCollectorSource,
     DefaultContextAssembler,
+    _estimate_messages_tokens,
 )
 from .context_policy import ContextPolicy
 from .messages import AgentMessage, ToolResultMessage
@@ -92,6 +93,7 @@ class RequestAssembly:
     token_estimate_source: str = "local"
     context_policy: ContextPolicy | None = None
     evidence_omitted: tuple[str, ...] = ()
+    evidence_reclaimed_tokens: int = 0
 
 
 class RequestAssembler(Protocol):
@@ -182,17 +184,49 @@ class DefaultRequestAssembler:
             estimate_source = "provider_anchor" if anchored else "local"
             return predicted
 
-        result = self.context_assembler.assemble(
-            ContextAssemblyInput(
-                system_prompt=context.system_prompt,
-                messages=request_messages,
-                tools=list(context.tools),
-                context_blocks=[*world_blocks, *legacy_blocks],
-                current_step=current_step,
-                token_budget=token_budget,
-                calibrate_tokens=calibrate_tokens,
-            )
+        assembly_input = ContextAssemblyInput(
+            system_prompt=context.system_prompt,
+            messages=request_messages,
+            tools=list(context.tools),
+            context_blocks=[*world_blocks, *legacy_blocks],
+            current_step=current_step,
+            token_budget=token_budget,
+            calibrate_tokens=calibrate_tokens,
         )
+        result = self.context_assembler.assemble(assembly_input)
+        evidence_reclaimed_tokens = 0
+        if (
+            policy is not None
+            and token_budget > 0
+            and result.total_tokens > token_budget
+        ):
+            # 用实际请求压力收紧证据配额；状态只收集一次，所有裁剪均为临时投影。
+            original_messages = request_messages
+            original_evidence_tokens = _estimate_messages_tokens(
+                [
+                    m
+                    for m in original_messages
+                    if isinstance(m, ToolResultMessage)
+                    and m.tool_call_id not in protected_ids
+                ]
+            )
+            evidence_budget = min(policy.evidence_budget, original_evidence_tokens)
+            for _attempt in range(3):
+                deficit = result.total_tokens - token_budget
+                if deficit <= 0 or evidence_budget <= 0:
+                    break
+                evidence_budget = max(0, evidence_budget - deficit)
+                reduced, omitted = policy.project_evidence(
+                    original_messages, protected_ids, token_budget=evidence_budget
+                )
+                assembly_input.messages = reduced
+                result = self.context_assembler.assemble(assembly_input)
+                evidence_omitted = tuple(dict.fromkeys((*evidence_omitted, *omitted)))
+            evidence_reclaimed_tokens = max(
+                0,
+                _estimate_messages_tokens(original_messages)
+                - _estimate_messages_tokens(assembly_input.messages),
+            )
         messages = result.messages
         wire_messages = self.converter(messages)
         assembly = RequestAssembly(
@@ -216,6 +250,7 @@ class DefaultRequestAssembler:
             token_estimate_source=estimate_source,
             context_policy=policy,
             evidence_omitted=evidence_omitted,
+            evidence_reclaimed_tokens=evidence_reclaimed_tokens,
         )
         return assembly
 

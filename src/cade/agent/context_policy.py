@@ -118,10 +118,14 @@ class ContextPolicy:
         self,
         messages: list[AgentMessage],
         protected_ids: frozenset[str] = frozenset(),
+        *,
+        token_budget: int | None = None,
     ) -> tuple[list[AgentMessage], tuple[str, ...]]:
         """按新到旧分配工具正文预算，原文和执行状态仍保留在事实历史中。"""
         projected = list(messages)
-        remaining = self.evidence_budget
+        remaining = (
+            self.evidence_budget if token_budget is None else max(0, token_budget)
+        )
         omitted: list[str] = []
         for index in range(len(messages) - 1, -1, -1):
             message = messages[index]
@@ -156,6 +160,10 @@ class ContextPolicy:
                 "Preview is incomplete; recover original commands and evidence from history.]"
             )
             content = f"{reference}\n{preview}" if preview else reference
+            # 小结果的原文比引用更省空间，不能越回收越大。
+            if estimate_tokens(content) >= tokens:
+                remaining = max(0, remaining - tokens)
+                continue
             replacement = (
                 content
                 if isinstance(message.content, str)

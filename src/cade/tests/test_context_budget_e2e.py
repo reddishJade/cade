@@ -22,6 +22,7 @@ from threading import Event, Thread
 import pytest
 
 import cade.agent.context as context_module
+from cade.agent._context_window import estimate_tokens
 from cade.agent.agent import Agent
 from cade.agent.config import AgentLoopConfig, ContextWindowResetReason
 from cade.agent.context import (
@@ -62,6 +63,7 @@ def _trace(assembly: RequestAssembly) -> dict[str, object]:
         "source": assembly.token_estimate_source,
         "budget": assembly.token_budget,
         "evidence_omitted": list(assembly.evidence_omitted),
+        "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
         "max_output_tokens": assembly.options.max_tokens if assembly.options else None,
         "policy": (
             {
@@ -127,7 +129,7 @@ def _http_provider(
                 release_idle.wait(timeout=15)
                 return
             tool_call = (scenario == "tool-overflow" and index == 0) or (
-                scenario == "evidence" and index < 3
+                scenario in {"evidence", "evidence-pressure"} and index < 3
             )
             fail = (
                 scenario in {"permanent", "ordinary-413", "disabled", "call-limit"}
@@ -164,7 +166,7 @@ def _http_provider(
                                 ["evidence-old", "evidence-new", "evidence-durable"][
                                     index
                                 ]
-                                if scenario == "evidence"
+                                if scenario in {"evidence", "evidence-pressure"}
                                 else "read-evidence-1"
                             ),
                             "type": "function",
@@ -173,6 +175,8 @@ def _http_provider(
                     ]
                 }
             prompt_tokens = 0 if scenario == "lifecycle" and index == 1 else 100
+            if scenario == "evidence-pressure":
+                prompt_tokens = estimate_tokens(json.dumps(payload))
             chunk = {
                 "id": f"reply-{index}",
                 "object": "chat.completion.chunk",
@@ -399,7 +403,10 @@ def test_exec_timeout_idle_responses_http_e2e(tmp_path: Path) -> None:
     assert elapsed < 8
 
 
-async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -> None:
+@pytest.mark.parametrize("pressure", [False, True])
+async def test_evidence_projection_and_history_reopen_http_e2e(
+    tmp_path: Path, pressure: bool
+) -> None:
     """请求省略旧正文，真实文件原文可从重开的 session 完整找回。"""
     texts = [
         "OLD_EXACT_MARKER\n" * 2400,
@@ -446,7 +453,10 @@ async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -
 
     manager = ContextManager()
     assemblies: list[dict[str, object]] = []
-    with _http_provider("evidence") as (provider, http_requests):
+    with _http_provider("evidence-pressure" if pressure else "evidence") as (
+        provider,
+        http_requests,
+    ):
         result = await Agent(
             tools=[
                 ToolSpecAdapter(
@@ -469,10 +479,12 @@ async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -
                     physical_window=16000,
                     output_reserve=512,
                     headroom_tokens=512,
-                    evidence_token_budget=400,
+                    evidence_token_budget=None if pressure else 400,
                 ),
                 request_assembler=DefaultRequestAssembler(
-                    hygiene=RequestHygiene(max_tool_result_bytes=60000)
+                    hygiene=RequestHygiene(
+                        enabled=not pressure, max_tool_result_bytes=60000
+                    )
                 ),
                 before_provider_request=lambda assembly: assemblies.append(
                     _trace(assembly)
@@ -501,6 +513,17 @@ async def test_evidence_projection_and_history_reopen_http_e2e(tmp_path: Path) -
     assert tool_bodies["evidence-new"] == texts[1]
     assert tool_bodies["evidence-durable"] == texts[2]
     assert assemblies[-1]["evidence_omitted"] == ["evidence-old"]
+    if pressure:
+        assert int(assemblies[-1]["evidence_reclaimed_tokens"]) > 0
+        assert int(assemblies[-1]["tokens"]) <= int(assemblies[-1]["budget"])
+        assert (
+            next(
+                message["content"]
+                for message in http_requests[1]["messages"]
+                if message.get("tool_call_id") == "evidence-old"
+            )
+            == texts[0]
+        )
     assert (
         last_request.get("max_completion_tokens", last_request.get("max_tokens")) == 512
     )
