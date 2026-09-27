@@ -7,26 +7,12 @@ from typing import Any, cast
 
 from cade.agent._context_window import (
     extract_prompt_tokens_from_usage,
-    should_rollover_token_aware,
 )
 from cade.agent.messages import (
     UserMessage,
 )
 from cade.harness.agent_runtime.config import _rollover_decision
 from cade.harness.config import AgentConfig
-
-
-def test_provider_usage_is_preferred_for_rollover_decision() -> None:
-    assert should_rollover_token_aware([], last_prompt_tokens=32_000)
-    assert not should_rollover_token_aware([], last_prompt_tokens=100)
-
-
-def test_static_rollover_fallbacks() -> None:
-    messages = [UserMessage(content="x") for _ in range(10)]
-
-    assert should_rollover_token_aware(messages, message_threshold=5)
-    assert should_rollover_token_aware(messages, token_threshold=1)
-    assert not should_rollover_token_aware([])
 
 
 def test_extract_prompt_tokens_from_usage() -> None:
@@ -46,10 +32,10 @@ def test_runtime_rollover_uses_provider_context_window_override() -> None:
         return messages
 
     before = _rollover_decision(
-        [], cast(Any, rollover), None, 899, cast(Any, composition), cast(Any, provider)
+        [], cast(Any, rollover), None, 769, cast(Any, composition), cast(Any, provider)
     )
     at_limit = _rollover_decision(
-        [], cast(Any, rollover), None, 900, cast(Any, composition), cast(Any, provider)
+        [], cast(Any, rollover), None, 770, cast(Any, composition), cast(Any, provider)
     )
 
     assert before is None
@@ -68,10 +54,10 @@ def test_runtime_rollover_uses_codex_transport_context_window() -> None:
     rollover = cast(Any, lambda messages: messages)
 
     before = _rollover_decision(
-        [], rollover, None, 258_399, cast(Any, composition), cast(Any, provider)
+        [], rollover, None, 257_375, cast(Any, composition), cast(Any, provider)
     )
     at_limit = _rollover_decision(
-        [], rollover, None, 258_400, cast(Any, composition), cast(Any, provider)
+        [], rollover, None, 257_376, cast(Any, composition), cast(Any, provider)
     )
 
     assert before is None

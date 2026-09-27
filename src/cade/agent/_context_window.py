@@ -10,11 +10,8 @@ import tiktoken
 
 from cade.agent.messages import (
     AgentMessage,
-    AssistantMessage,
-    BranchSummaryMessage,
     SystemMessage,
 )
-from cade.agent.types import TextContent, ThinkingContent, ToolCallContent
 
 _ENCODING_CACHE: dict[str, tiktoken.Encoding] = {}
 _DEFAULT_ENCODING = "cl100k_base"
@@ -35,47 +32,10 @@ def estimate_tokens(text: str) -> int:
 
 
 def estimate_message_tokens(messages: Sequence[AgentMessage]) -> int:
-    total = 0
-    for message in messages:
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextContent):
-                    total += estimate_tokens(block.text)
-                elif isinstance(block, ThinkingContent):
-                    total += estimate_tokens(block.thinking)
-                elif isinstance(block, ToolCallContent):
-                    total += estimate_tokens(
-                        json.dumps(block.arguments or {}, default=str)
-                    )
-        elif isinstance(message, BranchSummaryMessage):
-            total += estimate_tokens(message.summary)
-        else:
-            content = message.content
-            if isinstance(content, str):
-                total += estimate_tokens(content)
-            else:
-                for block in content:
-                    if isinstance(block, TextContent):
-                        total += estimate_tokens(block.text)
-    return total
+    """所有历史和工作集预算复用实际请求消息计量。"""
+    from ._codec import convert_to_llm
 
-
-def should_rollover_token_aware(
-    messages: Sequence[AgentMessage],
-    *,
-    last_prompt_tokens: int | None = None,
-    fallback_threshold: int = 32_000,
-    message_threshold: int = 0,
-    token_threshold: int = 0,
-) -> bool:
-    """优先使用 provider 用量，静态估算只作为兜底。"""
-    if last_prompt_tokens is not None:
-        return last_prompt_tokens >= fallback_threshold
-    if message_threshold > 0 and len(messages) >= message_threshold:
-        return True
-    if token_threshold > 0:
-        return estimate_message_tokens(messages) >= token_threshold
-    return False
+    return sum(estimate_wire_message_tokens(m) for m in convert_to_llm(list(messages)))
 
 
 def extract_prompt_tokens_from_usage(usage: Mapping[str, object] | None) -> int | None:

@@ -199,7 +199,7 @@ def test_exec_emits_only_json_lines_and_returns_completion_code(
     ]
     assert payloads[0]["session_id"] == "session-test"
     assert payloads[1]["context_window"] == 272000
-    assert payloads[1]["token_budget"] == 255616
+    assert payloads[1]["token_budget"] == 250176
     assert payloads[2]["estimated_tokens"] == 120443
     assert payloads[-1]["exit_code"] == 0
     assert payloads[-1]["answer"] == "done"

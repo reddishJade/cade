@@ -67,12 +67,11 @@ class AgentConfig(BaseModel):
     rollover_message_threshold: StrictInt = 0
     rollover_token_threshold: StrictInt = 0
     automatic_rollover: StrictBool = True
-    fallback_recent_messages: StrictInt = 10
-    fallback_recent_tokens: StrictInt = 20000
     reserve_tokens: StrictInt = 16384
     headroom_tokens: Annotated[StrictInt, Field(ge=0)] | None = None
     evidence_token_budget: Annotated[StrictInt, Field(ge=0)] | None = None
     working_set_token_budget: Annotated[StrictInt, Field(ge=0)] | None = None
+    next_turn_input_tokens: Annotated[StrictInt, Field(ge=0)] = 1024
     rollover_trigger_ratio: StrictFloat = Field(default=0.95, gt=0, le=1)
     tool_workers: StrictInt = 4
     tool_timeout_seconds: StrictFloat | StrictInt = 120.0

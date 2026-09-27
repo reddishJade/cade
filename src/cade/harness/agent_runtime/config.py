@@ -58,7 +58,6 @@ from .cancellation import CancellationToken
 from .context_window import (
     ContextWindowController,
     ContextWindowRollover,
-    estimate_message_tokens,
 )
 from .message_codec import messages_from_provider_dicts
 from .prompting.citations import decorate_citable_messages
@@ -254,6 +253,8 @@ def _build_before_provider_request_closure(
                                 "rotation_threshold": assembly.context_policy.rotation_threshold,
                                 "evidence_budget": assembly.context_policy.evidence_budget,
                                 "working_budget": assembly.context_policy.working_budget,
+                                "next_input_allowance": assembly.context_policy.next_input_allowance,
+                                "admission_target": assembly.context_policy.admission_target,
                                 "output_limit_supported": assembly.context_policy.output_limit_supported,
                             }
                             if assembly.context_policy is not None
@@ -469,7 +470,7 @@ def build_loop_config(
             )
         return None
 
-    policy = _context_policy(provider, composition.config)
+    policy = resolve_context_policy(provider, composition.config)
     return AgentLoopConfig(
         provider=provider,
         request_token_budget=policy.input_budget,
@@ -508,7 +509,9 @@ def build_loop_config(
     )
 
 
-def _context_policy(provider: ModelProvider, config: AgentConfig) -> ContextPolicy:
+def resolve_context_policy(
+    provider: ModelProvider, config: AgentConfig
+) -> ContextPolicy:
     """模型窗口与用户配置只在这里解析，不把本地估算当作物理上限。"""
     override = getattr(provider, "context_window", None)
     window = override if isinstance(override, int) and override > 0 else None
@@ -526,6 +529,7 @@ def _context_policy(provider: ModelProvider, config: AgentConfig) -> ContextPoli
         automatic_rollover=config.automatic_rollover,
         evidence_token_budget=config.evidence_token_budget,
         working_set_token_budget=config.working_set_token_budget,
+        next_turn_input_tokens=config.next_turn_input_tokens,
     ).for_provider(provider)
 
 
@@ -550,18 +554,20 @@ def _rollover_decision(
         and len(messages) >= composition.config.rollover_message_threshold
     ):
         return "token_limit"
-    from .agent_helpers import to_dict
+    from ...agent._context_window import estimate_message_tokens
 
     measured_tokens = (
         estimated_tokens
         if estimated_tokens is not None
         else last_prompt_tokens
         if last_prompt_tokens is not None
-        else estimate_message_tokens([to_dict(m) for m in messages])
+        else estimate_message_tokens(messages)
     )
     return (
         "token_limit"
-        if measured_tokens >= _rollover_token_threshold(composition, provider)
+        if resolve_context_policy(provider, composition.config).should_rotate(
+            measured_tokens
+        )
         else None
     )
 
@@ -570,7 +576,7 @@ def _rollover_token_threshold(
     composition: AgentComposition, provider: ModelProvider
 ) -> int:
     """统一自动换窗及提前交接提醒的预算边界。"""
-    return _context_policy(provider, composition.config).rotation_threshold
+    return resolve_context_policy(provider, composition.config).rotation_threshold
 
 
 def tool_definition_to_dict(tool: Any) -> dict[str, Any]:

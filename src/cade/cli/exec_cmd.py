@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from cade.agent.results import TerminationReason
-from cade.ai.models import get_model_context_window
+from cade.harness.agent_runtime.config import resolve_context_policy
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
     ToolResultStructuredEvent,
@@ -407,17 +407,9 @@ def _resolved_config_event(
     info = app.get_model_info()
     provider = app.agent.provider
     active = getattr(provider, "active_provider", provider)
-    configured_window = getattr(active, "context_window", None)
-    context_window = (
-        configured_window
-        if isinstance(configured_window, int) and configured_window > 0
-        else get_model_context_window(info["model"], transport=info.get("transport"))
-    )
-    token_budget = (
-        max(1, context_window - max(config.agent.reserve_tokens, 0))
-        if context_window is not None
-        else 0
-    )
+    policy = resolve_context_policy(active, config.agent)
+    context_window = policy.physical_window
+    token_budget = policy.input_budget
     reviewer = (
         "configured:reviewer"
         if "reviewer" in config.provider.model_profiles
@@ -437,6 +429,10 @@ def _resolved_config_event(
         "reviewer_profile": reviewer,
         "context_window": context_window,
         "token_budget": token_budget,
+        "output_reserve": policy.output_reserve,
+        "operational_headroom": policy.headroom,
+        "next_input_allowance": policy.next_input_allowance,
+        "admission_target": policy.admission_target,
         "config_precedence": [
             "cli_override",
             "selected_profile",

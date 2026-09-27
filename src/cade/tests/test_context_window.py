@@ -8,12 +8,7 @@ from pathlib import Path
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
     ContextWindowRollover,
-    _compute_recent_count_from_tokens,
-    _find_turn_boundary,
-    budget_large_tool_outputs,
     build_new_context_tool,
-    latest_read_file_tool_result_ids,
-    trim_old_tool_results,
 )
 
 
@@ -30,7 +25,7 @@ def test_rollover_uses_latest_user_turn_without_summary() -> None:
         _message("assistant", "current work"),
     ]
 
-    window = ContextWindowRollover()(messages, preserve_active_turn=True)
+    window = ContextWindowRollover()(messages)
     rendered = "\n".join(str(message["content"]) for message in window)
 
     assert "old goal" not in rendered
@@ -49,15 +44,15 @@ def test_rollover_does_not_treat_runtime_reminder_as_user_task() -> None:
         _message("user", "<reminder>Update task progress.</reminder>"),
     ]
 
-    window = ContextWindowRollover()(messages, preserve_active_turn=True)
+    window = ContextWindowRollover()(messages)
     rendered = "\n".join(str(message["content"]) for message in window)
 
     assert "fix the SSE watchdog" in rendered
-    assert "Update task progress" in rendered
+    assert "Update task progress" not in rendered
 
 
 def test_rollover_does_not_mutate_source_messages() -> None:
-    rollover = ContextWindowRollover(keep_recent_tool_results=0)
+    rollover = ContextWindowRollover()
     messages = [
         _message("user", "current"),
         _message(
@@ -99,7 +94,6 @@ def test_manual_idle_rollover_starts_without_previous_turn() -> None:
             _message("user", "finished task"),
             _message("assistant", "finished answer"),
         ],
-        preserve_active_turn=False,
         preserve_user_request=False,
     )
 
@@ -137,50 +131,6 @@ def test_new_context_tool_schedules_model_rollover(tmp_path: Path) -> None:
     assert controller.consume() == "model"
 
 
-def test_compute_recent_count_is_safe_for_empty_input() -> None:
-    assert _compute_recent_count_from_tokens([], 100) == 1
-
-
-def test_find_turn_boundary_moves_tool_result_to_assistant() -> None:
-    messages = [
-        _message("system"),
-        _message("user"),
-        _message("assistant"),
-        _message("tool"),
-    ]
-    assert _find_turn_boundary(messages, 3) == 2
-
-
-def test_openai_tool_calls_are_tracked_and_latest_read_is_preserved() -> None:
-    messages = [
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {
-                        "name": "read_file",
-                        "arguments": '{"path":"src/main.py"}',
-                    },
-                }
-            ],
-        },
-        _message(
-            "tool",
-            [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call-1",
-                    "content": "source",
-                }
-            ],
-        ),
-    ]
-
-    assert latest_read_file_tool_result_ids(messages) == {"call-1"}
-
-
 def test_openai_skill_activation_becomes_explicit_startup_context() -> None:
     messages = [
         _message("system", "system"),
@@ -212,61 +162,13 @@ def test_openai_skill_activation_becomes_explicit_startup_context() -> None:
     assert not any(message.get("role") == "tool" for message in window)
 
 
-def test_tool_output_budget_retrieval_marker() -> None:
-    messages = [
-        _message(
-            "tool",
-            [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call-1",
-                    "content": "a" * 100,
-                }
-            ],
-        )
-    ]
-
-    window = budget_large_tool_outputs(
-        messages,
-        large_tool_output_chars=20,
-        large_tool_output_head_chars=5,
-        large_tool_output_tail_chars=5,
-        active_window_token_threshold=1,
-        tool_trim_trigger_ratio=0,
-    )
-
-    assert "retrieve exact output from history" in str(window[0]["content"])
-
-
-def test_old_tool_result_trim_only_changes_copy() -> None:
-    messages = [
-        _message(
-            "tool",
-            [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call-1",
-                    "content": "a" * 100,
-                },
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call-2",
-                    "content": "latest",
-                },
-            ],
-        )
-    ]
-
-    window = trim_old_tool_results(messages, keep_recent=1, max_content_chars=10)
-
-    assert "available through history" in str(window[0]["content"])
-    assert "a" * 100 in str(messages[0]["content"])
-
-
 def test_runtime_rollover_releases_large_active_turn(tmp_path: Path) -> None:
     import json
 
-    from cade.harness.agent_runtime.context_window import estimate_message_tokens
+    from cade.agent._context_window import estimate_wire_message_tokens
+
+    def estimate_message_tokens(items: list[dict[str, object]]) -> int:
+        return sum(estimate_wire_message_tokens(m) for m in items)
 
     messages = [
         _message("system", "startup"),
