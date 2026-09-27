@@ -260,6 +260,7 @@ def _build_before_provider_request_closure(
                             else None
                         ),
                         "evidence_omitted": list(assembly.evidence_omitted),
+                        "working_omitted": list(assembly.working_omitted),
                         "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
                         "rotation_blocked_reason": assembly.rotation_blocked_reason,
                         "mandatory_estimated_tokens": assembly.mandatory_estimated_tokens,
