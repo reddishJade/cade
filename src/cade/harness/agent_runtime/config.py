@@ -258,6 +258,7 @@ def _build_before_provider_request_closure(
                             else None
                         ),
                         "evidence_omitted": list(assembly.evidence_omitted),
+                        "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
                         "token_budget": assembly.token_budget,
                         "budget_remaining": assembly.budget_remaining,
                         "context_trace": [
