@@ -277,14 +277,21 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             return "operation must be one of: list_windows, search, read, around"
         if not entries:
             return "No matching history in the current session."
-        return "\n\n".join(_render_entry(entry) for entry in entries)
+        return "\n\n".join(
+            _render_entry(
+                entry, query=str(data.get("query", "")) if operation == "search" else ""
+            )
+            for entry in entries
+        )
 
     return (
         ToolSpec(
             name="history",
             description=(
                 "List context windows, search the current session's lossless "
-                "transcript, page through one exact record, or inspect neighbors."
+                "transcript, page through one exact record, or inspect neighbors. "
+                "Search returns bounded excerpts and match offsets when an exact term "
+                "occurs in a large record; use those offsets for targeted reads."
             ),
             input_hint=(
                 'JSON: {"operation":"list_windows"}, '
@@ -333,8 +340,16 @@ def _default_artifacts_dir(sessions_dir: Path) -> Path:
     return sessions_dir / "session_artifacts"
 
 
-def _render_entry(entry: HistoryEntry) -> str:
+def _render_entry(entry: HistoryEntry, *, query: str = "") -> str:
     content = entry.text
+    match = re.search(re.escape(query), content, re.IGNORECASE) if query else None
+    if match is not None and len(content) > 2000:
+        offset = max(0, match.start() - 400)
+        excerpt = content[offset : offset + 1200]
+        return (
+            f"[message_id={entry.id} type={entry.type} at={entry.created_at} "
+            f"match_offset={match.start()} excerpt_offset={offset}]\n{excerpt}"
+        )
     if len(content) > 2000:
         content = (
             content[:1200]
