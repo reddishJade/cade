@@ -24,6 +24,7 @@ from cade.ai.types import StreamOptions, ThinkingLevel
 
 from .context import ContextState
 from .context_manager import ContextManager
+from .context_policy import ContextPolicy
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage
 from .request import DefaultRequestAssembler, RequestAssembler, RequestAssembly
 
@@ -57,6 +58,7 @@ class AgentContext(BaseModel):
     project_root: Path | None = None
     cwd: Path | None = None
     request_token_budget: Annotated[int, Field(ge=0)] = 0
+    context_policy: ContextPolicy | None = None
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
@@ -148,6 +150,7 @@ class AgentLoopConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
     provider: Annotated[StreamProvider | None, SkipValidation] = None
     request_token_budget: Annotated[int, Field(ge=0)] = 0
+    context_policy: ContextPolicy | None = None
     recover_context_overflow: bool = True
     tool_execution: ToolExecutionMode = "parallel"
     tool_workers: int = 4

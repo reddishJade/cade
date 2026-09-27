@@ -23,6 +23,7 @@ from .context import (
     ContextCollectorSource,
     DefaultContextAssembler,
 )
+from .context_policy import ContextPolicy
 from .messages import AgentMessage
 from .types import AgentTool, materialize_json_mapping
 
@@ -86,6 +87,7 @@ class RequestAssembly:
     options: StreamOptions | None = None
     local_estimated_tokens: int = 0
     token_estimate_source: str = "local"
+    context_policy: ContextPolicy | None = None
 
 
 class RequestAssembler(Protocol):
@@ -116,6 +118,13 @@ class DefaultRequestAssembler:
         current_step: int,
         options: StreamOptions | None,
     ) -> RequestAssembly:
+        policy = context.context_policy
+        if policy is not None:
+            policy = policy.for_request(options)
+            options = policy.request_options(options)
+        token_budget = (
+            policy.input_budget if policy is not None else context.request_token_budget
+        )
         if context.context_manager is not None:
             context.messages[:] = context.context_manager.normalize_messages(
                 context.messages
@@ -159,7 +168,7 @@ class DefaultRequestAssembler:
                 tools=list(context.tools),
                 context_blocks=legacy_blocks,
                 current_step=current_step,
-                token_budget=context.request_token_budget,
+                token_budget=token_budget,
                 calibrate_tokens=calibrate_tokens,
             )
         )
@@ -184,6 +193,7 @@ class DefaultRequestAssembler:
             options=options,
             local_estimated_tokens=local_tokens or result.total_tokens,
             token_estimate_source=estimate_source,
+            context_policy=policy,
         )
         return assembly
 

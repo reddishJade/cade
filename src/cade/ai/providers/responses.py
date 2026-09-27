@@ -718,6 +718,8 @@ class OpenAIResponsesProvider:
 class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
     """使用 ChatGPT 登录态调用 Codex Responses 后端。"""
 
+    supports_output_token_limit = False
+
     def __init__(
         self,
         config: ProviderConfig,
