@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Literal, Protocol
@@ -142,19 +142,17 @@ class ContextAssemblyResult:
 
 @dataclass(frozen=True)
 class ContextSection:
-    """可快照、可增量渲染的动态上下文 section。"""
+    """每次请求以当前快照渲染的动态上下文 section。"""
 
     section_id: str
     snapshot: Callable[[ContextCollectionInput], object]
     render_full: Callable[[object], list[ContextBlock]]
-    render_diff: Callable[[object, object], list[ContextBlock]]
 
 
 @dataclass
 class WorldState:
     """维护当前 section 投影与变化基线，不把过期状态叠加到模型请求。"""
 
-    _snapshots: dict[str, tuple[object, object]] = field(default_factory=dict)
     _current_blocks: dict[str, list[ContextBlock]] = field(default_factory=dict)
 
     def current_blocks(self) -> list[ContextBlock]:
@@ -166,40 +164,22 @@ class WorldState:
         sections: tuple[ContextSection, ...],
         input: ContextCollectionInput,
     ) -> list[ContextBlock]:
-        rendered: list[ContextBlock] = []
-        active_ids: set[str] = set()
+        active_ids = {section.section_id for section in sections}
+        for section_id in set(self._current_blocks) - active_ids:
+            del self._current_blocks[section_id]
         for section in sections:
-            active_ids.add(section.section_id)
             try:
                 current = section.snapshot(input)
-                fingerprint = _snapshot_fingerprint(current)
-                previous = self._snapshots.get(section.section_id)
-                if previous is None:
-                    blocks = section.render_full(current)
-                elif previous[0] == fingerprint:
-                    blocks = []
-                else:
-                    blocks = section.render_diff(current, previous[1])
-                if previous is None or previous[0] != fingerprint:
-                    self._current_blocks[section.section_id] = (
-                        blocks if previous is None else section.render_full(current)
-                    )
-                self._snapshots[section.section_id] = (fingerprint, current)
-                rendered.extend(blocks)
-            except Exception:
+                self._current_blocks[section.section_id] = section.render_full(current)
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError):
                 logger.exception(
-                    "ContextSection %s raised; skipping",
-                    section.section_id,
+                    "ContextSection %s raised; skipping", section.section_id
                 )
-
-        for section_id in set(self._snapshots) - active_ids:
-            del self._snapshots[section_id]
-            self._current_blocks.pop(section_id, None)
-        return rendered
+                self._current_blocks.pop(section.section_id, None)
+        return self.current_blocks()
 
     def reset(self) -> None:
         """清除 section baseline，使下一次请求重新注入完整状态。"""
-        self._snapshots.clear()
         self._current_blocks.clear()
 
 
@@ -217,55 +197,11 @@ class ContextState:
             self.persistent_messages[:] = messages
         self._prefix_fingerprint = current
 
-    def append_blocks(self, blocks: list[ContextBlock]) -> None:
-        for block in blocks:
-            if block.target == ContextBlockTarget.SYSTEM:
-                self.persistent_messages.append(SystemMessage(content=block.content))
-            else:
-                self.persistent_messages.append(
-                    UserMessage(content=_block_to_text(block))
-                )
-
     def reset(self) -> None:
         """清除压缩后需要重新建立的动态上下文投影。"""
         self.world_state.reset()
         self.persistent_messages.clear()
         self._prefix_fingerprint = None
-
-
-def _snapshot_fingerprint(value: object) -> object:
-    if isinstance(value, ContextBlock):
-        return (
-            value.source.value,
-            value.priority,
-            value.target.value,
-            value.content,
-            value.block_id,
-            value.provenance,
-            value.truncated,
-            value.truncation_reason,
-            value.scope,
-            _snapshot_fingerprint(value.metadata),
-        )
-    if isinstance(value, dict):
-        items = [
-            (
-                str(key),
-                _snapshot_fingerprint(item),
-            )
-            for key, item in value.items()
-        ]
-        return tuple(sorted(items, key=lambda item: item[0]))
-    if isinstance(value, list | tuple):
-        return tuple(_snapshot_fingerprint(item) for item in value)
-    if isinstance(value, set | frozenset):
-        items = [_snapshot_fingerprint(item) for item in value]
-        return tuple(sorted(items, key=repr))
-    try:
-        json.dumps(value, sort_keys=True, default=str)
-    except (TypeError, ValueError):
-        return repr(value)
-    return value
 
 
 def _message_fingerprint(message: AgentMessage) -> str:
@@ -374,7 +310,7 @@ def make_collector_section(
     section_id: str,
     collector: ContextCollector,
 ) -> ContextSection:
-    """把旧式 collector 包装为会话级 snapshot/diff section。"""
+    """把 collector 包装为当前快照 section。"""
 
     def snapshot(input: ContextCollectionInput) -> object:
         return tuple(collector.collect(input))
@@ -382,19 +318,7 @@ def make_collector_section(
     def render_full(snapshot_value: object) -> list[ContextBlock]:
         return _snapshot_blocks(snapshot_value)
 
-    def render_diff(current: object, _previous: object) -> list[ContextBlock]:
-        blocks = _snapshot_blocks(current)
-        if not blocks:
-            return [
-                _section_notice(
-                    section_id,
-                    "removed",
-                    _snapshot_blocks(_previous),
-                )
-            ]
-        return [_section_replacement(section_id, blocks)]
-
-    return ContextSection(section_id, snapshot, render_full, render_diff)
+    return ContextSection(section_id, snapshot, render_full)
 
 
 def make_state_section(
@@ -414,57 +338,13 @@ def make_state_section(
             return []
         return [_state_block(section_id, source, priority, snapshot_value)]
 
-    def render_diff(current: object, previous: object) -> list[ContextBlock]:
-        if current is None:
-            return [_section_notice(section_id, "removed", previous, source, priority)]
-        return [
-            _section_replacement(
-                section_id,
-                [_state_block(section_id, source, priority, current)],
-            )
-        ]
-
-    return ContextSection(section_id, snapshot, render_full, render_diff)
+    return ContextSection(section_id, snapshot, render_full)
 
 
 def _snapshot_blocks(value: object) -> list[ContextBlock]:
     if not isinstance(value, tuple | list):
         return []
     return [block for block in value if isinstance(block, ContextBlock)]
-
-
-def _section_replacement(section_id: str, blocks: list[ContextBlock]) -> ContextBlock:
-    first = blocks[0]
-    content = "\n\n".join(block.content for block in blocks)
-    return replace(
-        first,
-        content=(
-            f'<context-section id="{section_id}" status="updated">\n'
-            f"{content}\n"
-            "</context-section>"
-        ),
-        block_id=first.block_id or section_id,
-    )
-
-
-def _section_notice(
-    section_id: str,
-    status: str,
-    previous: object,
-    source: ContextBlockSource = ContextBlockSource.INSTRUCTION,
-    priority: ContextPriority = ContextPriority.MEDIUM,
-) -> ContextBlock:
-    previous_blocks = _snapshot_blocks(previous)
-    template = previous_blocks[0] if previous_blocks else None
-    return ContextBlock(
-        source=template.source if template else source,
-        target=template.target if template else ContextBlockTarget.SYSTEM,
-        priority=template.priority if template else priority,
-        content=f'<context-section id="{section_id}" status="{status}" />',
-        block_id=section_id,
-        provenance=template.provenance if template else section_id,
-        scope=template.scope if template else "runtime",
-    )
 
 
 def _state_block(
