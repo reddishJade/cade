@@ -562,7 +562,7 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
                     physical_window=16000,
                     output_reserve=512,
                     headroom_tokens=512,
-                    evidence_token_budget=None if pressure else 400,
+                    evidence_token_budget=None if pressure else 2000,
                 ),
                 before_provider_request=lambda assembly: assemblies.append(
                     _trace(assembly)
@@ -594,6 +594,15 @@ async def test_evidence_projection_and_history_reopen_http_e2e(
     assert tool_bodies["evidence-new"] == texts[1]
     assert tool_bodies["evidence-durable"] == texts[2]
     assert assemblies[-1]["evidence_omitted"] == ["evidence-old"]
+    if not pressure:
+        assert 2000 < len(tool_bodies["evidence-old"]) < len(texts[0])
+        assert "[... omitted ...]" in tool_bodies["evidence-old"]
+        first_result_body = next(
+            message["content"]
+            for message in http_requests[1]["messages"]
+            if message.get("tool_call_id") == "evidence-old"
+        )
+        assert 2000 < len(first_result_body) < len(texts[0])
     if pressure:
         assert int(assemblies[-1]["evidence_reclaimed_tokens"]) > 0
         assert int(assemblies[-1]["tokens"]) <= int(assemblies[-1]["budget"])

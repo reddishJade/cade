@@ -310,16 +310,15 @@ class ContextPolicy:
             if tokens <= remaining:
                 remaining -= tokens
                 continue
-            preview = _evidence_preview(text, remaining)
-            remaining = (
-                max(0, remaining - estimate_tokens(preview)) if preview else remaining
-            )
             reference = evidence_reference(message)
+            reference_tokens = estimate_tokens(reference)
+            preview = _evidence_preview(text, max(0, remaining - reference_tokens - 1))
             content = f"{reference}\n{preview}" if preview else reference
             # 小结果的原文比引用更省空间，不能越回收越大。
             if estimate_tokens(content) >= tokens:
                 remaining = max(0, remaining - tokens)
                 continue
+            remaining = max(0, remaining - estimate_tokens(content))
             replacement = (
                 content
                 if isinstance(message.content, str)
@@ -358,14 +357,18 @@ class ContextPolicy:
 
 
 def _evidence_preview(text: str, token_budget: int) -> str:
-    """预览只保留短头尾；引用和状态的开销由完整输入预算计量。"""
-    width = min(240, len(text) // 2)
-    while width > 0 and token_budget > 0:
+    """按可用 token 扩展头尾预览，不把近期大证据固定裁到几百字符。"""
+    if token_budget <= 0:
+        return ""
+    lower, upper = 0, len(text) // 2
+    while lower < upper:
+        width = (lower + upper + 1) // 2
         preview = f"{text[:width]}\n[... omitted ...]\n{text[-width:]}"
         if estimate_tokens(preview) <= token_budget:
-            return preview
-        width //= 2
-    return ""
+            lower = width
+        else:
+            upper = width - 1
+    return f"{text[:lower]}\n[... omitted ...]\n{text[-lower:]}" if lower else ""
 
 
 def latest_task_message(messages: list[AgentMessage]) -> UserMessage | None:
