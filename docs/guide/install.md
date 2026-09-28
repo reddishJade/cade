@@ -10,6 +10,8 @@ cd /path/to/your/project
 cade
 ```
 
+当前命令安装 `main` 开发版。首个版本标签发布后，安装说明将改为固定版本；发布规则见[版本与发布](releases.md)。
+
 首次启动自动引导账户登录或 API key 配置。完成后即可输入任务，下一次使用 `cade -c` 继续。[快速开始](quickstart.md) 介绍完整操作路径。
 
 ## 1. 前置条件

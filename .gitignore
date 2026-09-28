@@ -24,7 +24,6 @@ __pycache__/
 .local/
 .venv*/
 opencode.json*
-uv.lock
 cade.config.json
 
 # --- 构建产出 ——

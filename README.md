@@ -12,6 +12,8 @@ cd /path/to/your/project
 cade
 ```
 
+当前命令安装 `main` 开发版；首个版本标签发布后，安装说明将固定到标签。[版本与发布](docs/guide/releases.md) 记录发布规则。
+
 首次启动会引导你选择账户登录或 API key，并配置模型。推荐保存为个人默认配置，以便在其他项目中直接启动；也可以选择仅保存到当前项目。之后使用 `cade login` 更换登录方式，或 `cade setup` 重新配置 provider。[安装与环境准备](docs/guide/install.md) 包含 Linux Shell sandbox 的依赖说明。
 
 输入第一条任务，例如：
