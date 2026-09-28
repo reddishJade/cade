@@ -15,6 +15,7 @@ Cade 是运行在本地工作区中的编码 Agent。它把模型推理、工具
 | 扩展 Agent | [skills.md](skills.md) → [mcp.md](mcp.md) → [hooks.md](hooks.md) |
 | 使用子代理 | [subagents.md](subagents.md) |
 | 查阅命令和界面 | [slash-commands.md](slash-commands.md) → [cli.md](cli.md) → [web.md](web.md) |
+| 维护版本与发布 | [releases.md](releases.md) |
 
 ## 日常工作流
 
