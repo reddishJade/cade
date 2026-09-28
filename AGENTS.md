@@ -56,6 +56,9 @@ uv run pytest src/cade/tests/test_tools_file_handlers.py -q --tb=short
 ```
 
 The `mcp_external` tests require network tooling and are excluded by default.
+E2E test source files named `test_*_e2e.py` are local-only and ignored by Git;
+do not stage or push them. Run them locally when the required environment is
+available. Origin CI runs static checks, a CLI startup check, and packaging.
 
 ## Commits & Pull Requests
 

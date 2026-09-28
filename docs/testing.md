@@ -43,6 +43,11 @@ recorder 或 replayer。该测试必须覆盖：
 真实 provider、终端 UI、MCP server 和平台相关 shell 行为按需手工验证。
 不能用 HTTP 200、mock loader 或另一个服务实例代替用户实际运行路径。
 
+`src/cade/tests/test_*_e2e.py` 是本地专用测试源码，已由 `.gitignore` 排除，
+不会进入 origin 或分发包。它们使用 pytest 临时目录保存 trace、终端截图和
+复现步骤；有相应终端、沙箱或 provider 环境时在开发机运行。新克隆的仓库
+不包含这些文件，origin CI 只运行静态检查、命令行启动检查和打包。
+
 ## 必跑命令
 
 ```sh
@@ -51,8 +56,8 @@ uv run pyright src/
 uv run pytest src/cade/tests -q --tb=short
 ```
 
-修改局部行为时先运行聚焦测试，提交前运行完整套件。Pyright 的既有 warning
-可以单独治理，但新增代码不得增加 error。
+修改局部行为时先运行聚焦测试，提交前运行当前工作区可用的完整套件。Pyright
+的既有 warning 可以单独治理，但新增代码不得增加 error。
 
 ## 变更要求
 

@@ -13,15 +13,16 @@ Cade 目前通过 Git 安装；`pyproject.toml` 中的 `cade-agent` 版本是包
 
 ## 日常检查
 
-CI 在 pull request、`main` 更新和 `v*` 标签推送时运行。`checks` 作业使用 Python 3.12，安装终端与 Linux 沙箱依赖，按锁文件安装 Python 依赖，并执行 Ruff、Pyright、默认 pytest 和分发包构建。测试步骤使用无效的 API key 占位值，不连接真实模型。标签构建还检查标签名与 `pyproject.toml` 的版本一致。推送工作流后，可在 GitHub 仓库设置中将 `checks` 设为 `main` 的必需状态检查。
+CI 在 pull request、`main` 更新和 `v*` 标签推送时运行。`checks` 作业使用 Python 3.12，按锁文件安装依赖，并执行 Ruff、Pyright、命令行启动检查和分发包构建。E2E 测试源码仅保留在开发机，不提交 origin；常规 CI 不运行 E2E。标签构建还检查标签名与 `pyproject.toml` 的版本一致。推送工作流后，可在 GitHub 仓库设置中将 `checks` 设为 `main` 的必需状态检查。
 
-本地可用相同的只读检查确认提交状态：
+本地发布前运行只读检查和完整测试；完整测试所需环境见[测试说明](../testing.md)：
 
 ```sh
 uv sync --locked --extra dev
 uv run --locked ruff check src/
 uv run --locked ruff format --check src/
 uv run --locked pyright src/
+uv run --locked cade --help
 uv run --locked pytest src/cade/tests -q --tb=short
 uv build --no-sources
 ```

@@ -1,45 +1,50 @@
-# --- 开发工具缓存 ---
+# 本地 Agent、编辑器与项目状态
 .agents/*
 !.agents/notes/
 !.agents/notes/**
 .antigravitycli/
+.cade/
 .claude/
 .codex/
 .crush/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.uv-cache/
 .vscode/
-.cade/
 
-# --- Python 缓存与构建 ——
-*.py[cod]
-__pycache__/
-.coverage
-*.egg-info/
-
-# --- 环境与配置 ——
+# 本地配置与虚拟环境
 .env
 .local/
 .venv*/
-opencode.json*
 cade.config.json
+opencode.json*
 
-# --- 构建产出 ——
+# Python 缓存与构建产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.uv-cache/
 build/
 dist/
 *.spec
 
-# --- Eval 本地产物（任务私有数据、仓库 checkout 和运行日志） ---
+# 本地 E2E 测试源码
+src/cade/tests/test_*_e2e.py
+src/cade/tests/e2e/
+
+# 测试、E2E 与评测运行产物
+.coverage
+.pytest_cache/
+.benchmark/
+.e2e/
 .eval-repos/
+benchmark-results/
+e2e-results/
+eval-results/
 evals/private/
 logs/
-
-# --- 杂项 ---
-diff.log
-verifier-result.json
-eval-results/
-benchmark-results/
-docs/notes/
 tmp/
+
+# 本地草稿与诊断输出
+diff.log
+docs/notes/
+verifier-result.json
