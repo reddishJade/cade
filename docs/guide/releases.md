@@ -13,7 +13,7 @@ Cade 目前通过 Git 安装；`pyproject.toml` 中的 `cade-agent` 版本是包
 
 ## 日常检查
 
-CI 在 pull request、`main` 更新和 `v*` 标签推送时运行。`checks` 作业使用 Python 3.12，按锁文件安装依赖，并执行 Ruff、Pyright、默认 pytest 和分发包构建。标签构建还检查标签名与 `pyproject.toml` 的版本一致。推送工作流后，可在 GitHub 仓库设置中将 `checks` 设为 `main` 的必需状态检查。
+CI 在 pull request、`main` 更新和 `v*` 标签推送时运行。`checks` 作业使用 Python 3.12，安装终端与 Linux 沙箱依赖，按锁文件安装 Python 依赖，并执行 Ruff、Pyright、默认 pytest 和分发包构建。测试步骤使用无效的 API key 占位值，不连接真实模型。标签构建还检查标签名与 `pyproject.toml` 的版本一致。推送工作流后，可在 GitHub 仓库设置中将 `checks` 设为 `main` 的必需状态检查。
 
 本地可用相同的只读检查确认提交状态：
 
