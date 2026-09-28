@@ -21,6 +21,10 @@ jobs:
           version: "0.12.19"
           python-version: "3.12"
           enable-cache: true
+      - name: 安装终端与沙箱依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap tmux
       - name: 检查发布标签与包版本
         if: startsWith(github.ref, 'refs/tags/v')
         run: test "$GITHUB_REF_NAME" = "v$(uv version --short)"
@@ -34,5 +38,7 @@ jobs:
         run: uv run --locked pyright src/
       - name: 测试
         run: uv run --locked pytest src/cade/tests -q --tb=short
+        env:
+          DEEPSEEK_API_KEY: ci-test-only
       - name: 构建分发包
         run: uv build --no-sources
