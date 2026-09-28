@@ -57,6 +57,7 @@ cade = "cade.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cade*"]
+exclude = ["cade.tests", "cade.tests.*"]
 
 [tool.ruff.lint]
 extend-select = ["B", "S101"]
