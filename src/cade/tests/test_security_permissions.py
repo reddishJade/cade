@@ -38,6 +38,7 @@ def test_build_allows_proven_read_only_git_without_review(tmp_path: Path) -> Non
             mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
             mode_fallback="ask",
             shell_unresolved_policy="ask",
+            shell_mutation_policy="ask",
             execution_mode="build",
         )
     )
@@ -66,6 +67,7 @@ def test_build_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
             mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
             mode_fallback="ask",
             shell_unresolved_policy="ask",
+            shell_mutation_policy="ask",
             execution_mode="build",
         )
     )
@@ -95,6 +97,7 @@ def test_act_routes_unresolved_shell_to_user_review(tmp_path: Path) -> None:
             mode_ruleset=build_default_mode_rulesets(tmp_path)["act"],
             mode_fallback="ask",
             shell_unresolved_policy="ask",
+            shell_mutation_policy="ask",
             execution_mode="act",
         )
     )
@@ -120,6 +123,7 @@ def test_plan_allows_proven_read_only_shell_without_review(tmp_path: Path) -> No
             mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
             mode_fallback="deny",
             shell_unresolved_policy="ask",
+            shell_mutation_policy="deny",
             execution_mode="plan",
         )
     )
@@ -136,6 +140,36 @@ def test_plan_allows_proven_read_only_shell_without_review(tmp_path: Path) -> No
     assert result.blocked is False
 
 
+def test_build_routes_known_mutating_shell_to_auto_review(tmp_path: Path) -> None:
+    requests: list[ApprovalRequest] = []
+
+    def approve(request: ApprovalRequest) -> HITLResult:
+        requests.append(request)
+        return HITLResult("allow", "once")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
+            mode_fallback="ask",
+            shell_unresolved_policy="ask",
+            shell_mutation_policy="ask",
+            execution_mode="build",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "rm -rf build"},
+        tool_spec=_bash_tool(),
+        approval_callback=approve,
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "allow"
+    assert result.source == "auto_review"
+    assert [request.execution_mode for request in requests] == ["build"]
+
+
 def test_plan_denies_explicit_mutating_shell_before_review(tmp_path: Path) -> None:
     requests: list[ApprovalRequest] = []
 
@@ -148,6 +182,7 @@ def test_plan_denies_explicit_mutating_shell_before_review(tmp_path: Path) -> No
             mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
             mode_fallback="deny",
             shell_unresolved_policy="ask",
+            shell_mutation_policy="deny",
             execution_mode="plan",
         )
     )
@@ -177,6 +212,7 @@ def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
             mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
             mode_fallback="deny",
             shell_unresolved_policy="ask",
+            shell_mutation_policy="deny",
             execution_mode="plan",
         )
     )
