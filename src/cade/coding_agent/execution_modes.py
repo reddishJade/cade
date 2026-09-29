@@ -216,7 +216,6 @@ def build_default_mode_rulesets(
         Rule(action="recall", effect="allow"),
         Rule(action="history", effect="allow"),
         Rule(action="rollover", effect="allow"),
-        Rule(action="mcp__*", effect="allow"),
         Rule(action="mcp_tool_search", effect="allow"),
     )
     write_rules = (
