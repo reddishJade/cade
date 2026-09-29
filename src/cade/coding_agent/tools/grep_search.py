@@ -41,14 +41,15 @@ def build_grep_tool(
         ),
         input_hint='JSON: {"pattern": "ToolSpec", "path": "src/cade", "glob": "*.py"}',
         handler=handler,
+        execution_mode="parallel",
         prompt_guidelines=(
-            "Use grep_search to find strings in file contents (not filenames).",
+            "Use grep to find strings in file contents (not filenames).",
             "Supports full regex: 'log.*Error', 'function\\s+\\w+'.",
             "Combine with glob (*.py, *.{ts,tsx}) to narrow search scope.",
             "Use context=N to show N lines of surrounding context.",
             "Use ignore_case=true for case-insensitive search.",
             "Use literal=true to search plain text without regex escaping.",
-            "Prefer grep_search over bash grep/rg for content search.",
+            "Use this helper when shell access is unavailable or intentionally restricted.",
         ),
         schema={
             "type": "object",
