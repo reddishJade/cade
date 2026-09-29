@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from cade.harness.agent_runtime.contextual import ContextualRetrievalState
@@ -36,6 +37,26 @@ class TestContextualRetrievalState:
         state.record_file(Path("/project/file.py"))
         second = state.render()
         assert first != second
+
+    def test_parallel_file_records_remain_unique(self) -> None:
+        state = ContextualRetrievalState(Path("/project"), max_files=8)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(
+                pool.map(
+                    lambda index: state.record_file(Path(f"src/file{index % 4}.py")),
+                    range(200),
+                )
+            )
+
+        assert len(state.recent_files) == 4
+        assert set(state.recent_files) == {
+            "src/file0.py",
+            "src/file1.py",
+            "src/file2.py",
+            "src/file3.py",
+        }
+        assert state.active_file in state.recent_files
 
     def test_clear_removes_previous_session_projection(self) -> None:
         state = ContextualRetrievalState(Path("/project"))
