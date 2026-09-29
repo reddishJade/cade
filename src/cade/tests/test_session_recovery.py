@@ -160,8 +160,8 @@ def test_claimed_input_waits_for_complete_tool_batch(tmp_path: Path) -> None:
             "assistant",
             1,
             (
-                AssistantToolUseBlock("read-a", "read_file", {"path": "a"}),
-                AssistantToolUseBlock("read-b", "read_file", {"path": "b"}),
+                AssistantToolUseBlock("read-a", "read", {"path": "a"}),
+                AssistantToolUseBlock("read-b", "read", {"path": "b"}),
             ),
         )
     )
@@ -204,7 +204,7 @@ def test_replacement_rejects_input_inside_tool_batch() -> None:
             [
                 AssistantMessage(
                     content=[
-                        ToolCallContent(id="read-a", name="read_file", arguments={})
+                        ToolCallContent(id="read-a", name="read", arguments={})
                     ]
                 ),
                 UserMessage(content="interrupting input"),

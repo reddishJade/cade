@@ -179,7 +179,7 @@ def test_runtime_rollover_releases_large_active_turn(tmp_path: Path) -> None:
                 {
                     "id": "read-1",
                     "function": {
-                        "name": "read_file",
+                        "name": "read",
                         "arguments": {"path": "large.py"},
                     },
                 }

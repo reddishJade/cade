@@ -209,5 +209,5 @@ class TestProviderFunctionName:
     def test_uri_id(self) -> None:
         result = provider_function_name("filesystem://read_file")
         assert "filesystem" in result
-        assert "read_file" in result
+        assert "read" in result
         assert "://" not in result

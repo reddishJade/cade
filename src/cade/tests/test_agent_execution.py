@@ -161,26 +161,26 @@ class TestToolCallSignature:
 
 class TestFileToolClassification:
     def test_is_mutation_tool(self) -> None:
-        assert is_file_mutation_tool("write_file")
-        assert not is_file_mutation_tool("read_file")
+        assert is_file_mutation_tool("write")
+        assert not is_file_mutation_tool("read")
 
     def test_is_read_tool(self) -> None:
-        assert is_file_read_tool("read_file")
-        assert not is_file_read_tool("write_file")
+        assert is_file_read_tool("read")
+        assert not is_file_read_tool("write")
 
     def test_custom_sets(self) -> None:
         custom_mutation = frozenset({"my_write"})
         assert is_file_mutation_tool("my_write", custom_mutation)
-        assert not is_file_mutation_tool("write_file", custom_mutation)
+        assert not is_file_mutation_tool("write", custom_mutation)
 
 
 class TestShouldClearReadHistory:
     def test_mutation_clears(self) -> None:
-        calls = [ToolCallContent(id="1", name="write_file")]
+        calls = [ToolCallContent(id="1", name="write")]
         assert should_clear_read_history(calls, [])
 
     def test_read_only_does_not_clear(self) -> None:
-        calls = [ToolCallContent(id="1", name="read_file")]
+        calls = [ToolCallContent(id="1", name="read")]
         assert not should_clear_read_history(calls, [])
 
 

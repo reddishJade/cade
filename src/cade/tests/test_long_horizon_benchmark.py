@@ -329,10 +329,10 @@ def test_report_keeps_usage_for_single_variant_runner() -> None:
 
 def test_repeated_read_calls_count_same_path_only() -> None:
     calls = [
-        {"name": "read_file", "input": {"path": "src/a.py"}},
-        {"name": "read_file", "input": {"path": "src/a.py"}},
-        {"name": "read_file", "input": {"path": "src/b.py"}},
-        {"name": "edit_file", "input": {"path": "src/a.py"}},
+        {"name": "read", "input": {"path": "src/a.py"}},
+        {"name": "read", "input": {"path": "src/a.py"}},
+        {"name": "read", "input": {"path": "src/b.py"}},
+        {"name": "edit", "input": {"path": "src/a.py"}},
     ]
 
     assert _repeated_read_calls(calls) == 1
