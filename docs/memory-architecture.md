@@ -29,7 +29,7 @@ of truth when a note needs evidence.
 
 The system prompt tells the agent where memory lives and when to use it. It does
 not automatically inject search results on every turn. The agent calls the
-read-only `search_memory` tool when prior project knowledge may matter.
+read-only `recall` tool when prior project knowledge may matter.
 
 ### Rollover
 
