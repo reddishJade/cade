@@ -50,9 +50,7 @@ type GrantRecordData = dict[str, object]
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: str = Field(
-        description="Tool name or wildcard, e.g. 'bash', 'write', '*'"
-    )
+    action: str = Field(description="Tool name or wildcard, e.g. 'bash', 'write', '*'")
     effect: PermissionDecisionV2 = Field(description="Decision: allow / ask / deny")
 
     command: str | None = Field(
