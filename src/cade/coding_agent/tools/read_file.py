@@ -52,6 +52,7 @@ def build_read_file_tool(
         input_hint='JSON: {"path": "/absolute/path/to/file", "offset": 1, "limit": 80}',
         handler=handler,
         schema=READ_FILE_SCHEMA,
+        execution_mode="parallel",
         prompt_snippet="Read a text file inside the project sandbox",
         prompt_guidelines=(
             "Use read offset and limit to continue reading long files.",
