@@ -572,28 +572,6 @@ def _emit_tool_end(
 # ── 工具看门狗 ──
 
 
-DEFAULT_MUTATION_TOOLS: frozenset[str] = frozenset(
-    {
-        "write",
-        "edit",
-        "bash",
-        "create_file",
-        "delete_file",
-        "move_file",
-        "rename_file",
-    }
-)
-
-DEFAULT_READ_TOOLS: frozenset[str] = frozenset(
-    {
-        "read",
-        "grep",
-        "glob",
-        "list",
-        "find",
-    }
-)
-
 
 def tool_call_signature(call: ToolCallContent) -> str:
     args_str = json.dumps(call.arguments or {}, sort_keys=True, default=str)
