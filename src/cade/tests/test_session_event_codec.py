@@ -52,9 +52,7 @@ def test_encode_assistant_and_final_payloads() -> None:
                 answer="done",
                 messages=[],
                 steps=1,
-                tool_calls=[
-                    ToolCall(id="call-1", name="read", input={"path": "a"})
-                ],
+                tool_calls=[ToolCall(id="call-1", name="read", input={"path": "a"})],
                 run_state=RunState(
                     messages=[{"role": "tool", "content": "large result"}]
                 ),
