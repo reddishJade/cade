@@ -152,7 +152,6 @@ class ContextualRetrievalState:
             self._dirty = False
             return rendered
 
-
     @property
     def active_file(self) -> str | None:
         """返回当前最相关文件。"""
