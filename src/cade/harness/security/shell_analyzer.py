@@ -46,6 +46,22 @@ _UNSAFE_CONTROL = frozenset({"&", "(", ")"})
 _REDIRECTIONS = frozenset({"<", ">", "<<", ">>", "<<<"})
 _FIND_EXECUTORS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
 _FD_EXECUTORS = frozenset({"-x", "--exec", "-X", "--exec-batch"})
+_GIT_READ_SUBCOMMANDS = frozenset(
+    {
+        "status",
+        "diff",
+        "log",
+        "show",
+        "grep",
+        "ls-files",
+        "ls-tree",
+        "rev-parse",
+        "blame",
+        "cat-file",
+        "describe",
+    }
+)
+_GIT_GLOBAL_OPTIONS_WITH_VALUES = frozenset({"-C", "--git-dir", "--work-tree", "-c"})
 _FD_OPTIONS_WITH_VALUES = frozenset(
     {
         "-d",
@@ -196,6 +212,12 @@ def _analyze_posix(command: str) -> ShellAnalysis:
                 )
                 continue
             paths.extend(_fd_paths(args))
+            continue
+        if name == "git":
+            git_paths, git_effect = _git_read_analysis(args)
+            paths.extend(git_paths)
+            if git_effect is not None:
+                unresolved.append(git_effect)
             continue
         if name in _POSIX_NO_EFFECT_COMMANDS:
             continue
@@ -454,6 +476,56 @@ def _mutating_paths(command: str, args: list[str]) -> list[Target]:
         ]
     access: Literal["write", "delete"] = "delete" if command == "rm" else "write"
     return [_path_target(arg, access=access) for arg in positional]
+
+
+def _git_read_analysis(
+    args: list[str],
+) -> tuple[list[Target], UnresolvedEffect | None]:
+    paths: list[Target] = []
+    index = 0
+    subcommand: str | None = None
+    while index < len(args):
+        arg = args[index]
+        option = arg.split("=", 1)[0]
+        if option in _GIT_GLOBAL_OPTIONS_WITH_VALUES:
+            if "=" in arg:
+                value = arg.split("=", 1)[1]
+                if option in {"-C", "--git-dir", "--work-tree"} and value:
+                    paths.append(_path_target(value))
+                index += 1
+                continue
+            if index + 1 >= len(args):
+                return (
+                    paths,
+                    UnresolvedEffect(
+                        reason="wrapper_command",
+                        fragment=f"git option requires a value: {arg}",
+                    ),
+                )
+            value = args[index + 1]
+            if option in {"-C", "--git-dir", "--work-tree"}:
+                paths.append(_path_target(value))
+            index += 2
+            continue
+        if arg.startswith("-"):
+            index += 1
+            continue
+        subcommand = arg.lower()
+        break
+
+    if subcommand in _GIT_READ_SUBCOMMANDS:
+        return (paths, None)
+    return (
+        paths,
+        UnresolvedEffect(
+            reason="wrapper_command",
+            fragment=(
+                "git command requires approval"
+                if subcommand is None
+                else f"git subcommand requires approval: {subcommand}"
+            ),
+        ),
+    )
 
 
 def _fd_paths(args: list[str]) -> list[Target]:
