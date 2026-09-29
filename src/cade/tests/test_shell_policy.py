@@ -1,5 +1,7 @@
 """Shell 权限分类的行为测试。"""
 
+import pytest
+
 from cade.harness.security import (
     ActionExtractor,
     ShellAnalysisPolicyEvaluator,
@@ -30,6 +32,40 @@ def test_fd_is_read_only_but_exec_mode_requires_review() -> None:
     assert [effect.reason for effect in executing.unresolved_effects] == [
         "wrapper_command"
     ]
+
+
+# 失效情形：文件输出漏判、输出路径漏提取、参数缺失误放行、标准输出误判。
+@pytest.mark.parametrize("option", ["-fprint", "-fprint0", "-fprintf", "-fls"])
+def test_find_file_output_actions_are_mutations(option: str) -> None:
+    suffix = " '%p'" if option == "-fprintf" else ""
+    analysis = analyze_shell_command(f"find . {option} report.txt{suffix}")
+
+    assert [effect.reason for effect in analysis.unresolved_effects] == ["mutation"]
+    assert [(path.value, path.access) for path in analysis.resolved_paths] == [
+        (".", "read"),
+        ("report.txt", "write"),
+    ]
+
+
+@pytest.mark.parametrize("option", ["-fprint", "-fprint0", "-fprintf", "-fls"])
+def test_find_file_output_without_operand_requires_review(option: str) -> None:
+    analysis = analyze_shell_command(f"find . {option}")
+
+    assert analysis.unresolved_effects
+
+
+@pytest.mark.parametrize("action", ["-print", "-print0", "-printf '%p'"])
+def test_find_standard_output_actions_remain_read_only(action: str) -> None:
+    analysis = analyze_shell_command(f"find . {action}")
+
+    assert analysis.unresolved_effects == ()
+
+
+@pytest.mark.parametrize("action", ["-delete", "-exec", "-execdir", "-ok", "-okdir"])
+def test_find_execution_and_deletion_actions_require_review(action: str) -> None:
+    analysis = analyze_shell_command(f"find . {action} echo hello")
+
+    assert analysis.unresolved_effects
 
 
 def test_read_only_git_commands_do_not_require_review() -> None:
