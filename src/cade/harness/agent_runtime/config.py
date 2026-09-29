@@ -92,6 +92,9 @@ class GateConfig:
     shell_unresolved_policies: Mapping[str, PermissionDecision] = field(
         default_factory=dict
     )
+    shell_mutation_policies: Mapping[str, PermissionDecision] = field(
+        default_factory=dict
+    )
     tool_path_extractors: Mapping[str, PathExtractor] = field(default_factory=dict)
 
 

@@ -62,15 +62,16 @@ def build_glob_tools(
 
     return (
         ToolSpec(
-            name="glob_files",
+            name="glob",
             description="Find project files by glob pattern. Use **/*.py for recursive search.",
             input_hint='JSON: {"path": ".", "pattern": "**/*.py", "max_results": 100}',
             handler=glob_files,
+            execution_mode="parallel",
             prompt_guidelines=(
                 "Use **/*.py for recursive Python file search.",
                 "Combine path (directory) + pattern (glob) for narrower results.",
                 "Max results defaults to 200; raise max_results for large projects.",
-                "Prefer glob_files over bash ls/find for file discovery.",
+                "Use this helper when shell access is unavailable or intentionally restricted.",
             ),
             schema={
                 "type": "object",
@@ -93,18 +94,19 @@ def build_glob_tools(
             },
         ),
         ToolSpec(
-            name="find_files",
+            name="find",
             description=(
                 "Find files recursively by name or path glob. "
                 "Basename-only patterns (e.g. '*.py') automatically match at any depth."
             ),
             input_hint='JSON: {"path": ".", "pattern": "*.py", "max_results": 100}',
             handler=find_files,
+            execution_mode="parallel",
             prompt_guidelines=(
-                "Use find_files to locate files by name when you don't know the directory.",
+                "Use find to locate files by name when you don't know the directory.",
                 "Basename-only patterns (e.g. '*.py') search all subdirectories.",
                 "Add a path prefix to restrict search scope.",
-                "Prefer find_files over bash find for file discovery.",
+                "Use this helper when shell access is unavailable or intentionally restricted.",
             ),
             schema={
                 "type": "object",
@@ -128,15 +130,16 @@ def build_glob_tools(
             },
         ),
         ToolSpec(
-            name="list_dir",
+            name="ls",
             description="List directory contents. Entries sorted alphabetically, '/' suffix for directories. Includes dotfiles.",
             input_hint='JSON: {"path": "src/cade", "limit": 100}',
             handler=list_dir,
+            execution_mode="parallel",
             prompt_guidelines=(
-                "Use list_dir to explore directory contents before reading files.",
+                "Use ls to explore directory contents before reading files.",
                 "Limit defaults to 500 entries; raise it for large directories.",
                 "Entries show path relative to project root.",
-                "Prefer list_dir over bash ls for directory listing.",
+                "Use this helper when shell access is unavailable or intentionally restricted.",
             ),
             schema={
                 "type": "object",

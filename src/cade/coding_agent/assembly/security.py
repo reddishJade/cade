@@ -37,16 +37,16 @@ from cade.harness.security.permission_model.types import CREDENTIAL_PATH_PARTS
 # 网络工具意外包含到文件读取权限中。
 _PERMISSION_TOOLS: dict[str, tuple[str, ...]] = {
     "read": (
-        "read_file",
-        "glob_files",
-        "grep_search",
-        "find_files",
-        "list_dir",
+        "read",
+        "glob",
+        "grep",
+        "find",
+        "ls",
     ),
-    "edit": ("write_file", "edit_file", "apply_patch"),
-    "shell": ("bash", "shell"),
+    "edit": ("write", "edit", "patch"),
+    "shell": ("bash",),
     "web": ("websearch", "webfetch"),
-    "subagent": ("subagent",),
+    "subagent": ("delegate",),
     "skill": ("load_skill",),
 }
 

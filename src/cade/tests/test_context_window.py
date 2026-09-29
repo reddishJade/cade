@@ -116,6 +116,7 @@ def test_new_context_tool_does_not_block_without_working_note(tmp_path: Path) ->
 
     result = tool.handler({"reason": "window is noisy"})
 
+    assert tool.name == "rollover"
     assert "No summary" in result
     assert controller.consume() == "model"
 
@@ -179,7 +180,7 @@ def test_runtime_rollover_releases_large_active_turn(tmp_path: Path) -> None:
                 {
                     "id": "read-1",
                     "function": {
-                        "name": "read_file",
+                        "name": "read",
                         "arguments": {"path": "large.py"},
                     },
                 }

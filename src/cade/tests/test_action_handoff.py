@@ -25,14 +25,14 @@ def test_rollover_indexes_completed_actions_without_outputs(tmp_path: Path) -> N
                     content=[
                         ToolCallContent(
                             id=f"read-{number}",
-                            name="read_file",
+                            name="read",
                             arguments={"path": f"module-{number}.py"},
                         )
                     ]
                 ),
                 ToolResultMessage(
                     tool_call_id=f"read-{number}",
-                    tool_name="read_file",
+                    tool_name="read",
                     content="huge output" * 10000,
                     is_error=number == 7,
                 ),
@@ -84,12 +84,12 @@ def test_action_reference_is_exact_under_the_shared_byte_budget(tmp_path: Path) 
             content=[
                 ToolCallContent(
                     id=call_id,
-                    name="read_file",
+                    name="read",
                     arguments={"path": path},
                 )
             ]
         ),
-        ToolResultMessage(tool_call_id=call_id, tool_name="read_file", content="done"),
+        ToolResultMessage(tool_call_id=call_id, tool_name="read", content="done"),
     ]
     window = ContextWindowRollover().rollover_messages(source)
     text = "\n".join(m.content for m in window if isinstance(m, SystemMessage))

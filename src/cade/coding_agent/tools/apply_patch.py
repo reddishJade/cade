@@ -79,6 +79,13 @@ class FileChange:
     move_display_path: str | None = None
 
 
+@dataclass(frozen=True)
+class _PathSnapshot:
+    path: Path
+    existed: bool
+    data: bytes | None
+
+
 def build_apply_patch_tool(
     project_root: Path,
     context_state: ContextualRetrievalState | None = None,
@@ -97,11 +104,12 @@ def build_apply_patch_tool(
         return _apply_changes(root, ops, context_state, changes)
 
     return ToolSpec(
-        name="apply_patch",
+        name="patch",
         description=(
             "Edit, add, delete, or move multiple files in a single tool call "
-            "using a structured patch. Bundles related changes for atomic "
-            "multi-file edits. Prefer edit_file for single-file targeted "
+            "using a structured patch. Applies related multi-file changes "
+            "atomically: execution failures roll the affected paths back to "
+            "their pre-call state. Prefer edit for single-file targeted "
             "replacements."
         ),
         input_hint='JSON: {"patch_text": "*** Begin Patch\\n*** Update File: /abs/path/to/app.py\\n@@\\n-old\\n+new\\n*** End Patch"}',
@@ -109,9 +117,9 @@ def build_apply_patch_tool(
         schema=APPLY_PATCH_SCHEMA,
         prompt_snippet="Edit, add, delete, or move multiple files in a single patch",
         prompt_guidelines=(
-            "Use apply_patch for multi-file edits that touch 3+ files or need atomic application.",
-            "Use apply_patch to move or delete files (edit_file cannot do this).",
-            "Each apply_patch hunk must start with *** Begin Patch and end with *** End Patch.",
+            "Use patch for multi-file edits that touch 3+ files or need atomic application.",
+            "Use patch to move or delete files (edit cannot do this).",
+            "Each patch hunk must start with *** Begin Patch and end with *** End Patch.",
             "Patch paths must be project-relative and may not escape the project sandbox.",
         ),
         action_profile=("patch", "path"),
@@ -126,9 +134,9 @@ def parse_patch(patch_text: str) -> tuple[PatchHunk, ...]:
     if lines and lines[-1] == "":
         lines.pop()
     if not lines or lines[0] != "*** Begin Patch":
-        raise ValueError("apply_patch verification failed: missing *** Begin Patch")
+        raise ValueError("patch verification failed: missing *** Begin Patch")
     if lines[-1] != "*** End Patch":
-        raise ValueError("apply_patch verification failed: missing *** End Patch")
+        raise ValueError("patch verification failed: missing *** End Patch")
     if len(lines) == 2:
         raise ValueError("patch rejected: empty patch")
 
@@ -144,12 +152,12 @@ def parse_patch(patch_text: str) -> tuple[PatchHunk, ...]:
             hunk, index = _parse_delete_hunk(lines, index)
         else:
             raise ValueError(
-                f"apply_patch verification failed: unexpected line {index + 1}: {line}"
+                f"patch verification failed: unexpected line {index + 1}: {line}"
             )
         hunks.append(hunk)
 
     if not hunks:
-        raise ValueError("apply_patch verification failed: no hunks found")
+        raise ValueError("patch verification failed: no hunks found")
     return tuple(hunks)
 
 
@@ -194,12 +202,12 @@ def _parse_add_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
         line = lines[index]
         if not line.startswith("+"):
             raise ValueError(
-                f"apply_patch verification failed: Add File line {index + 1} must start with +"
+                f"patch verification failed: Add File line {index + 1} must start with +"
             )
         add_lines.append(line[1:])
         index += 1
     if not add_lines:
-        raise ValueError("apply_patch verification failed: Add File requires content")
+        raise ValueError("patch verification failed: Add File requires content")
     return PatchHunk(kind="add", path=path, add_lines=tuple(add_lines)), index
 
 
@@ -232,12 +240,12 @@ def _parse_update_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
             continue
         if not line:
             raise ValueError(
-                f"apply_patch verification failed: update line {index + 1} is missing an operation prefix"
+                f"patch verification failed: update line {index + 1} is missing an operation prefix"
             )
         op = line[0]
         if op not in {" ", "+", "-"}:
             raise ValueError(
-                f"apply_patch verification failed: invalid update operation {op!r} on line {index + 1}"
+                f"patch verification failed: invalid update operation {op!r} on line {index + 1}"
             )
         if op in {"+", "-"}:
             saw_change = True
@@ -247,11 +255,9 @@ def _parse_update_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
     if current_lines:
         sections.append(PatchSection(current_anchor, tuple(current_lines)))
     if not sections and move_path is None:
-        raise ValueError(
-            "apply_patch verification failed: Update File requires changes"
-        )
+        raise ValueError("patch verification failed: Update File requires changes")
     if not saw_change and move_path is None:
-        raise ValueError("apply_patch verification failed: Update File has no edits")
+        raise ValueError("patch verification failed: Update File has no edits")
     return (
         PatchHunk(
             kind="move" if move_path is not None else "update",
@@ -272,7 +278,7 @@ def _parse_delete_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
 def _header_path(line: str, prefix: str) -> str:
     path = line.removeprefix(prefix).strip()
     if not path:
-        raise ValueError(f"apply_patch verification failed: empty path in {prefix}")
+        raise ValueError(f"patch verification failed: empty path in {prefix}")
     return path
 
 
@@ -309,9 +315,7 @@ def _plan_add(
     display: str,
 ) -> FileChange:
     if operations.exists(path):
-        raise ValueError(
-            f"apply_patch verification failed: file already exists: {display}"
-        )
+        raise ValueError(f"patch verification failed: file already exists: {display}")
     after = "\n".join(hunk.add_lines)
     if after and not after.endswith("\n"):
         after += "\n"
@@ -360,7 +364,7 @@ def _plan_update(
         move_display = display_path(root, move_path)
         if move_path != path and operations.exists(move_path):
             raise ValueError(
-                f"apply_patch verification failed: move target already exists: {move_display}"
+                f"patch verification failed: move target already exists: {move_display}"
             )
         kind = "move"
     return FileChange(
@@ -402,7 +406,7 @@ def _apply_sections(
             match = _find_sequence(lines, old_lines, 0)
         if match is None:
             raise ValueError(
-                f"apply_patch verification failed: context not found in {display_path}"
+                f"patch verification failed: context not found in {display_path}"
             )
         lines[match : match + len(old_lines)] = list(new_lines)
         cursor = match + len(new_lines)
@@ -447,16 +451,38 @@ def _apply_changes(
     changes: tuple[FileChange, ...],
 ) -> ToolOutput:
     if not changes:
-        raise ValueError("apply_patch verification failed: no changes")
+        raise ValueError("patch verification failed: no changes")
 
     def mutate() -> ToolOutput:
-        for change in changes:
-            _write_change(operations, change)
-            target = change.move_path or change.path
-            if target and change.kind != "delete":
-                _format_file(target)
-            if context_state is not None and change.kind != "delete":
-                context_state.record_file(target)
+        snapshots = _snapshot_affected_paths(operations, changes)
+        missing_dirs = _snapshot_missing_parent_dirs(root, operations, changes)
+        try:
+            for change in changes:
+                _write_change(operations, change)
+                target = change.move_path or change.path
+                if target and change.kind != "delete":
+                    _format_file(target)
+        except Exception as exc:
+            rollback_failures = _rollback_changes(
+                operations,
+                snapshots,
+                missing_dirs,
+            )
+            if rollback_failures:
+                detail = ", ".join(rollback_failures)
+                raise RuntimeError(
+                    "patch failed and rollback was incomplete for: "
+                    f"{detail}. Original error: {exc}"
+                ) from exc
+            raise RuntimeError(
+                f"patch failed; all affected paths were rolled back: {exc}"
+            ) from exc
+
+        if context_state is not None:
+            for change in changes:
+                if change.kind != "delete":
+                    context_state.record_file(change.move_path or change.path)
+
         summary = "\n".join(_summary_line(change) for change in changes)
         diff = "\n".join(_diff_for_change(change) for change in changes)
         return ToolOutput(
@@ -475,6 +501,73 @@ def _apply_changes(
         )
 
     return with_file_mutation(root, mutate)
+
+
+def _affected_paths(changes: tuple[FileChange, ...]) -> tuple[Path, ...]:
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for change in changes:
+        for path in (change.path, change.move_path):
+            if path is None or path in seen:
+                continue
+            seen.add(path)
+            paths.append(path)
+    return tuple(paths)
+
+
+def _snapshot_affected_paths(
+    operations: FileSystem,
+    changes: tuple[FileChange, ...],
+) -> tuple[_PathSnapshot, ...]:
+    snapshots: list[_PathSnapshot] = []
+    for path in _affected_paths(changes):
+        existed = operations.exists(path)
+        data = operations.read_bytes(path) if existed else None
+        snapshots.append(_PathSnapshot(path=path, existed=existed, data=data))
+    return tuple(snapshots)
+
+
+def _snapshot_missing_parent_dirs(
+    root: Path,
+    operations: FileSystem,
+    changes: tuple[FileChange, ...],
+) -> tuple[Path, ...]:
+    missing: set[Path] = set()
+    for path in _affected_paths(changes):
+        parent = path.parent
+        while parent != root and parent not in missing:
+            if operations.exists(parent):
+                break
+            missing.add(parent)
+            parent = parent.parent
+    return tuple(sorted(missing, key=lambda path: len(path.parts), reverse=True))
+
+
+def _rollback_changes(
+    operations: FileSystem,
+    snapshots: tuple[_PathSnapshot, ...],
+    missing_dirs: tuple[Path, ...],
+) -> tuple[str, ...]:
+    failures: list[str] = []
+    for snapshot in snapshots:
+        try:
+            if snapshot.existed:
+                operations.mkdir(snapshot.path.parent)
+                operations.write_bytes(snapshot.path, snapshot.data or b"")
+            elif operations.exists(snapshot.path):
+                operations.remove_file(snapshot.path)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            failures.append(f"{snapshot.path}: {exc}")
+
+    for directory in missing_dirs:
+        try:
+            if operations.exists(directory):
+                operations.remove_dir(directory)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            # Never delete unrelated state to force rollback completion. If a directory
+            # cannot be removed safely, report it as the remaining partial state.
+            failures.append(f"{directory}: {exc}")
+    return tuple(failures)
 
 
 def _write_change(operations: FileSystem, change: FileChange) -> None:
@@ -508,9 +601,7 @@ def _existing_text(
     display: str,
 ) -> tuple[str, str]:
     if not operations.exists(path) or not operations.is_file(path):
-        raise ValueError(
-            f"apply_patch verification failed: failed to read file: {display}"
-        )
+        raise ValueError(f"patch verification failed: failed to read file: {display}")
     if matches_blocked_pattern(path):
         raise ValueError(f"path is blocked: {display}")
     return _read_text(path, operations)

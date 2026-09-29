@@ -23,6 +23,7 @@ _POSIX_READ_COMMANDS = frozenset(
         "ack",
         "cat",
         "dir",
+        "fd",
         "grep",
         "head",
         "less",
@@ -44,6 +45,50 @@ _SEPARATORS = frozenset({";", "&&", "||", "|"})
 _UNSAFE_CONTROL = frozenset({"&", "(", ")"})
 _REDIRECTIONS = frozenset({"<", ">", "<<", ">>", "<<<"})
 _FIND_EXECUTORS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
+_FD_EXECUTORS = frozenset({"-x", "--exec", "-X", "--exec-batch"})
+_GIT_READ_SUBCOMMANDS = frozenset(
+    {
+        "status",
+        "diff",
+        "log",
+        "show",
+        "grep",
+        "ls-files",
+        "ls-tree",
+        "rev-parse",
+        "blame",
+        "cat-file",
+        "describe",
+    }
+)
+_GIT_GLOBAL_OPTIONS_WITH_VALUES = frozenset({"-C", "--git-dir", "--work-tree"})
+_GIT_UNSAFE_READ_OPTIONS = frozenset(
+    {
+        "-c",
+        "--ext-diff",
+        "--textconv",
+        "--output",
+        "--open-files-in-pager",
+    }
+)
+_FD_OPTIONS_WITH_VALUES = frozenset(
+    {
+        "-d",
+        "--max-depth",
+        "--min-depth",
+        "-e",
+        "--extension",
+        "-E",
+        "--exclude",
+        "--max-results",
+        "--size",
+        "--changed-within",
+        "--changed-before",
+        "--base-directory",
+        "-t",
+        "--type",
+    }
+)
 _GLOB_CHARS = frozenset("*?[")
 _ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.DOTALL)
 
@@ -67,15 +112,21 @@ class ShellAnalysisPolicyEvaluator:
         self,
         action: Action,
         unresolved_policy: ShellUnresolvedPolicy = "ask",
+        mutation_policy: ShellUnresolvedPolicy = "ask",
     ) -> tuple[Constraint, ...]:
         constraints: list[Constraint] = []
         for effect in action.unresolved_effects:
-            dangerous = effect.reason == "dangerous_command"
-            if not dangerous and unresolved_policy == "allow":
+            if effect.reason == "dangerous_command":
+                decision: ShellUnresolvedPolicy = "deny"
+            elif effect.reason == "mutation":
+                decision = mutation_policy
+            else:
+                decision = unresolved_policy
+            if decision == "allow":
                 continue
             constraints.append(
                 Constraint(
-                    decision="deny" if dangerous else unresolved_policy,
+                    decision=decision,
                     source="shell_policy",
                     reason=f"{effect.reason}: {effect.fragment}",
                 )
@@ -166,6 +217,23 @@ def _analyze_posix(command: str) -> ShellAnalysis:
                 continue
             paths.extend(_find_paths(args))
             continue
+        if name == "fd":
+            if any(arg in _FD_EXECUTORS for arg in args):
+                unresolved.append(
+                    UnresolvedEffect(
+                        reason="wrapper_command",
+                        fragment="fd executes commands",
+                    )
+                )
+                continue
+            paths.extend(_fd_paths(args))
+            continue
+        if name == "git":
+            git_paths, git_effect = _git_read_analysis(args)
+            paths.extend(git_paths)
+            if git_effect is not None:
+                unresolved.append(git_effect)
+            continue
         if name in _POSIX_NO_EFFECT_COMMANDS:
             continue
         if name in _POSIX_READ_COMMANDS:
@@ -175,8 +243,8 @@ def _analyze_posix(command: str) -> ShellAnalysis:
             paths.extend(_mutating_paths(name, args))
             unresolved.append(
                 UnresolvedEffect(
-                    reason="wrapper_command",
-                    fragment=f"write command requires approval: {name}",
+                    reason="mutation",
+                    fragment=f"shell command mutates filesystem state: {name}",
                 )
             )
             continue
@@ -321,9 +389,38 @@ def _dynamic_effect(
         )
     if "$" in command:
         return UnresolvedEffect(reason="variable_expansion", fragment="shell variable")
-    if any(any(char in token for char in _GLOB_CHARS) for token in tokens):
+    if _has_unquoted_glob(command):
         return UnresolvedEffect(reason="glob", fragment="shell glob")
     return None
+
+
+def _has_unquoted_glob(command: str) -> bool:
+    """Return whether the shell itself may expand a glob in the command text."""
+    quote: str | None = None
+    escaped = False
+    for char in command:
+        if escaped:
+            escaped = False
+            continue
+        if quote == "'":
+            if char == "'":
+                quote = None
+            continue
+        if quote == '"':
+            if char == '"':
+                quote = None
+            elif char == "\\":
+                escaped = True
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char in _GLOB_CHARS:
+            return True
+    return False
 
 
 def _dangerous_posix(tokens: list[str]) -> str | None:
@@ -370,19 +467,73 @@ def _is_root_recursive_delete(args: list[str]) -> bool:
 def _read_paths(command: str, args: list[str]) -> list[Target]:
     positional: list[str] = []
     skip_next = False
-    options_with_values = {"-c", "-n"} if command in {"head", "tail"} else set()
+    options_with_values = _read_option_values(command)
     for arg in args:
         if skip_next:
             skip_next = False
             continue
-        if arg in options_with_values:
-            skip_next = True
+        option = arg.split("=", 1)[0]
+        if option in options_with_values:
+            if "=" not in arg:
+                skip_next = True
             continue
         if arg and not arg.startswith("-"):
             positional.append(arg)
     if command in {"grep", "rg", "ack"} and positional:
         positional = positional[1:]
     return [_path_target(arg) for arg in positional]
+
+
+def _read_option_values(command: str) -> frozenset[str]:
+    if command in {"head", "tail"}:
+        return frozenset({"-c", "--bytes", "-n", "--lines"})
+    if command == "rg":
+        return frozenset(
+            {
+                "-A",
+                "--after-context",
+                "-B",
+                "--before-context",
+                "-C",
+                "--context",
+                "-e",
+                "--regexp",
+                "-f",
+                "--file",
+                "-g",
+                "--glob",
+                "-t",
+                "--type",
+                "-T",
+                "--type-not",
+                "--iglob",
+                "--max-count",
+                "--max-columns",
+                "--max-depth",
+            }
+        )
+    if command in {"grep", "ack"}:
+        return frozenset(
+            {
+                "-A",
+                "--after-context",
+                "-B",
+                "--before-context",
+                "-C",
+                "--context",
+                "-e",
+                "--regexp",
+                "-f",
+                "--file",
+                "--include",
+                "--exclude",
+                "--include-dir",
+                "--exclude-dir",
+                "-m",
+                "--max-count",
+            }
+        )
+    return frozenset()
 
 
 def _mutating_paths(command: str, args: list[str]) -> list[Target]:
@@ -394,6 +545,101 @@ def _mutating_paths(command: str, args: list[str]) -> list[Target]:
         ]
     access: Literal["write", "delete"] = "delete" if command == "rm" else "write"
     return [_path_target(arg, access=access) for arg in positional]
+
+
+def _git_read_analysis(
+    args: list[str],
+) -> tuple[list[Target], UnresolvedEffect | None]:
+    paths: list[Target] = []
+    index = 0
+    subcommand: str | None = None
+    while index < len(args):
+        arg = args[index]
+        option = arg.split("=", 1)[0]
+        if option in _GIT_UNSAFE_READ_OPTIONS:
+            return (
+                paths,
+                UnresolvedEffect(
+                    reason="wrapper_command",
+                    fragment=f"git option requires approval: {option}",
+                ),
+            )
+        if option in _GIT_GLOBAL_OPTIONS_WITH_VALUES:
+            if "=" in arg:
+                value = arg.split("=", 1)[1]
+                if option in {"-C", "--git-dir", "--work-tree"} and value:
+                    paths.append(_path_target(value))
+                index += 1
+                continue
+            if index + 1 >= len(args):
+                return (
+                    paths,
+                    UnresolvedEffect(
+                        reason="wrapper_command",
+                        fragment=f"git option requires a value: {arg}",
+                    ),
+                )
+            value = args[index + 1]
+            if option in {"-C", "--git-dir", "--work-tree"}:
+                paths.append(_path_target(value))
+            index += 2
+            continue
+        if arg.startswith("-"):
+            index += 1
+            continue
+        subcommand = arg.lower()
+        break
+
+    if subcommand in _GIT_READ_SUBCOMMANDS:
+        remaining = args[index + 1 :]
+        unsafe = next(
+            (
+                arg.split("=", 1)[0]
+                for arg in remaining
+                if arg.split("=", 1)[0] in _GIT_UNSAFE_READ_OPTIONS
+            ),
+            None,
+        )
+        if unsafe is not None:
+            return (
+                paths,
+                UnresolvedEffect(
+                    reason="wrapper_command",
+                    fragment=f"git option requires approval: {unsafe}",
+                ),
+            )
+        return (paths, None)
+    return (
+        paths,
+        UnresolvedEffect(
+            reason="wrapper_command",
+            fragment=(
+                "git command requires approval"
+                if subcommand is None
+                else f"git subcommand requires approval: {subcommand}"
+            ),
+        ),
+    )
+
+
+def _fd_paths(args: list[str]) -> list[Target]:
+    """Extract explicit fd search roots while ignoring common option values."""
+    positional: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        option = arg.split("=", 1)[0]
+        if option in _FD_OPTIONS_WITH_VALUES and "=" not in arg:
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        positional.append(arg)
+    # fd syntax is [pattern] [path]...; with only a pattern the root is cwd.
+    roots = positional[1:] if len(positional) > 1 else []
+    return [_path_target(path) for path in roots]
 
 
 def _find_paths(args: list[str]) -> list[Target]:

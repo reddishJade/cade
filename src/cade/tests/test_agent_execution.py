@@ -12,10 +12,7 @@ from types import MappingProxyType
 from cade.agent._execution import (
     _run_tool_handler,
     execute_tool_calls,
-    is_file_mutation_tool,
-    is_file_read_tool,
     partition_tool_calls_for_execution,
-    should_clear_read_history,
     tool_call_signature,
     update_idle_tool_watchdog,
     update_repeated_tool_watchdog,
@@ -33,6 +30,7 @@ from cade.agent.types import (
     AgentToolResult,
     TextContent,
     ToolCallContent,
+    ToolSpec,
     ToolSpecAdapter,
 )
 from cade.coding_agent.tools.bash import build_bash_tool
@@ -80,6 +78,25 @@ class _MockTool(AgentTool):
         from cade.agent.types import AgentToolResult, TextContent
 
         return AgentToolResult(content=[TextContent(text="ok")])
+
+
+def test_tool_spec_adapter_preserves_execution_mode() -> None:
+    parallel = ToolSpec(
+        name="read",
+        description="",
+        input_hint="",
+        handler=lambda _data, _update: "",
+        execution_mode="parallel",
+    )
+    sequential = ToolSpec(
+        name="write",
+        description="",
+        input_hint="",
+        handler=lambda _data, _update: "",
+    )
+
+    assert ToolSpecAdapter(parallel).execution_mode == "parallel"
+    assert ToolSpecAdapter(sequential).execution_mode is None
 
 
 class TestPartitionToolCalls:
@@ -157,31 +174,6 @@ class TestToolCallSignature:
         c1 = ToolCallContent(id="a", name="read", arguments={"path": "/x"})
         c2 = ToolCallContent(id="b", name="read", arguments={"path": "/y"})
         assert tool_call_signature(c1) != tool_call_signature(c2)
-
-
-class TestFileToolClassification:
-    def test_is_mutation_tool(self) -> None:
-        assert is_file_mutation_tool("write_file")
-        assert not is_file_mutation_tool("read_file")
-
-    def test_is_read_tool(self) -> None:
-        assert is_file_read_tool("read_file")
-        assert not is_file_read_tool("write_file")
-
-    def test_custom_sets(self) -> None:
-        custom_mutation = frozenset({"my_write"})
-        assert is_file_mutation_tool("my_write", custom_mutation)
-        assert not is_file_mutation_tool("write_file", custom_mutation)
-
-
-class TestShouldClearReadHistory:
-    def test_mutation_clears(self) -> None:
-        calls = [ToolCallContent(id="1", name="write_file")]
-        assert should_clear_read_history(calls, [])
-
-    def test_read_only_does_not_clear(self) -> None:
-        calls = [ToolCallContent(id="1", name="read_file")]
-        assert not should_clear_read_history(calls, [])
 
 
 def _make_call(name: str, **kwargs: str) -> ToolCallContent:

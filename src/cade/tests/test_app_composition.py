@@ -103,14 +103,16 @@ def test_real_build_app_minimal_run_and_replay_contract(
     ][:2] == ["inbox/inserted", "inbox/claimed"]
     assert first.registry
     assert {tool.name for tool in first.registry} >= {
-        "read_file",
+        "read",
         "bash",
-        "subagent",
-        "subagent_continue",
-        "subagent_list",
-        "subagent_control",
+        "delegate",
     }
+    assert "patch" in first.agent.composition.gate.tool_path_extractors
+    assert "apply_patch" not in first.agent.composition.gate.tool_path_extractors
     first_request = providers[0].requests[0]
+    first_tool_names = {tool.name for tool in first_request[1]}
+    assert {"read", "write", "edit", "patch", "bash"} <= first_tool_names
+    assert not first_tool_names & {"grep", "glob", "find", "ls", "search_tools"}
     first_envelope = _provider_request_events(first)[0]["data"]
     assert first_envelope["composition_id"] == first.agent.composition.generation_id
     assert first_envelope["message_count"] == len(first_request[0])
@@ -173,4 +175,37 @@ def test_build_app_starts_in_configured_default_mode(
         "Build Mode is active" in str(message.get("content"))
         for message in first_request[0]
     )
+    build_tool_names = {tool.name for tool in first_request[1]}
+    assert {"read", "write", "edit", "patch", "bash"} <= build_tool_names
+    assert not build_tool_names & {"grep", "glob", "find", "ls", "search_tools"}
+    app.close()
+
+
+def test_plan_provider_surface_keeps_bash_without_search_wrappers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    providers: list[_ContractProvider] = []
+    _install_contract_provider(monkeypatch, providers)
+    runtime_config = CadeRuntimeConfig(
+        execution_modes=ExecutionModesRuntimeConfig(default_mode="plan")
+    )
+
+    app = build_app(
+        tmp_path,
+        runtime_config=runtime_config,
+        sessions_dir=tmp_path / "sessions",
+    )
+    app.ask("inspect the project and make a plan")
+
+    first_request = providers[0].requests[0]
+    assert any(
+        "Plan Mode is active" in str(message.get("content"))
+        for message in first_request[0]
+    )
+    plan_tool_names = {tool.name for tool in first_request[1]}
+    assert {"read", "bash", "write", "edit"} <= plan_tool_names
+    assert "patch" not in plan_tool_names
+    assert not plan_tool_names & {"grep", "glob", "find", "ls", "search_tools"}
+
     app.close()

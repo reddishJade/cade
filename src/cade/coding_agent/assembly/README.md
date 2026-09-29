@@ -14,7 +14,7 @@
 build_shared_infra()       build_tool_registry()        build_security_rules()
 - SessionStore             - Builtin Tools              - PermissionEngine
 - MemoryManager            - McpTools                   - Mode Rulesets
-- McpRuntimeRegistry       - search_tools               - ShellAnalyzer
+- McpRuntimeRegistry       - mcp_tool_search            - ShellAnalyzer
 - JsonlAuditLogger                  │                            │
        │                            └─────────────┬──────────────┘
        └────────────────────────────┬─────────────┘
@@ -30,7 +30,7 @@ build_shared_infra()       build_tool_registry()        build_security_rules()
   - `build_shell_from_security`：依据当前系统与配置构造沙箱 Shell。
   - `mode_rulesets_from_runtime_config`：生成 Plan/Build/Act 三种模式下的初始权限规则集。
   - `permission_policy_from_security`：构造路径安全与操作权限策略。
-- **工具注册表装配 ([registry.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/registry.py))**：装配工作区核心工具、MCP 动态工具及工具延迟检索工具（`build_search_tools_tool`）。
+- **工具注册表装配 ([registry.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/registry.py))**：装配工作区核心工具、MCP 动态工具及MCP 延迟发现能力（`mcp_tool_search`）。
 - **Agent 与 Hooks 构建 ([agent.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/agent.py))**：注入模型 Provider、装配外部 Hooks 运行器并返回最终可执行的 `CodingAgentHarness`。
 
 ---

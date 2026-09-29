@@ -202,6 +202,7 @@ class ApprovalRequest:
     transcript: str = ""
     working_directory: str = ""
     turn_id: str = ""
+    execution_mode: str = ""
 
 
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
@@ -252,6 +253,7 @@ class ToolSpec:
     prompt_guidelines: tuple[str, ...] = ()
     action_profile: tuple[str, str] | None = None
     path_extractor: ToolPathExtractor | None = None
+    execution_mode: ToolExecutionMode | None = None
 
 
 def materialize_json_mapping(value: object) -> dict[str, object]:
@@ -335,8 +337,8 @@ class ToolSpecAdapter:
         return self._spec.schema or {}
 
     @property
-    def execution_mode(self) -> None:
-        return None
+    def execution_mode(self) -> ToolExecutionMode | None:
+        return self._spec.execution_mode
 
     @property
     def examples(self) -> list[dict[str, object]]:

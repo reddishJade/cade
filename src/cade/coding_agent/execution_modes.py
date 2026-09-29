@@ -1,7 +1,7 @@
 """Plan / Build / Act 的工具可见性策略与三态 ruleset 初始化。
 
-PlanPolicy.filter_tools() 暴露 _PLAN_TOOLS，外加 write_file/edit_file（限 .cade/plans/*.md）。
-提供默认 ruleset；Build 的结构化项目读写直接执行，shell 与未知动作自动审批。
+Plan 保留完整只读探索能力和 bash，仅允许结构化写入计划文件。
+Build/Act 默认使用最小 coding surface；权限层决定 shell 与写入是否审批。
 """
 
 from __future__ import annotations
@@ -16,6 +16,10 @@ from cade.harness.security.permission_model import Rule
 from cade.harness.security.permissions import PermissionDecision
 
 ExecutionMode = Literal["plan", "build", "act"]
+
+# Structured search helpers remain registered for Plan/read-only and experiments,
+# but ordinary Build/Act coding relies on bash for rg/find/ls composition.
+_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
 
 
 class ExecutionPolicy(Protocol):
@@ -49,7 +53,7 @@ class ExecutionModeState:
             return "auto_review"
         if self._approval_router == "user":
             return "user"
-        return "auto_review" if self._current_mode == "build" else "user"
+        return "auto_review" if self._current_mode in {"plan", "build"} else "user"
 
     def set_mode(self, mode: ExecutionMode) -> None:
         """设置当前执行模式。"""
@@ -81,18 +85,14 @@ class PlanPolicy:
 
     _PLAN_TOOLS = frozenset(
         {
-            "read_file",
-            "glob_files",
-            "find_files",
-            "list_dir",
-            "grep_search",
-            "search_tools",
+            "read",
+            "bash",
             "webfetch",
             "websearch",
             "question",
             "history",
-            "search_memory",
-            "new_context",
+            "recall",
+            "rollover",
         }
     )
 
@@ -100,7 +100,7 @@ class PlanPolicy:
         return tuple(
             tool
             for tool in tools
-            if tool.name in self._PLAN_TOOLS or tool.name in {"write_file", "edit_file"}
+            if tool.name in self._PLAN_TOOLS or tool.name in {"write", "edit"}
         )
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
@@ -109,10 +109,12 @@ class PlanPolicy:
 
 
 class BuildPolicy:
-    """build: 项目内结构化读写直接执行，shell 与未知动作进入审批。"""
+    """build: 最小 coding surface；确定只读 shell 直行，其余副作用进入自动审批。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tools
+        return tuple(
+            tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS
+        )
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # check_call 返回 allow，实际决策由 RuleMatcher 完成
@@ -120,10 +122,12 @@ class BuildPolicy:
 
 
 class ActPolicy:
-    """act: 全部工具可见，写入和 shell 默认 ask。"""
+    """act: 最小 coding surface；写入和未解析/有副作用 shell 进入用户审批。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tools
+        return tuple(
+            tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS
+        )
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # check_call 返回 allow，实际决策由 RuleMatcher 完成
@@ -167,24 +171,28 @@ def mode_notice(mode: str) -> str:
         return (
             '<execution-mode name="plan">\n'
             "Plan Mode is active. Inspect and produce an action plan only. "
-            "Do not modify code or run shell commands. You may create or update "
-            "plan notes under .cade/plans/*.md.\n"
+            "Do not modify project code. Bash is available for exploration: "
+            "known read-only commands run directly, statically known mutations "
+            "are blocked, and commands with unresolved effects are reviewed "
+            "automatically. You may create or update plan notes under "
+            ".cade/plans/*.md.\n"
             "</execution-mode>"
         )
     if mode == "build":
         return (
             '<execution-mode name="build">\n'
-            "Build Mode is active. All tools are enabled. Structured project "
-            "file writes run directly; shell and unmatched actions are reviewed "
-            "automatically without pausing for user approval. Hard safety "
-            "boundaries always apply.\n"
+            "Build Mode is active. Structured project writes and proven read-only "
+            "shell commands run directly; shell commands with unresolved or mutating "
+            "effects are reviewed automatically. Hard safety boundaries always "
+            "apply.\n"
             "</execution-mode>"
         )
     if mode == "act":
         return (
             '<execution-mode name="act">\n'
-            "Act Mode is active. Read tools run directly; writes and shell "
-            "commands require user approval.\n"
+            "Act Mode is active. Read tools and proven read-only shell commands "
+            "run directly; structured writes and shell commands with unresolved or "
+            "mutating effects require user approval.\n"
             "</execution-mode>"
         )
     return ""
@@ -195,79 +203,76 @@ def build_default_mode_rulesets(
 ) -> dict[str, tuple[Rule, ...]]:
     """构建 coding product 的默认执行模式规则。"""
     read_rules = (
-        Rule(action="read_file", effect="allow"),
-        Rule(action="glob_files", effect="allow"),
-        Rule(action="grep_search", effect="allow"),
-        Rule(action="find_files", effect="allow"),
-        Rule(action="list_dir", effect="allow"),
-        Rule(action="search_tools", effect="allow"),
+        Rule(action="read", effect="allow"),
+        Rule(action="glob", effect="allow"),
+        Rule(action="grep", effect="allow"),
+        Rule(action="find", effect="allow"),
+        Rule(action="ls", effect="allow"),
         Rule(action="webfetch", effect="allow"),
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),
         Rule(action="load_skill", effect="allow"),
-        Rule(action="subagent", effect="allow"),
-        Rule(action="search_memory", effect="allow"),
+        Rule(action="delegate", effect="allow"),
+        Rule(action="recall", effect="allow"),
         Rule(action="history", effect="allow"),
-        Rule(action="new_context", effect="allow"),
-        Rule(action="mcp__*", effect="allow"),
+        Rule(action="rollover", effect="allow"),
         Rule(action="mcp_tool_search", effect="allow"),
     )
     write_rules = (
-        Rule(action="write_file", effect="allow"),
-        Rule(action="edit_file", effect="allow"),
-        Rule(action="apply_patch", effect="allow"),
+        Rule(action="write", effect="allow"),
+        Rule(action="edit", effect="allow"),
+        Rule(action="patch", effect="allow"),
     )
     ask_write_rules = tuple(
         Rule(action=rule.action, effect="ask") for rule in write_rules
     )
-    ask_shell_rules = tuple(
-        Rule(action=action, effect="ask") for action in ("bash", "shell")
-    )
+    allow_shell_rules = (Rule(action="bash", effect="allow"),)
 
     plan_rules = read_rules + (
+        Rule(action="bash", effect="allow"),
         Rule(
-            action="write_file",
+            action="write",
             effect="allow",
             resource_pattern=".cade/plans/*.md",
         ),
         Rule(
-            action="edit_file",
+            action="edit",
             effect="allow",
             resource_pattern=".cade/plans/*.md",
         ),
-        Rule(action="write_file", effect="allow", resource_pattern="NOTE.md"),
-        Rule(action="edit_file", effect="allow", resource_pattern="NOTE.md"),
+        Rule(action="write", effect="allow", resource_pattern="NOTE.md"),
+        Rule(action="edit", effect="allow", resource_pattern="NOTE.md"),
     )
     if project_root is not None:
         plan_pattern = (project_root.resolve() / ".cade" / "plans" / "*.md").as_posix()
         plan_rules += (
             Rule(
-                action="write_file",
+                action="write",
                 effect="allow",
                 resource_pattern=plan_pattern,
             ),
             Rule(
-                action="edit_file",
+                action="edit",
                 effect="allow",
                 resource_pattern=plan_pattern,
             ),
             Rule(
-                action="write_file",
+                action="write",
                 effect="allow",
                 resource_pattern=(project_root.resolve() / "NOTE.md").as_posix(),
             ),
             Rule(
-                action="edit_file",
+                action="edit",
                 effect="allow",
                 resource_pattern=(project_root.resolve() / "NOTE.md").as_posix(),
             ),
         )
     return {
         "plan": plan_rules,
-        # Sandbox 不消除项目内破坏和语义风险，Build 仍审查任意 shell 命令。
-        "build": read_rules + write_rules + ask_shell_rules,
-        # Act 以 ask 为兜底；显式放行只读工具，其他工具需用户审批。
-        "act": read_rules + ask_write_rules + ask_shell_rules,
+        # 已确认只读 shell 直接执行；未知或有副作用的 shell 由 analyzer 产生 ask。
+        "build": read_rules + write_rules + allow_shell_rules,
+        # Act 的结构化写入仍 ask；shell 只有未解析/有副作用时进入用户审批。
+        "act": read_rules + ask_write_rules + allow_shell_rules,
     }
 
 
@@ -279,6 +284,13 @@ DEFAULT_MODE_FALLBACKS: dict[str, PermissionDecision] = {
 
 
 DEFAULT_SHELL_UNRESOLVED_POLICIES: dict[str, PermissionDecision] = {
+    "plan": "ask",
+    "build": "ask",
+    "act": "ask",
+}
+
+DEFAULT_SHELL_MUTATION_POLICIES: dict[str, PermissionDecision] = {
+    "plan": "deny",
     "build": "ask",
     "act": "ask",
 }

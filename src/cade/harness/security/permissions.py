@@ -168,9 +168,13 @@ class PermissionEngineConfig:
     mode_fallback: PermissionDecision = "ask"
     """Default decision when no rule matches: plan='deny', build/act='ask'."""
     shell_unresolved_policy: ShellUnresolvedPolicy = "ask"
-    """Mode-level decision when shell effects cannot be determined statically; dangerous commands are always denied."""
+    """Mode-level decision when shell effects cannot be determined statically."""
+    shell_mutation_policy: ShellUnresolvedPolicy = "ask"
+    """Mode-level decision for shell commands statically known to mutate state."""
     approval_policy: ApprovalPolicy = "on-request"
     """Whether ask decisions can be sent to a reviewer; never deterministically denies when no grant matches."""
+    execution_mode: str = ""
+    """Execution mode attached to approval requests so reviewers can enforce mode authority."""
 
 
 class PermissionEngine:
@@ -353,7 +357,8 @@ class PermissionEngine:
 
             shell_constraints = ShellAnalysisPolicyEvaluator().evaluate(
                 action,
-                self._config.shell_unresolved_policy,
+                unresolved_policy=self._config.shell_unresolved_policy,
+                mutation_policy=self._config.shell_mutation_policy,
             )
 
         rules = rule_merge(
@@ -495,7 +500,7 @@ class PermissionEngine:
         path_targets: tuple[Any, ...],
     ) -> bool:
         """判断高风险文件系统输入是否缺少可验证的结构化路径。"""
-        if action.tool in {"read_file", "write_file", "edit_file", "apply_patch"}:
+        if action.tool in {"read", "write", "edit", "patch"}:
             return not path_targets
         if action.capability != "shell" or path_targets:
             return False
@@ -680,6 +685,7 @@ class PermissionEngine:
                 else ""
             ),
             turn_id=approval_turn_id,
+            execution_mode=self._config.execution_mode,
         )
         hitl = approval_callback(request)
         approval_source = (

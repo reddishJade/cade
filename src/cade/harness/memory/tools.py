@@ -40,7 +40,7 @@ def build_memory_tools(manager: MemoryManager) -> tuple[ToolSpec, ...]:
 
     return (
         ToolSpec(
-            name="search_memory",
+            name="recall",
             description=(
                 "Search durable project and user memory for prior rules, "
                 "architecture decisions, verified facts, and reusable solutions."
@@ -71,7 +71,7 @@ def build_memory_tools(manager: MemoryManager) -> tuple[ToolSpec, ...]:
                 "additionalProperties": False,
             },
             prompt_snippet=(
-                "Use search_memory before asking the user to repeat prior "
+                "Use recall before asking the user to repeat prior "
                 "project decisions or constraints."
             ),
         ),

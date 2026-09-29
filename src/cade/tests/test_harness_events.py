@@ -56,12 +56,12 @@ def test_tool_execution_start() -> None:
     state = _StreamTranslationState()
     result = _translate_tool_execution_start(
         ToolExecutionStartEvent(
-            tool_call_id="c1", tool_name="read_file", args={"path": "/x"}
+            tool_call_id="c1", tool_name="read", args={"path": "/x"}
         ),
         state,
     )
     assert isinstance(result, ToolUseStructuredEvent)
-    assert result.data.name == "read_file"
+    assert result.data.name == "read"
 
 
 def test_tool_execution_end() -> None:
@@ -71,10 +71,10 @@ def test_tool_execution_end() -> None:
     result = _translate_tool_execution_end(
         ToolExecutionEndEvent(
             tool_call_id="c1",
-            tool_name="read_file",
+            tool_name="read",
             result=ToolResultMessage(
                 tool_call_id="c1",
-                tool_name="read_file",
+                tool_name="read",
                 content="result text",
                 metadata={
                     "permission_notice": "Allowed by session grant",

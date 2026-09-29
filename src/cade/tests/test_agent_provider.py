@@ -193,14 +193,14 @@ def test_structured_result_uses_only_last_assistant_as_answer() -> None:
                     TextContent(text="I will inspect the file."),
                     ToolCallContent(
                         id="call-1",
-                        name="read_file",
+                        name="read",
                         arguments={"path": "README.md"},
                     ),
                 ]
             ),
             ToolResultMessage(
                 tool_call_id="call-1",
-                tool_name="read_file",
+                tool_name="read",
                 content="contents",
             ),
             AssistantMessage(content=[TextContent(text="The fix is complete.")]),
