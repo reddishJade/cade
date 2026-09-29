@@ -109,6 +109,7 @@ _GIT_UNSAFE_READ_OPTIONS = frozenset(
 )
 _GLOB_CHARS = frozenset("*?[")
 _ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.DOTALL)
+_SED_PRINT_RANGES = re.compile(r"[0-9]+(?:,[0-9]+)?p(?:;[0-9]+(?:,[0-9]+)?p)*")
 
 
 @dataclass(frozen=True)
@@ -240,6 +241,18 @@ def _analyze_posix(command: str) -> ShellAnalysis:
             paths.extend(git_paths)
             if git_effect is not None:
                 unresolved.append(git_effect)
+            continue
+        if name in {"sed", "wc", "nl"}:
+            inspection_paths = _line_inspection_paths(name, args)
+            if inspection_paths is None:
+                unresolved.append(
+                    UnresolvedEffect(
+                        reason="wrapper_command",
+                        fragment=f"command requires approval: {name}",
+                    )
+                )
+            else:
+                paths.extend(inspection_paths)
             continue
         if name in _POSIX_NO_EFFECT_COMMANDS:
             continue
@@ -507,6 +520,25 @@ def _read_paths(command: str, args: list[str]) -> list[Target]:
     if command in {"grep", "rg", "ack"} and positional:
         positional = positional[1:]
     return [_path_target(arg) for arg in positional]
+
+
+def _line_inspection_paths(name: str, args: list[str]) -> list[Target] | None:
+    """仅识别 baseline 中确定只打印到标准输出的行检查形式。"""
+    if name == "sed":
+        if len(args) < 2 or args[0] != "-n":
+            return None
+        if _SED_PRINT_RANGES.fullmatch(args[1]) is None:
+            return None
+        files = args[2:]
+    elif (name == "wc" and args[:1] == ["-l"]) or (
+        name == "nl" and args[:1] == ["-ba"]
+    ):
+        files = args[1:]
+    else:
+        return None
+    if any(file.startswith("-") for file in files):
+        return None
+    return [_path_target(file) for file in files]
 
 
 def _read_option_values(command: str) -> frozenset[str]:
