@@ -37,6 +37,7 @@ jobs:
       - name: Tool / mode / permission 回归测试
         run: >
           uv run --locked pytest -q
+          src/cade/tests/test_agent_execution.py
           src/cade/tests/test_tools_execution_modes.py
           src/cade/tests/test_security_permissions.py
           src/cade/tests/test_shell_policy.py
