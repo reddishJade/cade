@@ -231,6 +231,40 @@ def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
     assert requests[0].execution_mode == "plan"
 
 
+def test_build_routes_external_mcp_tool_to_auto_review(tmp_path: Path) -> None:
+    requests: list[ApprovalRequest] = []
+
+    def approve(request: ApprovalRequest) -> HITLResult:
+        requests.append(request)
+        return HITLResult("allow", "once")
+
+    tool = ToolSpec(
+        "mcp__github__create_issue",
+        "Create an issue in an external GitHub repository",
+        "",
+        lambda _data, _update: "",
+    )
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
+            mode_fallback="ask",
+            execution_mode="build",
+        )
+    )
+
+    result = engine.decide(
+        tool.name,
+        {"title": "test"},
+        tool_spec=tool,
+        approval_callback=approve,
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "allow"
+    assert result.source == "auto_review"
+    assert [request.tool.name for request in requests] == [tool.name]
+
+
 def test_never_policy_rejects_ask_without_calling_reviewer() -> None:
     requests: list[ApprovalRequest] = []
 
