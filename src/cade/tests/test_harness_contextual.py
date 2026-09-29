@@ -18,17 +18,17 @@ class TestContextualRetrievalState:
 
     def test_record_tool_result(self) -> None:
         state = ContextualRetrievalState(Path("/project"))
-        state.record_tool_result("read_file", "loaded 42 lines of code")
+        state.record_tool_result("read", "loaded 42 lines of code")
         rendered = state.render()
-        assert "read_file" in rendered
+        assert "read" in rendered
         assert "recent_tool_results" in rendered
 
     def test_record_tool_call(self) -> None:
         state = ContextualRetrievalState(Path("/project"))
-        state.record_tool_call(tool="write_file", input_brief="path=/x", status="allow")
+        state.record_tool_call(tool="write", input_brief="path=/x", status="allow")
         rendered = state.render()
         assert "recent_tool_calls" in rendered
-        assert "write_file" in rendered
+        assert "write" in rendered
 
     def test_cache_invalidation_on_record(self) -> None:
         state = ContextualRetrievalState(Path("/project"))
@@ -40,7 +40,7 @@ class TestContextualRetrievalState:
     def test_clear_removes_previous_session_projection(self) -> None:
         state = ContextualRetrievalState(Path("/project"))
         state.record_file(Path("src/main.py"))
-        state.record_tool_result("read_file", "loaded content")
+        state.record_tool_result("read", "loaded content")
 
         state.clear()
 

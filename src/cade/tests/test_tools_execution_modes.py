@@ -63,55 +63,53 @@ class TestDefaultCodingSurface:
         tools = tuple(
             _tool(name)
             for name in (
-                "read_file",
-                "write_file",
-                "edit_file",
-                "apply_patch",
+                "read",
+                "write",
+                "edit",
+                "patch",
                 "bash",
-                "grep_search",
-                "glob_files",
-                "find_files",
-                "list_dir",
-                "search_tools",
-                "websearch",
+                "grep",
+                "glob",
+                "find",
+                "list",
+                                "websearch",
             )
         )
         names = {tool.name for tool in BuildPolicy().filter_tools(tools)}
-        assert {"read_file", "write_file", "edit_file", "apply_patch", "bash"} <= names
+        assert {"read", "write", "edit", "patch", "bash"} <= names
         assert "websearch" in names
         assert not names & {
-            "grep_search",
-            "glob_files",
-            "find_files",
-            "list_dir",
-            "search_tools",
-        }
+            "grep",
+            "glob",
+            "find",
+            "list",
+                    }
 
     def test_act_hides_structured_search_helpers(self) -> None:
         tools = tuple(
             _tool(name)
             for name in (
-                "read_file",
-                "write_file",
-                "edit_file",
-                "apply_patch",
+                "read",
+                "write",
+                "edit",
+                "patch",
                 "bash",
-                "grep_search",
-                "glob_files",
+                "grep",
+                "glob",
             )
         )
         names = {tool.name for tool in ActPolicy().filter_tools(tools)}
-        assert names == {"read_file", "write_file", "edit_file", "apply_patch", "bash"}
+        assert names == {"read", "write", "edit", "patch", "bash"}
 
     def test_plan_keeps_structured_search_until_shell_policy_changes(self) -> None:
         tools = (
-            _tool("read_file"),
+            _tool("read"),
             _tool("bash"),
-            _tool("grep_search"),
-            _tool("glob_files"),
+            _tool("grep"),
+            _tool("glob"),
         )
         names = {tool.name for tool in PlanPolicy().filter_tools(tools)}
-        assert names == {"read_file", "grep_search", "glob_files"}
+        assert names == {"read", "grep", "glob"}
 
 
 class TestPlanPolicy:
@@ -120,7 +118,7 @@ class TestPlanPolicy:
 
         tools = (
             ToolSpec(
-                name="read_file", description="", input_hint="", handler=lambda d, _: ""
+                name="read", description="", input_hint="", handler=lambda d, _: ""
             ),
             ToolSpec(
                 name="bash", description="", input_hint="", handler=lambda d, _: ""
@@ -128,7 +126,7 @@ class TestPlanPolicy:
         )
         filtered = PlanPolicy().filter_tools(tools)
         names = {t.name for t in filtered}
-        assert "read_file" in names
+        assert "read" in names
         assert "bash" not in names
 
 

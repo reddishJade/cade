@@ -181,7 +181,7 @@ def test_hook_constraint_uses_the_canonical_resolver() -> None:
         )
     )
 
-    result = engine.decide("read_file", {"path": "README.md"})
+    result = engine.decide("read", {"path": "README.md"})
 
     assert result.decision == "deny"
     assert result.source == "hook"
@@ -240,7 +240,7 @@ def test_auto_review_cannot_create_session_grant() -> None:
 def test_unresolved_restricted_path_is_explicit_deny() -> None:
     engine = PermissionEngine(PermissionEngineConfig(restricted_dirs=("secrets",)))
 
-    result = engine.decide("read_file", {})
+    result = engine.decide("read", {})
 
     assert result.decision == "deny"
     assert result.blocked is True
@@ -263,7 +263,7 @@ def test_external_path_denial_has_actionable_remediation(
     engine = PermissionEngine(PermissionEngineConfig(project_root=tmp_path))
     outside = tmp_path.parent / "outside.txt"
 
-    result = engine.decide("read_file", {"path": str(outside)})
+    result = engine.decide("read", {"path": str(outside)})
 
     assert result.decision == "deny"
     assert result.reason_code == "outside_approved_roots"
@@ -329,7 +329,7 @@ def test_exact_environment_file_read_override_is_allowed(tmp_path: Path) -> None
         )
     )
 
-    result = engine.decide("read_file", {"path": str(env_path)})
+    result = engine.decide("read", {"path": str(env_path)})
 
     assert result.decision == "allow"
     assert result.blocked is False
@@ -347,8 +347,8 @@ def test_environment_override_is_exact_and_access_scoped(tmp_path: Path) -> None
         )
     )
 
-    write_result = engine.decide("write_file", {"path": str(env_path)})
-    other_result = engine.decide("read_file", {"path": str(tmp_path / ".env.local")})
+    write_result = engine.decide("write", {"path": str(env_path)})
+    other_result = engine.decide("read", {"path": str(tmp_path / ".env.local")})
 
     assert write_result.decision == "deny"
     assert write_result.reason_code == "sensitive_path"
@@ -368,7 +368,7 @@ def test_credential_path_cannot_use_sensitive_override(tmp_path: Path) -> None:
         )
     )
 
-    result = engine.decide("read_file", {"path": str(key_path)})
+    result = engine.decide("read", {"path": str(key_path)})
 
     assert result.decision == "deny"
     assert result.reason_code == "sensitive_path"
@@ -428,7 +428,7 @@ def test_file_grant_store_preserves_concurrent_updates(tmp_path: Path) -> None:
     records = [
         GrantRecord(
             capability="read",
-            operation="read_file",
+            operation="read",
             target_kind="path",
             target_pattern=f"src/file_{index}.py",
             access="read",
