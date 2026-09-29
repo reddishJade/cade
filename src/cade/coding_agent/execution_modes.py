@@ -20,7 +20,7 @@ ExecutionMode = Literal["plan", "build", "act"]
 # Structured search helpers remain registered for Plan/read-only and experiments,
 # but ordinary Build/Act coding relies on bash for rg/find/ls composition.
 _STRUCTURED_SEARCH_TOOLS = frozenset(
-    {"glob_files", "find_files", "list_dir", "grep_search", "search_tools"}
+    {"glob", "find", "list", "grep"}
 )
 
 
@@ -87,18 +87,18 @@ class PlanPolicy:
 
     _PLAN_TOOLS = frozenset(
         {
-            "read_file",
-            "glob_files",
-            "find_files",
-            "list_dir",
-            "grep_search",
+            "read",
+            "glob",
+            "find",
+            "list",
+            "grep",
             "search_tools",
             "webfetch",
             "websearch",
             "question",
             "history",
-            "search_memory",
-            "new_context",
+            "recall",
+            "rollover",
         }
     )
 
@@ -106,7 +106,7 @@ class PlanPolicy:
         return tuple(
             tool
             for tool in tools
-            if tool.name in self._PLAN_TOOLS or tool.name in {"write_file", "edit_file"}
+            if tool.name in self._PLAN_TOOLS or tool.name in {"write", "edit"}
         )
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
@@ -205,27 +205,26 @@ def build_default_mode_rulesets(
 ) -> dict[str, tuple[Rule, ...]]:
     """构建 coding product 的默认执行模式规则。"""
     read_rules = (
-        Rule(action="read_file", effect="allow"),
-        Rule(action="glob_files", effect="allow"),
-        Rule(action="grep_search", effect="allow"),
-        Rule(action="find_files", effect="allow"),
-        Rule(action="list_dir", effect="allow"),
-        Rule(action="search_tools", effect="allow"),
+        Rule(action="read", effect="allow"),
+        Rule(action="glob", effect="allow"),
+        Rule(action="grep", effect="allow"),
+        Rule(action="find", effect="allow"),
+        Rule(action="list", effect="allow"),
         Rule(action="webfetch", effect="allow"),
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),
         Rule(action="load_skill", effect="allow"),
         Rule(action="subagent", effect="allow"),
-        Rule(action="search_memory", effect="allow"),
+        Rule(action="recall", effect="allow"),
         Rule(action="history", effect="allow"),
-        Rule(action="new_context", effect="allow"),
+        Rule(action="rollover", effect="allow"),
         Rule(action="mcp__*", effect="allow"),
         Rule(action="mcp_tool_search", effect="allow"),
     )
     write_rules = (
-        Rule(action="write_file", effect="allow"),
-        Rule(action="edit_file", effect="allow"),
-        Rule(action="apply_patch", effect="allow"),
+        Rule(action="write", effect="allow"),
+        Rule(action="edit", effect="allow"),
+        Rule(action="patch", effect="allow"),
     )
     ask_write_rules = tuple(
         Rule(action=rule.action, effect="ask") for rule in write_rules
@@ -236,38 +235,38 @@ def build_default_mode_rulesets(
 
     plan_rules = read_rules + (
         Rule(
-            action="write_file",
+            action="write",
             effect="allow",
             resource_pattern=".cade/plans/*.md",
         ),
         Rule(
-            action="edit_file",
+            action="edit",
             effect="allow",
             resource_pattern=".cade/plans/*.md",
         ),
-        Rule(action="write_file", effect="allow", resource_pattern="NOTE.md"),
-        Rule(action="edit_file", effect="allow", resource_pattern="NOTE.md"),
+        Rule(action="write", effect="allow", resource_pattern="NOTE.md"),
+        Rule(action="edit", effect="allow", resource_pattern="NOTE.md"),
     )
     if project_root is not None:
         plan_pattern = (project_root.resolve() / ".cade" / "plans" / "*.md").as_posix()
         plan_rules += (
             Rule(
-                action="write_file",
+                action="write",
                 effect="allow",
                 resource_pattern=plan_pattern,
             ),
             Rule(
-                action="edit_file",
+                action="edit",
                 effect="allow",
                 resource_pattern=plan_pattern,
             ),
             Rule(
-                action="write_file",
+                action="write",
                 effect="allow",
                 resource_pattern=(project_root.resolve() / "NOTE.md").as_posix(),
             ),
             Rule(
-                action="edit_file",
+                action="edit",
                 effect="allow",
                 resource_pattern=(project_root.resolve() / "NOTE.md").as_posix(),
             ),

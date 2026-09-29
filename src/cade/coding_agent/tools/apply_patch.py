@@ -104,12 +104,12 @@ def build_apply_patch_tool(
         return _apply_changes(root, ops, context_state, changes)
 
     return ToolSpec(
-        name="apply_patch",
+        name="patch",
         description=(
             "Edit, add, delete, or move multiple files in a single tool call "
             "using a structured patch. Applies related multi-file changes "
             "atomically: execution failures roll the affected paths back to "
-            "their pre-call state. Prefer edit_file for single-file targeted "
+            "their pre-call state. Prefer edit for single-file targeted "
             "replacements."
         ),
         input_hint='JSON: {"patch_text": "*** Begin Patch\\n*** Update File: /abs/path/to/app.py\\n@@\\n-old\\n+new\\n*** End Patch"}',
@@ -117,9 +117,9 @@ def build_apply_patch_tool(
         schema=APPLY_PATCH_SCHEMA,
         prompt_snippet="Edit, add, delete, or move multiple files in a single patch",
         prompt_guidelines=(
-            "Use apply_patch for multi-file edits that touch 3+ files or need atomic application.",
-            "Use apply_patch to move or delete files (edit_file cannot do this).",
-            "Each apply_patch hunk must start with *** Begin Patch and end with *** End Patch.",
+            "Use patch for multi-file edits that touch 3+ files or need atomic application.",
+            "Use patch to move or delete files (edit cannot do this).",
+            "Each patch hunk must start with *** Begin Patch and end with *** End Patch.",
             "Patch paths must be project-relative and may not escape the project sandbox.",
         ),
         action_profile=("patch", "path"),

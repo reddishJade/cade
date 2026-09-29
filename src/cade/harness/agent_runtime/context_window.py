@@ -228,7 +228,7 @@ def build_new_context_tool(
 
     return (
         ToolSpec(
-            name="new_context",
+            name="rollover",
             description=(
                 "Close the current model context and continue in a fresh window "
                 "without generating a summary. Update NOTE.md when possible with the "
@@ -248,7 +248,7 @@ def build_new_context_tool(
                 "additionalProperties": False,
             },
             prompt_snippet=(
-                "Use new_context when the current working set is stale or near its "
+                "Use rollover when the current working set is stale or near its "
                 "token budget. Save progress in NOTE.md before the budget is exhausted; no summary is generated."
             ),
         ),

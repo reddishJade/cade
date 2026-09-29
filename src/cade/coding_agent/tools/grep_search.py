@@ -32,7 +32,7 @@ def build_grep_tool(
         return _grep(root, _search_utils.get_rg_path(), data)
 
     return ToolSpec(
-        name="grep_search",
+        name="grep",
         description=(
             "Fast content search tool that works with any codebase size. "
             "Searches file contents using regular expressions. "

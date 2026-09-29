@@ -62,7 +62,7 @@ def build_glob_tools(
 
     return (
         ToolSpec(
-            name="glob_files",
+            name="glob",
             description="Find project files by glob pattern. Use **/*.py for recursive search.",
             input_hint='JSON: {"path": ".", "pattern": "**/*.py", "max_results": 100}',
             handler=glob_files,
@@ -93,7 +93,7 @@ def build_glob_tools(
             },
         ),
         ToolSpec(
-            name="find_files",
+            name="find",
             description=(
                 "Find files recursively by name or path glob. "
                 "Basename-only patterns (e.g. '*.py') automatically match at any depth."
@@ -128,7 +128,7 @@ def build_glob_tools(
             },
         ),
         ToolSpec(
-            name="list_dir",
+            name="list",
             description="List directory contents. Entries sorted alphabetically, '/' suffix for directories. Includes dotfiles.",
             input_hint='JSON: {"path": "src/cade", "limit": 100}',
             handler=list_dir,

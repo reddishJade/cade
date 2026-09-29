@@ -68,10 +68,10 @@ def build_write_file_tools(
 
     return (
         ToolSpec(
-            name="write_file",
+            name="write",
             description=(
                 "Create a new text file or intentionally replace an entire file. "
-                "Prefer edit_file for targeted changes to an existing file."
+                "Prefer edit for targeted changes to an existing file."
             ),
             input_hint='JSON: {"path": "/absolute/path/to/file", "content": "..."}',
             handler=lambda data, _on_update=None: _handler(
@@ -80,15 +80,15 @@ def build_write_file_tools(
             schema=WRITE_FILE_SCHEMA,
             prompt_snippet="Create new files or deliberately replace entire files",
             prompt_guidelines=(
-                "Use write_file only for new files or deliberate full-file rewrites.",
+                "Use write only for new files or deliberate full-file rewrites.",
             ),
         ),
         ToolSpec(
-            name="edit_file",
+            name="edit",
             description=(
                 "Modify an existing text file with a targeted replacement. "
                 "old_text must match exactly, including whitespace and newlines. "
-                "Use write_file for new files or full replacements."
+                "Use write for new files or full replacements."
             ),
             input_hint='JSON: {"path": "/absolute/path/to/file", "old_text": "...", "new_text": "..."}',
             handler=lambda data, _on_update=None: _handler(
@@ -99,7 +99,7 @@ def build_write_file_tools(
                 "Make precise file edits with exact old_text/new_text replacements"
             ),
             prompt_guidelines=(
-                "Use edit_file for precise changes to existing files.",
+                "Use edit for precise changes to existing files.",
                 "When editing, provide the full old_text that should be replaced.",
                 "Keep old_text as small as possible while still unique in the file.",
             ),
