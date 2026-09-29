@@ -202,6 +202,7 @@ class ApprovalRequest:
     transcript: str = ""
     working_directory: str = ""
     turn_id: str = ""
+    execution_mode: str = ""
 
 
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
