@@ -103,12 +103,9 @@ def test_real_build_app_minimal_run_and_replay_contract(
     ][:2] == ["inbox/inserted", "inbox/claimed"]
     assert first.registry
     assert {tool.name for tool in first.registry} >= {
-        "read_file",
+        "read",
         "bash",
-        "subagent",
-        "subagent_continue",
-        "subagent_list",
-        "subagent_control",
+        "delegate",
     }
     first_request = providers[0].requests[0]
     first_envelope = _provider_request_events(first)[0]["data"]

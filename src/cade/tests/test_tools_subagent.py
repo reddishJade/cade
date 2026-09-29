@@ -17,6 +17,7 @@ from cade.coding_agent.tools.subagent import (
     _bounded_prompt,
     _max_concurrent,
     _parse_tasks,
+    build_subagent_tools,
 )
 from cade.harness.agent_runtime.cancellation import CancellationToken
 from cade.harness.agent_runtime.composition import AgentComposition
@@ -130,6 +131,14 @@ def _tool(name: str) -> ToolSpec:
         handler=lambda _data, _update: ToolOutput("ok"),
         schema={"type": "object", "properties": {}},
     )
+
+
+def test_delegate_is_single_model_facing_child_tool(tmp_path: Path) -> None:
+    manager = _manager(tmp_path, _Provider())
+    tools = build_subagent_tools(manager)
+
+    assert [tool.name for tool in tools] == ["delegate"]
+    assert len(tools[0].schema["oneOf"]) == 3
 
 
 def test_parse_single_requires_explicit_mode() -> None:
@@ -326,7 +335,7 @@ async def test_control_requires_current_direct_parent(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_cold_activation_cannot_gain_new_tools(tmp_path: Path) -> None:
     provider = _Provider()
-    read_tool = _tool("read_file")
+    read_tool = _tool("read")
     created_manager = _manager(tmp_path, provider, (read_tool,))
     created = await created_manager.execute(
         description="bounded authority",
@@ -353,7 +362,7 @@ async def test_cold_activation_cannot_gain_new_tools(tmp_path: Path) -> None:
     )
     await expanded_manager.send(created.child_session_id, "second turn")
 
-    assert provider.tool_requests == [["read_file"], ["read_file"]]
+    assert provider.tool_requests == [["read"], ["read"]]
 
 
 @pytest.mark.asyncio

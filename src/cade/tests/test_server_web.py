@@ -65,13 +65,13 @@ def test_final_event_keeps_metrics() -> None:
 
 def test_message_start_event_with_pydantic_message() -> None:
     message = AssistantMessage(
-        content=[TextContent(text="hi"), ToolCallContent(id="t1", name="grep_search")]
+        content=[TextContent(text="hi"), ToolCallContent(id="t1", name="grep")]
     )
     payload = event_to_dict(MessageStartStructuredEvent("message_start", 1, message))
     blocks = payload["data"]["content"]
     assert blocks[0] == {"type": "text", "text": "hi"}
     assert blocks[1]["type"] == "tool_call"
-    assert blocks[1]["name"] == "grep_search"
+    assert blocks[1]["name"] == "grep"
 
 
 class _FakeAgent:
