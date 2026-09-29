@@ -29,7 +29,32 @@ def _bash_tool() -> ToolSpec:
     return ToolSpec("bash", "", "", lambda _data, _update: "")
 
 
-def test_build_routes_unknown_shell_command_to_approval() -> None:
+def test_build_allows_proven_read_only_git_without_review(tmp_path: Path) -> None:
+    def reject_unexpected_review(_request: ApprovalRequest) -> HITLResult:
+        raise AssertionError("read-only git command should not require review")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
+            mode_fallback="ask",
+            shell_unresolved_policy="ask",
+            execution_mode="build",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "git log --oneline -10"},
+        tool_spec=_bash_tool(),
+        approval_callback=reject_unexpected_review,
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "allow"
+    assert result.blocked is False
+
+
+def test_build_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
     requests: list[ApprovalRequest] = []
 
     def approve(request: ApprovalRequest) -> HITLResult:
@@ -38,22 +63,52 @@ def test_build_routes_unknown_shell_command_to_approval() -> None:
 
     engine = PermissionEngine(
         PermissionEngineConfig(
-            mode_ruleset=(Rule(action="bash", effect="ask"),),
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
             mode_fallback="ask",
             shell_unresolved_policy="ask",
+            execution_mode="build",
         )
     )
 
     result = engine.decide(
         "bash",
-        {"command": "git log --oneline -10"},
+        {"command": "pytest -q"},
         tool_spec=_bash_tool(),
         approval_callback=approve,
+        approvals_reviewer="auto_review",
     )
 
     assert result.decision == "allow"
-    assert result.blocked is False
-    assert len(requests) == 1
+    assert result.source == "auto_review"
+    assert [request.execution_mode for request in requests] == ["build"]
+
+
+def test_act_routes_unresolved_shell_to_user_review(tmp_path: Path) -> None:
+    requests: list[ApprovalRequest] = []
+
+    def approve(request: ApprovalRequest) -> HITLResult:
+        requests.append(request)
+        return HITLResult("allow", "once")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["act"],
+            mode_fallback="ask",
+            shell_unresolved_policy="ask",
+            execution_mode="act",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "pytest -q"},
+        tool_spec=_bash_tool(),
+        approval_callback=approve,
+        approvals_reviewer="user",
+    )
+
+    assert result.decision == "allow"
+    assert [request.execution_mode for request in requests] == ["act"]
 
 
 def test_plan_allows_proven_read_only_shell_without_review(tmp_path: Path) -> None:
@@ -65,6 +120,7 @@ def test_plan_allows_proven_read_only_shell_without_review(tmp_path: Path) -> No
             mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
             mode_fallback="deny",
             shell_unresolved_policy="ask",
+            execution_mode="plan",
         )
     )
 
@@ -92,6 +148,7 @@ def test_plan_denies_explicit_mutating_shell_before_review(tmp_path: Path) -> No
             mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
             mode_fallback="deny",
             shell_unresolved_policy="ask",
+            execution_mode="plan",
         )
     )
 
@@ -120,6 +177,7 @@ def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
             mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
             mode_fallback="deny",
             shell_unresolved_policy="ask",
+            execution_mode="plan",
         )
     )
 
@@ -134,6 +192,7 @@ def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
     assert result.decision == "allow"
     assert result.source == "auto_review"
     assert len(requests) == 1
+    assert requests[0].execution_mode == "plan"
 
 
 def test_never_policy_rejects_ask_without_calling_reviewer() -> None:
