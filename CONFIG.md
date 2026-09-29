@@ -142,7 +142,7 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 
 | mode | 工具可见性 | 内置规则与 fallback |
 |---|---|---|
-| `plan` | `read` / `bash` 等探索能力，以及受限的 `write` / `edit` | 已确认只读 shell 直接执行；明确常见 mutation 拒绝；未解析 shell 进入自动 reviewer；仅允许结构化写入计划文件；fallback=`deny` |
+| `plan` | `read` / `bash` 等探索能力，以及受限的 `write` / `edit` | 已确认只读 shell 直接执行；analyzer 确认的 mutation 由 mode policy 拒绝；未解析 shell 进入自动 reviewer；仅允许结构化写入计划文件；fallback=`deny` |
 | `build` | 日常 coding surface | 结构化读写和已确认只读 shell 直接执行；未解析/有副作用 shell 进入自动 reviewer；fallback=`ask` |
 | `act` | 日常 coding surface | 只读和已确认只读 shell 直接执行；结构化写入与未解析/有副作用 shell 进入用户审批；fallback=`ask` |
 
