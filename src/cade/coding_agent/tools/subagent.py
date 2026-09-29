@@ -136,6 +136,24 @@ class _SubagentContinueHandler:
         )
 
 
+class _DelegateHandler:
+    """Single model-facing entry point for child creation and continuation."""
+
+    def __init__(self, manager: SubagentSessionManager) -> None:
+        self.manager = manager
+        self._create = _SubagentHandler(manager)
+        self._continue = _SubagentContinueHandler(manager)
+
+    def __call__(
+        self,
+        data: dict[str, Any],
+        on_update: Callable[[str], None] | None = None,
+    ) -> str:
+        if str(data.get("session_id", "")).strip():
+            return self._continue(data, on_update)
+        return self._create(data, on_update)
+
+
 class _SubagentListHandler:
     def __init__(self, manager: SubagentSessionManager) -> None:
         self.manager = manager
@@ -189,7 +207,8 @@ def bind_subagent_runtime(
         for spec in registry
         if isinstance(
             spec.handler,
-            _SubagentHandler
+            _DelegateHandler
+            | _SubagentHandler
             | _SubagentContinueHandler
             | _SubagentListHandler
             | _SubagentControlHandler,
@@ -201,129 +220,98 @@ def bind_subagent_runtime(
 
 def build_subagent_tools(
     manager: SubagentSessionManager,
-) -> tuple[ToolSpec, ToolSpec, ToolSpec, ToolSpec]:
-    """构建创建、续接、枚举与控制 child session 的明确工具。"""
-    return (
-        _build_subagent_tool(manager),
-        _build_subagent_continue_tool(manager),
-        _build_subagent_list_tool(manager),
-        _build_subagent_control_tool(manager),
-    )
+) -> tuple[ToolSpec, ...]:
+    """Expose one delegate primitive over the child-session runtime."""
+    return (_build_delegate_tool(manager),)
 
 
-def _build_subagent_tool(manager: SubagentSessionManager) -> ToolSpec:
+def _build_delegate_tool(manager: SubagentSessionManager) -> ToolSpec:
+    task_item_schema = {
+        "type": "object",
+        "properties": {
+            "description": {"type": "string"},
+            "prompt": {"type": "string"},
+            "subagent_type": {
+                "type": "string",
+                "enum": ["coding", "research", "default"],
+            },
+        },
+        "required": ["description", "prompt"],
+        "additionalProperties": False,
+    }
     return ToolSpec(
-        name="subagent",
+        name="delegate",
         description=(
-            "Create local session-backed child agents. Use one_shot for bounded work; "
-            "use continuable when later follow-up turns will be required. Parallel tasks "
-            "are always independent one_shot children."
+            "Delegate work to a session-backed child agent. Omit session_id to "
+            "create a child; provide session_id and prompt to continue an existing "
+            "continuable child. Batch tasks are independent one-shot children."
         ),
         input_hint=(
-            'JSON: {"description":"label","prompt":"...","mode":"one_shot",'
-            '"subagent_type":"coding"}'
+            'JSON create: {"description":"label","prompt":"...","mode":"one_shot"}; '
+            'continue: {"session_id":"...","prompt":"..."}'
         ),
-        handler=_SubagentHandler(manager),
+        handler=_DelegateHandler(manager),
         schema={
-            "type": "object",
-            "properties": {
-                "description": {"type": "string"},
-                "prompt": {"type": "string"},
-                "mode": {
-                    "type": "string",
-                    "enum": ["one_shot", "continuable"],
-                },
-                "subagent_type": {
-                    "type": "string",
-                    "enum": ["coding", "research", "default"],
-                },
-                "tasks": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "description": {"type": "string"},
-                            "prompt": {"type": "string"},
-                            "subagent_type": {
-                                "type": "string",
-                                "enum": ["coding", "research", "default"],
-                            },
-                        },
-                        "required": ["description", "prompt"],
-                        "additionalProperties": False,
-                    },
-                },
-                "max_concurrent": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": MAX_BATCH_TASKS,
-                },
-            },
             "oneOf": [
-                {"required": ["description", "prompt", "mode"]},
-                {"required": ["tasks"]},
-            ],
-            "additionalProperties": False,
+                {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "prompt": {"type": "string"},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["one_shot", "continuable"],
+                        },
+                        "subagent_type": {
+                            "type": "string",
+                            "enum": ["coding", "research", "default"],
+                        },
+                    },
+                    "required": ["description", "prompt", "mode"],
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "prompt": {"type": "string"},
+                    },
+                    "required": ["session_id", "prompt"],
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "tasks": {
+                            "type": "array",
+                            "items": task_item_schema,
+                            "minItems": 1,
+                            "maxItems": MAX_BATCH_TASKS,
+                        },
+                        "max_concurrent": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": MAX_BATCH_TASKS,
+                        },
+                        "subagent_type": {
+                            "type": "string",
+                            "enum": ["coding", "research", "default"],
+                        },
+                    },
+                    "required": ["tasks"],
+                    "additionalProperties": False,
+                },
+            ]
         },
-        prompt_snippet="Delegate work to an independent durable child session",
+        prompt_snippet="Delegate bounded work to a child agent",
         prompt_guidelines=(
             "Use one_shot for bounded independent work.",
-            "Use continuable only when later subagent_continue turns are expected.",
+            "Use continuable only when later delegate calls with session_id are expected.",
+            "Continue a child with delegate(session_id, prompt); keep the returned child session id.",
             "Child sessions receive the explicit task, not the parent transcript.",
         ),
     )
 
-
-def _build_subagent_continue_tool(manager: SubagentSessionManager) -> ToolSpec:
-    return ToolSpec(
-        name="subagent_continue",
-        description="Send the next FIFO turn to a direct continuable child session.",
-        input_hint='JSON: {"session_id":"...","prompt":"..."}',
-        handler=_SubagentContinueHandler(manager),
-        schema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string"},
-                "prompt": {"type": "string"},
-            },
-            "required": ["session_id", "prompt"],
-            "additionalProperties": False,
-        },
-    )
-
-
-def _build_subagent_list_tool(manager: SubagentSessionManager) -> ToolSpec:
-    return ToolSpec(
-        name="subagent_list",
-        description="List durable direct child sessions without activating them.",
-        input_hint="JSON: {}",
-        handler=_SubagentListHandler(manager),
-        schema={"type": "object", "properties": {}, "additionalProperties": False},
-    )
-
-
-def _build_subagent_control_tool(manager: SubagentSessionManager) -> ToolSpec:
-    return ToolSpec(
-        name="subagent_control",
-        description=(
-            "Interrupt a direct child turn or release an idle child activation. "
-            "Release never deletes the durable child session."
-        ),
-        input_hint=('JSON: {"session_id":"...","action":"interrupt|release"}'),
-        handler=_SubagentControlHandler(manager),
-        schema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string"},
-                "action": {
-                    "type": "string",
-                    "enum": ["interrupt", "release"],
-                },
-            },
-            "required": ["session_id", "action"],
-            "additionalProperties": False,
-        },
-    )
 
 
 def _parse_tasks(data: dict[str, Any]) -> list[dict[str, str]] | str:
