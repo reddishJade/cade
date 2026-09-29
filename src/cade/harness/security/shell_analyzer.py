@@ -23,7 +23,6 @@ _POSIX_READ_COMMANDS = frozenset(
         "ack",
         "cat",
         "dir",
-        "fd",
         "grep",
         "head",
         "less",
@@ -46,7 +45,6 @@ _UNSAFE_CONTROL = frozenset({"&", "(", ")"})
 _REDIRECTIONS = frozenset({"<", ">", "<<", ">>", "<<<"})
 _FIND_EXECUTORS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
 _FIND_FILE_OUTPUT_ACTIONS = frozenset({"-fprint", "-fprint0", "-fprintf", "-fls"})
-_FD_EXECUTORS = frozenset({"-x", "--exec", "-X", "--exec-batch"})
 _GIT_READ_SUBCOMMANDS = frozenset(
     {
         "status",
@@ -70,24 +68,6 @@ _GIT_UNSAFE_READ_OPTIONS = frozenset(
         "--textconv",
         "--output",
         "--open-files-in-pager",
-    }
-)
-_FD_OPTIONS_WITH_VALUES = frozenset(
-    {
-        "-d",
-        "--max-depth",
-        "--min-depth",
-        "-e",
-        "--extension",
-        "-E",
-        "--exclude",
-        "--max-results",
-        "--size",
-        "--changed-within",
-        "--changed-before",
-        "--base-directory",
-        "-t",
-        "--type",
     }
 )
 _GLOB_CHARS = frozenset("*?[")
@@ -211,17 +191,6 @@ def _analyze_posix(command: str) -> ShellAnalysis:
             find_paths, find_effects = _find_analysis(args)
             paths.extend(find_paths)
             unresolved.extend(find_effects)
-            continue
-        if name == "fd":
-            if any(arg in _FD_EXECUTORS for arg in args):
-                unresolved.append(
-                    UnresolvedEffect(
-                        reason="wrapper_command",
-                        fragment="fd executes commands",
-                    )
-                )
-                continue
-            paths.extend(_fd_paths(args))
             continue
         if name == "git":
             git_paths, git_effect = _git_read_analysis(args)
@@ -615,26 +584,6 @@ def _git_read_analysis(
             ),
         ),
     )
-
-
-def _fd_paths(args: list[str]) -> list[Target]:
-    """Extract explicit fd search roots while ignoring common option values."""
-    positional: list[str] = []
-    skip_next = False
-    for arg in args:
-        if skip_next:
-            skip_next = False
-            continue
-        option = arg.split("=", 1)[0]
-        if option in _FD_OPTIONS_WITH_VALUES and "=" not in arg:
-            skip_next = True
-            continue
-        if arg.startswith("-"):
-            continue
-        positional.append(arg)
-    # fd syntax is [pattern] [path]...; with only a pattern the root is cwd.
-    roots = positional[1:] if len(positional) > 1 else []
-    return [_path_target(path) for path in roots]
 
 
 def _find_paths(args: list[str]) -> list[Target]:
