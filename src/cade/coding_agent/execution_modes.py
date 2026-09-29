@@ -172,7 +172,7 @@ def mode_notice(mode: str) -> str:
             '<execution-mode name="plan">\n'
             "Plan Mode is active. Inspect and produce an action plan only. "
             "Do not modify project code. Bash is available for exploration: "
-            "known read-only commands run directly, explicit mutating commands "
+            "known read-only commands run directly, statically known mutations "
             "are blocked, and commands with unresolved effects are reviewed "
             "automatically. You may create or update plan notes under "
             ".cade/plans/*.md.\n"
@@ -231,11 +231,6 @@ def build_default_mode_rulesets(
 
     plan_rules = read_rules + (
         Rule(action="bash", effect="allow"),
-        Rule(action="bash", effect="deny", command="cp"),
-        Rule(action="bash", effect="deny", command="mkdir"),
-        Rule(action="bash", effect="deny", command="mv"),
-        Rule(action="bash", effect="deny", command="rm"),
-        Rule(action="bash", effect="deny", command="touch"),
         Rule(
             action="write",
             effect="allow",
@@ -291,6 +286,12 @@ DEFAULT_MODE_FALLBACKS: dict[str, PermissionDecision] = {
 
 DEFAULT_SHELL_UNRESOLVED_POLICIES: dict[str, PermissionDecision] = {
     "plan": "ask",
+    "build": "ask",
+    "act": "ask",
+}
+
+DEFAULT_SHELL_MUTATION_POLICIES: dict[str, PermissionDecision] = {
+    "plan": "deny",
     "build": "ask",
     "act": "ask",
 }
