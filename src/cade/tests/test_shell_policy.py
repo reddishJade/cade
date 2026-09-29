@@ -155,4 +155,6 @@ def test_recursive_root_delete_is_denied_but_scoped_delete_requires_approval() -
     assert [constraint.decision for constraint in root_constraints] == ["deny"]
     assert [constraint.decision for constraint in build_constraints] == ["ask"]
     assert [constraint.decision for constraint in plan_constraints] == ["deny"]
-    assert [effect.reason for effect in scoped_action.unresolved_effects] == ["mutation"]
+    assert [effect.reason for effect in scoped_action.unresolved_effects] == [
+        "mutation"
+    ]
