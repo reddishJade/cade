@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from cade.harness.skills import SkillRegistry
 
 
-
 def _discover_skills(
     project_root: Path,
     runtime_config: CadeRuntimeConfig,
