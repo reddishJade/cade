@@ -45,6 +45,7 @@ _SEPARATORS = frozenset({";", "&&", "||", "|"})
 _UNSAFE_CONTROL = frozenset({"&", "(", ")"})
 _REDIRECTIONS = frozenset({"<", ">", "<<", ">>", "<<<"})
 _FIND_EXECUTORS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
+_FIND_FILE_OUTPUT_ACTIONS = frozenset({"-fprint", "-fprint0", "-fprintf", "-fls"})
 _FD_EXECUTORS = frozenset({"-x", "--exec", "-X", "--exec-batch"})
 _GIT_READ_SUBCOMMANDS = frozenset(
     {
@@ -207,15 +208,9 @@ def _analyze_posix(command: str) -> ShellAnalysis:
         if name is None:
             continue
         if name == "find":
-            if any(arg.lower() in _FIND_EXECUTORS for arg in args):
-                unresolved.append(
-                    UnresolvedEffect(
-                        reason="wrapper_command",
-                        fragment="find executes or deletes paths",
-                    )
-                )
-                continue
-            paths.extend(_find_paths(args))
+            find_paths, find_effects = _find_analysis(args)
+            paths.extend(find_paths)
+            unresolved.extend(find_effects)
             continue
         if name == "fd":
             if any(arg in _FD_EXECUTORS for arg in args):
@@ -649,6 +644,50 @@ def _find_paths(args: list[str]) -> list[Target]:
             break
         paths.append(_path_target(arg))
     return paths
+
+
+def _find_analysis(args: list[str]) -> tuple[list[Target], list[UnresolvedEffect]]:
+    """提取 find 搜索根和文件输出目标，并保守标记执行动作。"""
+    paths = _find_paths(args)
+    effects: list[UnresolvedEffect] = []
+    index = 0
+    while index < len(args):
+        action = args[index].lower()
+        if action in _FIND_FILE_OUTPUT_ACTIONS:
+            if index + 1 >= len(args) or args[index + 1].startswith("-"):
+                effects.append(
+                    UnresolvedEffect(
+                        reason="wrapper_command",
+                        fragment=f"find action lacks output path: {action}",
+                    )
+                )
+                index += 1
+                continue
+            paths.append(_path_target(args[index + 1], access="write"))
+            effects.append(
+                UnresolvedEffect(
+                    reason="mutation",
+                    fragment=f"find writes output file: {action}",
+                )
+            )
+            index += 3 if action == "-fprintf" else 2
+            continue
+        if action == "-delete":
+            effects.append(
+                UnresolvedEffect(
+                    reason="mutation",
+                    fragment="find deletes paths",
+                )
+            )
+        elif action in _FIND_EXECUTORS:
+            effects.append(
+                UnresolvedEffect(
+                    reason="wrapper_command",
+                    fragment="find executes commands",
+                )
+            )
+        index += 1
+    return paths, effects
 
 
 def _path_target(

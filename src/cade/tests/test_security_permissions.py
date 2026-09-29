@@ -200,6 +200,71 @@ def test_plan_denies_explicit_mutating_shell_before_review(tmp_path: Path) -> No
     assert requests == []
 
 
+# 失效情形：Plan 放行文件输出、Build/Act 绕过各自 reviewer、越界输出被审批覆盖。
+@pytest.mark.parametrize(
+    ("mode", "reviewer", "expected_decision", "expected_reviews"),
+    [
+        ("plan", "auto_review", "deny", 0),
+        ("build", "auto_review", "allow", 1),
+        ("act", "user", "allow", 1),
+    ],
+)
+def test_find_file_output_obeys_mode_mutation_authority(
+    tmp_path: Path,
+    mode: str,
+    reviewer: str,
+    expected_decision: str,
+    expected_reviews: int,
+) -> None:
+    requests: list[ApprovalRequest] = []
+
+    def approve(request: ApprovalRequest) -> HITLResult:
+        requests.append(request)
+        return HITLResult("allow", "once")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            project_root=tmp_path,
+            mode_ruleset=build_default_mode_rulesets(tmp_path)[mode],
+            mode_fallback="deny" if mode == "plan" else "ask",
+            shell_unresolved_policy="ask",
+            shell_mutation_policy="deny" if mode == "plan" else "ask",
+            execution_mode=mode,
+        )
+    )
+    result = engine.decide(
+        "bash",
+        {"command": "find . -fprint report.txt"},
+        tool_spec=_bash_tool(),
+        approval_callback=approve,
+        approvals_reviewer=reviewer,
+    )
+
+    assert result.decision == expected_decision
+    assert len(requests) == expected_reviews
+
+
+def test_find_file_output_outside_workspace_is_denied(tmp_path: Path) -> None:
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            project_root=tmp_path,
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
+            mode_fallback="ask",
+            shell_mutation_policy="ask",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "find . -fprint ../outside.txt"},
+        tool_spec=_bash_tool(),
+        approval_callback=lambda _request: HITLResult("allow", "once"),
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "deny"
+
+
 def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
     requests: list[ApprovalRequest] = []
 
