@@ -32,6 +32,26 @@ def test_fd_is_read_only_but_exec_mode_requires_review() -> None:
     ]
 
 
+def test_read_only_git_commands_do_not_require_review() -> None:
+    for command in (
+        "git status --short",
+        "git diff --stat",
+        "git log --oneline -10",
+        "git show HEAD",
+        "git -C src status",
+    ):
+        analysis = analyze_shell_command(command)
+        assert analysis.unresolved_effects == ()
+
+
+def test_mutating_git_command_requires_review() -> None:
+    analysis = analyze_shell_command("git commit -am 'update'")
+
+    assert [effect.reason for effect in analysis.unresolved_effects] == [
+        "wrapper_command"
+    ]
+
+
 def test_unknown_command_requires_approval_without_guessing_side_effects() -> None:
     action = ActionExtractor().extract(
         "bash",
