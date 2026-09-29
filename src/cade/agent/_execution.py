@@ -581,7 +581,6 @@ def tool_calls_signature(calls: list[ToolCallContent]) -> str:
     return "|".join(sorted(parts))
 
 
-
 def is_tool_productive_default(
     tool_calls: list[ToolCallContent],
     tool_results: list[ToolResultMessage],
