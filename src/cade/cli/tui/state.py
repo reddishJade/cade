@@ -734,7 +734,7 @@ class _TuiState:
     def _tool_label(self, name: str, raw_input: ToolInput) -> str:
         """生成普通工具卡片使用的标题。"""
         label = brief_input(name, raw_input)
-        if name == "list":
+        if name == "ls":
             path = Path(str(raw_input.get("path", ".")))
             if self.project_root is not None and not path.is_absolute():
                 path = self.project_root / path
@@ -884,12 +884,12 @@ def _successful_tool_detail(
     if render_intent is not None:
         return render_intent_summary(render_intent, content)
     text = content.rstrip()
-    if name in {"bash", "hypa_shell", "shell"}:
+    if name == "bash":
         return _tool_output_preview(text) if text else "done"
     if name == "read":
         count = sum(bool(re.match(r"^\d+: ", line)) for line in content.splitlines())
         return f"Read {count} lines"
-    if name == "list":
+    if name == "ls":
         entries = [
             line.strip()
             for line in content.splitlines()
@@ -918,7 +918,7 @@ def _append_permission_notice(detail: str, permission_notice: str) -> str:
 
 def _is_exploration_call(name: str, raw_input: ToolInput) -> bool:
     """判断 agent 工具调用是否可安全归入只读探索组。"""
-    if name in {"read", "list", "grep", "glob", "find"}:
+    if name in {"read", "ls", "grep", "glob", "find"}:
         return True
     if name != "bash":
         return False
@@ -942,6 +942,8 @@ def _is_exploration_call(name: str, raw_input: ToolInput) -> bool:
             "grep",
             "ack",
             "find",
+            "fd",
+            "git",
         }
         and not analysis.unresolved_effects
         and all(path.access == "read" for path in analysis.resolved_paths)
@@ -960,12 +962,14 @@ def _exploration_label(name: str, raw_input: ToolInput) -> str:
             "ls": "List",
             "dir": "List",
             "find": "List",
+            "fd": "List",
+            "git": "Read",
         }.get(primary or "", "Read")
         return f"{prefix} {single_line_preview(command)}"
     label = brief_input(name, raw_input)
     if name in {"grep", "rg", "ack"}:
         return f"Search {label.removeprefix('grep ')}"
-    if name in {"glob", "find", "list", "ls", "dir"}:
+    if name in {"glob", "find", "ls", "dir"}:
         return f"List {label.removeprefix('glob ').removeprefix('ls ')}"
     if name in {"read", "cat", "head", "tail", "less", "more"}:
         return f"Read {label.removeprefix('read ')}"
