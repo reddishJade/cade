@@ -53,11 +53,7 @@ class ExecutionModeState:
             return "auto_review"
         if self._approval_router == "user":
             return "user"
-        return (
-            "auto_review"
-            if self._current_mode in {"plan", "build"}
-            else "user"
-        )
+        return "auto_review" if self._current_mode in {"plan", "build"} else "user"
 
     def set_mode(self, mode: ExecutionMode) -> None:
         """设置当前执行模式。"""
