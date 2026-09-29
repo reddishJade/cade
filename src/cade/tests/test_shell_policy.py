@@ -143,7 +143,16 @@ def test_recursive_root_delete_is_denied_but_scoped_delete_requires_approval() -
     )
 
     root_constraints = ShellAnalysisPolicyEvaluator().evaluate(root_action)
-    scoped_constraints = ShellAnalysisPolicyEvaluator().evaluate(scoped_action)
+    build_constraints = ShellAnalysisPolicyEvaluator().evaluate(
+        scoped_action,
+        mutation_policy="ask",
+    )
+    plan_constraints = ShellAnalysisPolicyEvaluator().evaluate(
+        scoped_action,
+        mutation_policy="deny",
+    )
 
     assert [constraint.decision for constraint in root_constraints] == ["deny"]
-    assert [constraint.decision for constraint in scoped_constraints] == ["ask"]
+    assert [constraint.decision for constraint in build_constraints] == ["ask"]
+    assert [constraint.decision for constraint in plan_constraints] == ["deny"]
+    assert [effect.reason for effect in scoped_action.unresolved_effects] == ["mutation"]
