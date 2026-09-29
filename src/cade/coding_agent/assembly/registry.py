@@ -80,7 +80,7 @@ def _build_child_registry(
             "patch",
             "glob",
             "find",
-            "list",
+            "ls",
             "grep",
             "webfetch",
             "websearch",
