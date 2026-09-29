@@ -214,7 +214,7 @@ def build_default_mode_rulesets(
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),
         Rule(action="load_skill", effect="allow"),
-        Rule(action="subagent", effect="allow"),
+        Rule(action="delegate", effect="allow"),
         Rule(action="recall", effect="allow"),
         Rule(action="history", effect="allow"),
         Rule(action="rollover", effect="allow"),
