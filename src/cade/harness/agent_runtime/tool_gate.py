@@ -388,6 +388,7 @@ class ToolGate:
             default_mode_rulesets=self._default_mode_rulesets,
             mode_fallbacks=self._mode_fallbacks,
             shell_unresolved_policies=self._shell_unresolved_policies,
+            shell_mutation_policies=self._shell_mutation_policies,
             tool_path_extractors=self._tool_path_extractors,
         )
 
