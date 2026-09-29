@@ -14,6 +14,24 @@ def test_read_only_pipeline_exposes_literal_paths_without_approval() -> None:
     assert analysis.unresolved_effects == ()
 
 
+def test_quoted_rg_glob_is_not_treated_as_shell_expansion() -> None:
+    analysis = analyze_shell_command("rg needle src -g '*.py'")
+
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == ["src"]
+
+
+def test_fd_is_read_only_but_exec_mode_requires_review() -> None:
+    read_only = analyze_shell_command("fd parser src")
+    executing = analyze_shell_command("fd parser src -x echo {}")
+
+    assert read_only.unresolved_effects == ()
+    assert [target.value for target in read_only.resolved_paths] == ["src"]
+    assert [effect.reason for effect in executing.unresolved_effects] == [
+        "wrapper_command"
+    ]
+
+
 def test_unknown_command_requires_approval_without_guessing_side_effects() -> None:
     action = ActionExtractor().extract(
         "bash",
