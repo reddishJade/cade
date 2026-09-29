@@ -134,13 +134,16 @@ class ContextualRetrievalState:
             if self._tool_results:
                 lines.append("recent_tool_results:")
                 lines.extend(
-                    f"- {result.tool}: {result.summary}" for result in self._tool_results
+                    f"- {result.tool}: {result.summary}"
+                    for result in self._tool_results
                 )
             if self._tool_calls:
                 lines.append("recent_tool_calls:")
                 for call in self._tool_calls:
                     approval = (
-                        f" approval={call.approval_scope}" if call.approval_scope else ""
+                        f" approval={call.approval_scope}"
+                        if call.approval_scope
+                        else ""
                     )
                     target = f" target={call.target_path}" if call.target_path else ""
                     lines.append(
