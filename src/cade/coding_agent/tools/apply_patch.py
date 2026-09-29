@@ -567,11 +567,9 @@ def _rollback_changes(
         try:
             if operations.exists(directory):
                 operations.remove_dir(directory)
-        except OSError:
-            # A directory may have become non-empty for reasons unrelated to this patch.
-            # Leave it in place rather than deleting unrelated state.
-            continue
         except Exception as exc:
+            # Never delete unrelated state to force rollback completion. If a directory
+            # cannot be removed safely, report it as the remaining partial state.
             failures.append(f"{directory}: {exc}")
     return tuple(failures)
 
