@@ -203,9 +203,7 @@ def test_replacement_rejects_input_inside_tool_batch() -> None:
         encode_surface_messages(
             [
                 AssistantMessage(
-                    content=[
-                        ToolCallContent(id="read-a", name="read", arguments={})
-                    ]
+                    content=[ToolCallContent(id="read-a", name="read", arguments={})]
                 ),
                 UserMessage(content="interrupting input"),
                 ToolResultMessage(tool_call_id="read-a", content="a"),
