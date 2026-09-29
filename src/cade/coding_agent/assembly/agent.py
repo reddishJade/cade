@@ -19,6 +19,7 @@ from cade.agent.types import ApprovalCallback, ToolSpec
 from cade.ai.providers.base import ModelProvider
 from cade.coding_agent.execution_modes import (
     DEFAULT_MODE_FALLBACKS,
+    DEFAULT_SHELL_MUTATION_POLICIES,
     DEFAULT_SHELL_UNRESOLVED_POLICIES,
     build_default_mode_rulesets,
 )
@@ -233,7 +234,8 @@ def build_agent(
         default_mode_rulesets=build_default_mode_rulesets(project_root),
         mode_fallbacks=DEFAULT_MODE_FALLBACKS,
         shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
-        tool_path_extractors={"apply_patch": extract_patch_paths},
+        shell_mutation_policies=DEFAULT_SHELL_MUTATION_POLICIES,
+        tool_path_extractors={"patch": extract_patch_paths},
     )
     composition = AgentComposition.create(
         primary_provider=llm,
