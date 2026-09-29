@@ -90,10 +90,6 @@ class PlanPolicy:
     _PLAN_TOOLS = frozenset(
         {
             "read",
-            "glob",
-            "find",
-            "list",
-            "grep",
             "bash",
             "webfetch",
             "websearch",
