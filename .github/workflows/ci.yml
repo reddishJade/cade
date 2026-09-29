@@ -32,6 +32,19 @@ jobs:
         run: uv run --locked ruff format --check src/
       - name: Pyright 检查
         run: uv run --locked pyright src/
+      - name: Tool / mode / permission 回归测试
+        run: >
+          uv run --locked pytest -q
+          src/cade/tests/test_tools_execution_modes.py
+          src/cade/tests/test_security_permissions.py
+          src/cade/tests/test_shell_policy.py
+          src/cade/tests/test_approval_reviewer.py
+          src/cade/tests/test_tools_apply_patch.py
+          src/cade/tests/test_harness_tool_gate.py
+          src/cade/tests/test_app_composition.py
+          src/cade/tests/test_tools_subagent.py
+          src/cade/tests/test_memory.py
+          src/cade/tests/test_context_window.py
       - name: 命令行启动检查
         run: uv run --locked cade --help
       - name: 构建分发包
