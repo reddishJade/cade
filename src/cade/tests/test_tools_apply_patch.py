@@ -136,7 +136,6 @@ class TestExtractPatchPaths:
         assert extract_patch_paths("not a dict") == ()
 
 
-
 class _FailOnWriteFileSystem(LocalFileSystem):
     def __init__(self, fail_on_write: int) -> None:
         self._fail_on_write = fail_on_write
