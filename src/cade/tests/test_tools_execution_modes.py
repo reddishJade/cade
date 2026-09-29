@@ -39,11 +39,24 @@ class TestDefaultModeRulesets:
             "act": "ask",
         }
         assert DEFAULT_SHELL_UNRESOLVED_POLICIES == {
+            "plan": "ask",
             "build": "ask",
             "act": "ask",
         }
         build_shell = next(rule for rule in rulesets["build"] if rule.action == "bash")
         assert build_shell.effect == "ask"
+        plan_shell = next(
+            rule
+            for rule in rulesets["plan"]
+            if rule.action == "bash" and rule.command is None
+        )
+        plan_rm = next(
+            rule
+            for rule in rulesets["plan"]
+            if rule.action == "bash" and rule.command == "rm"
+        )
+        assert plan_shell.effect == "allow"
+        assert plan_rm.effect == "deny"
         plan_patterns = {
             rule.resource_pattern
             for rule in rulesets["plan"]
@@ -101,7 +114,7 @@ class TestDefaultCodingSurface:
         names = {tool.name for tool in ActPolicy().filter_tools(tools)}
         assert names == {"read", "write", "edit", "patch", "bash"}
 
-    def test_plan_keeps_structured_search_until_shell_policy_changes(self) -> None:
+    def test_plan_keeps_bash_and_structured_search_helpers(self) -> None:
         tools = (
             _tool("read"),
             _tool("bash"),
@@ -109,7 +122,7 @@ class TestDefaultCodingSurface:
             _tool("glob"),
         )
         names = {tool.name for tool in PlanPolicy().filter_tools(tools)}
-        assert names == {"read", "grep", "glob"}
+        assert names == {"read", "bash", "grep", "glob"}
 
 
 class TestPlanPolicy:
@@ -127,7 +140,7 @@ class TestPlanPolicy:
         filtered = PlanPolicy().filter_tools(tools)
         names = {t.name for t in filtered}
         assert "read" in names
-        assert "bash" not in names
+        assert "bash" in names
 
 
 class TestExecutionModeState:
@@ -174,11 +187,16 @@ class TestExecutionModeState:
             shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
         )
 
+        state.set_mode("plan")
+        plan_snapshot = gate.snapshot()
         state.set_mode("build")
         build_snapshot = gate.snapshot()
         state.set_mode("act")
         act_snapshot = gate.snapshot()
 
+        assert plan_snapshot.shell_unresolved_policy == "ask"
+        assert plan_snapshot.approvals_reviewer == "auto_review"
+        assert plan_snapshot.approval_callback is auto
         assert build_snapshot.shell_unresolved_policy == "ask"
         assert build_snapshot.approvals_reviewer == "auto_review"
         assert build_snapshot.approval_callback is auto
