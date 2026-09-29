@@ -35,7 +35,12 @@ def build_glob_tools(
         base = _safe_path(root, str(data.get("path", ".")))
         max_results = _validated_int(data, "max_results", MAX_GLOB_RESULTS, minimum=1)
         return _glob_files(
-            root, base, pattern, max_results, _search_utils.get_rg_path()
+            root,
+            base,
+            pattern,
+            max_results,
+            _search_utils.get_fd_path(),
+            _search_utils.get_rg_path(),
         )
 
     def find_files(
@@ -48,7 +53,12 @@ def build_glob_tools(
         base = _safe_path(root, str(data.get("path", ".")))
         max_results = _validated_int(data, "max_results", MAX_GLOB_RESULTS, minimum=1)
         return _find_files(
-            root, base, pattern, max_results, _search_utils.get_rg_path()
+            root,
+            base,
+            pattern,
+            max_results,
+            _search_utils.get_fd_path(),
+            _search_utils.get_rg_path(),
         )
 
     def list_dir(
@@ -161,25 +171,62 @@ def build_glob_tools(
 
 
 def _glob_files(
-    root: Path, base: Path, pattern: str, max_results: int, rg: str | None
+    root: Path,
+    base: Path,
+    pattern: str,
+    max_results: int,
+    fd: str | None,
+    rg: str | None,
 ) -> str:
+    if fd:
+        try:
+            return _glob_with_fd(root, base, pattern, max_results, fd)
+        except FileNotFoundError:
+            pass
     if rg:
         return _glob_with_rg(root, base, pattern, max_results, rg)
     return _glob_with_python(root, base, pattern, max_results, recursive_basename=False)
 
 
 def _find_files(
-    root: Path, base: Path, pattern: str, max_results: int, rg: str | None
+    root: Path,
+    base: Path,
+    pattern: str,
+    max_results: int,
+    fd: str | None,
+    rg: str | None,
 ) -> str:
     normalized = pattern.replace("\\", "/").removeprefix("./")
     if "/" not in normalized:
         normalized = f"**/{normalized}"
 
+    if fd:
+        try:
+            return _glob_with_fd(root, base, normalized, max_results, fd)
+        except FileNotFoundError:
+            pass
     if rg:
         return _glob_with_rg(root, base, normalized, max_results, rg)
     return _glob_with_python(
         root, base, normalized, max_results, recursive_basename=True
     )
+
+
+def _glob_with_fd(
+    root: Path, base: Path, pattern: str, max_results: int, fd: str
+) -> str:
+    files = (
+        _search_utils.enumerate_search_files(root, base, use_external=False)
+        if base.is_file()
+        else _search_utils._enumerate_with_fd(root, base, fd)
+    )
+    matcher = _search_utils.build_path_matcher(pattern, recursive_basename=True)
+    matching_files = [
+        path
+        for path in files
+        if matcher(path.name if base.is_file() else path.relative_to(base).as_posix())
+    ]
+    return _render_external_matches(root, matching_files, max_results)
 
 
 def _glob_with_rg(
@@ -237,7 +284,11 @@ def _glob_with_rg(
                 continue
             files.append(path)
 
-    files.sort(key=lambda p: p.as_posix().lower())
+    return _render_external_matches(root, files, max_results)
+
+
+def _render_external_matches(root: Path, files: list[Path], max_results: int) -> str:
+    files.sort(key=lambda path: path.as_posix().lower())
     matches = [display_path(root, p) for p in files[:max_results]]
     truncated = len(files) > max_results
 
@@ -263,7 +314,7 @@ def _glob_with_python(
     recursive_basename: bool,
 ) -> str:
     try:
-        files = _search_utils.enumerate_search_files(root, base, use_ripgrep=False)
+        files = _search_utils.enumerate_search_files(root, base, use_external=False)
     except FileNotFoundError as exc:
         raise ValueError(str(exc)) from exc
 

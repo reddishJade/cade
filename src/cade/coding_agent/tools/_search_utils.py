@@ -15,6 +15,11 @@ _RG_PATH: str | None = None
 _RG_CHECKED = False
 
 
+def get_fd_path() -> str | None:
+    """查找 fd 或 fdfind 可执行文件。"""
+    return get_tool_path("fd")
+
+
 def get_rg_path() -> str | None:
     """缓存可用的 rg 路径，并在工具被移走后重新解析。"""
     global _RG_PATH, _RG_CHECKED
@@ -31,9 +36,9 @@ def _rg_available(path: str) -> bool:
 def enumerate_search_files(
     root: Path,
     base: Path,
-    use_ripgrep: bool = True,
+    use_external: bool = True,
 ) -> list[Path]:
-    """枚举可搜索文件，优先使用 ripgrep，回退到 Python walk。"""
+    """枚举可搜索文件，依次使用 fd、ripgrep 和 Python walk。"""
     if not base.exists():
         raise FileNotFoundError(f"Path not found: {_display(root, base)}")
     if base.is_file():
@@ -41,7 +46,13 @@ def enumerate_search_files(
     if not base.is_dir():
         raise NotADirectoryError(f"Not a directory: {_display(root, base)}")
 
-    if use_ripgrep:
+    if use_external:
+        fd = get_fd_path()
+        if fd:
+            try:
+                return _enumerate_with_fd(root, base, fd)
+            except FileNotFoundError:
+                pass
         rg = get_rg_path()
         if rg:
             try:
@@ -49,6 +60,42 @@ def enumerate_search_files(
             except FileNotFoundError:
                 pass
     return _enumerate_with_python(root, base)
+
+
+def _enumerate_with_fd(root: Path, base: Path, fd: str) -> list[Path]:
+    command = [
+        fd,
+        "--type",
+        "file",
+        "--print0",
+        "--no-require-git",
+        "--",
+        ".",
+        str(base),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if completed.returncode not in (0, 1):
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"fd file discovery failed: {detail or completed.returncode}")
+
+    files: list[Path] = []
+    for raw_path in completed.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        path = Path(os.fsdecode(raw_path))
+        if not path.is_absolute():
+            path = root / path
+        path = path.resolve()
+        if path.is_file() and not _is_search_path_excluded(root, path):
+            files.append(path)
+    files.sort(key=lambda path: path.as_posix().lower())
+    return files
 
 
 def _enumerate_with_ripgrep(root: Path, base: Path, rg: str) -> list[Path]:

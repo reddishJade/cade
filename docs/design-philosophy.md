@@ -384,7 +384,7 @@ Git 工程中的每个用户 turn 可以建立 pre/post tree snapshot。快照�
 
 ### 6.4 搜索：发现与阅读分工
 
-`glob`、`find`、`ls` 与 `grep` 保留为可选结构化搜索实现，供受限环境和消融实验使用。正常 Build/Act/Plan coding surface 依赖 `bash` 组合 `rg`、`fd`、`git` 等原生命令；结构化 helper 不默认占据 model tool schema。ripgrep 可用时这些 helper 仍优先使用，Python walk/grep 提供确定性回退。
+`glob`、`find`、`ls` 与 `grep` 保留为可选结构化搜索实现，供受限环境和消融实验使用。正常 Build/Act/Plan coding surface 依赖 `bash` 组合 `rg`、`fd`、`git` 等原生命令；结构化 helper 不默认占据 model tool schema。`glob`/`find` 的文件发现优先使用 `fd`，回退到 `rg` 和 Python walk；`grep` 的内容搜索优先使用 `rg`，回退到 Python grep。
 
 结果拥有数量上限、长行截断、尾部截断和 metadata。项目文件补全使用最多 5000 个文件与 75 ms 时间预算的短生命周期索引。
 

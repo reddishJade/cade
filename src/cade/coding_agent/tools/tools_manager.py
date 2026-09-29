@@ -19,6 +19,7 @@ class ExternalToolDefinition:
 
 
 _TOOLS: dict[str, ExternalToolDefinition] = {
+    "fd": ExternalToolDefinition(display_name="fd", candidate_names=("fd", "fdfind")),
     "rg": ExternalToolDefinition(display_name="rg", candidate_names=("rg",)),
 }
 

@@ -26,7 +26,7 @@ read / write / edit / patch / bash
   - `text_edit.py`：基于行范围和精确匹配的替换辅助引擎。
   - `file_image.py`：多模态图片文件支持与 Base64 提取。
 - **文件检索与代码搜索**：
-  - `glob_search.py`：高性能文件树通配符检索（model-facing `glob`、`find`、`ls`）。
+  - `glob_search.py`：文件树通配符检索（model-facing `glob`、`find`、`ls`）；文件发现优先使用 `fd`，回退到 `rg` 或 Python。
   - `grep_search.py`：基于 Ripgrep 的代码内容搜索（model-facing `grep`）。
   - `file_index.py` / `_search_utils.py`：工程目录索引构建与过滤支持。
 - **环境交互与进程执行**：
