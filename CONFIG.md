@@ -142,9 +142,9 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 
 | mode | 工具可见性 | 内置规则与 fallback |
 |---|---|---|
-| `plan` | 只读工具，以及 `write_file` / `edit_file` | 只读允许；仅允许写入或编辑 `.cade/plans/*.md`；fallback=`deny`，不进入 HITL |
-| `build` | 全部工具 | 项目内结构化读写允许；shell 和未匹配动作自动 review；fallback=`ask`（内部 review，不是人工询问） |
-| `act` | 全部工具 | 只读允许，写和 shell 询问；fallback=`ask` |
+| `plan` | `read` / `bash` 等探索能力，以及受限的 `write` / `edit` | 已确认只读 shell 直接执行；明确常见 mutation 拒绝；未解析 shell 进入自动 reviewer；仅允许结构化写入计划文件；fallback=`deny` |
+| `build` | 日常 coding surface | 结构化读写和已确认只读 shell 直接执行；未解析/有副作用 shell 进入自动 reviewer；fallback=`ask` |
+| `act` | 日常 coding surface | 只读和已确认只读 shell 直接执行；结构化写入与未解析/有副作用 shell 进入用户审批；fallback=`ask` |
 
 每个 mode 可配置 `rules` 数组。用户规则追加到内置规则之后，匹配采用 findLast
 语义（最后一条匹配规则生效），所以用户规则优先。fallback 不作为 catch-all `*`
@@ -157,7 +157,7 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
     "build": {
       "rules": [
         {"action": "bash", "effect": "ask", "command": "git", "subcommand": "push"},
-        {"action": "write_file", "effect": "deny", "resource_pattern": "secrets/**"}
+        {"action": "write", "effect": "deny", "resource_pattern": "secrets/**"}
       ]
     },
     "act": {
@@ -173,7 +173,7 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `action` | string | 必填，工具名或通配符，如 `bash`、`write_file`、`*` |
+| `action` | string | 必填，工具名或通配符，如 `bash`、`write`、`*` |
 | `effect` | string | 必填，`allow`、`ask`、`deny` |
 | `command` | string/null | shell 主命令，可使用通配符 |
 | `subcommand` | string/null | shell 精确子命令 |
@@ -267,7 +267,7 @@ deny。使用 `/hooks` 查看每项来源、启用状态、运行次数和最近
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `approval_policy` | string | `"on-request"` | `on-request`：处理规则产生的 `ask`；`never`：未匹配已有 grant 时拒绝 |
-| `approval_router` | string | `"mode"` | `ask` 的审批路由：`mode` 按模式（build→自动 reviewer，act→用户）；`user` 强制用户；`auto` 强制自动 reviewer |
+| `approval_router` | string | `"mode"` | `ask` 的审批路由：`mode` 按模式（plan/build→自动 reviewer，act→用户）；`user` 强制用户；`auto` 强制自动 reviewer |
 | `non_workspace_access` | bool | `true` | `false` 时忽略外部目录白名单，工作区外一律拒绝 |
 | `auto_review_timeout_seconds` | number | `90` | 自动 reviewer 的总 deadline，范围 0–300 秒（不含 0） |
 | `sandbox` | object | 见下文 | Linux Agent shell 的文件系统与网络隔离策略 |
@@ -329,10 +329,10 @@ Linux 默认配置要求 PATH 中存在 `bwrap`；缺失时 fail closed。只有
 产出模式约束。路径边界、mode policy、静态策略、shell 可解析性与 mode ruleset
 共同进入同一个 resolver，较严格的结果优先。
 
-规则产生的 `ask` 是内部 approval request，不等于询问用户。默认配置下，Build
-使用 `on-request + auto_review`，approval request 交给独立的 `reviewer` profile；
-Act 使用 `on-request + user`；Plan 不进入审批。reviewer 路由由 mode 固定，不能由
-回调结果或配置改写。`approval_policy=never` 禁止提交新的 approval request。这里
+规则产生的 `ask` 是内部 approval request，不等于询问用户。默认配置下，Plan
+与 Build 使用 `on-request + auto_review`，approval request 交给独立的
+`reviewer` profile；Act 使用 `on-request + user`。reviewer request 显式携带
+当前 execution mode，使 reviewer 能遵守各 mode 的 authority。`approval_policy=never` 禁止提交新的 approval request。这里
 只接受 `on-request` 和 `never`，没有旧值迁移或别名。
 
 自动 reviewer 接收带角色和信任标记的有界会话 transcript，以及本次动作的完整
@@ -365,9 +365,9 @@ Automatic approval review approved (risk: low, authorization: high):
 ```
 
 权限提示、自动 reviewer 与 shell 效果分析不是 OS sandbox；它们决定工具调用
-是否获准。Linux Agent shell 另由 bubblewrap 强制文件与网络边界。Build 仍不会
-仅因为存在 sandbox 就默认放行任意命令，因为破坏项目内数据、资源耗尽和语义
-风险仍需要规则或 reviewer 处理。
+是否获准。Linux Agent shell 另由 bubblewrap 强制文件与网络边界。已确认只读
+shell 可直接执行；未解析或可能产生副作用的命令仍由当前 mode 的 reviewer 处理，
+危险命令与硬边界不能被 reviewer 覆盖。
 
 ### external_directories 示例
 
@@ -422,22 +422,21 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 
 ### 工具注册
 
-稳定工具默认注册：`read_file`、`write_file`、`edit_file`、`apply_patch`、
-`glob_files`、`find_files`、`list_dir`、`grep_search`、`websearch`、
-`webfetch`、`question`、`bash`、`search_tools`、`subagent`、`todowrite`、
-`history`、`search_memory`。发现 skill 时注册 `load_skill`；存在
-`.cade/mcp_config.json` 时注册 `mcp__{server}__{tool}` 动态工具。
-
-`search_tools` 工具按关键字搜索当前已注册工具。
+项目工具实现注册为 `read`、`write`、`edit`、`patch`、`glob`、`find`、
+`ls`、`grep`、`websearch`、`webfetch`、`question`、`bash`。运行时按功能
+追加 `delegate`、`recall`、`history`、`rollover`；发现 skill 时注册
+`load_skill`；MCP 使用 `mcp_tool_search` 延迟发现并注册
+`mcp__{server}__{tool}` 动态工具。Build/Act 默认不向模型暴露
+`grep/glob/find/ls`，日常代码搜索交给 `bash` 组合 `rg/fd/git` 等原生命令。
 `websearch` 通过 Exa / Parallel MCP provider 搜索网络，默认 Exa；支持 `query`、
 `numResults`、`type`（`auto`/`fast`/`deep`）、`livecrawl`（`fallback`/`preferred`）
 和 `timeout`。可通过环境变量 `EXA_API_KEY` / `PARALLEL_API_KEY` 或
 `OPENCODE_EXPERIMENTAL_PARALLEL` 切换/鉴权。`webfetch` 支持 `markdown`、`text`、
 `html` 输出格式，自动解压 gzip/deflate，最多读取 5MB，并在截断时标记结果。
-运行时不会按每轮用户问题自动检索 Memory。Agent 通过 `search_memory` 按需合并
+运行时不会按每轮用户问题自动检索 Memory。Agent 通过 `recall` 按需合并
 检索项目根 `MEMORY.md` 与 `~/.cade/memory/MEMORY.md`；resume/rebuild 才会在
 独立预算内注入相关记忆。
-`search_memory` 的 schema 接受必填 `query`，以及可选 `limit`（1-10）、
+`recall` 的 schema 接受必填 `query`，以及可选 `limit`（1-10）、
 `scope` 和 `layer`（`all` / `project` / `user`）；工具标记为只读。
 MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺少这些
 协商元数据的旧缓存会自动重新发现。
