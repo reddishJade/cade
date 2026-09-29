@@ -107,6 +107,8 @@ def test_real_build_app_minimal_run_and_replay_contract(
         "bash",
         "delegate",
     }
+    assert "patch" in first.agent.composition.gate.tool_path_extractors
+    assert "apply_patch" not in first.agent.composition.gate.tool_path_extractors
     first_request = providers[0].requests[0]
     first_envelope = _provider_request_events(first)[0]["data"]
     assert first_envelope["composition_id"] == first.agent.composition.generation_id
