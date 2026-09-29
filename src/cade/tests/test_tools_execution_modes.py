@@ -211,3 +211,30 @@ class TestExecutionModeState:
         assert act_snapshot.shell_mutation_policy == "ask"
         assert act_snapshot.approvals_reviewer == "user"
         assert act_snapshot.approval_callback is user
+
+    def test_subagent_gate_inherits_mode_shell_authority(self) -> None:
+        state = ExecutionModeState(initial_mode="plan")
+        gate = ToolGate(
+            mode_state=state,
+            user_approval_callback=None,
+            auto_approval_callback=None,
+            permission_policy=None,
+            hook_manager=None,
+            audit_logger=None,
+            session_id="parent",
+            shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
+            shell_mutation_policies=DEFAULT_SHELL_MUTATION_POLICIES,
+        )
+
+        child = gate.fork_for_subagent("child")
+        snapshot = child.snapshot()
+
+        assert snapshot.mode_name == "plan"
+        assert snapshot.shell_unresolved_policy == "ask"
+        assert snapshot.shell_mutation_policy == "deny"
+
+        state.set_mode("act")
+        act_snapshot = child.snapshot()
+        assert act_snapshot.mode_name == "act"
+        assert act_snapshot.shell_mutation_policy == "ask"
+        assert act_snapshot.approvals_reviewer == "user"
