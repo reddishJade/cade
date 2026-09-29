@@ -79,6 +79,13 @@ class FileChange:
     move_display_path: str | None = None
 
 
+@dataclass(frozen=True)
+class _PathSnapshot:
+    path: Path
+    existed: bool
+    data: bytes | None
+
+
 def build_apply_patch_tool(
     project_root: Path,
     context_state: ContextualRetrievalState | None = None,
@@ -100,8 +107,9 @@ def build_apply_patch_tool(
         name="apply_patch",
         description=(
             "Edit, add, delete, or move multiple files in a single tool call "
-            "using a structured patch. Bundles related changes for atomic "
-            "multi-file edits. Prefer edit_file for single-file targeted "
+            "using a structured patch. Applies related multi-file changes "
+            "atomically: execution failures roll the affected paths back to "
+            "their pre-call state. Prefer edit_file for single-file targeted "
             "replacements."
         ),
         input_hint='JSON: {"patch_text": "*** Begin Patch\\n*** Update File: /abs/path/to/app.py\\n@@\\n-old\\n+new\\n*** End Patch"}',
@@ -450,13 +458,35 @@ def _apply_changes(
         raise ValueError("apply_patch verification failed: no changes")
 
     def mutate() -> ToolOutput:
-        for change in changes:
-            _write_change(operations, change)
-            target = change.move_path or change.path
-            if target and change.kind != "delete":
-                _format_file(target)
-            if context_state is not None and change.kind != "delete":
-                context_state.record_file(target)
+        snapshots = _snapshot_affected_paths(operations, changes)
+        missing_dirs = _snapshot_missing_parent_dirs(root, operations, changes)
+        try:
+            for change in changes:
+                _write_change(operations, change)
+                target = change.move_path or change.path
+                if target and change.kind != "delete":
+                    _format_file(target)
+        except Exception as exc:
+            rollback_failures = _rollback_changes(
+                operations,
+                snapshots,
+                missing_dirs,
+            )
+            if rollback_failures:
+                detail = ", ".join(rollback_failures)
+                raise RuntimeError(
+                    "apply_patch failed and rollback was incomplete for: "
+                    f"{detail}. Original error: {exc}"
+                ) from exc
+            raise RuntimeError(
+                f"apply_patch failed; all affected paths were rolled back: {exc}"
+            ) from exc
+
+        if context_state is not None:
+            for change in changes:
+                if change.kind != "delete":
+                    context_state.record_file(change.move_path or change.path)
+
         summary = "\n".join(_summary_line(change) for change in changes)
         diff = "\n".join(_diff_for_change(change) for change in changes)
         return ToolOutput(
@@ -475,6 +505,75 @@ def _apply_changes(
         )
 
     return with_file_mutation(root, mutate)
+
+
+def _affected_paths(changes: tuple[FileChange, ...]) -> tuple[Path, ...]:
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for change in changes:
+        for path in (change.path, change.move_path):
+            if path is None or path in seen:
+                continue
+            seen.add(path)
+            paths.append(path)
+    return tuple(paths)
+
+
+def _snapshot_affected_paths(
+    operations: FileSystem,
+    changes: tuple[FileChange, ...],
+) -> tuple[_PathSnapshot, ...]:
+    snapshots: list[_PathSnapshot] = []
+    for path in _affected_paths(changes):
+        existed = operations.exists(path)
+        data = operations.read_bytes(path) if existed else None
+        snapshots.append(_PathSnapshot(path=path, existed=existed, data=data))
+    return tuple(snapshots)
+
+
+def _snapshot_missing_parent_dirs(
+    root: Path,
+    operations: FileSystem,
+    changes: tuple[FileChange, ...],
+) -> tuple[Path, ...]:
+    missing: set[Path] = set()
+    for path in _affected_paths(changes):
+        parent = path.parent
+        while parent != root and parent not in missing:
+            if operations.exists(parent):
+                break
+            missing.add(parent)
+            parent = parent.parent
+    return tuple(sorted(missing, key=lambda path: len(path.parts), reverse=True))
+
+
+def _rollback_changes(
+    operations: FileSystem,
+    snapshots: tuple[_PathSnapshot, ...],
+    missing_dirs: tuple[Path, ...],
+) -> tuple[str, ...]:
+    failures: list[str] = []
+    for snapshot in snapshots:
+        try:
+            if snapshot.existed:
+                operations.mkdir(snapshot.path.parent)
+                operations.write_bytes(snapshot.path, snapshot.data or b"")
+            elif operations.exists(snapshot.path):
+                operations.remove_file(snapshot.path)
+        except Exception as exc:
+            failures.append(f"{snapshot.path}: {exc}")
+
+    for directory in missing_dirs:
+        try:
+            if operations.exists(directory):
+                operations.remove_dir(directory)
+        except OSError:
+            # A directory may have become non-empty for reasons unrelated to this patch.
+            # Leave it in place rather than deleting unrelated state.
+            continue
+        except Exception as exc:
+            failures.append(f"{directory}: {exc}")
+    return tuple(failures)
 
 
 def _write_change(operations: FileSystem, change: FileChange) -> None:
