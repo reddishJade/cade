@@ -35,7 +35,7 @@ class TestBuildToolPrompt:
     def test_single_tool(self) -> None:
         tool = _make_tool("read", snippet="Read a file")
         result = build_tool_prompt((tool,))
-        assert "read_file: Read a file" in result
+        assert "read: Read a file" in result
 
 
 class TestCompactToolParams:

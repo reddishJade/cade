@@ -48,13 +48,13 @@ def test_plain_progress_flushes_run_turn_and_tool_status() -> None:
     with reporter:
         reporter.update(_event("run_started"))
         reporter.update(_event("turn_started", turn=1, detail="inspect code"))
-        reporter.update(_event("tool_started", turn=1, detail="read_file · src/a.py"))
+        reporter.update(_event("tool_started", turn=1, detail="read · src/a.py"))
         reporter.update(_event("run_completed", detail="success=True"))
 
     rendered = output.getvalue()
     assert "run 0/2 parser-recovery baseline r1" in rendered
     assert "turn 1/10" in rendered
-    assert "read_file · src/a.py" in rendered
+    assert "read · src/a.py" in rendered
     assert "run 1/2" in rendered
 
 
