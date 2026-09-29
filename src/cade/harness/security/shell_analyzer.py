@@ -112,15 +112,21 @@ class ShellAnalysisPolicyEvaluator:
         self,
         action: Action,
         unresolved_policy: ShellUnresolvedPolicy = "ask",
+        mutation_policy: ShellUnresolvedPolicy = "ask",
     ) -> tuple[Constraint, ...]:
         constraints: list[Constraint] = []
         for effect in action.unresolved_effects:
-            dangerous = effect.reason == "dangerous_command"
-            if not dangerous and unresolved_policy == "allow":
+            if effect.reason == "dangerous_command":
+                decision: ShellUnresolvedPolicy = "deny"
+            elif effect.reason == "mutation":
+                decision = mutation_policy
+            else:
+                decision = unresolved_policy
+            if decision == "allow":
                 continue
             constraints.append(
                 Constraint(
-                    decision="deny" if dangerous else unresolved_policy,
+                    decision=decision,
                     source="shell_policy",
                     reason=f"{effect.reason}: {effect.fragment}",
                 )
@@ -237,8 +243,8 @@ def _analyze_posix(command: str) -> ShellAnalysis:
             paths.extend(_mutating_paths(name, args))
             unresolved.append(
                 UnresolvedEffect(
-                    reason="wrapper_command",
-                    fragment=f"write command requires approval: {name}",
+                    reason="mutation",
+                    fragment=f"shell command mutates filesystem state: {name}",
                 )
             )
             continue
