@@ -57,31 +57,13 @@ Cade 通过删除重复路径、回收兼容层、移除未使用功能、拆出
 
 当前运行路径可以抽象为：
 
-```text
-CLI / TUI / Web
-       │
-       ▼
-    CadeApp
-       │
-       ▼
- coding_agent 装配与 CodingAgentHarness
-       │
-       ├── execution modes / tool registry / skills / memory
-       ├── ToolGate / PermissionEngine
-       ├── session / snapshot / MCP / hooks
-       ▼
-   通用 AgentHarness
-       │
-       ▼
-      Agent
-       │
-       ├── request assembly / context / window rollover
-       ├── provider stream / tool execution / watchdog
-       ▼
-       AI provider layer
-       │
-       ▼
-  OpenAI-compatible gateways and provider APIs
+```mermaid
+flowchart TD
+    Host["CLI / TUI / Web"] --> App["CadeApp"]
+    App --> Product["coding_agent 装配与 CodingAgentHarness<br/>• execution modes / tool registry / skills / memory<br/>• ToolGate / PermissionEngine<br/>• session / snapshot / MCP / hooks"]
+    Product --> Harness["通用 AgentHarness"]
+    Harness --> Agent["Agent 核心层<br/>• request assembly / context / window rollover<br/>• provider stream / tool execution / watchdog"]
+    Agent --> Provider["AI provider layer<br/>OpenAI-compatible gateways and provider APIs"]
 ```
 
 ### 2.1 AI 层：把服务差异压缩在 provider 边界

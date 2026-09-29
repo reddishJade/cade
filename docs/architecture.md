@@ -53,24 +53,19 @@ provider；provider 不感知产品工具。
 
 ## 一次回合的数据流
 
-```text
-user input
-  -> SessionInbox.inbox/inserted
-  -> active run claims next_step / next_turn
-  -> SessionInbox.inbox/claimed
-  -> CodingAgentHarness / Agent loop
-  -> RequestAssembly
-       - scoped prefix + session surface
-       - context collection and injection
-       - ContextPolicy admission
-       - wire messages + tool schemas + options
-  -> provider_request envelope
-  -> provider stream
-  -> typed assistant/tool events
-  -> local Shell or local FileSystem
-  -> permission and audit hooks
-  -> append-only session events
-  -> REPL/TUI projection
+```mermaid
+flowchart TD
+    UserInput["用户输入 (User Input)"] --> Inserted["SessionInbox.inbox / inserted"]
+    Inserted --> Claimed["active run claims next_step / next_turn<br/>SessionInbox.inbox / claimed"]
+    Claimed --> Harness["CodingAgentHarness / Agent loop"]
+    Harness --> Assembly["RequestAssembly<br/>• scoped prefix + session surface<br/>• context collection and injection<br/>• ContextPolicy admission<br/>• wire messages + tool schemas + options"]
+    Assembly --> Envelope["provider_request envelope"]
+    Envelope --> Stream["provider stream"]
+    Stream --> Events["typed assistant / tool events"]
+    Events --> LocalExec["local Shell or local FileSystem"]
+    LocalExec --> Hooks["permission and audit hooks"]
+    Hooks --> SessionEvents["append-only session events"]
+    SessionEvents --> UI["REPL / TUI projection"]
 ```
 
 `SessionInbox` 是所有模型输入的统一所有者，`SessionRecorder` 记录运行输出。

@@ -1,159 +1,69 @@
-# CLI、TUI 与 Web 启动参数
+# CLI 命令行参数与交互指南
 
-## 1. 基础语法
+Cade 提供了开箱即用的命令行工具 `cade`。本节汇总启动参数、终端快捷键与高级输入技巧。
 
-```bash
-cade [OPTIONS] [COMMAND]
-```
+---
 
-未指定 command 时启动 TUI。可用子命令：
-
-| 子命令 | 作用 |
-| --- | --- |
-| `tui` | 启动终端 TUI |
-| `cli` | 启动 CLI / REPL |
-| `exec` | 通过 NDJSON 机器协议执行单次 prompt |
-| `session` | 查询、导出或中断 session |
-| `login` / `connect` | 选择账户 OAuth 或 API key provider |
-| `setup` | 运行 provider 配置向导 |
-| `config` | 打开交互式设置浏览器 |
-| `web` | 启动 FastAPI + WebSocket 浏览器工作台 |
-
-## 2. 全局参数
-
-| 参数 | 默认值 | 作用 |
-| --- | --- | --- |
-| `-p`, `--prompt TEXT` | 空 | 执行单次 prompt 并退出 |
-| `--project-root PATH` | 当前目录 | 指定工作区根目录 |
-| `--config PATH` | 空 | 指定运行时配置文件 |
-| `--sessions-dir PATH` | `.cade/sessions` | 指定 session 账本目录 |
-| `--resume` | 关闭 | 启动历史 session 选择器 |
-| `-c`, `--continue` | 关闭 | 恢复当前项目最近的有意义 session |
-| `--session ID` | 空 | 恢复指定 session |
-
-示例：
-
-```bash
-cade -p "检查最近修改"
-cade --project-root ./backend --continue
-cade --project-root ./backend --session 20260825-120000 cli
-cade --sessions-dir D:\\cade-sessions tui
-```
-
-`--resume` 和 `--continue` 代表两种不同路径：前者打开选择器，后者直接使用当前项目最近会话。`--session` 会校验 session 所属项目。
-
-## 3. `cade exec`
-
-`exec` 是供外层 Agent、CI 和其他自动化调用方使用的非交互入口。默认情况下，stdout 只包含每行一个 JSON 对象的 NDJSON；库或 provider 诊断输出会被导向 stderr。
-
-```bash
-cade exec \
-  --project-root /tmp/project \
-  --sessions-dir /tmp/cade-sessions \
-  --model gpt-5.6-luna \
-  --transport openai-codex \
-  --reasoning-effort max \
-  --mode build \
-  --approval auto-review \
-  --max-steps 60 \
-  --max-llm-calls 80 \
-  --timeout 45m \
-  --prompt-file task.md
-```
-
-从 stdin 读取长 prompt，避免 shell 引号和命令行长度问题：
-
-```bash
-cade exec --mode build --prompt-file - < task.md
-cade exec resume 20260922-163122 --prompt-file - < followup.md
-```
-
-输出事件包括 `run.started`、`config.resolved`、`step.started`、`tool.started`、`tool.completed`、`budget.updated`、`context.reset` 和 `run.completed`。最终 envelope 含 session ID、步数、模型调用数、工具调用数、本次运行改动的文件和结构化错误。`--output-last-message PATH` 可同时把最终回答写入独立文件。
-
-`bash` 工具执行测试、lint、类型检查等验证命令时，可设置 `purpose: "validation"`。`run.completed.validation` 仅汇总显式标记的调用，按 `tool_call_id` 与工具事件关联，记录 `passed`、`failed`、`blocked`、`incomplete` 或 `unknown` 及退出码；空列表表示本次运行没有记录到标记的验证调用，不代表代码已通过验证。未标记的探索和环境准备命令不会被推断为验证。运行完成状态与验证结果分别报告，验证失败不会自动把 `run.completed.status` 改为失败。
-
-稳定退出码：
-
-| 退出码 | 含义 |
-| --- | --- |
-| `0` | 正常完成 |
-| `2` | step、LLM call 或 watchdog 限制 |
-| `3` | provider 故障 |
-| `4` | 请求超出 token budget |
-| `5` | 审批不可用或 `deny` 拒绝 |
-| `6` | 参数或已解析配置无效 |
-| `124` | wall-clock timeout |
-| `130` | 运行被中断 |
-
-`--approval interactive` 在没有 TTY 时会立即失败。`auto-review` 使用 reviewer；如果没有单独配置 reviewer profile，reviewer 会跟随 main profile。`never` 只执行规则已允许的操作；`deny` 在第一个需审批操作上停止并返回 `5`。
-
-## 4. `cade login` / `cade connect`
-
-```bash
-cade login
-# 或
-cade connect
-```
-
-无参数运行时会显示：
+## 1. 命令行启动参数
 
 ```text
-Select authentication method:
-
- → Sign in with an account
-   Sign in with an API key
+用法: cade [选项] [子命令]
 ```
 
-选择账户后进入 Codex/ChatGPT OAuth；选择 API key 后进入 provider 配置向导。也可以使用 `--method browser`、`--method device_code` 或 `--method api_key` 跳过选择。
+### 常用全局选项
 
-API key 方式会配置 `main` profile，已有配置可重复运行，不会删除已保存的 OAuth 凭据。当前 `/config` 不编辑 provider；需要使用 `login`、`connect` 或 `setup`。
+| 选项参数 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `-m, --mode <plan\|build\|act>` | string | 覆盖本次启动的默认执行模式（默认：`act`） |
+| `--model <name>` | string | 指定本次运行使用的大模型名称（如 `deepseek-flash` 或 `gpt-6-sol`） |
+| `--provider <name>` | string | 指定使用的 Provider 协议（如 `deepseek_chat`、`openai_responses`、`custom`） |
+| `--verbose` | flag | 开启详细输出，在终端打印底层工具完整入参和返回结果 |
+| `--debug` | flag | 输出底层网络传输与事件循环调试信息 |
+| `-v, --version` | flag | 打印当前安装的 Cade 版本号 |
+| `-h, --help` | flag | 打印命令行帮助信息 |
 
-## 5. `cade setup`
+### 命令行常用场景
 
 ```bash
-cade setup
+# 1. 默认交互式启动
+cade
+
+# 2. 直接以 Build 模式启动，使用 DeepSeek-V4-Pro 旗舰模型
+cade --mode build --model deepseek-v4-pro
+
+# 3. 在 CI 或脚本中非交互式执行单条任务（Headless）
+cade exec "运行 pytest 并修复所有失败的测试用例"
 ```
 
-向导交互式配置 provider、API key、base URL、模型、thinking 和 reasoning effort。保存时可选择个人默认配置 `~/.cade/settings.json`、当前项目 `cade.config.json` 或仅在当前进程使用临时配置。该向导也可以在首次运行后重复使用。
+---
 
-## 6. `cade config`
+## 2. 终端交互快捷键与技巧
 
-```bash
-cade config
-cade config --project-root ./backend
-cade config --config ./private-settings.json
-```
+在交互终端（REPL）中，Cade 提供了丰富的操作便利：
 
-设置浏览器当前提供执行模式、审批策略、非工作区访问、sandbox mode、sandbox network 和 Shell 等常用设置。每次写入前使用 `CadeRuntimeConfig` 校验。
+### 2.1 快捷键清单
+- **多行输入**：按 `Shift+Enter` 进行换行。如果你的终端未正确映射该快捷键，可使用 `Esc` 然后按 `Enter` 作为通用后备换行方案。
+- **补全机制 (`Tab`)**：
+  - 自动补全 Slash 命令（输入 `/` 后按 `Tab`）；
+  - 自动补全工具名称（输入 `/tool ` 后按 `Tab`）；
+  - 自动补全文件路径（输入 `@` 触发文件补全）。
+- **打断与退出 (`Ctrl+C`)**：
+  - **单次按下**：秒级取消当前正在进行的模型流式推理或后台长命令执行；
+  - **连续按两次**：安全退出 Cade 终端。
 
-REPL 中的 `/config` 使用同一组设置定义；TUI 将选择菜单、说明和文本表单嵌入当前输出区域。
+### 2.2 高级输入魔法
 
-## 7. `cade web`
+1. **`@` 文件直接引用**：
+   在提示词中输入 `@` 即可模糊补全并引用工作区中的文件：
+   ```text
+   > 请参考 @src/cade/main.py 的入参处理，为 @src/cade/cli/commands.py 补充对应选项
+   ```
+   Cade 会在发送请求时自动把引用的文件内容作为背景上下文呈递给模型。
 
-```bash
-cade web
-cade web --host 127.0.0.1 --port 8787 --open
-cade web --project-root ./backend
-```
-
-参数：
-
-- `--host`：绑定地址，默认 `127.0.0.1`。
-- `--port`：端口，默认 `8787`。
-- `--open`：服务启动后打开浏览器。
-- `--project-root`：浏览器工作台使用的项目根目录。
-
-浏览器工作台使用 REST 读取状态，使用 `/ws` 接收实时事件和发送任务、取消、审批消息。详细协议位于 [web.md](web.md)。
-
-## 8. CLI 与 TUI 的共同输入
-
-两种终端界面共享 CadeApp、工具注册表、session、权限 gate 和命令注册表：
-
-- 普通文本提交 Agent turn。
-- `!` 进入 bash shortcut。
-- `@` 进入文件引用。
-- `$` 进入技能激活。
-- `/` 进入控制命令。
-- Tab 补全命令、工具、技能和文件。
-
-CLI 使用 Rich 输出 Markdown；TUI 使用 inline transcript 工作台，提供折叠详情、滚动视口和输入提示。TUI 忙时 Enter 默认排队、Alt+Enter 纠偏；CLI 忙时普通输入默认纠偏。两者都支持 `/queue 消息` 和 `/steer 消息`。
+2. **`!` 快速执行本地命令**：
+   如果只想在不打断对话的情况下快速看一下本地状态，可以在行首加 `!`：
+   ```text
+   > !git status
+   > !pytest src/tests/test_harness.py
+   ```
+   命令输出将直接呈现在终端中。

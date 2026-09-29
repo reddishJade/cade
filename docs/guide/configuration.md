@@ -1,161 +1,105 @@
-# 配置系统
+# 配置系统完全手册
 
-Cade 使用 JSON 运行时配置。配置先按层合并，再通过 Pydantic 模型校验；运行中的 Agent 使用校验后的快照。
+Cade 支持分层配置系统。所有配置均由强类型的 Pydantic 模型校验，杜绝非法或过期的字段。
 
-## 1. 配置文件与优先级
+---
 
-`discover_runtime_config()` 按以下顺序读取：
+## 1. 配置加载优先级
 
-```text
-~/.cade/settings.json       全局
-<project>/cade.config.json  项目
-<project>/.cade/settings.json 本地
-环境变量                      最后覆盖
-```
+当 Cade 启动时，配置按照以下从高到低的优先级合并覆盖：
 
-后层只覆盖自己显式出现的键，显式写入默认值也会生效。`--config PATH` 将指定文件作为项目配置来源参与解析。
+1. **CLI 命令行参数**（最高，如 `cade --mode build --model deepseek-v4-pro`）
+2. **环境变量**（当前 Shell 环境变量与项目根目录 `.env` 文件）
+3. **工作区本地配置**（`<项目根目录>/.cade/settings.json`）
+4. **项目级配置文件**（`<项目根目录>/cade.config.json`）
+5. **用户全局配置文件**（`~/.cade/settings.json`）
+6. **系统默认内置参数**（最低，默认模型 `deepseek-flash`）
 
-常用位置：
+---
 
-- `cade.config.json`：项目运行配置。
-- `.cade/settings.json`：本地覆盖。
-- `~/.cade/settings.json`：用户全局默认。
-- `.cade/mcp_config.json`：项目 MCP server 配置，单独读取。
+## 2. 核心配置字段全景表
 
-当前仓库的 `.gitignore` 会忽略 `cade.config.json` 与 `.cade/`。团队需要共享配置时，按团队策略调整忽略规则，并单独管理 API key。
-
-## 2. 顶层结构
+以下是完整的配置结构及默认值说明（对应 `.cade/config.json`）：
 
 ```json
 {
-  "provider": { "model_profiles": {} },
-  "agent": {},
-  "tools": {},
-  "skills": {},
-  "prompt": {},
-  "paths": {},
-  "observability": {},
-  "hooks": {},
-  "security": {},
-  "execution_modes": {}
-}
-```
-
-未知字段进入校验错误。嵌套 profile 支持继承 `main`：字符串值可作为只改模型名的 profile，对象值覆盖继承字段。
-
-## 3. Agent 与请求预算
-
-```json
-{
+  "provider": {
+    "model_profiles": {
+      "main": {
+        "transport": "openai_chat",
+        "chat_model": "deepseek-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "",
+        "context_window": null,
+        "thinking": true,
+        "reasoning_effort": "high"
+      },
+      "subagent": {
+        "transport": "openai_chat",
+        "chat_model": "deepseek-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "",
+        "thinking": false
+      },
+      "fallback": {
+        "transport": "openai_chat",
+        "chat_model": "deepseek-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key": ""
+      }
+    }
+  },
   "agent": {
-    "max_steps": null,
-    "max_llm_calls": null,
-    "rollover_token_threshold": 0,
-    "automatic_rollover": true,
-    "reserve_tokens": 16384,
-    "headroom_tokens": null,
-    "next_turn_input_tokens": 1024,
-    "evidence_token_budget": null,
-    "working_set_token_budget": null,
     "rollover_trigger_ratio": 0.95,
+    "reserve_tokens": 16384,
     "tool_workers": 4,
-    "tool_timeout_seconds": 120,
+    "tool_timeout_seconds": 120.0,
     "watchdog_repeated_tool_limit": 3
-  }
-}
-```
-
-`max_steps` 为空时不限制 agent 步数，`max_llm_calls` 为空时不限制实际 provider 调用数（包括重试与 max-token 续写）。Agent 仍会因完成、取消、provider error 和 watchdog 结束。
-
-`reserve_tokens` 只预留下一次模型输出；`headroom_tokens` 独立预留运行余量，默认窗口的 2%，最多 8192 tokens。窗口未知时默认余量为 1024。输入预算为窗口减去这两项。窗口优先使用 provider profile 的 `context_window`，否则读取模型元数据。
-
-`next_turn_input_tokens` 默认 1024（不超过触发预算的八分之一），为下一轮新增调用和证据留出 allowance。请求先回收旧证据和旧交互；预测输入加 allowance 达到触发预算时才换窗。`rollover_trigger_ratio` 默认 0.95，仅作额外 guardrail。本地估算超限不会直接拒绝请求。
-
-`evidence_token_budget` 默认最多 32000 tokens，且不超过输入预算；`working_set_token_budget` 默认最多 4096，且不超过输入预算的四分之一，控制换窗带走的近期完整交互。两者可设为零。旧 `fallback_recent_messages` / `fallback_recent_tokens` 配置已移除。
-
-旧 `rollover_message_threshold` 也已移除：消息数量不代表 token 成本，统一使用 ContextPolicy 的成本准入与显式 token guardrail。
-
-旧 `request_hygiene` 配置和无条件的字节/行数/工具参数截断已移除。预算允许时保留原文；需要限制工具证据时配置 `agent.evidence_token_budget`，全部内容仍由 session 历史保存。
-
-## 4. 工具、技能与 prompt
-
-```json
-{
-  "tools": {
-    "shell": "auto",
-    "subagent_extra_tools": ["todowrite"]
   },
-  "skills": {
-    "trust_project_skills": false
-  },
-  "prompt": {
-    "modules": [
-      "identity", "tool_discipline", "citations", "tools",
-      "search_strategy", "environment", "cwd",
-      "contextual_retrieval", "notices"
-    ],
-    "instructions": [
-      {"type": "file", "path": "TEAM_RULES.md", "priority": "critical"},
-      {"type": "inline", "content": "Use the project formatter.", "priority": "high"}
-    ]
-  }
-}
-```
-
-指令文件路径要求项目相对路径，累计注入预算为 32 KB。prompt modules 控制稳定、动态和易变 prompt 区域。
-
-## 5. 路径、会话与观测
-
-```json
-{
-  "paths": {
-    "sessions_dir": ".cade/sessions",
-    "skills_dir": null
-  },
-  "observability": {
-    "audit_path": ".cade/audit.jsonl"
-  }
-}
-```
-
-相对路径以项目根目录解析。会话账本、快照、MCP 缓存和永久授权默认位于 `.cade/`。
-
-## 6. 安全与执行模式
-
-```json
-{
-  "security": {
-    "approval_policy": "on-request",
-    "approval_router": "mode",
-    "non_workspace_access": true,
-    "auto_review_timeout_seconds": 90,
-    "sandbox": {
-      "mode": "workspace-write",
-      "network_access": "deny"
-    },
-    "restricted_dirs": ["secrets"],
-    "permissions": {"read": "allow", "web": "ask"},
-    "tools": {"bash": "ask"}
+  "sandbox": {
+    "mode": "workspace_write",
+    "network_access": "deny"
   },
   "execution_modes": {
-    "default_mode": "act",
-    "plan": {"rules": []},
-    "build": {"rules": []},
-    "act": {"rules": []}
+    "default_mode": "act"
   }
 }
 ```
 
-`permissions` 先展开为工具集合，`tools` 再按具体工具覆盖。规则字段支持 `action`、`effect`、shell 的 `command`/`subcommand`/flags，以及 `resource_pattern`。决策顺序和目录边界位于 [security.md](security.md)。
+### 关键参数说明
 
-## 7. 交互式编辑
+| 配置路径 | 类型 | 默认值 | 详细含义与建议 |
+| :--- | :--- | :--- | :--- |
+| `agent.rollover_trigger_ratio` | float | `0.95` | **上下文换窗水位线**。当 Token 消耗占模型总容量的 95% 时触发换窗，保护长任务不超限。 |
+| `agent.reserve_tokens` | int | `16384` | 预留给模型生成回答与工具调用的安全 Token 空间。 |
+| `agent.tool_workers` | int | `4` | 只读工具（读取文件、搜代码、搜网络）的**最大并发线程数**。 |
+| `agent.tool_timeout_seconds` | float | `120.0` | 单个工具（特别是 Bash 命令）的最大超时时长（秒）。 |
+| `sandbox.mode` | string | `"workspace_write"` | Linux 沙箱模式：`workspace_write`（宿主只读、工作区可写）、`off`（禁用沙箱）。 |
+| `sandbox.network_access` | string | `"deny"` | 沙箱内网络访问权限：`deny`（断网隔离）、`allow`（允许联网拉取包）。 |
+| `execution_modes.default_mode`| string | `"act"` | 默认工作模式，可选 `act`（人工审批）、`build`（自动改代码）、`plan`（只读规划）。 |
+
+---
+
+## 3. 环境变量对照表
+
+你可以不写任何 JSON 配置文件，仅通过环境变量快速注入配置：
+
+| 环境变量 | 作用与示例 |
+| :--- | :--- |
+| `OPENAI_API_KEY` | 主模型 API Key |
+| `OPENAI_BASE_URL` | 自定义兼容 OpenAI 协议的网关地址（如 `https://api.deepseek.com/v1`） |
+| `DEEPSEEK_API_KEY` | DeepSeek 官方专属 API Key |
+| `CADE_MODE` | 默认执行模式（`act` / `build` / `plan`） |
+| `CADE_MODEL` | 覆盖启动时默认使用的模型名称 |
+
+---
+
+## 4. 交互式查看与修改设置
+
+在 Cade 终端运行期间，你可以直接输入：
 
 ```bash
-cade config
-cade config --project-root ./project
-cade config --config ./private.json
+/config
 ```
 
-REPL 中使用 `/config`。浏览器当前展示常用模式、审批、sandbox 和 Shell 设置；文本或枚举写入前先验证，校验失败时保持原文件。
-
-环境变量 `CADE_APPROVAL_POLICY` 可以覆盖 `security.approval_policy`。provider API key 按 profile、provider 环境变量和通用 `OPENAI_API_KEY` 等顺序解析，详见 [providers.md](providers.md)。
+即可打开终端交互式设置浏览器，查看每一项配置的实时生效值，并直接在终端内完成热修改。

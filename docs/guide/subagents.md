@@ -1,99 +1,31 @@
-# Subagents 子代理
+# Subagents 子代理协作机制
 
-`subagent` 工具为独立任务创建 session-backed child agent。child 拥有自己的 session、history、inbox、recorder、correlation 和 ToolGate，同时继承父运行时的 provider 配置、项目边界和安全规则。
+在处理大型工程任务时，如果主 Agent 将全库扫描、依赖搜索等冗长的中间过程都塞进主窗口，不仅浪费主模型的昂贵上下文，还会迅速挤爆窗口上限。
 
-## 1. One-shot 与 Continuable
+Cade 引入了 **一等公民持久化子代理（Subagents）**，用于安全分治复杂任务。
 
-| mode | 生命周期 | 适用场景 |
-| --- | --- | --- |
-| `one_shot` | 完成后释放 activation，session 保留 | 一次性搜索、局部修改、独立验证 |
-| `continuable` | 保留 child session，可继续提交 turn | 需要后续追问或多轮协作的子任务 |
+---
 
-创建一个 child：
+## 1. 为什么需要子代理？
 
-```json
-{
-  "description": "检查 provider 适配器",
-  "prompt": "阅读相关实现，列出协议差异和风险，不修改文件。",
-  "mode": "one_shot",
-  "subagent_type": "research"
-}
-```
+- **上下文污染隔离**：子代理在完全独立的会话分支中运行。它可以自由读取几十个文件、输出数万字中间日志，完成后仅向主 Agent 汇报高度提炼的关键结论；
+- **成本与速度优化**：主 Agent 可采用强大的高推理模型（如 `deepseek-v4-pro` 或 `gpt-6-sol`），而子代理可配置为更轻更快的小模型（如 `deepseek-flash`、`gpt-6-luna` 或 `glm-4.7-flash`）；
+- **任务分治**：适合执行诸如“调研多种架构方案的可行性并各自运行验证测试”这类可以独立探索的子目标。
 
-## 2. 批量委派
+---
 
-多个独立任务使用 `tasks`：
+## 2. 子代理的底层运行机制
 
-```json
-{
-  "tasks": [
-    {"description": "检查 AI 层", "prompt": "分析 provider 错误处理", "subagent_type": "research"},
-    {"description": "检查工具层", "prompt": "分析文件编辑边界", "subagent_type": "coding"}
-  ],
-  "max_concurrent": 2
-}
-```
+1. **谱系持久化（Durable Lineage）**：
+   每一个子代理启动时，都会在 `.cade/sessions/` 中生成自己的持久化 Session JSONL 文件，并明确记录其 `parent_session_id`。所有的执行过程皆可独立回放与溯源。
+2. **安全与资源约束**：
+   子代理继承主会话的沙箱与权限配置，但具有更严格的超时保护和最大工具调用次数限制，防止子任务失控。
+3. **干净生命周期回收**：
+   当会话结束或用户按下 `Ctrl+C` 中断时，Cade 采用**由底向上（Child-first）逆序回收机制**，先行终止所有子代理并释放其占用的沙箱进程与临时资源，杜绝孤儿进程与资源泄露。
 
-批量任务固定为独立 `one_shot` child。单次请求最多 16 个任务，默认并发上限 4；结果按 task index 汇总，实时 update 展示每个任务的状态和当前工具。
+---
 
-## 3. Continuable API
+## 3. 使用场景与观察
 
-```text
-/subagent             通过模型创建 continuable child
-subagent_continue     向 direct child 提交下一 FIFO turn
-subagent_list         列出 direct child session
-subagent_control      interrupt 或 release child activation
-```
-
-工具调用示例：
-
-```json
-{
-  "session_id": "child-session-id",
-  "prompt": "继续检查刚才发现的错误处理，给出最小修复建议。"
-}
-```
-
-`subagent_continue` 只接受 direct continuable child。`subagent_control`：
-
-```text
-{"session_id": "child-session-id", "action": "interrupt"}
-{"session_id": "child-session-id", "action": "release"}
-```
-
-interrupt 取消当前 child turn；release 释放进程内 activation，child 账本继续保留并可冷恢复。
-
-## 4. Child 工具集合
-
-child registry 默认包含核心文件、搜索、Shell、Web 和 patch 工具。通过 `tools.subagent_extra_tools` 可以追加工具，例如：
-
-```json
-{
-  "tools": {
-    "subagent_extra_tools": ["todowrite", "websearch"]
-  }
-}
-```
-
-child 收到显式 prompt 和自己的 system prompt。父 session 的完整 transcript作为父侧事实保留，child 的模型上下文从 child session 自身建立。
-
-## 5. 权限与谱系
-
-child 使用父 gate 的项目 root、external directories、sensitive overrides、静态权限、mode ruleset 和 grant 来源，并建立 child session id 对应的独立 correlation 与 hook manager。child 工具继续经过 ActionExtractor、PermissionEngine 和审批流程。
-
-父 session 记录：
-
-- `SubagentDescriptor`：child session、父 session、mode、类型、provider、composition 和工具名。
-- `SubagentActivationEvent`：materialized/released activation。
-- `SubagentRunEvent`：run id、batch id、task index、状态、摘要和错误。
-
-## 6. 关闭顺序
-
-父运行时关闭时：
-
-1. 取消所有 active child turn。
-2. 等待 child activation 在有界时间内进入 idle。
-3. 逆序释放 activation。
-4. 关闭 MCP、reviewer 和其他共享资源。
-
-child 未能在期限内收敛时返回明确关闭错误，避免静默遗留运行。
+主 Agent 会在需要的时候自动调度 `subagent` 工具执行局部探索。在终端中，你可以清晰看到子代理的启动、分支出去的会话 ID 以及汇总回来的结果卡片。
+你也可以随时使用 `/tree` 指令查看当前项目下主会话与所有派生子代理的完整谱系树状图。

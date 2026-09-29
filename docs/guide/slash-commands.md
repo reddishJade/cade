@@ -1,84 +1,106 @@
-# Slash 命令参考
+# Slash 命令参考手册
 
-REPL 和 TUI 使用统一命令注册表。输入 `/` 后按 Tab 可以补全命令、说明和参数提示。
+在 Cade 终端交互界面中，所有以斜杠 `/` 开头的输入均被视为内部控制指令。终端支持按 `Tab` 键自动补全命令名称与参数。
 
-## 1. 模式与运行控制
+---
 
-| 命令 | 用法 | 作用 |
-| --- | --- | --- |
-| `/plan` | `/plan [prompt]` | 进入 Plan；带 prompt 时排入下一次运行 |
-| `/build` | `/build` | 进入 Build |
-| `/act` | `/act` | 进入 Act |
-| `/steer` | `/steer MESSAGE` | 将消息送入当前 run 的下一次模型边界 |
-| `/queue` | `/queue steer\|followup\|interrupt\|MESSAGE` | 设置 busy policy，或排入 follow-up |
-| `/verbose` | `/verbose normal\|verbose\|debug` | 设置输出详细程度 |
-| `/debug` | `/debug on\|off` | 切换 debug 输出 |
-| `/compact` | `/compact` | 硬换窗并保留最近工作回合，不生成摘要 |
-| `/rollover` | `/rollover [--force]` | 使用 `NOTE.md` 交接并开启干净窗口；`--force` 跳过交接检查 |
-| `/goal` | `/goal CONDITION\|pause\|resume\|clear` | 设置、暂停、恢复或清除独立验收目标 |
+## 1. 会话管理与生命周期
 
-`/steer` 适合当前 run 的即时纠偏；`/queue` 的 follow-up 在当前 run 完成后启动新的 run。TUI 忙时 Enter 默认排队，Alt+Enter 纠偏；传统 REPL 忙时普通输入默认纠偏。`/queue steer|followup|interrupt` 可以改变忙时普通输入策略。Ctrl+J 用于换行；Esc、Enter 在空闲时换行，在忙时纠偏。
+| 命令 | 完整语法 | 功能说明 | 典型场景 |
+| :--- | :--- | :--- | :--- |
+| `/new` | `/new` | 创建并切换到一个全新的会话 | 开启一段互不干扰的全新任务 |
+| `/continue` | `/continue` | 自动恢复最近一次退出的活跃会话 | 重新打开终端，继续未完成的工作 |
+| `/resume` | `/resume [session_id]` | 通过会话 ID 恢复指定历史会话 | 切换回昨天的某个特定任务 |
+| `/sessions` | `/sessions` | 列出当前项目下的所有历史会话 | 查看历史任务记录与最后更新时间 |
+| `/rename` | `/rename <新标题>` | 为当前会话设置自定义标题 | 方便在会话列表中辨识关键任务 |
+| `/exit` 或 `/quit` | `/exit` | 安全保存状态并退出 Cade 终端 | 结束本次工作 |
 
-## 2. Session 生命周期
+---
 
-| 命令 | 用法 | 作用 |
-| --- | --- | --- |
-| `/new` | `/new` | 建立空 session |
-| `/clear` | `/clear` | 清空当前 session 并恢复空状态 |
-| `/continue` | `/continue` | 恢复当前项目最近的 session |
-| `/resume` | `/resume [ID]` | 选择或恢复指定 session |
-| `/sessions` | `/sessions` | 打开历史 session 选择器 |
-| `/rename` | `/rename TITLE` | 修改当前 session 标题 |
-| `/fork` | `/fork` | 从当前 branch 的用户消息选择 fork 起点 |
-| `/clone` | `/clone` | 复制当前 session |
-| `/tree` | `/tree` | 浏览 session entry tree 并移动 head |
-| `/rewind` | `/rewind [N]` | 回退最近 N 个用户 turn，默认 1 |
+## 2. 会话分支与树状溯源
 
-切换、fork、clone、rewind 后，Agent 从新的 branch 重新恢复 history、运行状态和上下文。
+| 命令 | 完整语法 | 功能说明 | 典型场景 |
+| :--- | :--- | :--- | :--- |
+| `/fork` | `/fork [turn_id]` | 从指定对话轮次分叉出一个全新会话 | 探索不同的技术方案分支 |
+| `/clone` | `/clone` | 完整克隆当前会话的所有历史状态 | 复制一份当前进度作为备份 |
+| `/tree` | `/tree` | 以树状图可视化展示各会话的派生谱系 | 梳理父子会话与分叉关系 |
 
-## 3. 文件回滚
+---
 
-| 命令 | 用法 | 作用 |
-| --- | --- | --- |
-| `/undo` | `/undo [N\|--list]` | 查看或回退 Git snapshot turn |
+## 3. 回滚、撤销与时空穿梭
 
-`/undo` 校验 post snapshot 冲突和权限。冲突或无法恢复的文件进入 skipped；session transcript 保持可追踪。
+| 命令 | 完整语法 | 功能说明 | 典型场景 |
+| :--- | :--- | :--- | :--- |
+| `/undo` | `/undo [N]` | **文件级快照回滚**：原子撤销最近 N 次工具执行对代码库的修改 | Agent 改错了代码，一键秒级还原 |
+| `/rewind` | `/rewind [N]` | **对话回退**：将当前会话历史回退 N 轮对话 | 撤销近期的错误提示词或误判操作 |
+| `/revert` | `/revert [turn_id]` | 将会话与文件同时还原到指定的历史节点 | 彻底回到过去的某个稳定工作状态 |
 
-## 4. 模型与配置
+---
 
-| 命令 | 用法 | 作用 |
-| --- | --- | --- |
-| `/model` | `/model` | 显示当前模型和 base URL |
-| `/model` | `/model MODEL` | 切换 main profile 模型 |
-| `/model` | `/model PROFILE/MODEL:LEVEL` | 切换 main/subagent 与 thinking level |
-| `/effort` | `/effort LEVEL` | 设置当前 provider 的 reasoning effort |
-| `/thinking` | `/thinking on\|off` | 切换可见的推理摘要；不改变 effort |
-| `/config` | `/config [setting]` | 打开或定位交互式设置浏览器 |
+## 4. 执行模式切换
 
-`PROFILE` 当前使用 `main` 或 `subagent`。具体 effort 选项由 active transport 决定。
+| 命令 | 完整语法 | 功能说明 |
+| :--- | :--- | :--- |
+| `/plan` | `/plan [调研目标]` | 切换至 Plan 模式（只读探索，限制写规划文件） |
+| `/build` | `/build` | 切换至 Build 模式（自动修改代码并自动审查运行验证） |
+| `/act` | `/act` | 切换至 Act 模式（默认模式，写文件与 Shell 逐项人工确认） |
 
-## 5. 工具与扩展
+---
 
-| 命令 | 用法 | 作用 |
-| --- | --- | --- |
-| `/tool` | `/tool list` | 列出注册工具 |
-| `/tool` | `/tool NAME INPUT` | 通过当前权限 gate 直接执行工具 |
-| `/skill` | `/skill NAME [prompt]` | 显式激活技能并可追加任务 |
-| `/memory` | `/memory list\|search\|add\|update\|delete` | 检索和维护项目/用户记忆 |
-| `/permissions` | `/permissions [list\|clear]` | 查看权限状态或清除 session grant |
-| `/hooks` | `/hooks` | 查看外部 hook 诊断 |
-| `/mcp` | `/mcp status\|reload` | 查看或重载 MCP runtime |
-| `/context` | `/context` | 查看 token、工具、记忆和技能占用 |
-| `/btw` | `/btw QUESTION` | 发起侧问题并恢复主 session |
+## 5. 上下文与换窗控制
 
-工具输入可以使用 JSON object；只有一个 required 参数的工具支持对应的文本简写。
+| 命令 | 完整语法 | 功能说明 | 典型场景 |
+| :--- | :--- | :--- | :--- |
+| `/context` | `/context` | 查看当前窗口的 Token 消耗、预算与换窗状态 | 了解距离 95% 上下文上限还有多少空间 |
+| `/rollover` | `/rollover [--force]` | 立即通过 `NOTE.md` 交接任务并主动开启干净窗口 | 对话过长时主动归纳并重置上下文 |
+| `/new-context` | `/new-context` | 手动开启一个全新的空白上下文窗口 | 快速清空多轮对话的上下文噪音 |
+| `/compact` | `/compact` | 强制进行窗口归约并保留最新工作回合 | 手动清理陈旧输出 |
 
-## 6. 退出
+---
 
-| 命令 | 用法 | 作用 |
-| --- | --- | --- |
-| `/exit` | `/exit` | 保存当前 session 并退出 |
-| `/quit` | `/quit` | `/exit` 的隐藏 alias |
-| `/revert` | `/revert [N\|--list]` | `/undo` 的隐藏 alias |
+## 6. 模型与推理配置
 
-终端 Ctrl+C / Ctrl+D：输入栏有内容时 Ctrl+C 先清空；活动 run 中请求取消；空闲状态 3 秒内连续两次按同一个键退出（Ctrl+C 两次或 Ctrl+D 两次，CLI 与 TUI 一致，不可混用）。
+| 命令 | 完整语法 | 功能说明 |
+| :--- | :--- | :--- |
+| `/model` | `/model [profile/model_name]` | 查看或快速切换当前活跃的大模型 |
+| `/effort` | `/effort [low\|medium\|high]` | 设置模型深度思考（Reasoning Effort）的努力程度 |
+| `/thinking` | `/thinking [on\|off]` | 开启或关闭思考链（Thinking Process）的展示 |
+
+---
+
+## 7. 认证与设置管理
+
+| 命令 | 完整语法 | 功能说明 |
+| :--- | :--- | :--- |
+| `/auth` | `/auth [status\|list]` | 查看当前的 API 认证状态与凭据列表 |
+| `/login` | `/login [provider]` | 发起特定 Provider 的凭据登录与验证 |
+| `/logout` | `/logout [provider]` | 清除指定 Provider 的本地已存凭据 |
+| `/config` | `/config [key [value]]` | 打开终端交互式配置浏览器，或直接查看/修改设置项 |
+| `/permissions` | `/permissions` | 查看当前工作区生效的文件与命令权限规则清单 |
+| `/hooks` | `/hooks` | 查看当前注册的生命周期钩子事件清单 |
+
+---
+
+## 8. 工具、扩展与记忆
+
+| 命令 | 完整语法 | 功能说明 |
+| :--- | :--- | :--- |
+| `/tool` | `/tool [list\|info <name>]` | 列出当前所有可用工具及其只读/串行分类 |
+| `/skill` | `/skill [list\|load <name>]` | 查看当前项目或全局可用的技能包并手动加载 |
+| `/memory` | `/memory [list\|add\|search]` | 管理长期记忆（三层记忆查看、添加新规则、向量语义检索） |
+| `/mcp` | `/mcp [status\|reload]` | 检查外部 MCP 服务的连通状态或热重载连接 |
+
+---
+
+## 9. 交互控制与调试
+
+| 命令 | 完整语法 | 功能说明 |
+| :--- | :--- | :--- |
+| `/steer` | `/steer` | 将繁忙输入模式切换为中途转向（默认：新输入会中途引导当前 Agent） |
+| `/queue` | `/queue` | 将繁忙输入模式切换为排队（新输入在当前任务完成后顺延执行） |
+| `/goal` | `/goal [目标描述]` | 设定明确的验证目标，开启长任务目标守卫循环 |
+| `/btw` | `/btw [备注信息]` | 附注补充信息，仅写入记录而不打断当前正在进行的推理 |
+| `/clear` | `/clear` | 清理当前终端屏幕内容，保持视野清爽 |
+| `/verbose` | `/verbose [on\|off]` | 切换是否展示详细的底层工具入参与执行详情 |
+| `/debug` | `/debug [on\|off]` | 开启或关闭底层事件与流式传输的调试日志 |
+| `/help` | `/help` | 在终端打印命令帮助概览 |

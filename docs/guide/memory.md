@@ -1,68 +1,37 @@
-# 长期记忆
+# 长期记忆（Memory）系统
 
-Cade 的长期记忆保存跨 session 可复用的规则、架构决策、验证事实和解决方案。当前任务连续性由 session surface 与账本承担。
+为了避免在每次新会话中重复向 Agent 交代团队约定或代码偏好，Cade 提供了三层长期记忆机制。它能够跨越不同会话，持久化记住架构决策、技术栈约束与编码偏好。
 
-## 1. 两个记忆层
+---
 
-| 层 | 默认文件 | 适合保存 |
-| --- | --- | --- |
-| project | `<project>/MEMORY.md` | 项目架构约定、技术选择、团队规则 |
-| user | `~/.cade/memory/MEMORY.md` | 个人偏好、跨项目习惯、通用工作方式 |
+## 1. 记忆的三层架构
 
-每个 Markdown H2 section 形成一条 `MemoryRecord`。记录包含 title、body、layer 和由 layer/title 生成的稳定 id。旧格式的 metadata 行会被解析并从检索正文中剥离；退休状态记录不会进入结果。
+| 层级 | 作用范围 | 存储位置 | 适用内容 |
+| :--- | :--- | :--- | :--- |
+| **Global 记忆** | 用户跨项目全局生效 | `~/.config/cade/memory.md` | 个人习惯（如“使用中文写注释”、“倾向使用函数式编程”） |
+| **Project 记忆** | 当前代码仓库全体成员生效 | `<项目根目录>/.cade/memory.md` | 项目专属约束（如“数据库只用 PostgreSQL”、“所有导出接口需加类型校验”） |
+| **Session 记忆** | 仅在当前会话生命周期内生效 | 内存与当前 Session JSONL | 本轮任务的临时上下文决策 |
 
-## 2. 按需检索
+---
 
-Agent 拥有 `search_memory` 工具：
+## 2. 记忆的注入与检索
 
-```json
-{
-  "query": "provider timeout",
-  "scope": "providers",
-  "layer": "all",
-  "limit": 3
-}
+- **关键摘要常驻**：每次对话发起前，Cade 会自动将项目记忆的核心条目提取作为上下文前置补充注入系统 Prompt；
+- **语义搜索召回**：当用户提出的问题涉及特定的历史决策时，Agent 会利用 BM25 或向量语义检索主动从记忆库中召回最匹配的历史偏好。
+
+---
+
+## 3. 记忆管理命令
+
+在终端中，你可以通过 `/memory` 命令快速增删改查：
+
+```bash
+/memory list            # 查看当前项目和全局已记住的所有规则与偏好
+/memory add [内容]      # 追加一条新的记忆条目（自动写入 .cade/memory.md）
+/memory search [关键词] # 检索记忆库中与特定技术或模块相关的历史记录
 ```
-
-检索使用确定性 BM25：
-
-- 英文、数字、代码、路径和中文 token 参与匹配。
-- 中文文本额外生成字符和双字 token。
-- exact match 与 token overlap 提升排序分数。
-- `project` 在相同分数条件下排在 `user` 前面。
-- 单次结果最多 10 条。
-
-索引按记忆文件的 path、inode、mtime 和 size 建立签名；文件变化后自动重建。
-
-普通 turn 只接收长期记忆使用协议，模型在需要时调用 `search_memory`。恢复旧 session 时可以读取最多 6000 token 的 memory overview，并将其作为背景上下文。
-
-## 3. 写入与维护
-
-REPL 命令：
-
+例如：
 ```text
-/memory list
-/memory list project
-/memory search provider timeout
-/memory add project Retry policy | Provider requests retry transient failures.
-/memory update project Retry policy | Retry transient provider failures twice.
-/memory delete project Retry policy
+> /memory add 本项目所有新加的 API 接口必须通过 pydantic 进行入参强校验
+已将新规则持久化至项目记忆。
 ```
-
-`/memory add` 也支持 `title: body` 或两个空格分隔字段的简写。项目和用户层通过命令中的可选前缀选择。
-
-写入规则：
-
-- 输入需要一个 H2 标题和至少三字符正文。
-- 标题重复或正文重复时拒绝写入。
-- update 按标题替换并保留其他 section。
-- delete 按标题删除并保留文件其他内容。
-- 文件锁保护并发修改。
-- 临时文件、flush、fsync 和 replace 提供原子更新。
-- 成功写入后清除内存检索索引。
-
-## 4. 记忆与上下文的关系
-
-记忆检索结果通过普通工具结果进入当前 session，可以参与后续压缩和恢复。记忆文件本身作为可读文件拥有来源路径；memory overview 以 `[project memory · memory_id]` 或 `[user memory · memory_id]` 标识层和记录身份。
-
-长期记忆适合稳定事实，todo、当前 diff、临时错误和当前回合进度属于 session context。保存记忆时使用具体、可复用、可验证的描述，并保留项目层与用户层的边界。

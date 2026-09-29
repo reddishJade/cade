@@ -1,37 +1,48 @@
-# 版本与发布
+# 版本与发布规范
 
-Cade 目前通过 Git 安装；`pyproject.toml` 中的 `cade-agent` 版本是包版本的唯一来源。`0.2.0` 正在准备发布，仓库还没有 Cade 的版本标签，因此版本号暂时不能用来定位某次发布。
+Cade 遵循严格的语义化版本规范（[Semantic Versioning 2.0.0](https://semver.org/)）与敏捷演进机制。
 
-## 版本规则
+---
 
-- 开发期间不按提交次数递增版本；准备发布时才修改版本号。
-- 在 `0.x` 阶段，修复且不改变现有用法时增加修订号（例如 `0.2.0` → `0.2.1`）。新增功能或改变现有用法时增加次版本号（例如 `0.1.2` → `0.2.0`）。
-- 不兼容的 CLI、配置、会话格式或 Python 接口变更应在发布说明中明确列出。只有准备承诺稳定的外部使用方式时才发布 `1.0.0`。
-- 每个发布版本只对应一个提交和一个同号 Git 标签：包版本 `0.2.0` 对应标签 `v0.2.0`。不要移动或复用已发布的标签。
+## 1. 版本号命名格式
 
-`uv.lock` 纳入版本控制，供开发和 CI 使用。它锁定仓库环境，但从 Git 安装 Cade 的用户仍按包元数据解析依赖；固定 Git 标签首先固定的是 Cade 源代码。
+版本号格式为 `MAJOR.MINOR.PATCH`（例如 `0.2.0`）：
+- **MAJOR（主版本号）**：当架构发生重大不兼容断代调整时递增；
+- **MINOR（次版本号）**：新增向后兼容的特性、新增工具或重构模块时递增；
+- **PATCH（补丁版本号）**：向后兼容的 Bug 修复、安全加固或文档修正时递增。
 
-## 日常检查
+---
 
-CI 在 pull request、`main` 更新和 `v*` 标签推送时运行。`checks` 作业使用 Python 3.12，按锁文件安装依赖，并执行 Ruff、Pyright、命令行启动检查和分发包构建。E2E 测试源码仅保留在开发机，不提交 origin；常规 CI 不运行 E2E。标签构建还检查标签名与 `pyproject.toml` 的版本一致。推送工作流后，可在 GitHub 仓库设置中将 `checks` 设为 `main` 的必需状态检查。
+## 2. 检查当前版本
 
-本地发布前运行只读检查和完整测试；完整测试所需环境见[测试说明](../testing.md)：
+在终端中运行：
 
-```sh
-uv sync --locked --extra dev
-uv run --locked ruff check src/
-uv run --locked ruff format --check src/
-uv run --locked pyright src/
-uv run --locked cade --help
-uv run --locked pytest src/cade/tests -q --tb=short
-uv build --no-sources
+```bash
+cade --version
 ```
 
-## 发布步骤
+或使用 Python 包管理器查看：
 
-1. 确认 `pyproject.toml` 中待发布的版本；当前准备的是 `0.2.0`。后续发布如需升级，运行 `uv version <新版本> --no-sync`，并检查 `pyproject.toml` 和 `uv.lock` 的改动。
-2. 更新 `CHANGELOG.md` 中的待发布条目，写明日期、主要变化及不兼容变化。
-3. 运行上述检查，将版本、锁文件和更新日志一起提交；等待 `main` 的 CI 通过。
-4. 在该提交创建 `v<新版本>` 标签并推送。确认标签 CI 通过后，在 GitHub 创建对应的 Release，并把 README 的安装命令固定到该标签。
+```bash
+uv pip list | grep cade-agent
+```
 
-仓库暂不自动向 PyPI 发布。决定通过 PyPI 分发时，再增加独立的发布流程和相应的安装说明。
+---
+
+## 3. 发布与打包流程（维护者指南）
+
+Cade 采用 `uv` 与 GitHub Actions 进行全自动化 CI/CD 构建与验证：
+
+1. **更新包版本**：在 `pyproject.toml` 中更新 `version` 字段；
+2. **提交并打标签**：
+   ```bash
+   git commit -am "chore: release v0.2.0"
+   git tag v0.2.0
+   git push origin main --tags
+   ```
+3. **CI 自动化验证**：GitHub Actions 触发 `ci.yml`，执行：
+   - 校验 Git 标签与 `pyproject.toml` 版本一致性；
+   - 运行 Ruff Lint 与格式化检查；
+   - 运行 Pyright 严格类型检查；
+   - 运行命令行入口启动检查；
+   - 执行 `uv build --no-sources` 构建分发包。

@@ -1,35 +1,28 @@
-# 模型与 Provider
+# 模型与 Provider 接入指南
 
-Cade 把模型调用统一为 `ModelProvider` 流式协议。provider 负责服务差异，Agent 只接收统一的文本、推理、工具、usage、结束和失败事件。
+Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务商在 API 协议、分块流式传输、推理思考链以及工具调用格式上的异构性，原生支持前沿大模型与本地私有化部署服务。
 
-## 1. 支持的 transport
+---
 
-| transport | 适配器 | 说明 |
-| --- | --- | --- |
-| `openai_chat` | `OpenAIChatProvider` | OpenAI Chat Completions 及兼容网关 |
-| `deepseek_chat` | `DeepSeekProvider` | DeepSeek Chat 与 reasoning content |
-| `chatglm_chat` | `ChatGLMProvider` | ChatGLM Chat、thinking、tool stream |
-| `mimo_chat` | `MiMoProvider` | Xiaomi MiMo Chat |
-| `custom` | OpenAI Chat 适配器 | 自定义 base URL 的 OpenAI-compatible 网关 |
+## 1. 支持的 Provider 与 Transport 协议
 
-共享基类处理消息转换、工具 schema、thinking 参数、流式 chunk、usage 和在途请求中止；各 provider 处理自己的字段约束。
+在配置中，通过 `transport` 字段指定通信协议类型：
 
-## 2. 连接方式与 Profile 配置
+| Transport 协议 | 对应适配类 | 适用平台与典型模型 |
+| :--- | :--- | :--- |
+| **`deepseek_chat`** | `DeepSeekProvider` | DeepSeek 官方 API（`deepseek-flash` 默认模型、`deepseek-v4-pro` 旗舰推理） |
+| **`openai_responses`**| `OpenAIResponsesProvider` | OpenAI 最新 Responses 协议（`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6` 系列） |
+| **`openai_chat`** | `OpenAIChatProvider` | 标准 OpenAI 格式接口与兼容聚合服务 |
+| **`openai_codex`** | `OpenAICodexResponsesProvider` | ChatGPT / Codex 登录会话与模型通道 |
+| **`chatglm_chat`** | `ChatGLMProvider` | 智谱 AI（`glm-5.1`、`glm-5`、`glm-4.7-flash` 系列）官方 API |
+| **`mimo_chat`** | `MiMoProvider` | 小米 MiMo 平台大模型接口（`mimo-v2.5-pro`、`mimo-v2.5`） |
+| **`custom`** | `OpenAIChatProvider` | 任意自定义 OpenAI 兼容网关、vLLM、Ollama 本地私有服务 |
 
-`cade login` 和 `cade connect` 会先让用户选择认证方式：账户 OAuth 或 API
-key。账户方式目前用于 Codex/ChatGPT；API key 方式进入下面的 provider 配置向导。
-API key 连接可以在首次运行后重复执行，配置写入 `main` profile。
+---
 
-## Profile 配置
+## 2. 典型配置示例 (`cade.config.json` 或 `~/.cade/settings.json`)
 
-运行时 profile 通常使用 `main`、`subagent`、`fallback` 和 `reviewer`：
-
-- `main`：主 Agent。
-- `subagent`：子代理。
-- `fallback`：主 provider 连续失败后的回退 provider。
-- `reviewer`：Build 自动审批 reviewer。
-
-示例：
+### 示例 A：配置 DeepSeek（官方 API）
 
 ```json
 {
@@ -39,86 +32,85 @@ API key 连接可以在首次运行后重复执行，配置写入 `main` profile
         "transport": "deepseek_chat",
         "chat_model": "deepseek-flash",
         "base_url": "https://api.deepseek.com",
-        "api_key": "",
+        "api_key": "sk-your-deepseek-key",
         "thinking": true,
         "reasoning_effort": "high"
-      },
-      "reviewer": {
-        "chat_model": "deepseek-flash",
-        "thinking": false
-      },
-      "subagent": "deepseek-flash"
+      }
     }
   }
 }
 ```
 
-profile 可以从 `main` 继承。API key 可以写在 profile，也可以通过环境变量提供。常用变量：
+### 示例 B：配置 OpenAI GPT-6
+
+```json
+{
+  "provider": {
+    "model_profiles": {
+      "main": {
+        "transport": "openai_responses",
+        "chat_model": "gpt-6-sol",
+        "api_key": "sk-your-openai-key",
+        "thinking": true,
+        "reasoning_effort": "medium"
+      }
+    }
+  }
+}
+```
+
+### 示例 C：配置本地 Ollama 或 vLLM 私有模型
+
+无需公网网络，完全本地私密运行：
+
+```json
+{
+  "provider": {
+    "model_profiles": {
+      "main": {
+        "transport": "custom",
+        "chat_model": "qwen2.5-coder:32b",
+        "base_url": "http://localhost:11434/v1",
+        "api_key": "ollama",
+        "context_window": 32768
+      }
+    }
+  }
+}
+```
+
+---
+
+## 3. 多 Profile 分工：主模型、子代理与容灾回退
+
+Cade 支持定义独立的模型 Profile，分担不同的工作负荷以优化成本与速度：
+
+1. **`main`（主模型）**：
+   负责与人类直接交互并驱动主事件循环，通常选用推理能力最强、支持思考链的模型（如 `deepseek-v4-pro` 或 `gpt-6-sol`）。
+2. **`subagent`（子代理模型）**：
+   负责执行拆分出去的孤立子任务（如单纯检索大目录、执行局部静态语法检查）。可配置速度极快的小模型（如 `deepseek-flash`、`gpt-6-luna` 或 `glm-4.7-flash`）。
+3. **`fallback`（容灾回退模型）**：
+   当主模型遭遇网络故障、服务商限流（Rate Limit）或 5xx 错误时，系统会自动切至回退模型重试，保障开发流程不中断。
+
+---
+
+## 4. 思考链（Thinking）与选择语法
+
+Cade 支持精确控制推理模型的思考深度，并提供统一的选择语法：
+
+### 模型选择语法：`provider/model:thinking_level`
+
+在终端中使用 `/model` 时，支持一步指定提供商、模型与思考深度：
 
 ```bash
-OPENAI_API_KEY=...
-DEEPSEEK_API_KEY=...
-MIMO_API_KEY=...
-CHATGLM_API_KEY=...
-ZHIPUAI_API_KEY=...
-BIGMODEL_API_KEY=...
+/model gpt-6-sol                          # 切换模型，保留当前思考深度
+/model deepseek/deepseek-v4-pro:high      # 指定 DeepSeek 提供商、V4 Pro 模型与 high 思考深度
+/model openai/gpt-6-astra:max             # 开启 max 级别极限推理深度
+/model chatglm/glm-5.1:medium             # 切换至 GLM-5.1 并设定为 medium 思考
 ```
 
-配置值优先于环境变量。provider 专用变量优先于通用 `OPENAI_API_KEY` 和 `API_KEY`。
-
-## 3. 内置模型
-
-内置模型注册表当前包含：
-
-| provider | 模型 |
-| --- | --- |
-| OpenAI | `gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.5` |
-| DeepSeek | `deepseek-v4-pro`、`deepseek-flash` |
-| ChatGLM | `glm-5.1`、`glm-5`、`glm-5-turbo`、`glm-4.7`、`glm-4.7-flash` |
-| MiMo | `mimo-v2.5-pro`、`mimo-v2.5` |
-
-DeepSeek 的 `deepseek-flash` 对应 DeepSeek-V4.1-Flash（1M 上下文、384K 最大
-输出）；`deepseek-v4-pro` 对应 DeepSeek-V4-Pro。官方已停用的
-`deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 仍会被 API 接受，cade
-在注册表查询、上下文窗口和成本估算时把它们归一化为 `deepseek-flash`。
-
-网关可以提供自定义模型名。Web 工作台会优先请求当前 gateway 的 `/models`，失败时使用注册表和当前模型；custom transport 展示当前模型与自定义输入。
-
-## 4. Thinking 与 reasoning effort
-
-`thinking` 在 Responses/Codex transport 中控制是否请求并展示可公开的推理摘要，
-`reasoning_effort` 控制模型的推理强度。两者分别保存：
-
-- `/thinking off` 关闭推理摘要显示，并沿用 profile 当前 effort。
-- `/thinking on` 请求推理摘要，并沿用 profile 当前 effort；简单请求可能不返回摘要。
-- `/effort off` 关闭 reasoning effort。
-- `/effort LEVEL` 开启 thinking 并设置 effort。
-
-当前界面档位：
-
-- `openai_chat`、`custom`：`none`、`minimal`、`low`、`medium`、`high`、`xhigh`。
-- `deepseek_chat`：`off`、`high`、`max`。
-- ChatGLM 与 MiMo 主要使用 thinking 配置以及各自 extra body。
-
-provider 可能返回 `reasoning_content`。跨 provider 使用历史消息时，归一化器会把 provider 专用字段转换为通用文本结构。
-
-## 5. 模型切换
-
-```text
-/model
-/model gpt-5.4-mini
-/model main/gpt-5.4-mini:high
-/model subagent/deepseek-v4-pro
-/effort high
-/thinking off
-```
-
-斜杠前的名称在当前 CLI 中作为 profile 使用，可用 profile 为 `main` 和 `subagent`。活动 run 存在时拒绝主模型替换；run 结束后再次执行切换。切换子代理模型只影响后续 child activation。
-
-## 6. 缓存、成本与回退
-
-provider 记录输入 token、输出 token、缓存命中/未命中 token、reasoning token 和累计成本。DeepSeek 优先读取原生缓存字段，OpenAI-compatible usage 使用 `prompt_tokens_details.cached_tokens` 回退字段。
-
-模型注册表保存美元/百万 token 单价和可选 UTC 高峰时段。状态栏可以展示输入、输出、缓存读取、缓存写入、命中率和累计成本。
-
-ProviderRuntime 对 429、500、502、503、529、连接错误和超时使用退避重试，并把状态码归类为可读错误。Fallback wrapper 在主 provider 连续三次失败后切换 fallback；fallback 连续三次成功后重新尝试主 provider。
+支持的思考深度阶梯（`thinking_level`）：
+- `off` / `none`：关闭思考流，仅输出最终代码与文本
+- `minimal` / `low`：轻度思考，适合常规语法与简单工具调用
+- `medium`：标准推理，适合日常功能模块实现与重构
+- `high` / `xhigh` / `max`：深度思考推演，适合复杂并发架构设计与疑难死锁排查
