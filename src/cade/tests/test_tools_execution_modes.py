@@ -8,6 +8,8 @@ from cade.agent.types import ApprovalRequest
 from cade.coding_agent.execution_modes import (
     DEFAULT_MODE_FALLBACKS,
     DEFAULT_SHELL_UNRESOLVED_POLICIES,
+    ActPolicy,
+    BuildPolicy,
     ExecutionModeState,
     PlanPolicy,
     build_default_mode_rulesets,
@@ -48,6 +50,68 @@ class TestDefaultModeRulesets:
             if rule.resource_pattern is not None
         }
         assert (tmp_path / ".cade" / "plans" / "*.md").as_posix() in plan_patterns
+
+
+def _tool(name: str):
+    from cade.agent.types import ToolSpec
+
+    return ToolSpec(name=name, description="", input_hint="", handler=lambda d, _: "")
+
+
+class TestDefaultCodingSurface:
+    def test_build_hides_structured_search_helpers(self) -> None:
+        tools = tuple(
+            _tool(name)
+            for name in (
+                "read_file",
+                "write_file",
+                "edit_file",
+                "apply_patch",
+                "bash",
+                "grep_search",
+                "glob_files",
+                "find_files",
+                "list_dir",
+                "search_tools",
+                "websearch",
+            )
+        )
+        names = {tool.name for tool in BuildPolicy().filter_tools(tools)}
+        assert {"read_file", "write_file", "edit_file", "apply_patch", "bash"} <= names
+        assert "websearch" in names
+        assert not names & {
+            "grep_search",
+            "glob_files",
+            "find_files",
+            "list_dir",
+            "search_tools",
+        }
+
+    def test_act_hides_structured_search_helpers(self) -> None:
+        tools = tuple(
+            _tool(name)
+            for name in (
+                "read_file",
+                "write_file",
+                "edit_file",
+                "apply_patch",
+                "bash",
+                "grep_search",
+                "glob_files",
+            )
+        )
+        names = {tool.name for tool in ActPolicy().filter_tools(tools)}
+        assert names == {"read_file", "write_file", "edit_file", "apply_patch", "bash"}
+
+    def test_plan_keeps_structured_search_until_shell_policy_changes(self) -> None:
+        tools = (
+            _tool("read_file"),
+            _tool("bash"),
+            _tool("grep_search"),
+            _tool("glob_files"),
+        )
+        names = {tool.name for tool in PlanPolicy().filter_tools(tools)}
+        assert names == {"read_file", "grep_search", "glob_files"}
 
 
 class TestPlanPolicy:
