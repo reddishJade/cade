@@ -23,13 +23,15 @@ def test_quoted_rg_glob_is_not_treated_as_shell_expansion() -> None:
     assert [target.value for target in analysis.resolved_paths] == ["src"]
 
 
-def test_fd_is_read_only_but_exec_mode_requires_review() -> None:
-    read_only = analyze_shell_command("fd parser src")
-    executing = analyze_shell_command("fd parser src -x echo {}")
+@pytest.mark.parametrize(
+    "command",
+    ["fd parser src", "fd parser src -x echo {}", "fd --exec=echo parser src"],
+)
+def test_fd_requires_review_without_a_partial_option_parser(command: str) -> None:
+    analysis = analyze_shell_command(command)
 
-    assert read_only.unresolved_effects == ()
-    assert [target.value for target in read_only.resolved_paths] == ["src"]
-    assert [effect.reason for effect in executing.unresolved_effects] == [
+    assert analysis.resolved_paths == ()
+    assert [effect.reason for effect in analysis.unresolved_effects] == [
         "wrapper_command"
     ]
 
