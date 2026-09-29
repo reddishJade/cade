@@ -301,6 +301,16 @@ class ToolGate:
             raise ValueError(f"tools must define JSON schemas: {names}")
         return [_RedactingAdapter(spec) for spec in registry]
 
+    def filter_tools(
+        self,
+        registry: tuple[ToolSpec, ...],
+    ) -> tuple[ToolSpec, ...]:
+        """Project the registry through the current execution mode."""
+        filter_tools = getattr(self._mode, "filter_tools", None)
+        if filter_tools is None:
+            return registry
+        return filter_tools(registry)
+
     @property
     def current_approval_callback(self) -> ApprovalCallback | None:
         """返回当前 execution mode 实际使用的审批回调。"""
