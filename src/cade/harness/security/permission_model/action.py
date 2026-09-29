@@ -80,9 +80,7 @@ class ActionExtractor:
             return self._apply_patch_action(tool_name, tool_input, path_extractor)
         if tool_name == "bash":
             return self._bash_action(tool_name, tool_input)
-        if tool_name == "shell":
-            return self._shell_action(tool_name, tool_input)
-        if tool_name in ("grep", "glob", "find", "list"):
+        if tool_name in ("grep", "glob", "find", "ls"):
             return self._path_action(tool_name, tool_input, "read", tool_name, "read")
         if tool_name == "load_skill":
             return self._load_skill_action(tool_name, tool_input)
@@ -196,30 +194,6 @@ class ActionExtractor:
             unresolved_effects=unresolved_effects,
         )
 
-    def _shell_action(self, tool_name: str, tool_input: Mapping[str, object]) -> Action:
-        targets: list[Target] = []
-        all_unresolved: list[UnresolvedEffect] = []
-        for command in self._shell_commands(tool_input):
-            normalized_command = command.strip()
-            if not normalized_command:
-                continue
-            targets.append(
-                Target(kind="command", value=normalized_command, access="execute")
-            )
-            analysis = self._analyze_command(normalized_command, "posix")
-            targets.extend(analysis.resolved_paths)
-            all_unresolved.extend(analysis.unresolved_effects)
-            if not analysis.classification_available:
-                targets.extend(self._shell_path_targets(normalized_command))
-        return Action(
-            tool=tool_name,
-            capability="shell",
-            operation="run_command",
-            targets=tuple(targets),
-            input=tool_input,
-            unresolved_effects=tuple(all_unresolved),
-        )
-
     def _analyze_command(
         self,
         command: str,
@@ -283,19 +257,6 @@ class ActionExtractor:
         raw_paths = tool_input.get("paths")
         if isinstance(raw_paths, tuple | list):
             return tuple(path for path in raw_paths if isinstance(path, str))
-
-        return ()
-
-    def _shell_commands(self, tool_input: Mapping[str, object]) -> tuple[str, ...]:
-        raw_commands = tool_input.get("commands")
-        if isinstance(raw_commands, tuple | list):
-            return tuple(
-                command for command in raw_commands if isinstance(command, str)
-            )
-
-        raw_command = tool_input.get("command")
-        if isinstance(raw_command, str):
-            return (raw_command,)
 
         return ()
 
