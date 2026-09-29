@@ -139,6 +139,7 @@ class ToolGateSnapshot:
     user_ruleset: tuple[Rule, ...] = ()
     mode_fallback: PermissionDecision = "ask"
     shell_unresolved_policy: PermissionDecision = "ask"
+    shell_mutation_policy: PermissionDecision = "ask"
     tool_path_extractors: dict[str, PathExtractor] = field(default_factory=dict)
 
 
@@ -172,6 +173,7 @@ class ToolGate:
         default_mode_rulesets: Mapping[str, tuple[Rule, ...]] | None = None,
         mode_fallbacks: Mapping[str, PermissionDecision] | None = None,
         shell_unresolved_policies: Mapping[str, PermissionDecision] | None = None,
+        shell_mutation_policies: Mapping[str, PermissionDecision] | None = None,
         tool_path_extractors: Mapping[str, PathExtractor] | None = None,
     ) -> None:
         self._mode = mode_state
@@ -180,6 +182,7 @@ class ToolGate:
         self._default_mode_rulesets = default_mode_rulesets or {}
         self._mode_fallbacks = mode_fallbacks or {}
         self._shell_unresolved_policies = shell_unresolved_policies or {}
+        self._shell_mutation_policies = shell_mutation_policies or {}
         self._tool_path_extractors = tool_path_extractors or {}
         self._user_approval_callback = user_approval_callback
         self._auto_approval_callback = auto_approval_callback
@@ -222,6 +225,9 @@ class ToolGate:
     def _shell_unresolved_policy_for_mode(self, mode_name: str) -> PermissionDecision:
         return self._shell_unresolved_policies.get(mode_name, "ask")
 
+    def _shell_mutation_policy_for_mode(self, mode_name: str) -> PermissionDecision:
+        return self._shell_mutation_policies.get(mode_name, "ask")
+
     def _approval_callback_for_mode(
         self, reviewer: ApprovalsReviewer
     ) -> ApprovalCallback | None:
@@ -234,6 +240,7 @@ class ToolGate:
         default_rules = self._default_ruleset_for_mode(mode_name)
         fallback = self._fallback_for_mode(mode_name)
         shell_unresolved_policy = self._shell_unresolved_policy_for_mode(mode_name)
+        shell_mutation_policy = self._shell_mutation_policy_for_mode(mode_name)
         reviewer = self._mode.approvals_reviewer
         return ToolGateSnapshot(
             user_ruleset=self._ruleset_for_mode(mode_name),
@@ -253,6 +260,7 @@ class ToolGate:
             mode_ruleset=default_rules,
             mode_fallback=fallback,
             shell_unresolved_policy=shell_unresolved_policy,
+            shell_mutation_policy=shell_mutation_policy,
             tool_path_extractors=dict(self._tool_path_extractors),
         )
 
@@ -262,6 +270,7 @@ class ToolGate:
         default_rules = self._default_ruleset_for_mode(mode_name)
         fallback = self._fallback_for_mode(mode_name)
         shell_unresolved_policy = self._shell_unresolved_policy_for_mode(mode_name)
+        shell_mutation_policy = self._shell_mutation_policy_for_mode(mode_name)
         reviewer = self._mode.approvals_reviewer
         return ToolGateSnapshot(
             user_ruleset=self._ruleset_for_mode(mode_name),
@@ -281,6 +290,7 @@ class ToolGate:
             mode_ruleset=default_rules,
             mode_fallback=fallback,
             shell_unresolved_policy=shell_unresolved_policy,
+            shell_mutation_policy=shell_mutation_policy,
             tool_path_extractors=dict(self._tool_path_extractors),
         )
 
@@ -609,6 +619,7 @@ class ToolGate:
                 user_ruleset=snapshot.user_ruleset,
                 mode_fallback=snapshot.mode_fallback,
                 shell_unresolved_policy=snapshot.shell_unresolved_policy,
+                shell_mutation_policy=snapshot.shell_mutation_policy,
                 approval_policy=snapshot.approval_policy,
                 execution_mode=snapshot.mode_name,
             )
