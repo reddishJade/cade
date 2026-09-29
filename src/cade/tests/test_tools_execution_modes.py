@@ -7,6 +7,7 @@ from pathlib import Path
 from cade.agent.types import ApprovalRequest
 from cade.coding_agent.execution_modes import (
     DEFAULT_MODE_FALLBACKS,
+    DEFAULT_SHELL_MUTATION_POLICIES,
     DEFAULT_SHELL_UNRESOLVED_POLICIES,
     ActPolicy,
     BuildPolicy,
@@ -43,6 +44,11 @@ class TestDefaultModeRulesets:
             "build": "ask",
             "act": "ask",
         }
+        assert DEFAULT_SHELL_MUTATION_POLICIES == {
+            "plan": "deny",
+            "build": "ask",
+            "act": "ask",
+        }
         build_shell = next(rule for rule in rulesets["build"] if rule.action == "bash")
         act_shell = next(rule for rule in rulesets["act"] if rule.action == "bash")
         assert build_shell.effect == "allow"
@@ -52,13 +58,7 @@ class TestDefaultModeRulesets:
             for rule in rulesets["plan"]
             if rule.action == "bash" and rule.command is None
         )
-        plan_rm = next(
-            rule
-            for rule in rulesets["plan"]
-            if rule.action == "bash" and rule.command == "rm"
-        )
         assert plan_shell.effect == "allow"
-        assert plan_rm.effect == "deny"
         plan_patterns = {
             rule.resource_pattern
             for rule in rulesets["plan"]
@@ -187,6 +187,7 @@ class TestExecutionModeState:
             audit_logger=None,
             session_id="test",
             shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
+            shell_mutation_policies=DEFAULT_SHELL_MUTATION_POLICIES,
         )
 
         state.set_mode("plan")
@@ -197,11 +198,14 @@ class TestExecutionModeState:
         act_snapshot = gate.snapshot()
 
         assert plan_snapshot.shell_unresolved_policy == "ask"
+        assert plan_snapshot.shell_mutation_policy == "deny"
         assert plan_snapshot.approvals_reviewer == "auto_review"
         assert plan_snapshot.approval_callback is auto
         assert build_snapshot.shell_unresolved_policy == "ask"
+        assert build_snapshot.shell_mutation_policy == "ask"
         assert build_snapshot.approvals_reviewer == "auto_review"
         assert build_snapshot.approval_callback is auto
         assert act_snapshot.shell_unresolved_policy == "ask"
+        assert act_snapshot.shell_mutation_policy == "ask"
         assert act_snapshot.approvals_reviewer == "user"
         assert act_snapshot.approval_callback is user
