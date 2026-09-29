@@ -23,6 +23,44 @@ def test_quoted_rg_glob_is_not_treated_as_shell_expansion() -> None:
     assert [target.value for target in analysis.resolved_paths] == ["src"]
 
 
+# 失效情形：baseline 中的行数统计和行号显示触发不必要的审查。
+@pytest.mark.parametrize("command", ["wc -l src/main.py", "nl -ba src/main.py"])
+def test_simple_line_inspection_is_read_only(command: str) -> None:
+    analysis = analyze_shell_command(command)
+
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == ["src/main.py"]
+
+
+# 失效情形：只读行范围显示被审查，写入或执行脚本却被误放行。
+@pytest.mark.parametrize(
+    "command",
+    ["sed -n '1,20p' src/main.py", "sed -n '1,20p;30,40p' src/main.py"],
+)
+def test_sed_numeric_print_ranges_are_read_only(command: str) -> None:
+    analysis = analyze_shell_command(command)
+
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == ["src/main.py"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sed -i 's/a/b/' src/main.py",
+        "sed -n '1,20p' -i src/main.py",
+        "sed -n '1w report.txt' src/main.py",
+        "sed -n '1e touch report.txt' src/main.py",
+    ],
+)
+def test_sed_other_forms_still_require_review(command: str) -> None:
+    analysis = analyze_shell_command(command)
+
+    assert [effect.reason for effect in analysis.unresolved_effects] == [
+        "wrapper_command"
+    ]
+
+
 # 失效情形：等号形式或分离参数形式的外部程序选项被误判为只读。
 @pytest.mark.parametrize(
     "command",
