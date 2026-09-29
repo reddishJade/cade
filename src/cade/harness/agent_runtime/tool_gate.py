@@ -70,12 +70,11 @@ _TOOL_ACTION_PROFILES: dict[str, tuple[str, str]] = {
     "glob": ("read", "path"),
     "grep": ("read", "path"),
     "find": ("read", "path"),
-    "list": ("read", "path"),
+    "ls": ("read", "path"),
     "write": ("write", "path"),
     "edit": ("edit", "path"),
     "patch": ("patch", "path"),
     "bash": ("shell", "none"),
-    "shell": ("shell", "none"),
     "load_skill": ("skill", "skill"),
     "webfetch": ("read", "none"),
     "websearch": ("read", "none"),
@@ -127,6 +126,7 @@ class ToolGateSnapshot:
     approvals_reviewer: ApprovalsReviewer
     permission_policy: PermissionPolicy | None
     approval_policy: ApprovalPolicy
+    mode_name: str
     tool_map: dict[str, ToolSpec]
     restricted_dirs: tuple[str, ...] = ()
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = ()
@@ -241,6 +241,7 @@ class ToolGate:
             approvals_reviewer=reviewer,
             permission_policy=self._permission_policy,
             approval_policy=self._approval_policy,
+            mode_name=mode_name,
             tool_map={},
             restricted_dirs=self._restricted_dirs,
             hook_constraint_providers=self._hook_constraint_providers,
@@ -268,6 +269,7 @@ class ToolGate:
             approvals_reviewer=reviewer,
             permission_policy=self._permission_policy,
             approval_policy=self._approval_policy,
+            mode_name=mode_name,
             tool_map={tool.name: tool for tool in registry},
             restricted_dirs=self._restricted_dirs,
             hook_constraint_providers=self._hook_constraint_providers,
@@ -608,6 +610,7 @@ class ToolGate:
                 mode_fallback=snapshot.mode_fallback,
                 shell_unresolved_policy=snapshot.shell_unresolved_policy,
                 approval_policy=snapshot.approval_policy,
+                execution_mode=snapshot.mode_name,
             )
         )
         result = engine.decide(
