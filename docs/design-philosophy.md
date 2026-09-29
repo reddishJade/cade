@@ -475,7 +475,7 @@ Plan 具有最大 investigation turn 计数，达到上限后自动进入 Build 
 
 ### 7.5 Shell 分析器保持保守语义
 
-POSIX、PowerShell 和 cmd 拥有对应分析器。分析器只承担 deterministic fast path：识别少量确定只读命令、明确 mutation、危险命令、路径与动态 shell 语法；它不充当第二个 reviewer。POSIX fast path 覆盖常见 `rg/find` 和只读 Git 子命令；`fd` 由 reviewer 审查，避免依赖不完整的参数表判断其副作用。
+POSIX、PowerShell 和 cmd 拥有对应分析器。分析器只承担 deterministic fast path：识别少量确定只读命令、明确 mutation、危险命令、路径与动态 shell 语法；它不充当第二个 reviewer。POSIX fast path 覆盖常见 `rg/fd/find` 和只读 Git 子命令；`fd` 仅放行明确识别的只读搜索参数，其他参数由 reviewer 审查。
 
 `rm -rf /`、主机级关机/重启、权限提升、`git reset --hard`、强制 `git clean` 等危险命令直接拒绝。已知 mutation 与未知命令、动态路径、待确认 wrapper 分开表达：mutation policy 由 mode 决定（Plan deny，Build/Act ask），unresolved effect 进入当前 mode 的 reviewer；显式危险命令始终 deny。静态分析只表达“已确认的效果”，OS sandbox 负责实际进程边界。
 

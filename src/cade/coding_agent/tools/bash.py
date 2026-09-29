@@ -254,7 +254,8 @@ def _build_prompt_guidelines(
                 "Use single quotes (') for paths with spaces in bash.",
                 (
                     "Common file commands: cat (read), cp (read+write), mv (write), "
-                    "rm (delete), grep/rg (search), curl/wget (download), tar (archive)"
+                    "rm (delete), rg (content search), fd (file search), "
+                    "curl/wget (download), tar (archive)"
                 ),
             ]
         )
