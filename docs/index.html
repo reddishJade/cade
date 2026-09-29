@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>cade — 可扩展的 Python Coding Agent 运行时骨架</title>
-  <meta name="description" content="围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文压缩、REPL/TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。">
-  <meta property="og:title" content="cade — 可扩展的 Python Coding Agent 运行时骨架">
-  <meta property="og:description" content="围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文压缩、REPL/TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。">
+  <title>cade — 统一内核驱动的 Python Coding Agent 运行时与三端工作台 (工程架构版)</title>
+  <meta name="description" content="基于不可篡改的无损事件流与动态投影，通过 95% 无摘要换窗与持久记忆系统，统一驱动 TUI、CLI 与 Web 三端工作台的确定性 Coding Agent 运行时。">
+  <meta property="og:title" content="cade — 统一内核驱动的 Python Coding Agent 运行时与三端工作台 (工程架构版)">
+  <meta property="og:description" content="基于不可篡改的无损事件流与动态投影，通过 95% 无摘要换窗与持久记忆系统，统一驱动 TUI、CLI 与 Web 三端工作台的确定性 Coding Agent 运行时。">
   <meta property="og:url" content="https://reddishjade.github.io/cade/">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
@@ -25,7 +25,13 @@
           else if (nav.indexOf('en') === 0) l = 'en';
           else l = 'zh';
         }
-        if (l === 'zh' || l === 'en') { document.documentElement.dataset.lang = l; document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en'; }
+        if (l === 'zh' || l === 'en') {
+          document.documentElement.dataset.lang = l;
+          document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
+          if (l === 'en') {
+            document.title = 'cade — Unified Python Coding Agent Runtime & Tri-Workbenches (Tech Edition)';
+          }
+        }
       } catch (e) {}
       try {
         var t = localStorage.getItem('cade-theme');
@@ -118,236 +124,464 @@
     h1, h2, h3, p { margin: 0; }
 
     .lz, .le { display: inline; }
-    html[data-lang="zh"] .le, html[data-lang="en"] .lz { display: none !important; }
+    html[data-lang="zh"] .le { display: none !important; }
+    html[data-lang="en"] .lz { display: none !important; }
 
-    .wrap { width: min(1140px, 92vw); margin-inline: auto; }
-    .reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
-    .reveal.in { opacity: 1; transform: none; }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 28px;
+    }
 
-    /* Nav */
+    /* Header / Nav */
     nav {
-      position: fixed;
-      top: 0; left: 0; right: 0;
+      position: sticky;
+      top: 0;
       z-index: 100;
-      background: color-mix(in srgb, var(--paper) 86%, transparent);
       backdrop-filter: blur(14px);
-      border-bottom: 1px solid var(--line-soft);
+      -webkit-backdrop-filter: blur(14px);
+      background: color-mix(in srgb, var(--paper) 82%, transparent);
+      border-bottom: 1px solid var(--line);
+      height: 64px;
     }
     .nav-inner {
-      display: flex; align-items: center; justify-content: space-between;
-      height: 68px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
     }
     .nav-left { display: flex; align-items: center; gap: 32px; }
     .logo {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-family: var(--font-mono); font-size: 18px; font-weight: 500; letter-spacing: -0.02em;
+      font-family: var(--font-mono);
+      font-weight: 500;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
     }
-    .logo-mark {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 28px; height: 28px; border-radius: 6px;
-      background: var(--ink); color: var(--paper); font-size: 13px;
-    }
-    .nav-links { display: flex; gap: 22px; }
-    .nav-links a {
-      font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--ink-soft); position: relative; padding: 4px 0;
-    }
-    .nav-links a::after {
-      content: ""; position: absolute; bottom: 0; left: 0; width: 0; height: 1px; background: var(--clay);
-      transition: width .3s var(--ease);
-    }
-    .nav-links a:hover { color: var(--ink); }
-    .nav-links a:hover::after { width: 100%; }
-    .nav-right { display: flex; align-items: center; gap: 12px; }
+    .logo-mark { color: var(--clay); font-weight: 700; }
+    .nav-links { display: flex; gap: 20px; font-size: 14px; }
+    .nav-links a { color: var(--ink-soft); transition: color .18s var(--ease); }
+    .nav-links a:hover { color: var(--clay); }
+    .nav-right { display: flex; align-items: center; gap: 10px; }
+
     .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-family: var(--font-mono); font-size: 12px; font-weight: 500;
-      padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
-      background: transparent; color: var(--ink); cursor: pointer;
-      transition: all .25s var(--ease);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 18px;
+      border-radius: 999px;
+      font-family: var(--font-body);
+      font-size: 14px;
+      font-weight: 500;
+      border: 1px solid var(--line);
+      background: var(--paper-2);
+      color: var(--ink);
+      cursor: pointer;
+      transition: all .2s var(--ease);
+      line-height: 1;
     }
-    .btn:hover { border-color: var(--clay); background: color-mix(in srgb, var(--clay) 8%, transparent); }
-    .btn-primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-    .btn-primary:hover { background: var(--clay); border-color: var(--clay); color: var(--paper); }
-    .btn-small { padding: 6px 10px; }
-    .lang-toggle { min-width: 42px; justify-content: center; }
-    .theme-toggle { width: 36px; justify-content: center; }
-    .theme-icon { display: none; width: 16px; height: 16px; }
+    .btn:hover {
+      border-color: var(--clay);
+      background: var(--paper-3);
+      transform: translateY(-1px);
+    }
+    .btn-primary {
+      background: var(--clay);
+      color: var(--paper);
+      border-color: var(--clay);
+    }
+    .btn-primary:hover {
+      background: var(--clay-2);
+      border-color: var(--clay-2);
+      color: var(--paper);
+    }
+    .btn-small { padding: 6px 12px; font-size: 13px; height: 34px; }
+    .theme-toggle, .lang-toggle { font-family: var(--font-mono); padding: 0 10px; min-width: 34px; }
+    .theme-icon { width: 16px; height: 16px; display: none; }
     .theme-icon.active { display: block; }
 
     /* Hero */
-    .hero { padding-top: 140px; padding-bottom: 90px; }
+    .hero {
+      padding: 76px 0 68px;
+      border-bottom: 1px solid var(--line-soft);
+      position: relative;
+    }
     .hero-grid {
-      display: grid; grid-template-columns: 1.05fr .95fr; gap: 64px; align-items: center;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 48px;
+      align-items: center;
     }
     .eyebrow {
-      display: inline-flex; align-items: center; gap: 10px;
-      font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: var(--clay-2); margin-bottom: 22px;
-    }
-    .eyebrow::before {
-      content: ""; display: block; width: 24px; height: 1px; background: var(--clay);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      letter-spacing: 0.04em;
+      color: var(--clay);
+      background: var(--paper-3);
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line-soft);
+      margin-bottom: 22px;
     }
     .hero h1 {
-      font-family: var(--font-display); font-weight: 350; font-size: clamp(2.6rem, 6.2vw, 5.6rem);
-      line-height: 1.05; letter-spacing: -0.02em; margin-bottom: 24px;
+      font-family: var(--font-display);
+      font-size: clamp(2.4rem, 4.4vw, 3.4rem);
+      font-weight: 500;
+      line-height: 1.14;
+      letter-spacing: -0.03em;
+      margin-bottom: 20px;
     }
     .hero h1 em {
-      font-style: italic; color: var(--clay); font-weight: 500;
+      font-style: italic;
+      color: var(--clay);
+      font-weight: 400;
     }
     .hero-lede {
-      font-size: 1.15rem; line-height: 1.65; color: var(--ink-soft); max-width: 520px; margin-bottom: 34px;
+      font-size: 1.12rem;
+      line-height: 1.7;
+      color: var(--ink-soft);
+      margin-bottom: 32px;
+      max-width: 580px;
     }
-    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 38px; }
-    .hero-actions .btn { font-size: 13px; padding: 11px 20px; }
-    .hero-actions .btn-primary .lz::after { content: " →"; }
-    .hero-actions .btn-primary .le::after { content: " →"; }
+    .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 38px; }
     .stats {
-      display: flex; gap: 28px; flex-wrap: wrap;
-      font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft);
+      display: flex;
+      gap: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line-soft);
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: var(--ink-soft);
     }
-    .stats span { display: flex; align-items: center; gap: 8px; }
-    .stats span::before {
-      content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--clay);
-    }
+    .stats span { display: inline-flex; align-items: center; gap: 6px; }
+    .stats span::before { content: "•"; color: var(--clay); }
 
-    /* Terminal */
+    /* Terminal Mockup */
     .terminal-wrap { position: relative; }
     .terminal {
-      background: #1b1a16; color: #d8d5cb; border-radius: 16px;
-      box-shadow:
-        0 2px 0 rgba(255,255,255,.04) inset,
-        0 32px 70px -24px rgba(0,0,0,.55),
-        0 0 0 1px var(--line-soft);
-      overflow: hidden; font-family: var(--font-mono); font-size: 13.5px; line-height: 1.7;
+      border: 1px solid var(--line);
+      background: #151513;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 18px 45px -12px rgba(0,0,0,.35);
+      font-family: var(--font-mono);
     }
     .term-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 14px 18px; background: rgba(0,0,0,.22);
-      border-bottom: 1px solid rgba(255,255,255,.06);
+      height: 38px;
+      background: #1e1d19;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 7px;
+      border-bottom: 1px solid var(--line-soft);
     }
-    .term-dot { width: 11px; height: 11px; border-radius: 50%; }
-    .term-dot.r { background: #d97757; }
-    .term-dot.y { background: #d4a76a; }
-    .term-dot.g { background: #788c5d; }
-    .term-title { margin-left: auto; font-size: 11px; color: rgba(216,213,203,.5); }
-    .term-body { padding: 20px 22px 26px; min-height: 260px; }
-    .t-line { opacity: 0; transform: translateY(5px); transition: opacity .45s ease, transform .45s ease; white-space: pre-wrap; }
-    .t-line.on { opacity: 1; transform: none; }
-    .t-prompt { color: var(--clay); }
-    .t-prompt .sym { margin-right: 6px; color: var(--clay); }
-    .t-dim { color: rgba(216,213,203,.48); }
-    .t-tool .bullet { color: var(--blue); margin-right: 8px; }
-    .t-tool .path { color: #9fb8d8; }
-    .t-tool .diff-plus { color: var(--olive); }
-    .t-tool .diff-minus { color: var(--clay); }
-    .t-ok { color: var(--olive); }
-    .caret { display: inline-block; width: 8px; height: 1.1em; background: var(--clay); vertical-align: text-bottom; margin-left: 2px; animation: blink 1.05s step-end infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
+    .term-dot { width: 10px; height: 10px; border-radius: 999px; }
+    .term-dot.r { background: #d97757; opacity: .85; }
+    .term-dot.y { background: #d3a152; opacity: .85; }
+    .term-dot.g { background: #788c5d; opacity: .85; }
+    .term-title {
+      margin-left: auto;
+      margin-right: auto;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: rgba(216,213,203,.5);
+      letter-spacing: .02em;
+    }
+    .term-body {
+      padding: 22px 24px;
+      font-size: 13px;
+      line-height: 1.75;
+      color: #e8e6dc;
+      min-height: 290px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .t-main-content {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .t-line { opacity: 0; transform: translateY(3px); transition: opacity .22s var(--ease), transform .22s var(--ease); }
+    .t-line.on { opacity: 1; transform: translateY(0); }
+    .t-banner {
+      color: rgba(216,213,203,.48);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .t-banner .dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--olive);
+    }
+    .t-prompt-line {
+      display: flex;
+      align-items: baseline;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: #f5f3ec;
+      margin-top: 2px;
+    }
+    .t-prompt-line .sym {
+      color: var(--clay);
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .t-thinking {
+      color: rgba(216,213,203,.5);
+      font-style: italic;
+      font-size: 12px;
+      padding-left: 18px;
+    }
+    .t-tool-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #879fa8;
+      font-size: 12.5px;
+      padding-left: 2px;
+    }
+    .t-tool-row .bullet { color: var(--blue); font-size: 9px; }
+    .t-tool-row .t-name { color: #f0f6fc; font-weight: 500; width: 84px; }
+    .t-tool-row .t-arg { color: #e8e6dc; }
+    .t-tool-row .diff-plus { color: var(--olive); font-weight: 600; margin-left: 4px; }
+    .t-tool-row .diff-minus { color: var(--clay); font-weight: 600; }
+    .t-ok {
+      color: var(--olive);
+      font-weight: 500;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .t-footer-status {
+      margin-top: 18px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,.07);
+      font-size: 11.5px;
+      color: rgba(216,213,203,.45);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .t-footer-status .branch { color: var(--blue); }
+    .caret {
+      display: inline-block;
+      width: 7px;
+      height: 14px;
+      background: var(--clay);
+      vertical-align: -2px;
+      margin-left: 3px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 
-    /* Marquee */
+    /* Tool ticker */
     .marquee {
-      border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-      background: var(--paper-2); overflow: hidden; padding: 14px 0;
+      border-bottom: 1px solid var(--line-soft);
+      padding: 12px 0;
+      overflow: hidden;
+      white-space: nowrap;
+      background: var(--paper-2);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--ink-soft);
     }
     .marquee-track {
-      display: flex; width: max-content; gap: 32px;
-      animation: marquee 55s linear infinite;
+      display: inline-flex;
+      gap: 32px;
+      animation: marquee 42s linear infinite;
     }
-    .marquee:hover .marquee-track { animation-play-state: paused; }
-    .marquee span {
-      font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-soft); white-space: nowrap;
-      display: flex; align-items: center; gap: 32px;
+    .marquee-track span { opacity: .75; }
+    .marquee-track span::before { content: "+"; color: var(--clay); margin-right: 6px; }
+    @keyframes marquee {
+      from { transform: translateX(0); }
+      to { transform: translateX(-50%); }
     }
-    .marquee span::after {
-      content: "◆"; font-size: 6px; color: var(--clay); opacity: .7;
-    }
-    @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
 
-    /* Sections */
-    section { padding: 90px 0; }
-    .sec-head { margin-bottom: 52px; }
+    /* Section Headers */
+    section { padding: 92px 0; }
+    .sec-head { margin-bottom: 48px; }
     .sec-kicker {
-      font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: var(--clay-2); margin-bottom: 10px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--clay);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
     }
     .sec-head h2 {
-      font-family: var(--font-display); font-weight: 400; font-size: clamp(2rem, 4.5vw, 3.2rem);
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 3.4vw, 2.7rem);
+      font-weight: 500;
+      line-height: 1.2;
       letter-spacing: -0.02em;
+      margin-bottom: 14px;
     }
-    .sec-head h2 em { font-style: italic; color: var(--clay); }
-    .sec-rule { display: block; width: 70px; height: 2px; background: var(--clay); margin-top: 18px; }
+    .sec-head h2 em { font-style: italic; color: var(--clay); font-weight: 400; }
+    .sec-rule {
+      display: block;
+      width: 48px;
+      height: 2px;
+      background: var(--clay);
+      margin-top: 20px;
+    }
 
-    /* Features */
-    .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-    .feature {
-      padding: 32px 36px 36px; border-top: 1px solid var(--line-soft); position: relative;
-      transition: background .3s ease;
+    /* Features Grid (01-06) */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
     }
-    .feature:nth-child(odd) { border-right: 1px solid var(--line-soft); }
-    .feature:hover { background: color-mix(in srgb, var(--clay) 5%, transparent); }
+    .feature {
+      background: var(--paper);
+      padding: 38px 36px;
+      position: relative;
+      transition: background .2s var(--ease);
+    }
+    .feature:hover { background: var(--paper-2); }
     .feature-num {
-      font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 2.6rem;
-      color: var(--clay); line-height: 1; margin-bottom: 14px; display: block;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--clay);
+      letter-spacing: .08em;
+      margin-bottom: 16px;
+      display: block;
     }
     .feature h3 {
-      font-family: var(--font-display); font-weight: 500; font-size: 1.35rem; margin-bottom: 10px;
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.015em;
     }
-    .feature p { color: var(--ink-soft); line-height: 1.65; }
+    .feature p {
+      color: var(--ink-soft);
+      font-size: .98rem;
+      line-height: 1.68;
+    }
 
-    /* Quick start */
-    .install-grid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 50px; align-items: start; }
-    .steps { display: flex; flex-direction: column; gap: 34px; }
-    .step { display: grid; grid-template-columns: 42px 1fr; gap: 16px; }
-    .step-num {
-      width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line);
-      display: grid; place-items: center; font-family: var(--font-mono); font-size: 14px; color: var(--clay);
+    /* Install & Quick Start */
+    .install-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 40px;
+      align-items: start;
     }
-    .step h4 { font-family: var(--font-display); font-weight: 500; font-size: 1.2rem; margin-bottom: 6px; }
-    .step p { color: var(--ink-soft); font-size: .98rem; line-height: 1.6; }
+    .steps { display: flex; flex-direction: column; gap: 24px; }
+    .step { display: flex; gap: 20px; align-items: flex-start; }
+    .step-num {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--clay);
+      color: var(--clay);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+    .step h4 { font-family: var(--font-display); font-weight: 500; font-size: 1.2rem; margin-bottom: 4px; }
+    .step p { color: var(--ink-soft); font-size: .95rem; line-height: 1.55; }
     .code-card {
-      background: #1b1a16; color: #d8d5cb; border-radius: 16px; overflow: hidden;
-      box-shadow: 0 24px 60px -20px rgba(0,0,0,.45); border: 1px solid var(--line-soft); margin-bottom: 18px; position: relative;
+      background: #141412;
+      border: 1px solid #2d2c27;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 14px 34px -10px rgba(0,0,0,.3);
     }
     .code-header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 16px; background: rgba(0,0,0,.22); border-bottom: 1px solid rgba(255,255,255,.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: rgba(0,0,0,.22);
+      border-bottom: 1px solid rgba(255,255,255,.06);
     }
     .code-lang { font-family: var(--font-mono); font-size: 11px; color: rgba(216,213,203,.5); text-transform: uppercase; }
     .copy-btn {
-      font-family: var(--font-mono); font-size: 11px; color: rgba(216,213,203,.7);
-      background: transparent; border: 1px solid rgba(255,255,255,.12); border-radius: 5px;
-      padding: 4px 8px; cursor: pointer; transition: all .2s;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: rgba(216,213,203,.7);
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 5px;
+      padding: 4px 8px;
+      cursor: pointer;
+      transition: all .2s;
     }
     .copy-btn:hover { border-color: var(--clay); color: var(--clay); }
     .copy-btn.copied { color: var(--olive); border-color: var(--olive); }
     pre { margin: 0; padding: 18px 20px; overflow-x: auto; }
     pre code {
-      font-family: var(--font-mono); font-size: 13px; line-height: 1.75; color: #d8d5cb;
-      display: block; white-space: pre;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.75;
+      color: #d8d5cb;
+      display: block;
+      white-space: pre;
     }
     .code-comment { color: rgba(216,213,203,.42); }
     .sandbox-note {
-      font-size: .88rem; color: var(--ink-soft); line-height: 1.55; border-left: 2px solid var(--clay); padding-left: 14px;
+      font-size: .88rem;
+      color: var(--ink-soft);
+      line-height: 1.55;
+      border-left: 2px solid var(--clay);
+      padding-left: 14px;
     }
     .cli-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
     .chip {
-      font-family: var(--font-mono); font-size: 12px; padding: 7px 12px; border-radius: 999px;
-      background: var(--paper-3); border: 1px solid var(--line-soft); color: var(--ink-soft);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--paper-3);
+      border: 1px solid var(--line-soft);
+      color: var(--ink-soft);
     }
 
     /* Workflows */
     .workflow-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
     .workflow-card {
-      border: 1px solid var(--line-soft); border-radius: 14px; padding: 24px;
-      background: var(--paper); transition: transform .2s, border-color .2s;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      padding: 24px;
+      background: var(--paper);
+      transition: transform .2s, border-color .2s;
     }
     .workflow-card:hover { transform: translateY(-3px); border-color: var(--clay); }
     .workflow-icon {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 36px; height: 36px; border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
       background: color-mix(in srgb, var(--clay) 12%, transparent);
-      color: var(--clay); margin-bottom: 14px; font-family: var(--font-mono); font-weight: 600; font-size: 14px;
+      color: var(--clay);
+      margin-bottom: 14px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 14px;
     }
     .workflow-card h3 { font-family: var(--font-display); font-weight: 500; font-size: 1.18rem; margin-bottom: 8px; }
     .workflow-card p { font-size: .92rem; color: var(--ink-soft); line-height: 1.55; }
@@ -355,8 +589,11 @@
     /* Slash commands */
     .cmd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
     .cmd-cell {
-      border: 1px solid var(--line-soft); border-radius: 12px; padding: 18px;
-      background: var(--paper-2); transition: transform .2s, border-color .2s;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 18px;
+      background: var(--paper-2);
+      transition: transform .2s, border-color .2s;
     }
     .cmd-cell:hover { transform: translateY(-3px); border-color: var(--clay); }
     .cmd-name { font-family: var(--font-mono); font-size: 15px; color: var(--clay); margin-bottom: 6px; }
@@ -364,12 +601,19 @@
     .cmd-more { margin-top: 24px; font-size: .92rem; color: var(--ink-soft); }
     .cmd-more a { color: var(--clay); text-decoration: underline; text-underline-offset: 3px; }
 
-    /* Architecture */
+    /* Architecture Stack */
     .arch-stack { position: relative; }
     .arch-row {
-      display: grid; grid-template-columns: 130px 1fr; gap: 24px; align-items: start;
-      padding: 22px 26px; border: 1px solid var(--line-soft); border-radius: 14px;
-      background: var(--paper-2); margin-bottom: 14px; position: relative;
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 24px;
+      align-items: start;
+      padding: 22px 26px;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: var(--paper-2);
+      margin-bottom: 14px;
+      position: relative;
       transition: border-color .25s, transform .25s;
     }
     .arch-row:hover { border-color: var(--clay); transform: translateX(6px); }
@@ -377,53 +621,80 @@
     .arch-desc h4 { font-family: var(--font-display); font-weight: 500; font-size: 1.15rem; margin-bottom: 4px; }
     .arch-desc p { color: var(--ink-soft); font-size: .95rem; line-height: 1.55; }
     .arch-flow {
-      margin-top: 28px; padding: 18px 22px; border-radius: 12px; background: var(--ink); color: var(--paper);
-      font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; overflow-x: auto;
+      margin-top: 28px;
+      padding: 18px 22px;
+      border-radius: 12px;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.7;
+      overflow-x: auto;
     }
-    .arch-flow span { opacity: .65; }
+    .arch-flow span { opacity: .65; color: var(--clay); }
 
-    /* Benchmarks */
-    .bench-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    .bench-card {
-      border: 1px solid var(--line-soft); border-radius: 16px; padding: 28px; background: var(--paper-2);
-    }
-    .bench-card h3 { font-family: var(--font-display); font-weight: 500; font-size: 1.3rem; margin-bottom: 10px; }
-    .bench-card p { color: var(--ink-soft); font-size: .95rem; line-height: 1.6; margin-bottom: 16px; }
-    .bench-tag {
-      display: inline-block; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
-      padding: 3px 8px; border-radius: 999px;       background: color-mix(in srgb, var(--olive) 12%, transparent); color: var(--olive);
-      margin-bottom: 12px;
-    }
-    .bench-tag.warn { background: color-mix(in srgb, var(--clay) 12%, transparent); color: var(--clay-2); }
-
-    /* Docs */
+    /* Docs Hero Card */
     .docs-hero-card {
-      display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 40px; align-items: center;
-      background: var(--paper-2); border: 1px solid var(--line); border-radius: 16px;
-      padding: 44px; margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 40px;
+      align-items: center;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 44px;
+      margin-top: 10px;
     }
     .docs-hero-badge {
-      display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono);
-      font-size: 13px; color: var(--clay); background: var(--paper-3); padding: 4px 12px;
-      border-radius: 999px; border: 1px solid var(--line-soft); margin-bottom: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--clay);
+      background: var(--paper-3);
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line-soft);
+      margin-bottom: 16px;
     }
     .docs-hero-left h3 {
-      font-family: var(--font-display); font-weight: 500; font-size: 1.75rem;
-      margin: 0 0 16px; color: var(--ink); line-height: 1.3;
+      font-family: var(--font-display);
+      font-weight: 500;
+      font-size: 1.75rem;
+      margin: 0 0 16px;
+      color: var(--ink);
+      line-height: 1.3;
     }
     .docs-hero-left p {
-      color: var(--ink-soft); font-size: 1.02rem; line-height: 1.68; margin: 0 0 28px;
+      color: var(--ink-soft);
+      font-size: 1.02rem;
+      line-height: 1.68;
+      margin: 0 0 28px;
     }
     .docs-hero-topics {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
     .topic-chip {
-      display: flex; align-items: center; gap: 8px; background: var(--paper-3);
-      border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 14px;
-      font-size: 13px; font-family: var(--font-mono); color: var(--ink-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--paper-3);
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      color: var(--ink-soft);
     }
     .topic-chip .chip-dot {
-      width: 6px; height: 6px; border-radius: 999px; background: var(--clay); flex-shrink: 0;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--clay);
+      flex-shrink: 0;
     }
 
     /* Footer */
@@ -438,27 +709,17 @@
     @media (max-width: 980px) {
       .hero-grid { grid-template-columns: 1fr; gap: 50px; }
       .features { grid-template-columns: 1fr; }
-      .feature:nth-child(odd) { border-right: none; }
-      .install-grid, .bench-grid { grid-template-columns: 1fr; }
+      .install-grid { grid-template-columns: 1fr; }
       .workflow-grid { grid-template-columns: repeat(2, 1fr); }
       .cmd-grid { grid-template-columns: repeat(2, 1fr); }
+      .docs-hero-card { grid-template-columns: 1fr; }
       .nav-links { display: none; }
     }
     @media (max-width: 560px) {
       .hero { padding-top: 120px; }
-      .stats { gap: 14px; }
+      .stats { gap: 14px; flex-wrap: wrap; }
       .workflow-grid { grid-template-columns: 1fr; }
       .cmd-grid { grid-template-columns: 1fr; }
-      .arch-row { grid-template-columns: 1fr; gap: 8px; }
-      .term-body { font-size: 12px; padding: 16px; }
-    }
-
-    /* Reduced motion */
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      .marquee-track { animation: none; }
-      .caret { animation: none; }
-      .reveal, .t-line { opacity: 1 !important; transform: none !important; transition: none !important; }
     }
   </style>
 </head>
@@ -477,8 +738,7 @@
         <a href="#workflows"><span class="lz">场景</span><span class="le">Workflows</span></a>
         <a href="#commands"><span class="lz">命令</span><span class="le">Commands</span></a>
         <a href="#architecture"><span class="lz">架构</span><span class="le">Architecture</span></a>
-        <a href="#benchmarks">Benchmark</a>
-        <a href="docs.html"><span class="lz">文档</span><span class="le">Docs</span></a>
+        <a href="docs.html"><span class="lz">技术文档</span><span class="le">Docs</span></a>
       </div>
     </div>
     <div class="nav-right">
@@ -501,7 +761,7 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <div class="eyebrow reveal"><span class="lz">Python 3.12+ · MIT · v0.1.2</span><span class="le">Python 3.12+ · MIT · v0.1.2</span></div>
+        <div class="eyebrow reveal"><span class="lz">Python 3.12+ · MIT · v0.2.0</span><span class="le">Python 3.12+ · MIT · v0.2.0</span></div>
         <h1 class="reveal" style="transition-delay:.08s">
           <span class="lz">可扩展的 Python<br><em>Coding Agent</em> 运行时骨架</span>
           <span class="le">An extensible<br><em>Python coding-agent</em> runtime harness</span>
@@ -512,13 +772,14 @@
         </p>
         <div class="hero-actions reveal" style="transition-delay:.24s">
           <a class="btn btn-primary" href="#install"><span class="lz">快速开始</span><span class="le">Quick Start</span></a>
-          <a class="btn" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener"><span class="lz">GitHub</span><span class="le">GitHub</span></a>
+          <a class="btn" href="docs.html"><span class="lz">技术文档</span><span class="le">Documentation</span></a>
+          <a class="btn" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">GitHub</a>
         </div>
         <div class="stats reveal" style="transition-delay:.32s">
-          <span>Python 3.12+</span>
-          <span><span class="lz">5 层架构</span><span class="le">5 layers</span></span>
-          <span><span class="lz">30+ Slash 命令</span><span class="le">30+ slash cmds</span></span>
-          <span><span class="lz">可扩展</span><span class="le">Extensible</span></span>
+          <span><span class="lz">TUI / CLI / Web 三端</span><span class="le">Tri-Workbenches</span></span>
+          <span><span class="lz">95% 平滑换窗</span><span class="le">95% Rollover</span></span>
+          <span><span class="lz">/undo 无损回滚</span><span class="le">/undo Revert</span></span>
+          <span><span class="lz">持久分层记忆</span><span class="le">Durable Memory</span></span>
         </div>
       </div>
 
@@ -528,7 +789,7 @@
             <span class="term-dot r"></span>
             <span class="term-dot y"></span>
             <span class="term-dot g"></span>
-            <span class="term-title">cade — tui</span>
+            <span class="term-title">cade v0.2.0</span>
           </div>
           <div class="term-body" id="termBody"></div>
         </div>
@@ -556,33 +817,33 @@
       <div class="features">
         <article class="feature reveal">
           <span class="feature-num">01</span>
-          <h3><span class="lz">结构化 Agent 循环</span><span class="le">Structured agent loop</span></h3>
-          <p><span class="lz">CodingAgentHarness 统一消费 provider 流式事件——text、reasoning、tool_use、tool_result 与 final answer——在一个循环中完成全部交互。</span><span class="le">CodingAgentHarness consumes provider stream events — text, reasoning, tool_use, tool_result and final answers — in one closed loop.</span></p>
+          <h3><span class="lz">结构化 Agent 循环与统一内核</span><span class="le">Structured Agent Loop & Unified Kernel</span></h3>
+          <p><span class="lz">CodingAgentHarness 统一消费 provider 流式事件（文本、推理思考流、工具调用与结果），在单一可信循环中驱动 TUI、CLI 与 Web 三端工作台。</span><span class="le">CodingAgentHarness consumes streaming events — text, reasoning, tool_use, and tool_result — driving TUI, CLI, and Web interfaces from a single deterministic loop.</span></p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">02</span>
-          <h3><span class="lz">三种执行模式</span><span class="le">Three execution modes</span></h3>
-          <p><span class="lz">plan 只读勘察，build 允许写入，act 逐步确认；findLast 规则引擎按序覆盖权限，HITL 审批贯穿始终。</span><span class="le">plan reads, build writes, act confirms each step; a findLast rule engine resolves permissions with HITL approval throughout.</span></p>
+          <h3><span class="lz">无损历史与动态投影 (/undo)</span><span class="le">Lossless History & Projections</span></h3>
+          <p><span class="lz">会话以追加型不可篡改日志持久记录，任何历史状态均可投影视角。配合磁盘快照池，实现毫秒级原子文件回退与视窗回拨，决不静默截断。</span><span class="le">Sessions persist as append-only event logs with dynamic projections. Snapshot pooling enables atomic file reverts and window rewinds without silent truncation.</span></p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">03</span>
-          <h3><span class="lz">工具并发分区</span><span class="le">Tool concurrency</span></h3>
-          <p><span class="lz">只读且并发安全的工具并行执行；写操作与高风险命令保持串行。edit_file 采用 read-before-edit SHA256 指纹校验。</span><span class="le">Read-only, concurrency-safe tools run in parallel while writes and risky commands stay serial. edit_file enforces read-before-edit with SHA256 fingerprint checks.</span></p>
+          <h3><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Summary-Free Context Rollover</span></h3>
+          <p><span class="lz">彻底剔除模型自我递归摘要引起的信息失真与幻觉放大。在 95% 上下文容量阈值自动平滑重开窗口，继承核心目标并对冲中间冗余。</span><span class="le">Eliminates lossy self-summaries. Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs.</span></p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">04</span>
-          <h3><span class="lz">权限、审计与沙箱</span><span class="le">Permissions, audit & sandbox</span></h3>
-          <p><span class="lz">PermissionEngine 统一权限判定与脱敏；JsonlAuditLogger 记录审计日志；Linux 下 Agent shell 默认在 bubblewrap 沙箱中运行（网络隔离与路径保护）。</span><span class="le">PermissionEngine centralizes gating and redaction; JsonlAuditLogger persists an audit trail; Linux agent shell runs inside a bubblewrap sandbox by default (network isolation & path protection).</span></p>
+          <h3><span class="lz">持久化分层记忆系统</span><span class="le">Durable Hierarchical Memory</span></h3>
+          <p><span class="lz">全局个人习惯（~/.cade/memory.md）与项目工程约定（.cade/memory.md）分层持久落盘，跨会话按需自动装配至系统提示词，告别重复背景交代。</span><span class="le">User preferences and repository rules are durably partitioned, automatically assembled into system prompts across sessions without manual re-prompting.</span></p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">05</span>
-          <h3><span class="lz">上下文换窗与会话恢复</span><span class="le">Context rollover & session resume</span></h3>
-          <p><span class="lz">窗口默认在模型容量的 95% 自动重开，不生成摘要；完整历史保留为可检索事实，NOTE.md 保存跨窗口工作状态。</span><span class="le">Windows roll over at 95% of the model capacity without summaries; searchable history remains the source of truth and NOTE.md carries working state across windows.</span></p>
+          <h3><span class="lz">三种执行模式与权限沙箱</span><span class="le">Three Execution Modes & Sandboxing</span></h3>
+          <p><span class="lz">plan 只读勘察防误改，build 交互开发（默认），act 全自动推进。结合工作区路径隔离、敏感命令审批与受限环境，守护系统安全。</span><span class="le">plan for read-only safety, build for guided development, act for automated sprints. Path jailing, policy gating, and sandboxing secure host environments.</span></p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">06</span>
-          <h3><span class="lz">记忆、MCP 与 Hooks</span><span class="le">Memory, MCP & hooks</span></h3>
-          <p><span class="lz">MEMORY.md 与用户级记忆库是可审查的长期事实源，BM25 按需检索；MCP stdio server 自动发现注册；外部 hooks 响应事件。</span><span class="le">MEMORY.md plus a user-level store form an auditable long-term memory with BM25 retrieval; MCP stdio servers are discovered automatically; external hooks react to events.</span></p>
+          <h3><span class="lz">三端工作台与扩展生态</span><span class="le">Tri-Workbenches & Ecosystem</span></h3>
+          <p><span class="lz">默认 TUI 全屏分屏视图、极速 CLI 交互流与可视化 Web 端无缝切换；原生支持 MCP 外部工具协议集成与 Python 生命周期 Hooks 自动化。</span><span class="le">Seamlessly switch between split-pane TUI (default), CLI streams, and Web interfaces; with native MCP protocol integration and lifecycle hooks.</span></p>
         </article>
       </div>
     </div>
@@ -631,21 +892,22 @@
           <div class="code-card">
             <div class="code-header">
               <span class="code-lang">Shell</span>
-              <button class="copy-btn" data-copy="#install-code" aria-label="复制"><span class="lz">复制</span><span class="le">Copy</span></button>
+              <button class="copy-btn" data-copy="#install-code" aria-label="Copy code"><span class="lz">复制</span><span class="le">Copy</span></button>
             </div>
             <pre><code id="install-code">uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
 cd /path/to/your/project
 
-cade                <span class="code-comment"># 首次启动引导配置，然后输入任务</span>
-cade -c             <span class="code-comment"># 下次继续最近的任务</span>
-cade --resume       <span class="code-comment"># 选择历史会话</span></code></pre>
+cade                <span class="code-comment"><span class="lz"># 默认：启动 TUI 沉浸式工作台</span><span class="le"># Default: launch TUI workbench</span></span>
+cade cli            <span class="code-comment"><span class="lz"># 启动命令行 REPL 模式</span><span class="le"># Launch interactive CLI REPL</span></span>
+cade web            <span class="code-comment"><span class="lz"># 启动现代 Web 浏览器工作台</span><span class="le"># Launch browser workbench (FastAPI + WebSockets)</span></span>
+cade -c             <span class="code-comment"><span class="lz"># 极速断点续接最近任务</span><span class="le"># Resume latest task</span></span></code></pre>
           </div>
           <div class="cli-chips">
-            <span class="chip">cade -p "..."</span>
-            <span class="chip">cade tui</span>
+            <span class="chip">cade (TUI)</span>
             <span class="chip">cade cli</span>
+            <span class="chip">cade web</span>
             <span class="chip">cade -c</span>
-            <span class="chip">cade --resume</span>
+            <span class="chip">cade -p "..."</span>
             <span class="chip">cade config</span>
           </div>
         </div>
@@ -743,8 +1005,8 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
         </div>
       </div>
       <p class="cmd-more reveal">
-        <span class="lz">完整 30+ 条 slash 命令见 <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>。</span>
-        <span class="le">See the full 30+ slash commands in the <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>.</span>
+        <span class="lz">完整 30+ 条 slash 命令见 <a href="docs.html#slash-commands">技术文档</a> 或 <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>。</span>
+        <span class="le">See the full 30+ slash commands in the <a href="docs.html#slash-commands">Docs</a> or <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>.</span>
       </p>
     </div>
   </section>
@@ -752,104 +1014,60 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
   <section id="architecture">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">05 — <span class="lz">架构</span><span class="le">Architecture</span></p>
+        <p class="sec-kicker">05 — <span class="lz">架构全景</span><span class="le">Architecture</span></p>
         <h2>
-          <span class="lz">五层骨架，<em>职责分离</em></span>
-          <span class="le">Five layers, <em>clear ownership</em></span>
+          <span class="lz">统一内核驱动，<em>清晰职责边界</em></span>
+          <span class="le">Unified Kernel, <em>Clear Ownership</em></span>
         </h2>
         <span class="sec-rule"></span>
       </header>
       <div class="arch-stack reveal">
         <div class="arch-row">
-          <div class="arch-name">cli/</div>
+          <div class="arch-name">surfaces/</div>
           <div class="arch-desc">
-            <h4><span class="lz">交互层</span><span class="le">Interface layer</span></h4>
-            <p><span class="lz">REPL、TUI、slash 命令、setup 向导与配置管理。</span><span class="le">REPL, TUI, slash commands, setup wizard, and config management.</span></p>
-          </div>
-        </div>
-        <div class="arch-row">
-          <div class="arch-name">coding_agent/</div>
-          <div class="arch-desc">
-            <h4><span class="lz">产品工具装配</span><span class="le">Product tool assembly</span></h4>
-            <p><span class="lz">文件读写编辑、glob/grep、bash、subagent、webfetch/websearch 等。</span><span class="le">File read/write/edit, glob/grep, bash, subagent, webfetch/websearch, and more.</span></p>
+            <h4><span class="lz">三端交互投影层</span><span class="le">Multi-Interface Surfaces</span></h4>
+            <p><span class="lz">TUI 全屏沉浸分屏工作台（默认）、CLI 流式命令行 REPL、Web 浏览器可视化端，支持状态即时同步与热切换。</span><span class="le">Full-screen split TUI (default), CLI streaming REPL, and Web browser dashboard with synchronized event states.</span></p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">harness/</div>
           <div class="arch-desc">
-            <h4><span class="lz">运行时与装配</span><span class="le">Runtime & assembly</span></h4>
-            <p><span class="lz">应用装配、会话存储、权限引擎、审计、MCP、记忆管理、外部 hooks。</span><span class="le">App assembly, session storage, permission engine, audit, MCP, memory, external hooks.</span></p>
+            <h4><span class="lz">运行时中枢与策略装配</span><span class="le">Runtime & Harness Assembly</span></h4>
+            <p><span class="lz">应用装配、追加型无损会话存储、权限审查引擎、脱敏审计日志、MCP 外部协议集成、生命周期 Hooks。</span><span class="le">App bootstrap, append-only lossless session storage, permission engine, audit logging, MCP protocol, and lifecycle hooks.</span></p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">agent/</div>
           <div class="arch-desc">
-            <h4><span class="lz">Agent 循环合约</span><span class="le">Agent loop contracts</span></h4>
-            <p><span class="lz">消息/事件类型、上下文换窗、工具执行分区、watchdog。</span><span class="le">Message/event types, context rollover, tool partitioning, watchdog.</span></p>
+            <h4><span class="lz">Agent 循环与上下文对冲</span><span class="le">Agent Loop & Context Engine</span></h4>
+            <p><span class="lz">事件驱动循环、Prompt 装配、95% 水位线无摘要平滑换窗引擎、工具并发安全分区、动态历史投影。</span><span class="le">Event-driven loop, prompt assembly, 95% summary-free context rollover engine, tool concurrency, and dynamic projection.</span></p>
+          </div>
+        </div>
+        <div class="arch-row">
+          <div class="arch-name">coding_agent/</div>
+          <div class="arch-desc">
+            <h4><span class="lz">工程工具系统与安全沙箱</span><span class="le">Engineering Tools & Sandbox</span></h4>
+            <p><span class="lz">文件原子精准修补、目录勘察、Subagents 子代理并行协作、本地安全隔离环境与受限 Shell。</span><span class="le">Atomic file patching, directory survey, subagent orchestration, and sandboxed safe execution.</span></p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">ai/</div>
           <div class="arch-desc">
-            <h4><span class="lz">Provider 适配</span><span class="le">Provider adapters</span></h4>
-            <p><span class="lz">OpenAI 兼容基类 + DeepSeek / ChatGLM / MiMo 适配器，支持流式、缓存与 thinking。</span><span class="le">OpenAI-compatible base + DeepSeek / ChatGLM / MiMo adapters with streaming, caching, and thinking.</span></p>
+            <h4><span class="lz">模型与 Provider 统一适配</span><span class="le">AI Provider Adapters</span></h4>
+            <p><span class="lz">统一抽象接口，深度适配 DeepSeek、OpenAI、ChatGLM、MiMo 及本地网关，原生支持流式输出、Prompt 缓存与思考推理流。</span><span class="le">Unified interface for DeepSeek, OpenAI, ChatGLM, MiMo, and local endpoints with streaming, prompt caching, and reasoning tokens.</span></p>
           </div>
         </div>
       </div>
       <div class="arch-flow reveal">
-        main.py <span>→</span> build_app() <span>→</span> CodingAgentHarness <span>→</span> Agent loop <span>→</span> provider stream <span>→</span> tool execution
+        main.py <span>→</span> CodingAgentHarness <span>→</span> Unified Agent Loop <span>→</span> Provider Stream <span>→</span> Tools & Sandbox <span>→</span> Lossless Event Log <span>→</span> TUI / CLI / Web
       </div>
     </div>
   </section>
 
-  <section id="benchmarks" style="background:var(--paper-2)">
+  <section id="docs" style="background:var(--paper-2)">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">06 — <span class="lz">评估</span><span class="le">Evaluation</span></p>
-        <h2>
-          <span class="lz">用 Benchmark <em>量化</em> 关键设计</span>
-          <span class="le"><em>Measure</em> the key design choices</span>
-        </h2>
-        <span class="sec-rule"></span>
-      </header>
-      <div class="bench-grid">
-        <div class="bench-card reveal">
-          <span class="bench-tag warn"><span class="lz">真实 API 调用</span><span class="le">Real API calls</span></span>
-          <h3><span class="lz">长程任务换窗消融</span><span class="le">Long-horizon rollover</span></h3>
-          <p><span class="lz">同模型、同温度、同任务配对运行：不换窗 baseline vs 启用无摘要换窗的 Cade 配置。测试进程判定任务成功，文件哈希与禁止路径判定状态保持。</span><span class="le">Paired runs with the same model, temperature, and task: a no-rollover baseline vs Cade with summary-free context rollover. Task success is judged by tests; state retention is judged by file hashes and forbidden paths.</span></p>
-          <div class="code-card" style="box-shadow:none; margin-bottom:0">
-            <div class="code-header">
-              <span class="code-lang">Shell</span>
-              <button class="copy-btn" data-copy="#bench1" aria-label="复制"><span class="lz">复制</span><span class="le">Copy</span></button>
-            </div>
-            <pre style="padding:14px 18px"><code id="bench1">uv run python -m benchmarks.runners.run_ablation \
-  benchmarks/tasks/long_horizon \
-  --repeat 3 --temperature 0 \
-  --max-pair-attempts 2 --require-complete-usage</code></pre>
-          </div>
-        </div>
-        <div class="bench-card reveal">
-          <span class="bench-tag"><span class="lz">不调用模型</span><span class="le">No model calls</span></span>
-          <h3><span class="lz">工具调度消融</span><span class="le">Tool scheduling</span></h3>
-          <p><span class="lz">确定性消融：生产调度器重放 5/10/20 文件读取批次，对比强制串行与副作用感知并发调度；混合读写 workload 验证写操作不与其他工具重叠。结果仅反映工具执行阶段。</span><span class="le">Deterministic ablation: replay identical read batches through the production scheduler, comparing forced serial execution with side-effect-aware concurrency. Mixed read/write workloads verify writes never overlap other operations. Results reflect the tool-execution stage only.</span></p>
-          <div class="code-card" style="box-shadow:none; margin-bottom:0">
-            <div class="code-header">
-              <span class="code-lang">Shell</span>
-              <button class="copy-btn" data-copy="#bench2" aria-label="复制"><span class="lz">复制</span><span class="le">Copy</span></button>
-            </div>
-            <pre style="padding:14px 18px"><code id="bench2">uv run python -m benchmarks.runners.run_tool_scheduling \
-  benchmarks/tasks/parallel_reads \
-  --repeat 10 --warmup 1</code></pre>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="docs">
-    <div class="wrap">
-      <header class="sec-head reveal">
-        <p class="sec-kicker">07 — <span class="lz">开发者文档</span><span class="le">Documentation</span></p>
+        <p class="sec-kicker">06 — <span class="lz">技术文档</span><span class="le">Documentation</span></p>
         <h2>
           <span class="lz">深入了解 <em>Cade</em></span>
           <span class="le">Deep dive into <em>Cade</em></span>
@@ -868,8 +1086,8 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
             <span class="le">Cade Official Developer Documentation Hub</span>
           </h3>
           <p>
-            <span class="lz">涵盖系统设计哲学、五层架构契约、Linux Bubblewrap 命名空间沙箱、只读并发调度与写串行屏障、无摘要上下文换窗、Durable Session 子代理以及全套 Slash 命令与配置手册。</span>
-            <span class="le">Comprehensive reference covering design philosophy, 5-layer architecture, Linux bubblewrap sandbox, side-effect-aware concurrency, summary-free context rollover, durable subagents, slash commands, and configuration.</span>
+            <span class="lz">涵盖系统设计哲学、统一内核架构、无损历史与动态投影 (/undo)、95% 无摘要换窗机制、持久化分层记忆、三端工作台 (TUI/CLI/Web) 以及全套 Slash 指令与配置参考手册。</span>
+            <span class="le">Comprehensive reference covering unified kernel architecture, lossless history & projections (/undo), 95% summary-free context rollover, durable memory, tri-workbenches (TUI/CLI/Web), and full slash commands.</span>
           </p>
           <div class="docs-hero-cta">
             <a class="btn btn-primary" style="padding:12px 28px; font-size:15px; border-radius:10px;" href="docs.html">
@@ -880,14 +1098,14 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
           </div>
         </div>
         <div class="docs-hero-topics">
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">设计理念与不变量</span><span class="le">Design & Invariants</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">五层单向流架构</span><span class="le">5-Layer Architecture</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">Plan / Build 执行模式</span><span class="le">Work Modes</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">Linux Bubblewrap 沙箱</span><span class="le">Bubblewrap Sandbox</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">工具并发分区调度</span><span class="le">Tool Concurrency</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">70% 水位线分层压缩</span><span class="le">Layered Compaction</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">MCP 服务与工具扩展</span><span class="le">MCP Integration</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">30+ Slash 交互指令</span><span class="le">Slash Commands</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">设计哲学与核心机制</span><span class="le">Philosophy & Overview</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">无损历史与动态投影</span><span class="le">Lossless History</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Rollover</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">持久化分层记忆系统</span><span class="le">Durable Memory</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">TUI / CLI / Web 工作台</span><span class="le">Tri-Workbenches</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">Plan / Build / Act 模式</span><span class="le">Execution Modes</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">MCP 服务与 Skills 扩展</span><span class="le">MCP & Skills</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">权限审查与安全沙箱</span><span class="le">Security & Policy</span></div>
         </div>
       </div>
     </div>
@@ -901,8 +1119,8 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
       <span>MIT © 2026 Cade Contributors</span>
     </div>
     <div class="footer-links">
+      <a href="docs.html"><span class="lz">技术文档</span><span class="le">Documentation</span></a>
       <a href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/reddishJade/cade/issues" target="_blank" rel="noopener">Issues</a>
       <a href="#top"><span class="lz">返回顶部</span><span class="le">Back to top</span></a>
     </div>
   </div>
@@ -910,25 +1128,35 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
 
 <script>
 (function() {
-  const TERM_DATA = {
-    zh: [
-      { type: "cmd", text: "cade" },
-      { type: "banner", text: "cade 0.1.2 · build 模式 · deepseek-flash" },
-      { type: "prompt", text: "/act 给 main.py 加上 --version 选项" },
-      { type: "tool", name: "read_file", arg: "src/cade/main.py" },
-      { type: "tool", name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
-      { type: "tool", name: "bash", arg: "uv run pytest -q" },
-      { type: "ok", text: "测试通过 · --version 已接入 argparse" }
-    ],
-    en: [
-      { type: "cmd", text: "cade" },
-      { type: "banner", text: "cade 0.1.2 · build mode · deepseek-flash" },
-      { type: "prompt", text: "/act add a --version flag to main.py" },
-      { type: "tool", name: "read_file", arg: "src/cade/main.py" },
-      { type: "tool", name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
-      { type: "tool", name: "bash", arg: "uv run pytest -q" },
-      { type: "ok", text: "Tests green · --version wired into argparse" }
-    ]
+  const TERM_CONFIG = {
+    zh: {
+      banner: "cade v0.2.0 · act 模式 · deepseek-flash",
+      prompt: "/act 给 main.py 增加 --version 选项",
+      thinking: "thinking  检查 main.py 的 argparse 命令行配置与版本常量...",
+      thoughtDone: "thought for 1.8s",
+      tools: [
+        { name: "read_file", arg: "src/cade/main.py" },
+        { name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
+        { name: "bash",      arg: "uv run pytest -q" }
+      ],
+      ok: "测试通过 · --version 选项已接入",
+      statusLeft: "~/workspace/cade (main)",
+      statusRight: "context: 8.4k/1.0M (0.8%) · deepseek-flash"
+    },
+    en: {
+      banner: "cade v0.2.0 · act mode · deepseek-flash",
+      prompt: "/act add a --version flag to main.py",
+      thinking: "thinking  inspecting argparse CLI setup and version constant in main.py...",
+      thoughtDone: "thought for 1.8s",
+      tools: [
+        { name: "read_file", arg: "src/cade/main.py" },
+        { name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
+        { name: "bash",      arg: "uv run pytest -q" }
+      ],
+      ok: "All tests green · --version flag verified",
+      statusLeft: "~/workspace/cade (main)",
+      statusRight: "context: 8.4k/1.0M (0.8%) · deepseek-flash"
+    }
   };
 
   const termBody = document.getElementById('termBody');
@@ -937,144 +1165,190 @@ cade --resume       <span class="code-comment"># 选择历史会话</span></code
   let timers = [];
 
   function clearTimers() { timers.forEach(t => clearTimeout(t)); timers = []; }
-
-  function createLine(cls) {
-    const el = document.createElement('div');
-    el.className = 't-line ' + cls;
-    return el;
-  }
-
-  function renderTerm() {
-    const lang = document.documentElement.dataset.lang || 'zh';
-    const lines = TERM_DATA[lang];
-    termBody.innerHTML = '';
-    const els = lines.map((ln, i) => {
-      const el = createLine(i === 0 ? 't-prompt' : (ln.type === 'tool' ? 't-tool' : (ln.type === 'ok' ? 't-ok' : 't-dim')));
-      if (ln.type === 'cmd') el.innerHTML = '<span class="sym">$</span><span class="typed"></span><span class="caret"></span>';
-      else if (ln.type === 'prompt') el.innerHTML = '<span class="sym">❯</span><span class="typed"></span><span class="caret"></span>';
-      else if (ln.type === 'banner') el.textContent = ln.text;
-      else if (ln.type === 'tool') {
-        const [add, sub] = (ln.diff || '').split(' ');
-        el.innerHTML = '<span class="bullet">●</span>' +
-          ln.name.padEnd(10, ' ') + ' ' +
-          '<span class="path">' + escapeHtml(ln.arg) + '</span>' +
-          (ln.diff ? '  <span class="diff-plus">' + add + '</span> <span class="diff-minus">' + sub + '</span>' : '');
-      } else if (ln.type === 'ok') el.textContent = '✓ ' + ln.text;
-      termBody.appendChild(el);
-      return el;
-    });
-    return { els, lines };
-  }
-
-  function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
   function wait(ms) { return new Promise(r => timers.push(setTimeout(r, ms))); }
+  function escapeHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
   async function playTerm() {
     const runId = ++termRun;
     clearTimers();
-    const { els, lines } = renderTerm();
+    const lang = document.documentElement.dataset.lang === 'en' ? 'en' : 'zh';
+    const cfg = TERM_CONFIG[lang];
+
+    termBody.innerHTML = `
+      <div class="t-main-content">
+        <div class="t-line t-banner on">
+          <span class="dot"></span>
+          <span>${escapeHtml(cfg.banner)}</span>
+        </div>
+        <div class="t-line t-prompt-line on">
+          <span class="sym">❯</span><span id="tTyped"></span><span class="caret" id="tCaret"></span>
+        </div>
+        <div class="t-line t-thinking" id="tThinking"></div>
+        <div id="tToolsArea" style="display:flex;flex-direction:column;gap:5px;"></div>
+        <div class="t-line t-ok" id="tOk"></div>
+      </div>
+      <div class="t-line t-footer-status on">
+        <span class="branch">${escapeHtml(cfg.statusLeft)}</span>
+        <span>${escapeHtml(cfg.statusRight)}</span>
+      </div>
+    `;
+
+    const typedEl = document.getElementById('tTyped');
+    const caretEl = document.getElementById('tCaret');
+    const thinkingEl = document.getElementById('tThinking');
+    const toolsArea = document.getElementById('tToolsArea');
+    const okEl = document.getElementById('tOk');
+
     if (reducedMotion) {
-      els.forEach(el => el.classList.add('on'));
+      if (typedEl) typedEl.textContent = cfg.prompt;
+      if (caretEl) caretEl.remove();
+      if (thinkingEl) {
+        thinkingEl.textContent = cfg.thoughtDone;
+        thinkingEl.classList.add('on');
+      }
+      cfg.tools.forEach(tool => {
+        const item = document.createElement('div');
+        item.className = 't-line t-tool-row on';
+        const diffHtml = tool.diff
+          ? ` <span class="diff-plus">${tool.diff.split(' ')[0]}</span> <span class="diff-minus">${tool.diff.split(' ')[1] || ''}</span>`
+          : '';
+        item.innerHTML = `<span class="bullet">●</span><span class="t-name">${escapeHtml(tool.name)}</span><span class="t-arg">${escapeHtml(tool.arg)}</span>${diffHtml}`;
+        toolsArea.appendChild(item);
+      });
+      if (okEl) {
+        okEl.textContent = '✓ ' + cfg.ok;
+        okEl.classList.add('on');
+      }
       return;
     }
-    // Type first command
-    const cmdTyped = els[0].querySelector('.typed');
-    for (let i = 0; i <= lines[0].text.length; i++) {
+
+    // Type prompt character by character
+    await wait(240);
+    for (let i = 0; i <= cfg.prompt.length; i++) {
       if (runId !== termRun) return;
-      cmdTyped.textContent = lines[0].text.slice(0, i);
-      await wait(80);
+      typedEl.textContent = cfg.prompt.slice(0, i);
+      await wait(36);
     }
+    await wait(300);
     if (runId !== termRun) return;
-    els[0].querySelector('.caret').remove();
-    els[1].classList.add('on');
-    await wait(380);
-    // Type prompt
-    const promptIdx = 2;
-    const promptTyped = els[promptIdx].querySelector('.typed');
-    for (let i = 0; i <= lines[promptIdx].text.length; i++) {
+    if (caretEl) caretEl.remove();
+
+    // Show reasoning stream
+    thinkingEl.textContent = cfg.thinking;
+    thinkingEl.classList.add('on');
+    await wait(600);
+    if (runId !== termRun) return;
+
+    // Conclude reasoning
+    thinkingEl.textContent = cfg.thoughtDone;
+    await wait(220);
+
+    // Stagger tool runs
+    for (const tool of cfg.tools) {
       if (runId !== termRun) return;
-      promptTyped.textContent = lines[promptIdx].text.slice(0, i);
-      await wait(45);
+      const item = document.createElement('div');
+      item.className = 't-line t-tool-row';
+      const diffHtml = tool.diff
+        ? ` <span class="diff-plus">${tool.diff.split(' ')[0]}</span> <span class="diff-minus">${tool.diff.split(' ')[1] || ''}</span>`
+        : '';
+      item.innerHTML = `<span class="bullet">●</span><span class="t-name">${escapeHtml(tool.name)}</span><span class="t-arg">${escapeHtml(tool.arg)}</span>${diffHtml}`;
+      toolsArea.appendChild(item);
+      await wait(30);
+      item.classList.add('on');
+      await wait(280);
     }
+
     if (runId !== termRun) return;
-    els[promptIdx].querySelector('.caret').remove();
-    // Stagger tool lines
-    for (let i = 3; i < els.length; i++) {
-      await wait(260);
-      if (runId !== termRun) return;
-      els[i].classList.add('on');
+    // Show completion
+    okEl.textContent = '✓ ' + cfg.ok;
+    okEl.classList.add('on');
+
+    // Pause before subtle loop
+    await wait(8500);
+    if (runId === termRun) {
+      playTerm();
     }
-    await wait(4200);
-    if (runId !== termRun) return;
-    // Fade out and restart
-    els.forEach(el => { el.style.transition = 'opacity .6s ease'; el.style.opacity = '0'; });
-    await wait(700);
-    if (runId !== termRun) return;
-    playTerm();
   }
 
+  // Scroll reveal
+  if ('IntersectionObserver' in window && !reducedMotion) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.style.opacity = '1';
+          e.target.style.transform = 'translateY(0)';
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.reveal').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(16px)';
+      el.style.transition = 'opacity .45s cubic-bezier(0.2,0.6,0.2,1), transform .45s cubic-bezier(0.2,0.6,0.2,1)';
+      io.observe(el);
+    });
+  }
+
+  // Copy code helper
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sel = btn.getAttribute('data-copy');
+      const target = sel ? document.querySelector(sel) : null;
+      if (!target) return;
+      navigator.clipboard.writeText(target.innerText).then(() => {
+        const orig = btn.innerHTML;
+        btn.classList.add('copied');
+        btn.innerHTML = '<span class="lz">已复制!</span><span class="le">Copied!</span>';
+        setTimeout(() => {
+          btn.innerHTML = orig;
+          btn.classList.remove('copied');
+        }, 1800);
+      });
+    });
+  });
+
   // Language toggle
-  const langBtn = document.getElementById('langToggle');
+  const langToggle = document.getElementById('langToggle');
   function setLang(lang) {
     document.documentElement.dataset.lang = lang;
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     try { localStorage.setItem('cade-lang', lang); } catch (e) {}
     document.title = lang === 'zh'
-      ? 'cade — 可扩展的 Python Coding Agent 运行时骨架'
-      : 'cade — An extensible Python coding-agent runtime harness';
+      ? 'cade — 统一内核驱动的 Python Coding Agent 运行时与三端工作台 (工程架构版)'
+      : 'cade — Unified Python Coding Agent Runtime & Tri-Workbenches (Tech Edition)';
+    const desc = lang === 'zh'
+      ? '基于不可篡改的无损事件流与动态投影，通过 95% 无摘要换窗与持久记忆系统，统一驱动 TUI、CLI 与 Web 三端工作台的确定性 Coding Agent 运行时。'
+      : 'A deterministic Python coding-agent runtime driving TUI, CLI, and Web workbenches via lossless event streams, dynamic projections, 95% summary-free rollover, and durable memory.';
+    const metaDesc = document.querySelector('meta[name="description"]');
+    if (metaDesc) metaDesc.setAttribute('content', desc);
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    if (ogDesc) ogDesc.setAttribute('content', desc);
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle) ogTitle.setAttribute('content', document.title);
     playTerm();
   }
-  langBtn.addEventListener('click', () => {
+  langToggle.addEventListener('click', () => {
     setLang(document.documentElement.dataset.lang === 'zh' ? 'en' : 'zh');
   });
 
-  // Copy buttons
-  document.querySelectorAll('.copy-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.getAttribute('data-copy');
-      const el = document.getElementById(id);
-      const text = el ? el.innerText.replace(/\u00A0/g, ' ') : '';
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (e) {
-        const ta = document.createElement('textarea');
-        ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-      }
-      btn.classList.add('copied');
-      const original = btn.innerHTML;
-      btn.innerHTML = '<span class="lz">已复制</span><span class="le">Copied</span>';
-      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1400);
-    });
-  });
-
-  // Scroll reveal
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); observer.unobserve(e.target); } });
-  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-
-  // Fallback: ensure all reveals are visible even if IntersectionObserver misses
-  // (e.g., during full-page screenshots or when the viewport is resized after load).
-  setTimeout(() => {
-    document.querySelectorAll('.reveal:not(.in)').forEach((el, i) => {
-      setTimeout(() => el.classList.add('in'), i * 50);
-    });
-  }, 1600);
-
   // Theme toggle
-  const themeBtn = document.getElementById('themeToggle');
-  const themeIcons = themeBtn.querySelectorAll('.theme-icon');
+  const themeToggle = document.getElementById('themeToggle');
+  const themeIcons = themeToggle.querySelectorAll('.theme-icon');
   function applyTheme(mode) {
-    if (mode === 'auto') { delete document.documentElement.dataset.theme; }
-    else { document.documentElement.dataset.theme = mode; }
+    if (mode === 'auto') {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = mode;
+    }
     try { localStorage.setItem('cade-theme', mode); } catch (e) {}
-    themeIcons.forEach(icon => icon.classList.toggle('active', icon.dataset.mode === mode));
-    themeBtn.title = mode === 'auto' ? 'Theme: auto' : 'Theme: ' + mode;
+    themeIcons.forEach(icon => {
+      icon.classList.toggle('active', icon.dataset.mode === mode);
+    });
+    themeToggle.title = mode === 'auto' ? 'Theme: auto' : 'Theme: ' + mode;
   }
-  themeBtn.addEventListener('click', () => {
+  themeToggle.addEventListener('click', () => {
     const current = document.documentElement.dataset.theme || 'auto';
     applyTheme(current === 'auto' ? 'light' : (current === 'light' ? 'dark' : 'auto'));
   });

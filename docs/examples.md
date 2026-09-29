@@ -10,10 +10,10 @@
 
 ```bash
 # 查询代码实现
-cade -p "解释 src/cade/agent/agent.py 中的 AgentLoop 运行机制"
+cade exec "解释 src/cade/agent/agent.py 中的 AgentLoop 运行机制"
 
 # 执行特定定位
-cade -p "检查项目中所有未被使用的 import 语句"
+cade exec "检查项目中所有未被使用的 import 语句"
 ```
 
 ---

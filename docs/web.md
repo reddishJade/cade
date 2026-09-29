@@ -15,13 +15,14 @@ cade web --port 9000
 
 ## 进程模型
 
-```text
-uvicorn (asyncio 事件循环)
-├── REST API       /api/*（会话、工作区、模型、effort、git 分支、统计）
-├── WebSocket /ws  唯一的实时通道：事件流 + 控制 + 审批桥接
-├── StaticFiles    static/ 三件套（index.html / styles.css / app.js），no-store
-└── WebRunHub      持有唯一 CadeApp
-        └── 回合在 run_in_executor 工作线程中消费（ask_stream 同步迭代）
+```mermaid
+graph TD
+    Uvicorn["uvicorn (asyncio 事件循环)"]
+    Uvicorn --> REST["REST API (/api/*)<br/>会话、工作区、模型、effort、git 分支、统计"]
+    Uvicorn --> WS["WebSocket (/ws)<br/>实时通道：事件流 + 控制 + 审批桥接"]
+    Uvicorn --> Static["StaticFiles (static/)<br/>index.html / styles.css / app.js"]
+    Uvicorn --> Hub["WebRunHub (持有唯一 CadeApp)"]
+    Hub --> Worker["run_in_executor 工作线程<br/>消费 ask_stream 同步迭代"]
 ```
 
 关键点：

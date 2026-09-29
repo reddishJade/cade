@@ -1,90 +1,52 @@
-# Skills 技能系统
+# Skills 技能扩展系统
 
-Skill 是由 `SKILL.md` 描述的可加载工作规程。Cade 先建立技能目录索引，再按任务需要加载正文和引用资源。
+Skills 是针对特定工程领域（如大型重构、单测生成、API 接入、数据库迁移）编写的专业知识包与操作规范。
 
-## 1. 目录结构
+通过将团队的最佳实践沉淀为 Skill，可以让 Cade 在处理特定任务时具备专家级的代码规范和思维逻辑。
 
-```text
-skill-name/
-├── SKILL.md
-├── references/
-├── scripts/
-└── assets/
-```
+---
 
-`SKILL.md` 以 YAML frontmatter 开始：
+## 1. 技能存放路径
+
+Cade 会从以下两个层级自动扫描并发现可用技能：
+
+1. **项目专属技能**（随项目版本库共享）：
+   ```text
+   <项目根目录>/.cade/skills/<skill_name>/SKILL.md
+   ```
+2. **用户全局技能**（跨项目通用）：
+   ```text
+   ~/.config/cade/skills/<skill_name>/SKILL.md
+   ```
+
+---
+
+## 2. 编写一个 Skill
+
+每个技能由一个独立的目录构成，核心文件必须命名为 `SKILL.md`，文件顶部包含 YAML 格式的元数据：
 
 ```markdown
 ---
-name: code-review
-description: Review focused code changes and report concrete findings.
-compatibility: Python 3.12+
-allowed-tools: read_file, grep_search
+name: react-refactor
+description: 专门用于执行大型 React 组件拆分、Hook 提取与性能优化的规范指南。当用户提出重构前端组件时加载此技能。
 ---
 
-# Review procedure
+# React 重构核心规范
 
-Read the relevant diff, inspect surrounding code, and report evidence.
+在重构当前项目的组件时，请严格遵守以下约束：
+
+1. **单一职责**：单个 JSX 文件代码行数不得超过 150 行，超过必须将子视图拆分至 `components/` 子目录；
+2. **Hook 隔离**：所有带状态的网络请求必须封装在 `hooks/use*.ts` 中；
+3. **测试防守**：每次完成拆分后，必须运行 `npm run test` 确保无破坏性变动。
 ```
 
-必须提供非空 `description`。`name`、目录名、`disable-model-invocation`、`license`、`compatibility`、`allowed-tools` 和字符串 metadata 会被规范化。
+---
 
-## 2. 发现顺序
+## 3. 技能的加载与使用
 
-搜索目录按优先级排列：
-
-1. 显式 `paths.skills_dir`。
-2. 项目 `.cade/skills/`，需要 `trust_project_skills=true`。
-3. 项目 `.agents/skills/`，需要 `trust_project_skills=true`。
-4. 用户 `~/.cade/skills/`。
-5. 用户 `~/.agents/skills/`。
-
-同名技能 first-wins。`disable-model-invocation: true` 的技能可以被索引记录，但不会出现在可激活目录。
-
-## 3. 渐进加载
-
-启动时 `SkillIndexCollector` 只向模型提供名称和 description：
-
-```xml
-<available-skills>
-  <skill>
-    <name>code-review</name>
-    <description>Review focused code changes.</description>
-  </skill>
-</available-skills>
-```
-
-任务明确匹配时，模型调用：
-
-```json
-{"name": "code-review"}
-```
-
-`load_skill` 随后返回完整正文、兼容性、advisory allowed-tools、references、scripts 和 assets 元数据。技能正文仅在激活时进入上下文。
-
-## 4. 显式激活
-
-REPL 和 TUI 支持：
-
-```text
-$code-review 检查当前修改
-/skill code-review
-```
-
-显式激活会使用同一个 `load_skill` 工具执行路径，生成 tool use/tool result 语义事件并写入 session。重复激活返回 `already-active` 状态。
-
-## 5. References 与资源
-
-`references/` 在发现阶段扫描元数据，隐藏文件、符号链接、二进制文件和不可读取文件标记为 skipped。单个 reference 读取上限为 50 KB；模型可以使用：
-
-```json
-{"name": "code-review", "reference": "checklist.md"}
-```
-
-`scripts/` 和 `assets/` 记录相对路径与大小，正文加载过程只披露资源元数据。
-
-## 6. 会话、换窗与安全
-
-技能激活状态通过 `<skill-activation-state>` 标记写入工具结果。session restore 从标记恢复激活集合；换窗时已激活 skill 作为显式启动上下文重新注入。
-
-技能的 `allowed-tools` 属于 advisory 信息，权限 gate 继续执行。技能内容进入模型上下文后，仍遵循工具 schema、执行模式和路径边界。
+- **自动意图匹配（动态激活）**：Cade 会在系统提示词中自动注入所有已发现技能的摘要；当你的问题与某个技能的 `description` 描述高度吻合时，模型会自动调用内部工具加载对应的完整指令。
+- **手动显式激活**：你可以在终端通过 `/skill` 指令主动加载：
+  ```bash
+  /skill list             # 查看当前所有可用技能及其描述
+  /skill load react-refactor # 强制将指定技能加载进当前会话上下文
+  ```

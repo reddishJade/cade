@@ -1,98 +1,71 @@
-# 运行时架构与一次回合
+# 运行时架构与核心生命周期
 
-Cade 将编码 Agent 组织为分层运行时。每层拥有自己的状态、协议和失败边界，外层通过装配把能力组合成一个可运行的 app。
+Cade 绝不仅是一个局限于终端命令行的 CLI 工具，而是一个拥有**统一应用运行时内核（Unified Agent Harness）**、开箱即用支持 **TUI 全屏终端**、**CLI 极速交互** 与 **Web 浏览器工作台** 的现代 Coding Agent 平台。
 
-## 1. 分层
+---
 
-```text
-CLI / TUI / Web
-      │
-      ▼
-   CadeApp
-      │
-      ▼
-coding_agent product
-  tools · modes · skills · memory · assembly
-      │
-      ▼
- generic AgentHarness
-  lifecycle · inbox · hooks · gate · results
-      │
-      ▼
-      Agent
-  loop · context · request · tool scheduling
-      │
-      ▼
-   AI provider layer
-  protocol · codec · streaming · usage · fallback
+## 1. 统一运行时内核与三端工作台架构
+
+```mermaid
+flowchart TD
+    subgraph Surfaces["三端一体交互形态 (Tri-Surface Interfaces)"]
+        TUI["TUI 全屏沉浸式终端 (默认入口 `cade`)"]
+        CLI["CLI 极速终端 REPL / Headless (`cade cli` / `exec`)"]
+        Web["Web 现代浏览器工作台 (`cade web`)"]
+    end
+
+    Surfaces --> AppCore["统一应用产品层 (CadeApp)<br/>• Plan / Build / Act 模式管理<br/>• 编码工具箱调度与 NOTE.md 状态协作"]
+
+    AppCore --> Harness["运行时安全与支撑层 (Harness)<br/>• JSONL 追加写会话账本与快照回滚 (/undo)<br/>• Linux Bubblewrap 容器沙箱隔离<br/>• 三态权限判定引擎与 Reviewer 审查<br/>• MCP 外部协议扩展、三层记忆与技能"]
+
+    Harness --> Loop["智能驱动与上下文核心 (Agent Loop)<br/>• 95% 水位线无摘要换窗 (Summary-free Rollover)<br/>• 只读并发池与串行写屏障 (防脏写保护)"]
+
+    Loop --> Provider["统一模型适配层 (AI Providers)<br/>• OpenAI, DeepSeek, ChatGLM, MiMo, 本地模型<br/>• 思考链 (Thinking) 流式输出与用量统计"]
 ```
 
-- **AI**：`ModelProvider`、provider transport、模型元数据、费用、thinking、流式事件和 API 错误。
-- **Agent**：消息、内容块、核心循环、工具执行、请求组装、压缩和终止原因。
-- **Harness**：active run、取消、durable inbox、事件翻译、权限 gate、审计、session 连接和结果。
-- **Coding product**：编码工具、Plan/Build/Act、技能、长期记忆、todo、Goal、MCP 与应用装配。
-- **Host**：CLI、TUI、Web 的输入、审批和事件展示。
+各层级职责自上而下严格解耦，应用内核通过统一装配工厂（Assembly）注入能力：
 
-依赖由外向内指向稳定协议。前端消费事件和 app API，工具通过注册表进入 Agent，provider 通过统一协议进入循环。
+1. **三端一体交互层 (`src/cade/cli/`, `src/cade/server/`)**：
+   - **TUI 工作台**（默认入口）：提供类 IDE 的全屏分屏视图、Diff 实时审查看板与任务看板；
+   - **CLI REPL**：极轻量行交互，支持快捷键、`@` 文件补全、`!` 穿透与 CI 脚本自动化；
+   - **Web 工作台**：基于 FastAPI 与 WebSocket 实时双向流，支持多端可视化管理。
+2. **应用产品层 (`src/cade/coding_agent/`)**：
+   承载与编码任务直接绑定的业务语义。管理 Plan/Build/Act 状态机、系统 Prompt 拼装与任务清单（TODO）。
+3. **运行时支撑与安全层 (`src/cade/harness/`)**：
+   提供底层的安全与持久化地基。通过 Linux Bubblewrap 隔离 Shell 命令执行，通过追加写 JSONL 保证全量事实留存，并集成 MCP 外部协议。
+4. **智能驱动与上下文核心 (`src/cade/agent/`)**：
+   负责核心事件驱动循环。当上下文占满 95% 时触发换窗重置，并负责只读工具并发派发与写操作串行排队。
+5. **统一模型适配层 (`src/cade/ai/`)**：
+   抹平大模型服务商协议差异，原生支持深层思考链解析与 Token 统计。
 
-## 2. 一次回合
+---
 
-```text
-用户输入
-  → SessionInbox inserted
-  → active run claim
-  → context prefix + session surface
-  → ContextBlock / world state collection
-  → RequestAssembly
-  → provider request envelope
-  → provider stream
-  → assistant message / tool calls
-  → ToolGate + PermissionEngine
-  → tool handler
-  → tool result / hooks / audit
-  → session events
-  → next model step or final result
+## 2. 一次回合（Turn）的完整生命周期
+
+当你在终端中敲下回车发送一条指令时，Cade 内部经历以下执行链条：
+
+```mermaid
+flowchart TD
+    Start["用户输入"] --> Step1["1. 写入 Session 账本 (JSONL 追加写)"]
+    Step1 --> Step2["2. 收集环境与上下文 (NOTE.md, 文件树, 激活规则)"]
+    Step2 --> CheckBudget{"3. 95% 上下文预算检查"}
+    CheckBudget -- "超过 95%" --> Rollover["触发换窗交接至 NOTE.md<br/>开启干净上下文窗口"]
+    CheckBudget -- "余量充足" --> Infer["4. 向 AI Provider 发起流式推理"]
+    Rollover --> Infer
+    Infer --> Gate["5. 工具门控与权限审查 (ToolGate & PermissionEngine)"]
+    Gate -- "只读工具" --> ReadPool["6a. 并发池并行执行<br/>(read_file, grep_search 等)"]
+    Gate -- "写操作/命令" --> WriteBarrier["6b. 串行屏障排队 + 冲突校验<br/>(edit_file, bash)"]
+    ReadPool --> Result["7. 工具结果写回账本并追加上下文"]
+    WriteBarrier --> Result
+    Result --> Done{"8. 任务是否完成?"}
+    Done -- "需要后续步骤" --> Infer
+    Done -- "已完成" --> Finish["结束回合并等待用户输入"]
 ```
 
-`CadeApp` 负责装配共享的 provider、工具注册表、session recorder、inbox、context rollover、skills、memory、MCP 和安全配置。每个 run 捕获一个 `AgentComposition` generation；provider、工具、配置、静态 gate 策略和请求组装器保持同一代视图。
+---
 
-## 3. 三种状态表达
+## 3. 核心设计原则
 
-### 运行状态
-
-`AgentContext` 保存本次循环的 system prompt、request prefix、messages、tools、context state、project root、cwd 和 request budget。`ContextManager` 统一管理 history、world state、token usage、换窗计数和 prompt/cache fingerprint。
-
-### 事件状态
-
-Agent 核心事件包括 turn、message、thinking、tool execution 和 context-window reset。Harness 翻译为结构化 `AgentHarnessEvent`，前端消费 text delta、reasoning delta、tool use、tool update、tool result、context-window reset 和 final。
-
-### 持久状态
-
-Session recorder 保存稳定语义事件。流式碎片用于实时展示；JSONL 账本保存可重建模型历史、工具配对、换窗 replacement、provider request、Goal 和子代理谱系。
-
-## 4. 请求组装
-
-`RequestAssembly` 是模型请求的完整快照，包含：
-
-- 修复后的 typed messages。
-- provider wire messages。
-- 工具定义与 JSON Schema。
-- context trace、token 数和剩余预算。
-- request hygiene 状态。
-- 当前 step 与 StreamOptions。
-
-provider 和 `before_provider_request` hook 消费同一份 assembly。请求卫生裁剪 provider 投影，session surface 保留原始结构。
-
-## 5. 失败与停止
-
-运行时具备多层出口：
-
-- provider 临时错误：ProviderRuntime 重试并分类 HTTP 错误。
-- Agent provider error：指数退避并限制 step retry。
-- `max_tokens`：自动续写，低产出连续达到阈值后结束。
-- 工具异常、超时和取消：转换为结构化 ToolResult。
-- 重复工具和连续错误结果：watchdog 停止。
-- Goal judge：对完成声明进行独立验收。
-- `max_steps`：显式步骤上限。
-
-最终结果包含 answer、messages、tool calls、steps、termination reason、metrics、provider failure 和 run state。
+- **代码即真相**：所有运行时状态最终都可以由 Session JSONL 账本回放重构。
+- **只读并发，写操作屏障**：只读工具大胆并行提高探索速度，写文件与 Shell 严格串行加锁并校验指纹，杜绝并发竞争与写坏文件。
+- **无摘要换窗**：不使用 LLM 递归总结历史对话，避免总结丢失细节或产生幻觉；依托结构化的 `NOTE.md` 传承长任务进展。

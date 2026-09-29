@@ -1,113 +1,66 @@
 # 安装与环境准备
 
-Cade 需要 Python 3.12 或更高版本。运行时依赖 OpenAI-compatible provider、终端交互、文件处理、MCP、FastAPI Web 服务和 Linux bubblewrap sandbox。
+Cade 是一个运行在本地工作区的轻量 Python Coding Agent。在开始使用前，请确保系统已安装必要的运行依赖。
 
-## 快速安装
+---
+
+## 1. 系统要求与环境依赖
+
+- **Python**：`>= 3.12`
+- **包管理器（推荐）**：[`uv`](https://github.com/astral-sh/uv)（极速安装与虚拟环境管理）
+- **推荐系统工具**：
+  - `ripgrep` (`rg`)：Cade 的 `grep_search` 与 `glob_files` 工具会优先调用系统级 ripgrep 进行毫秒级全文检索。未安装时自动回退为纯 Python 实现。
+  - `bubblewrap` (`bwrap`)：仅在 Linux 下生效。用于提供命名空间级的 Shell 执行沙箱隔离。未安装时系统将以无沙箱的直接执行模式运行。
+
+### 在各系统安装系统依赖
 
 ```bash
-uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
-cd /path/to/your/project
-cade
+# Ubuntu / Debian
+sudo apt-get update && sudo apt-get install -y ripgrep bubblewrap
+
+# macOS (Homebrew)
+brew install ripgrep
+
+# Arch Linux
+sudo pacman -S ripgrep bubblewrap
 ```
 
-当前命令安装 `main` 开发版。首个版本标签发布后，安装说明将改为固定版本；发布规则见[版本与发布](releases.md)。
+---
 
-首次启动自动引导账户登录或 API key 配置。完成后即可输入任务，下一次使用 `cade -c` 继续。[快速开始](quickstart.md) 介绍完整操作路径。
+## 2. 安装 Cade
 
-## 1. 前置条件
+### 方式 A：源码克隆与开发安装（推荐）
 
-- **Python**：3.12+。
-- **包管理器**：推荐 [uv](https://docs.astral.sh/uv/)，pip 也可用。
-- **Git**：项目内文件快照、`/undo` 和 Git 上下文需要 Git 工程。
-- **Linux sandbox**：Linux 默认使用 `bwrap`。需要时安装：
-
-  ```bash
-  # Debian / Ubuntu
-  sudo apt-get update && sudo apt-get install -y bubblewrap
-
-  # Fedora / RHEL
-  sudo dnf install -y bubblewrap
-
-  # Arch Linux
-  sudo pacman -S bubblewrap
-  ```
-
-  Linux 中使用默认 `workspace-write` sandbox 时，缺少 `bwrap` 会让 sandbox 初始化失败。可以安装 bubblewrap；在明确理解风险后，也可以同时配置 `danger-full-access` 与 `network_access: allow`，让运行时使用本地 subprocess shell。
-
-Linux 以外的环境使用本地 `SubprocessShell`；工具权限和路径策略仍然生效。
-
-## 2. 开发模式安装
+如果你需要基于最新代码进行开发或体验最新特性：
 
 ```bash
 git clone https://github.com/reddishJade/cade.git
 cd cade
 
+# 创建虚拟环境并安装运行时依赖
 uv venv
-# Linux / macOS
 source .venv/bin/activate
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-
 uv pip install -e .
-```
 
-开发依赖：
-
-```bash
+# 若需要运行测试与代码静态检查，可安装 dev 依赖
 uv pip install -e ".[dev]"
 ```
 
-也可以直接使用：
+### 方式 B：使用 pip 直接安装
 
 ```bash
-uv run cade --help
+pip install cade-agent
 ```
 
-## 3. 首次配置
+---
 
-交互式向导：
+## 3. 验证安装
 
-```bash
-cade setup
-```
-
-向导会收集 provider、API key、base URL、模型、thinking 和可用的 reasoning effort，保存时可选择个人默认配置 `~/.cade/settings.json`、当前项目的 `cade.config.json` 或临时配置。个人默认配置便于多个项目共用。
-
-也可以使用环境变量。常用 key 包括：
-
-```bash
-export OPENAI_API_KEY="..."
-export DEEPSEEK_API_KEY="..."
-export MIMO_API_KEY="..."
-export CHATGLM_API_KEY="..."
-```
-
-Windows PowerShell：
-
-```powershell
-$env:OPENAI_API_KEY = "..."
-```
-
-API key 也可以写入 provider profile。敏感配置适合放在个人配置或环境变量中，并结合 [security.md](security.md) 的路径和审计策略使用。
-
-## 4. 验证安装
+在终端运行以下命令，验证命令行工具已正确安装并处于 PATH 中：
 
 ```bash
 cade --help
-cade
-# 完成首次配置后，也可以执行单次任务
-cade -p "输出一句安装成功"
 ```
 
-若执行 `cade` 没有指定子命令，程序启动终端 TUI。标准 REPL 使用 `cade cli`，浏览器工作台使用 `cade web`。
-
-## 5. 运行目录
-
-启动时默认以当前目录作为项目根目录。可以显式指定：
-
-```bash
-cade --project-root /path/to/project
-cade --project-root D:\\work\\project cli
-```
-
-会话、快照、MCP、技能和项目记忆都会依据这个项目根目录建立各自的运行边界。
+如果看到包含 `--mode`、`--provider`、`--model` 等启动选项的帮助界面，说明安装成功。
+下一步请参考 [快速上手指南](quickstart.md) 配置模型并开启你的第一个开发任务。

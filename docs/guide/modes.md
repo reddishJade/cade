@@ -1,94 +1,63 @@
 # 执行模式：Plan、Build、Act
 
-默认使用 Act：读取和搜索可以直接进行，写文件与 Shell 按权限规则申请批准。想自动修改项目文件时用 `/build`，先调查方案时用 `/plan`；Plan 默认调查 8 轮后转入 Build。
+Cade 设计了三种执行模式（Execution Modes），用来在**全自动开发的高效性**与**系统修改的安全性**之间取得平衡。
 
-执行模式同时控制工具可见性、默认规则、Shell 未决效果处理和审批路由。模式状态进入 session run state，恢复会话时继续使用记录中的模式。
+你可以随时在终端通过对应的 Slash 指令切换当前工作模式。
 
-## 1. 模式对照
+---
 
-| 模式 | 工具可见性 | 默认动作 | 适用场景 |
-| --- | --- | --- | --- |
-| Plan | 只读探索、搜索、Web、question；显式技能可激活 | 规则覆盖外的动作 deny | 研究架构、制定方案 |
-| Build | 全部已注册工具 | 项目结构化写入 allow；Shell 与未匹配动作 ask | 自动完成编码和验证 |
-| Act | 全部已注册工具 | 只读 allow；写入与 Shell ask | 逐项确认副作用 |
+## 1. 三种模式特性对比
 
-## 2. Plan
+| 模式 | 核心定位 | 工具可见性 | 写入与执行权限 | 适用场景 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`Plan`** | 只读调研与规划 | 仅可见只读工具、搜索、Web 与提问工具 | 仅允许写入 `.cade/plans/*.md`，拒绝一切项目文件修改和 Shell | 分析需求、排查 Bug 原因、制定重构设计方案 |
+| **`Build`** | 自动实施与验证 | 全部已注册工具 | 项目文件读写自动放行；Shell 命令由 Reviewer 自动审计 | 需求明确，让 Agent 批量编写代码、补充单测并运行测试验证 |
+| **`Act`** (默认) | 逐项人工确认 | 全部已注册工具 | 只读工具直接放行；写文件与运行 Shell 需人工敲回车确认 | 关键生产代码修改、对破坏性操作保持谨慎核查 |
 
-```text
-/plan
-/plan 分析当前 provider 结构并给出修改方案
-```
+---
 
-Plan 可见 `read_file`、`glob_files`、`find_files`、`list_dir`、`grep_search`、`search_tools`、`webfetch`、`websearch` 和 `question`。`write_file`、`edit_file` 的默认允许目标是 `.cade/plans/*.md`，`apply_patch`、bash 和其他写操作由模式 fallback 拒绝。
+## 2. 深入理解各模式
 
-Plan investigation turn 默认上限为 8。达到上限后自动切换 Build，并向下一轮注入模式通知。
+### 2.1 Plan 模式：只动口不动手
 
-## 3. Build
+输入 `/plan [你的问题]` 即可进入规划模式：
 
 ```text
-/build
+> /plan 分析当前数据库连接池在高并发下连接泄露的原因并给出修复步骤
 ```
 
-Build 保持全部工具可见：
+- **安全边界**：Cade 无法修改项目代码，无法运行破坏性 Shell 命令。
+- **产物沉淀**：Cade 会将最终的规划方案整理为 Markdown 文件，写入项目根目录下的 `.cade/plans/` 中保存。
+- **自动防死循环（Timeout）**：为了防止模型在探索代码时漫无目的地无限循环，Plan 模式内置了轮数上限（默认 **8 轮**）。达到上限后，Cade 会自动提示是否转入 Build 模式执行方案。
 
-- 项目内 `write_file`、`edit_file`、`apply_patch` 由默认规则直接允许。
-- 读取、搜索、技能、记忆和 MCP 工具由默认规则允许。
-- Shell 默认进入自动审批 reviewer。
-- 危险命令、敏感路径、restricted_dirs、项目外未授权路径仍然形成硬拒绝。
+### 2.2 Build 模式：全自动高效推进
 
-自动 reviewer 只授予当前动作的 once 权限。`security.approval_policy=never` 时，ask 约束转为确定性 deny。
-
-## 4. Act
+当你已有了明确的方案，或者不想每改一个文件都手动点击“确认”时，输入 `/build`：
 
 ```text
-/act
+> /build
+已切换到 Build 模式：项目写入操作自动放行，Shell 命令将进行自动语义审计。
 ```
 
-Act 默认允许只读工具，写工具和 Shell 请求用户审批。用户可以在授权面板选择：
+- **自动文件修改**：修改、新建文件不再打扰用户，Agent 自行闭环完成。
+- **Shell 审查机制（Reviewer）**：当需要运行命令（如 `uv run pytest`）时，系统会自动进行安全策略匹配；如果策略不确定，会通过内置审查器进行安全审计后自动放行，无需人工介入。
 
-- `Allow (once)`：当前动作。
-- `Allow this session`：当前 session 的同类目标。
-- `Always allow`：写入项目级永久授权。
-- `Deny`：拒绝当前动作，并可向模型提供下一步建议。
+### 2.3 Act 模式：人工安全锁
 
-规则、restricted_dirs 和危险命令优先于交互选择。
+Act 模式是 Cade 启动时的**默认模式**。
 
-## 5. 模式切换
+- **透明可控**：读文件、搜代码随意进行，但凡触碰 `write_file`、`edit_file` 或 `bash` 命令，Cade 都会在终端弹出待执行操作与 Diff 预览。
+- **确认选项**：你可以输入 `y` 确认执行、`n` 拒绝本次操作，或者直接输入意见让 Agent 调整思路后再试。
 
-REPL 和 TUI 使用 `/plan`、`/build`、`/act`；Web 顶部模式按钮在下一次提交时携带模式。
+---
 
-当前 run 会捕获 ToolGate snapshot。模式切换后的规则在新的模型/工具边界生效，正在执行的单次工具调用保持原决策。
+## 3. 模式切换操作
 
-## 6. 自定义 ruleset
+在 REPL 中可以随时无缝切换：
 
-```json
-{
-  "execution_modes": {
-    "default_mode": "build",
-    "build": {
-      "rules": [
-        {
-          "action": "bash",
-          "command": "git",
-          "subcommand": "push",
-          "effect": "ask"
-        },
-        {
-          "action": "write_file",
-          "resource_pattern": "deploy/**",
-          "effect": "deny"
-        }
-      ]
-    }
-  }
-}
+```bash
+/plan [目标]    # 切换至 Plan 模式，可携带初始规划目标
+/build          # 切换至 Build 模式
+/act            # 切换回 Act 模式
 ```
-
-规则字段：
-
-- `action`：工具名或通配符。
-- `effect`：`allow`、`ask`、`deny`。
-- Shell 条件：`command`、`subcommand`、`subcommand_in`、`flags_any`、`flags_all`。
-- 文件或资源条件：`resource_pattern`。
-
-规则按顺序匹配，后匹配规则覆盖同层前匹配规则。用户 ruleset 追加在默认 ruleset 后，因此可以收紧默认动作。
+切换记录会持久化在当前会话状态中，即使退出重进也会恢复之前的模式设置。
