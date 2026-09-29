@@ -173,11 +173,11 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
         return single_line_preview(f"{name}: {raw_input}") if raw_input else name
 
     # ── 各工具类型特化格式化 ──
-    if name in ("bash", "hypa_shell"):
+    if name == "bash":
         cmd = raw_input.get("command") or raw_input.get("input") or ""
         return single_line_preview(f"$ {cmd}") if cmd else name
 
-    if name in ("read", "read", "hypa_read"):
+    if name == "read":
         path = _shorten_path(
             str(
                 raw_input.get(
@@ -192,7 +192,7 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
             suffix += f"-{off + lim - 1}" if off else f" ({lim} lines)"
         return single_line_preview(f"read {path}{suffix}")
 
-    if name in ("write", "write"):
+    if name == "write":
         path = _shorten_path(str(raw_input.get("file_path", raw_input.get("path", ""))))
         content = str(raw_input.get("content", ""))
         lines = content.count("\n") + 1 if content else 0
@@ -200,22 +200,22 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
             f"write {path}" + (f" ({lines} lines)" if lines else "")
         )
 
-    if name in ("edit", "edit"):
+    if name == "edit":
         path = _shorten_path(str(raw_input.get("file_path", raw_input.get("path", ""))))
         return single_line_preview(f"edit {path}")
 
-    if name in ("list", "ls", "hypa_ls"):
+    if name == "ls":
         path = _shorten_path(str(raw_input.get("path", ".")))
         return single_line_preview(f"ls {path}")
 
-    if name in ("glob", "find", "hypa_find"):
+    if name in ("glob", "find"):
         pattern = str(raw_input.get("pattern", raw_input.get("path", "*")))
         path = _shorten_path(str(raw_input.get("path", ".")))
         return single_line_preview(
             f"glob {pattern}" + (f" in {path}" if path != "." else "")
         )
 
-    if name in ("grep", "grep", "hypa_grep"):
+    if name == "grep":
         pattern = str(raw_input.get("pattern", ""))
         path = _shorten_path(str(raw_input.get("path", raw_input.get("include", "."))))
         return single_line_preview(
@@ -225,9 +225,9 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
     if name == "delegate":
         tasks = _subagent_tasks(raw_input)
         if tasks:
-            return f"subagent tasks ({len(tasks)})"
+            return f"delegate tasks ({len(tasks)})"
         desc = raw_input.get("description", "")
-        return single_line_preview(f"subagent: {desc}") if desc else name
+        return single_line_preview(f"delegate: {desc}") if desc else name
 
     if name == "websearch":
         query = raw_input.get("query", raw_input.get("input", ""))
