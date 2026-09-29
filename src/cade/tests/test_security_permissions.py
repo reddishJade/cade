@@ -265,6 +265,64 @@ def test_build_routes_external_mcp_tool_to_auto_review(tmp_path: Path) -> None:
     assert [request.tool.name for request in requests] == [tool.name]
 
 
+def test_structured_writes_cannot_modify_protected_workspace_metadata(
+    tmp_path: Path,
+) -> None:
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            project_root=tmp_path,
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
+            mode_fallback="ask",
+            execution_mode="build",
+        )
+    )
+
+    for path in (".cade/mcp_config.json", ".agents/skills/project/SKILL.md"):
+        result = engine.decide("write", {"path": path, "content": "x"})
+
+        assert result.decision == "deny"
+        assert result.reason_code == "protected_workspace_metadata"
+        assert result.overrideable is False
+
+
+def test_plan_write_can_use_managed_plan_file_channel(tmp_path: Path) -> None:
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            project_root=tmp_path,
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
+            mode_fallback="deny",
+            execution_mode="plan",
+        )
+    )
+
+    result = engine.decide(
+        "write",
+        {"path": ".cade/plans/refactor.md", "content": "# Plan"},
+    )
+
+    assert result.decision == "allow"
+    assert result.blocked is False
+
+
+def test_patch_cannot_use_plan_file_metadata_exception(tmp_path: Path) -> None:
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            project_root=tmp_path,
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
+            mode_fallback="ask",
+            execution_mode="build",
+            tool_path_extractors={
+                "patch": lambda _data: (".cade/plans/refactor.md",)
+            },
+        )
+    )
+
+    result = engine.decide("patch", {"patch_text": "opaque"})
+
+    assert result.decision == "deny"
+    assert result.reason_code == "protected_workspace_metadata"
+
+
 def test_never_policy_rejects_ask_without_calling_reviewer() -> None:
     requests: list[ApprovalRequest] = []
 
