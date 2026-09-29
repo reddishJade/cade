@@ -88,9 +88,7 @@ def _freeze_gate(gate: GateConfig) -> GateConfig:
         shell_unresolved_policies=MappingProxyType(
             dict(gate.shell_unresolved_policies)
         ),
-        shell_mutation_policies=MappingProxyType(
-            dict(gate.shell_mutation_policies)
-        ),
+        shell_mutation_policies=MappingProxyType(dict(gate.shell_mutation_policies)),
         tool_path_extractors=MappingProxyType(dict(gate.tool_path_extractors)),
     )
 
