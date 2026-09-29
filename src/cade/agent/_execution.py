@@ -571,6 +571,7 @@ def _emit_tool_end(
 
 # ── 工具看门狗 ──
 
+
 def tool_call_signature(call: ToolCallContent) -> str:
     args_str = json.dumps(call.arguments or {}, sort_keys=True, default=str)
     return f"{call.name}:{args_str}"
