@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from cade.agent.types import ApprovalRequest, ToolSpec
 from cade.coding_agent.assembly.security import sensitive_path_overrides_from_security
+from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.harness.config import SecurityRuntimeConfig
 from cade.harness.security import HITLResult
 from cade.harness.security.permission_model import (
@@ -52,6 +53,86 @@ def test_build_routes_unknown_shell_command_to_approval() -> None:
 
     assert result.decision == "allow"
     assert result.blocked is False
+    assert len(requests) == 1
+
+
+def test_plan_allows_proven_read_only_shell_without_review(tmp_path: Path) -> None:
+    def reject_unexpected_review(_request: ApprovalRequest) -> HITLResult:
+        raise AssertionError("read-only shell command should not require review")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
+            mode_fallback="deny",
+            shell_unresolved_policy="ask",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "rg needle src | head -n 20"},
+        tool_spec=_bash_tool(),
+        approval_callback=reject_unexpected_review,
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "allow"
+    assert result.blocked is False
+
+
+def test_plan_denies_explicit_mutating_shell_before_review(tmp_path: Path) -> None:
+    requests: list[ApprovalRequest] = []
+
+    def approve(request: ApprovalRequest) -> HITLResult:
+        requests.append(request)
+        return HITLResult("allow", "once")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
+            mode_fallback="deny",
+            shell_unresolved_policy="ask",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "rm -rf build"},
+        tool_spec=_bash_tool(),
+        approval_callback=approve,
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "deny"
+    assert result.blocked is True
+    assert requests == []
+
+
+def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
+    requests: list[ApprovalRequest] = []
+
+    def approve(request: ApprovalRequest) -> HITLResult:
+        requests.append(request)
+        return HITLResult("allow", "once", rationale="read-only test run")
+
+    engine = PermissionEngine(
+        PermissionEngineConfig(
+            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
+            mode_fallback="deny",
+            shell_unresolved_policy="ask",
+        )
+    )
+
+    result = engine.decide(
+        "bash",
+        {"command": "pytest -q"},
+        tool_spec=_bash_tool(),
+        approval_callback=approve,
+        approvals_reviewer="auto_review",
+    )
+
+    assert result.decision == "allow"
+    assert result.source == "auto_review"
     assert len(requests) == 1
 
 
@@ -252,7 +333,7 @@ def test_unresolved_restricted_path_is_explicit_deny() -> None:
     )
     assert result.reason == (
         "filesystem paths could not be extracted safely while "
-        "restricted_dirs is configured for tool: read_file"
+        "restricted_dirs is configured for tool: read"
     )
 
 
