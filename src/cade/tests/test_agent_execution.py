@@ -156,7 +156,6 @@ class TestToolCallSignature:
         assert tool_call_signature(c1) != tool_call_signature(c2)
 
 
-
 def _make_call(name: str, **kwargs: str) -> ToolCallContent:
     return ToolCallContent(id=kwargs.get("id", "c1"), name=name, arguments={"k": "v"})
 
