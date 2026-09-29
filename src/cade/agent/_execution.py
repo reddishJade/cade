@@ -574,8 +574,8 @@ def _emit_tool_end(
 
 DEFAULT_MUTATION_TOOLS: frozenset[str] = frozenset(
     {
-        "write_file",
-        "edit_file",
+        "write",
+        "edit",
         "bash",
         "create_file",
         "delete_file",
@@ -586,11 +586,11 @@ DEFAULT_MUTATION_TOOLS: frozenset[str] = frozenset(
 
 DEFAULT_READ_TOOLS: frozenset[str] = frozenset(
     {
-        "read_file",
-        "grep_search",
-        "glob_files",
-        "list_dir",
-        "find_files",
+        "read",
+        "grep",
+        "glob",
+        "list",
+        "find",
     }
 )
 

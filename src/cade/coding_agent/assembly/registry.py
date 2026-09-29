@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -32,51 +31,6 @@ if TYPE_CHECKING:
     from cade.harness.session.recorder import SessionRecorder
     from cade.harness.skills import SkillRegistry
 
-
-def build_search_tools_tool(
-    registry_provider: Callable[[], tuple[ToolSpec, ...]],
-) -> ToolSpec:
-    """按关键字搜索所有已注册工具。"""
-
-    def search_tools(
-        data: dict[str, Any], _on_update: Callable[[str], None] | None = None
-    ) -> str:
-        registry = registry_provider()
-        query = str(data.get("query", "")).strip().lower()
-        if not query:
-            lines = [f"Available tools ({len(registry)}):"]
-            for t in sorted(registry, key=lambda x: x.name):
-                lines.append(f"  {t.name}: {t.description[:80]}")
-            return "\n".join(lines)
-        results = []
-        for t in registry:
-            if query in t.name.lower() or query in t.description.lower():
-                schema_str = json.dumps(t.schema or {}, ensure_ascii=False)[:200]
-                results.append(
-                    f"{t.name}:\n  description: {t.description[:200]}\n  schema: {schema_str}"
-                )
-        if not results:
-            return f"No tools matching '{query}'."
-        return f"Found {len(results)} tool(s) matching '{query}':\n" + "\n\n".join(
-            results[:5]
-        )
-
-    return ToolSpec(
-        name="search_tools",
-        description="Search available tools by keyword. Returns tool descriptions and schemas matching the query.",
-        input_hint='JSON: {"query": "file"}',
-        handler=search_tools,
-        schema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Keyword to search for in tool names and descriptions",
-                }
-            },
-            "additionalProperties": False,
-        },
-    )
 
 
 def _discover_skills(
@@ -121,14 +75,14 @@ def _build_child_registry(
 ) -> tuple[ToolSpec, ...]:
     CORE_TOOLS = frozenset(
         {
-            "read_file",
-            "write_file",
-            "edit_file",
-            "apply_patch",
-            "glob_files",
-            "find_files",
-            "list_dir",
-            "grep_search",
+            "read",
+            "write",
+            "edit",
+            "patch",
+            "glob",
+            "find",
+            "list",
+            "grep",
             "webfetch",
             "websearch",
             "bash",
@@ -221,8 +175,6 @@ def build_tool_registry(
         registry,
         set(runtime_config.tools.subagent_extra_tools),
     )
-    registry += (build_search_tools_tool(lambda: registry),)
-
     subagents = SubagentSessionManager(
         provider=subagent_provider,
         coding_tools=child_registry,

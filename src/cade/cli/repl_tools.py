@@ -177,7 +177,7 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
         cmd = raw_input.get("command") or raw_input.get("input") or ""
         return single_line_preview(f"$ {cmd}") if cmd else name
 
-    if name in ("read_file", "read", "hypa_read"):
+    if name in ("read", "read", "hypa_read"):
         path = _shorten_path(
             str(
                 raw_input.get(
@@ -192,7 +192,7 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
             suffix += f"-{off + lim - 1}" if off else f" ({lim} lines)"
         return single_line_preview(f"read {path}{suffix}")
 
-    if name in ("write_file", "write"):
+    if name in ("write", "write"):
         path = _shorten_path(str(raw_input.get("file_path", raw_input.get("path", ""))))
         content = str(raw_input.get("content", ""))
         lines = content.count("\n") + 1 if content else 0
@@ -200,22 +200,22 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
             f"write {path}" + (f" ({lines} lines)" if lines else "")
         )
 
-    if name in ("edit_file", "edit"):
+    if name in ("edit", "edit"):
         path = _shorten_path(str(raw_input.get("file_path", raw_input.get("path", ""))))
         return single_line_preview(f"edit {path}")
 
-    if name in ("list_dir", "ls", "hypa_ls"):
+    if name in ("list", "ls", "hypa_ls"):
         path = _shorten_path(str(raw_input.get("path", ".")))
         return single_line_preview(f"ls {path}")
 
-    if name in ("glob_files", "find", "hypa_find"):
+    if name in ("glob", "find", "hypa_find"):
         pattern = str(raw_input.get("pattern", raw_input.get("path", "*")))
         path = _shorten_path(str(raw_input.get("path", ".")))
         return single_line_preview(
             f"glob {pattern}" + (f" in {path}" if path != "." else "")
         )
 
-    if name in ("grep_search", "grep", "hypa_grep"):
+    if name in ("grep", "grep", "hypa_grep"):
         pattern = str(raw_input.get("pattern", ""))
         path = _shorten_path(str(raw_input.get("path", raw_input.get("include", "."))))
         return single_line_preview(
@@ -285,25 +285,25 @@ def _subagent_list_text(raw_input: ToolInput) -> Text | None:
 def tool_intent(name: str, raw_input: ToolInput | str) -> str:
     if not isinstance(raw_input, dict):
         return single_line_preview(f"Run {name}")
-    if name == "grep_search":
+    if name == "grep":
         pattern = (
             raw_input.get("pattern") or raw_input.get("query") or raw_input.get("input")
         )
         path = raw_input.get("path") or raw_input.get("include") or "workspace"
         if pattern:
             return single_line_preview(f"Search {path} for {pattern}")
-    if name == "glob_files":
+    if name == "glob":
         pattern = (
             raw_input.get("pattern") or raw_input.get("path") or raw_input.get("input")
         )
         path = raw_input.get("path") if raw_input.get("pattern") else "workspace"
         if pattern:
             return single_line_preview(f"Find {pattern} in {path}")
-    if name == "read_file":
+    if name == "read":
         path = raw_input.get("path") or raw_input.get("input")
         if path:
             return single_line_preview(f"Read {path}")
-    if name in {"write_file", "edit_file"}:
+    if name in {"write", "edit"}:
         path = raw_input.get("path") or raw_input.get("input")
         if path:
             return single_line_preview(f"Edit {path}")

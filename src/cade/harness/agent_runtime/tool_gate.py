@@ -66,15 +66,14 @@ class _ClearableGrantStore(Protocol):
 
 # 核心工具 capability 映射，提供给权限引擎
 _TOOL_ACTION_PROFILES: dict[str, tuple[str, str]] = {
-    "read_file": ("read", "path"),
-    "glob_files": ("read", "path"),
-    "grep_search": ("read", "path"),
-    "find_files": ("read", "path"),
-    "list_dir": ("read", "path"),
-    "search_tools": ("read", "none"),
-    "write_file": ("write", "path"),
-    "edit_file": ("edit", "path"),
-    "apply_patch": ("patch", "path"),
+    "read": ("read", "path"),
+    "glob": ("read", "path"),
+    "grep": ("read", "path"),
+    "find": ("read", "path"),
+    "list": ("read", "path"),
+    "write": ("write", "path"),
+    "edit": ("edit", "path"),
+    "patch": ("patch", "path"),
     "bash": ("shell", "none"),
     "shell": ("shell", "none"),
     "load_skill": ("skill", "skill"),

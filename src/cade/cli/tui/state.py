@@ -734,12 +734,12 @@ class _TuiState:
     def _tool_label(self, name: str, raw_input: ToolInput) -> str:
         """生成普通工具卡片使用的标题。"""
         label = brief_input(name, raw_input)
-        if name == "list_dir":
+        if name == "list":
             path = Path(str(raw_input.get("path", ".")))
             if self.project_root is not None and not path.is_absolute():
                 path = self.project_root / path
             label = f"List {self._display_path(path)}"
-        elif name == "read_file":
+        elif name == "read":
             path = Path(str(raw_input.get("path", "")))
             if self.project_root is not None and not path.is_absolute():
                 path = self.project_root / path
@@ -769,7 +769,7 @@ class _TuiState:
         if exploration is not None:
             exploration.complete = True
             exploration.failed = status != "ok"
-            if exploration.name == "read_file" and status == "ok":
+            if exploration.name == "read" and status == "ok":
                 count = sum(
                     bool(re.match(r"^\d+: ", line)) for line in content.splitlines()
                 )
@@ -886,10 +886,10 @@ def _successful_tool_detail(
     text = content.rstrip()
     if name in {"bash", "hypa_shell", "shell"}:
         return _tool_output_preview(text) if text else "done"
-    if name == "read_file":
+    if name == "read":
         count = sum(bool(re.match(r"^\d+: ", line)) for line in content.splitlines())
         return f"Read {count} lines"
-    if name == "list_dir":
+    if name == "list":
         entries = [
             line.strip()
             for line in content.splitlines()
@@ -899,9 +899,9 @@ def _successful_tool_detail(
             entries = []
         directories = sum(line.endswith("/") for line in entries)
         return f"{len(entries) - directories} files, {directories} directories"
-    if name in {"glob_files", "find_files"}:
+    if name in {"glob", "find"}:
         return f"{len([line for line in content.splitlines() if line.strip()])} matches"
-    if name == "grep_search":
+    if name == "grep":
         if "no matches" in content.lower():
             return "No matches found"
         matches = sum(bool(re.search(r":\d+:", line)) for line in content.splitlines())
@@ -918,7 +918,7 @@ def _append_permission_notice(detail: str, permission_notice: str) -> str:
 
 def _is_exploration_call(name: str, raw_input: ToolInput) -> bool:
     """判断 agent 工具调用是否可安全归入只读探索组。"""
-    if name in {"read_file", "list_dir", "grep_search", "glob_files", "find_files"}:
+    if name in {"read", "list", "grep", "glob", "find"}:
         return True
     if name != "bash":
         return False
@@ -963,11 +963,11 @@ def _exploration_label(name: str, raw_input: ToolInput) -> str:
         }.get(primary or "", "Read")
         return f"{prefix} {single_line_preview(command)}"
     label = brief_input(name, raw_input)
-    if name in {"grep_search", "grep", "rg", "ack"}:
+    if name in {"grep", "grep", "rg", "ack"}:
         return f"Search {label.removeprefix('grep ')}"
-    if name in {"glob_files", "find_files", "find", "list_dir", "ls", "dir"}:
+    if name in {"glob", "find", "find", "list", "ls", "dir"}:
         return f"List {label.removeprefix('glob ').removeprefix('ls ')}"
-    if name in {"read_file", "read", "cat", "head", "tail", "less", "more"}:
+    if name in {"read", "read", "cat", "head", "tail", "less", "more"}:
         return f"Read {label.removeprefix('read ')}"
     return label[:1].upper() + label[1:]
 

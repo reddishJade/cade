@@ -121,16 +121,16 @@ def tool_preview_lines(tool: ToolSpec, action_input: ToolInput) -> list[str]:
     lines.append(f"[bold]Tool:[/bold] {tool.name}")
 
     # ToolInput is always dict[str, Any]
-    if tool.name == "edit_file":
+    if tool.name == "edit":
         _preview_edit_file(action_input, lines)
     elif tool.name == "bash":
         _preview_bash(action_input, lines)
-    elif tool.name == "write_file":
+    elif tool.name == "write":
         _preview_write_file(action_input, lines)
-    elif tool.name == "read_file":
+    elif tool.name == "read":
         path = action_input.get("path", "")
         lines.append(f"[bold]File:[/bold] {path}")
-    elif tool.name in ("grep_search", "glob_files", "find_files"):
+    elif tool.name in ("grep", "glob", "find"):
         _preview_search(tool.name, action_input, lines)
     else:
         brief = brief_input(tool.name, action_input)
@@ -306,7 +306,7 @@ def _preview_write_file(action_input: dict, lines: list[str]) -> None:
 
 def _preview_search(tool_name: str, action_input: dict, lines: list[str]) -> None:
     """为搜索类工具显示查询信息和路径。"""
-    if tool_name == "grep_search":
+    if tool_name == "grep":
         pattern = (
             action_input.get("pattern")
             or action_input.get("query")
@@ -315,7 +315,7 @@ def _preview_search(tool_name: str, action_input: dict, lines: list[str]) -> Non
         path = action_input.get("path") or action_input.get("include", "workspace")
         lines.append(f"[bold]Pattern:[/bold] {pattern[:200]}")
         lines.append(f"[bold]Search in:[/bold] {path}")
-    elif tool_name == "glob_files" or tool_name == "find_files":
+    elif tool_name == "glob" or tool_name == "find":
         pattern = action_input.get("pattern") or action_input.get("path", "")
         lines.append(f"[bold]Pattern:[/bold] {pattern[:200]}")
 

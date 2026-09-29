@@ -11,10 +11,7 @@
 from .agent import build_agent, build_hook_manager
 from .config import ResolvedConfig, resolve_config
 from .infra import SharedInfra, build_shared_infra
-from .registry import (
-    build_search_tools_tool,
-    build_tool_registry,
-)
+from .registry import build_tool_registry
 from .security import (
     build_shell_from_security,
     external_directories_from_security,
@@ -28,7 +25,6 @@ __all__ = [
     "SharedInfra",
     "build_agent",
     "build_hook_manager",
-    "build_search_tools_tool",
     "build_shared_infra",
     "build_shell_from_security",
     "build_tool_registry",

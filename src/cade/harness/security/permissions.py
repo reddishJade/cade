@@ -495,7 +495,7 @@ class PermissionEngine:
         path_targets: tuple[Any, ...],
     ) -> bool:
         """判断高风险文件系统输入是否缺少可验证的结构化路径。"""
-        if action.tool in {"read_file", "write_file", "edit_file", "apply_patch"}:
+        if action.tool in {"read", "write", "edit", "patch"}:
             return not path_targets
         if action.capability != "shell" or path_targets:
             return False

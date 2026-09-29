@@ -70,17 +70,17 @@ class ActionExtractor:
         tool_input: Mapping[str, object],
         path_extractor: PathExtractor | None,
     ) -> Action:
-        if tool_name == "read_file":
-            return self._path_action(tool_name, tool_input, "read", "read_file", "read")
-        if tool_name == "write_file":
+        if tool_name == "read":
+            return self._path_action(tool_name, tool_input, "read", "read", "read")
+        if tool_name == "write":
             return self._path_action(
-                tool_name, tool_input, "write", "write_file", "write"
+                tool_name, tool_input, "write", "write", "write"
             )
-        if tool_name == "edit_file":
+        if tool_name == "edit":
             return self._path_action(
-                tool_name, tool_input, "edit", "edit_file", "write"
+                tool_name, tool_input, "edit", "edit", "write"
             )
-        if tool_name == "apply_patch":
+        if tool_name == "patch":
             return self._apply_patch_action(tool_name, tool_input, path_extractor)
         if tool_name == "bash":
             return self._bash_action(tool_name, tool_input)
@@ -90,7 +90,7 @@ class ActionExtractor:
             return self._path_action(
                 tool_name, tool_input, "write", "delete_file", "write"
             )
-        if tool_name in ("grep_search", "glob_files", "find_files", "list_dir"):
+        if tool_name in ("grep", "glob", "find", "list"):
             return self._path_action(tool_name, tool_input, "read", tool_name, "read")
         if tool_name == "load_skill":
             return self._load_skill_action(tool_name, tool_input)
@@ -164,7 +164,7 @@ class ActionExtractor:
         return Action(
             tool=tool_name,
             capability="patch",
-            operation="apply_patch",
+            operation="patch",
             targets=targets,
             input=tool_input,
         )

@@ -27,19 +27,19 @@ from .types import AgentTool, CancellationSignal, TextContent
 
 
 def _tool_update_label(tool_name: str, args: dict[str, object]) -> str:
-    if tool_name == "read_file":
+    if tool_name == "read":
         path = str(args.get("path") or args.get("file_path") or args.get("input") or "")
         return f"read {path}" if path else tool_name
     if tool_name == "bash":
         command = str(args.get("command") or args.get("input") or "")
         return f"$ {command}" if command else tool_name
-    if tool_name == "grep_search":
+    if tool_name == "grep":
         pattern = str(
             args.get("pattern") or args.get("query") or args.get("input") or ""
         )
         path = str(args.get("path") or args.get("include") or "workspace")
         return f"grep /{pattern}/ in {path}" if pattern else tool_name
-    if tool_name in {"glob_files", "find_files"}:
+    if tool_name in {"glob", "find"}:
         pattern = str(
             args.get("pattern") or args.get("path") or args.get("input") or ""
         )
