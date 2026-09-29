@@ -963,11 +963,11 @@ def _exploration_label(name: str, raw_input: ToolInput) -> str:
         }.get(primary or "", "Read")
         return f"{prefix} {single_line_preview(command)}"
     label = brief_input(name, raw_input)
-    if name in {"grep", "grep", "rg", "ack"}:
+    if name in {"grep", "rg", "ack"}:
         return f"Search {label.removeprefix('grep ')}"
-    if name in {"glob", "find", "find", "list", "ls", "dir"}:
+    if name in {"glob", "find", "list", "ls", "dir"}:
         return f"List {label.removeprefix('glob ').removeprefix('ls ')}"
-    if name in {"read", "read", "cat", "head", "tail", "less", "more"}:
+    if name in {"read", "cat", "head", "tail", "less", "more"}:
         return f"Read {label.removeprefix('read ')}"
     return label[:1].upper() + label[1:]
 
