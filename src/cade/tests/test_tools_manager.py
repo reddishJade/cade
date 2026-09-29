@@ -5,6 +5,7 @@ from __future__ import annotations
 from cade.coding_agent.tools.tools_manager import (
     ExternalToolDefinition,
     _resolve_tool_path,
+    get_tool_path,
 )
 
 
@@ -21,3 +22,11 @@ class TestResolveToolPath:
             resolver,
         )
         assert result == "/usr/bin/foo"
+
+    def test_fd_uses_fdfind_candidate_when_available(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cade.coding_agent.tools.tools_manager.shutil.which",
+            lambda name: "/usr/bin/fdfind" if name == "fdfind" else None,
+        )
+
+        assert get_tool_path("fd") == "/usr/bin/fdfind"

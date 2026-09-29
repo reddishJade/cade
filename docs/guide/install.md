@@ -9,20 +9,21 @@ Cade 是一个运行在本地工作区的轻量 Python Coding Agent。在开始�
 - **Python**：`>= 3.12`
 - **包管理器（推荐）**：[`uv`](https://github.com/astral-sh/uv)（极速安装与虚拟环境管理）
 - **推荐系统工具**：
-  - `ripgrep` (`rg`)：Cade 的 `grep_search` 与 `glob_files` 工具会优先调用系统级 ripgrep 进行毫秒级全文检索。未安装时自动回退为纯 Python 实现。
+  - `fd` (`fdfind`)：可选的 `glob`/`find` 工具优先用它发现文件；未安装时回退到 `rg` 或 Python。
+  - `ripgrep` (`rg`)：可选的 `grep` 工具优先用它搜索内容，也是文件发现的回退后端；未安装时可使用 Python 实现。
   - `bubblewrap` (`bwrap`)：仅在 Linux 下生效。用于提供命名空间级的 Shell 执行沙箱隔离。未安装时系统将以无沙箱的直接执行模式运行。
 
 ### 在各系统安装系统依赖
 
 ```bash
 # Ubuntu / Debian
-sudo apt-get update && sudo apt-get install -y ripgrep bubblewrap
+sudo apt-get update && sudo apt-get install -y fd-find ripgrep bubblewrap
 
 # macOS (Homebrew)
-brew install ripgrep
+brew install fd ripgrep
 
 # Arch Linux
-sudo pacman -S ripgrep bubblewrap
+sudo pacman -S fd ripgrep bubblewrap
 ```
 
 ---

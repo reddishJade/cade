@@ -259,7 +259,7 @@ def _grep_fallback(
     context: int,
 ) -> str:
     base = resolve_absolute_path(root, raw_path) if raw_path else root
-    files = _search_utils.enumerate_search_files(root, base, use_ripgrep=False)
+    files = _search_utils.enumerate_search_files(root, base, use_external=False)
     if glob_pattern:
         matcher = _search_utils.build_path_matcher(
             glob_pattern, recursive_basename=True
