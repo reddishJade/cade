@@ -452,19 +452,73 @@ def _is_root_recursive_delete(args: list[str]) -> bool:
 def _read_paths(command: str, args: list[str]) -> list[Target]:
     positional: list[str] = []
     skip_next = False
-    options_with_values = {"-c", "-n"} if command in {"head", "tail"} else set()
+    options_with_values = _read_option_values(command)
     for arg in args:
         if skip_next:
             skip_next = False
             continue
-        if arg in options_with_values:
-            skip_next = True
+        option = arg.split("=", 1)[0]
+        if option in options_with_values:
+            if "=" not in arg:
+                skip_next = True
             continue
         if arg and not arg.startswith("-"):
             positional.append(arg)
     if command in {"grep", "rg", "ack"} and positional:
         positional = positional[1:]
     return [_path_target(arg) for arg in positional]
+
+
+def _read_option_values(command: str) -> frozenset[str]:
+    if command in {"head", "tail"}:
+        return frozenset({"-c", "--bytes", "-n", "--lines"})
+    if command == "rg":
+        return frozenset(
+            {
+                "-A",
+                "--after-context",
+                "-B",
+                "--before-context",
+                "-C",
+                "--context",
+                "-e",
+                "--regexp",
+                "-f",
+                "--file",
+                "-g",
+                "--glob",
+                "-t",
+                "--type",
+                "-T",
+                "--type-not",
+                "--iglob",
+                "--max-count",
+                "--max-columns",
+                "--max-depth",
+            }
+        )
+    if command in {"grep", "ack"}:
+        return frozenset(
+            {
+                "-A",
+                "--after-context",
+                "-B",
+                "--before-context",
+                "-C",
+                "--context",
+                "-e",
+                "--regexp",
+                "-f",
+                "--file",
+                "--include",
+                "--exclude",
+                "--include-dir",
+                "--exclude-dir",
+                "-m",
+                "--max-count",
+            }
+        )
+    return frozenset()
 
 
 def _mutating_paths(command: str, args: list[str]) -> list[Target]:
