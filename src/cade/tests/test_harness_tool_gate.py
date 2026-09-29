@@ -68,19 +68,19 @@ class TestStricterDecision:
 
 def test_any_successful_tool_result_counts_as_progress() -> None:
     calls = [
-        ToolCall(id="call-1", name="read_file", input={}),
-        ToolCall(id="call-2", name="read_file", input={}),
+        ToolCall(id="call-1", name="read", input={}),
+        ToolCall(id="call-2", name="read", input={}),
     ]
     results = [
         ToolResultMessage(
             tool_call_id="call-1",
-            tool_name="read_file",
+            tool_name="read",
             content="failed",
             is_error=True,
         ),
         ToolResultMessage(
             tool_call_id="call-2",
-            tool_name="read_file",
+            tool_name="read",
             content="ok",
         ),
     ]
@@ -96,7 +96,7 @@ def test_empty_tool_batch_does_not_count_as_progress() -> None:
 async def test_redacted_tool_result_explains_display_only_mask() -> None:
     adapter = _RedactingAdapter(
         ToolSpec(
-            name="read_file",
+            name="read",
             description="Read text",
             input_hint="path",
             handler=lambda _params, _update: 'apiKey: "example-test-key"',
@@ -116,7 +116,7 @@ async def test_redacted_tool_result_explains_display_only_mask() -> None:
 async def test_unmasked_tool_result_has_no_mask_notice() -> None:
     adapter = _RedactingAdapter(
         ToolSpec(
-            name="read_file",
+            name="read",
             description="Read text",
             input_hint="path",
             handler=lambda _params, _update: "plain content",

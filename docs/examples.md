@@ -46,7 +46,7 @@ cade cli
 ```text
 /plan 分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案
 ```
-* **运行机制**：Agent 处于只读模式，通过 `read_file`、`grep_search` 等工具勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
+* **运行机制**：Agent 处于只读模式，通过 `read`、`grep` 等工具勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
 * **安全保证**：此阶段 Agent 无法修改任何业务代码，无法执行任意 Shell 命令。
 
 ### 第二步：审查计划并一键切换到 Build 模式
@@ -54,7 +54,7 @@ cade cli
 ```text
 /build 按照 .cade/plans/rbac_design.md 中的方案实现代码并跑通测试
 ```
-* **运行机制**：Agent 自动切换为构建模式，依次使用 `edit_file` / `write_file` 应用修改，并通过 `bash` 运行单元测试。
+* **运行机制**：Agent 自动切换为构建模式，依次使用 `edit` / `write` 应用修改，并通过 `bash` 运行单元测试。
 * **自动审查**：执行测试等低风险命令由独立的 Reviewer 模型自动审查放行；如果涉及跨工作区写入或敏感命令，则自动暂停向用户请求确认。
 
 ---
@@ -129,7 +129,7 @@ Cade 内置了分层的长期记忆系统：
 /memory list
 ```
 
-Agent 在执行任务时，会根据需要通过 `search_memory` 工具按需检索，无需每轮浪费 Token 注入完整背景。
+Agent 在执行任务时，会根据需要通过 `recall` 工具按需检索，无需每轮浪费 Token 注入完整背景。
 
 ---
 
@@ -151,7 +151,7 @@ Agent 在执行任务时，会根据需要通过 `search_memory` 工具按需检
       },
       {
         "event": "post_tool",
-        "matcher": "edit_file",
+        "matcher": "edit",
         "command": ["uv", "run", "ruff", "check", "--fix"],
         "timeout": 10,
         "failure_policy": "warn"

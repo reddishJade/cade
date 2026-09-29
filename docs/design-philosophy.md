@@ -358,32 +358,33 @@ Git 工程中的每个用户 turn 可以建立 pre/post tree snapshot。快照�
 文件工具集中执行路径、编码、大小、换行、BOM、二进制和输出策略：
 
 - 相对路径锚定项目 root，绝对路径保留规范化结果；ToolGate 的路径边界决定项目外访问，内置规则阻断 `.git`、`.venv`、`__pycache__` 和环境文件模式。
-- `read_file` 支持文件、目录、1-based offset/limit、行号、50 KB 输出预算和目录分页。
+- `read` 支持文件、目录、1-based offset/limit、行号、50 KB 输出预算和目录分页。
 - 图片按 magic bytes 检测，使用 Pillow 读取，最大边缩放至 2000 像素，数据保留在 metadata。
-- `write_file` 用于新文件或有意的整文件替换，返回 unified diff。
-- `edit_file` 使用精确 `old_text`/`new_text`，默认要求唯一匹配；`replace_all` 仅在单编辑时启用。
+- `write` 用于新文件或有意的整文件替换，返回 unified diff。
+- `edit` 使用精确 `old_text`/`new_text`，默认要求唯一匹配；`replace_all` 仅在单编辑时启用。
 - 编辑保持 BOM 和原始换行风格，Python 文件写入后尝试格式化。
 - 单文件写操作经过路径 mutex，减少并发写入交错。
 - 文件写入内容默认上限 1 MB。
 
 工具结果同时包含人类可读文本、结构化 metadata 和 `LocationRenderIntent`/`DiffRenderIntent`。前端可以展示位置或差异，模型也能获得同一动作的文本证据。
 
-### 6.3 apply_patch：先解析与计划，再应用
+### 6.3 patch：先规划，再以失败回滚保证多文件一致性
 
-`apply_patch` 支持 add、update、delete、move。处理分为：
+`patch` 支持 add、update、delete、move。处理分为：
 
 1. 解析完整 patch envelope。
 2. 校验每个 hunk、操作前缀、锚点和目标路径。
 3. 读取所有目标文件并构建 `FileChange` 计划。
 4. 逐个精确匹配上下文，失败时给出 verification error。
-5. 在文件 mutation queue 中写入变更。
-6. 输出文件摘要、unified diff、增删统计和 render intent。
+5. 在文件 mutation queue 中快照全部受影响 source/destination，并依次写入变更。
+6. 任一步失败时恢复原文件、删除本次新建文件并清理新建空目录；恢复不完整时明确报告剩余路径。
+7. 全部成功后再发布 contextual state，并输出文件摘要、unified diff、增删统计和 render intent。
 
-多文件修改因此拥有整体校验、清晰失败和统一结果；单文件小改动保留 `edit_file` 的精确路径。
+这里保证普通执行失败下的 all-or-nothing 语义；进程崩溃或断电恢复不属于当前契约。单文件小改动仍使用 `edit`。
 
 ### 6.4 搜索：发现与阅读分工
 
-`glob_files`、`find_files`、`list_dir` 负责文件发现，`grep_search` 负责内容检索。ripgrep 可用时优先使用，Python walk/grep 提供确定性回退；`.gitignore`、隐藏目录、敏感目录和二进制文件在搜索路径层过滤。
+`glob`、`find`、`ls` 与 `grep` 保留为可选结构化搜索实现，供受限环境和消融实验使用。正常 Build/Act/Plan coding surface 依赖 `bash` 组合 `rg`、`fd`、`git` 等原生命令；结构化 helper 不默认占据 model tool schema。ripgrep 可用时这些 helper 仍优先使用，Python walk/grep 提供确定性回退。
 
 结果拥有数量上限、长行截断、尾部截断和 metadata。项目文件补全使用最多 5000 个文件与 75 ms 时间预算的短生命周期索引。
 
@@ -410,7 +411,7 @@ Shell 结果带有 `TerminalRenderIntent`，CLI、TUI、Web 可以把它呈现�
 
 `webfetch` 限定 HTTP(S)，默认输出 Markdown，支持 text/html，响应体上限 5 MB；图片和二进制文件进入明确错误路径。`websearch` 通过 Exa 或 Parallel MCP HTTP endpoint 获取当前外部信息，并对结果进行字节限制。
 
-`subagent` 创建独立 child session：
+`delegate` 是模型面对的单一 child-session 入口：
 
 - one-shot child 用于有界独立工作。
 - continuable child 进入 durable inbox，支持后续 turn。
@@ -434,7 +435,7 @@ Shell 结果带有 `TerminalRenderIntent`，CLI、TUI、Web 可以把它呈现�
 - `targets`：path、command、domain、mcp、skill 等目标。
 - `unresolved_effects`：变量、glob、命令替换、wrapper、解析错误和危险命令。
 
-工具可以通过 `action_profile` 声明能力和 target kind，通过 `path_extractor` 提取多文件目标。`apply_patch` 因此能在真正写入前暴露 patch 中的全部目标路径。
+工具可以通过 `action_profile` 声明能力和 target kind，通过 `path_extractor` 提取多文件目标。`patch` 因此能在真正写入前暴露 patch 中的全部目标路径。
 
 ### 7.2 PermissionEngine 的唯一决策路径
 
@@ -454,9 +455,9 @@ ToolGate 在每个 turn 创建冻结 snapshot，把当前模式、规则、审�
 
 三种执行模式分别表达各自的自主性边界：
 
-- **Plan**：模型可见只读探索、搜索、问答和 Web 能力；技能可以通过显式激活进入会话；`write_file`、`edit_file` 的允许范围限定为 `.cade/plans/*.md`；模式 fallback 为 deny。
-- **Build**：全部工具可见；项目内结构化写入直接执行；规则覆盖范围外的 shell 与动作进入自动 reviewer；模式 fallback 为 ask。
-- **Act**：全部工具可见；只读工具直接执行；写入与 shell 默认进入用户审批；模式 fallback 为 ask。
+- **Plan**：代码探索核心为 `read + bash`；已确认只读 shell 直接执行，analyzer 确认的 mutation 由 mode-level mutation policy 拒绝，未解析 shell 进入 auto reviewer；`write`、`edit` 仅允许计划文件与 NOTE.md；fallback 为 deny。
+- **Build**：日常 coding surface 为 `read / write / edit / patch / bash`；结构化项目写入和已确认只读 shell 直接执行，未解析或可能有副作用的 shell 进入 auto reviewer；fallback 为 ask。
+- **Act**：使用同一最小 coding surface；只读和已确认只读 shell 直接执行，结构化写入以及未解析/有副作用 shell 进入用户审批；fallback 为 ask。
 
 Plan 具有最大 investigation turn 计数，达到上限后自动进入 Build 并发出模式通知。执行模式存入 `CodingRunState`，恢复 session 时一并恢复。
 
@@ -474,9 +475,9 @@ Plan 具有最大 investigation turn 计数，达到上限后自动进入 Build 
 
 ### 7.5 Shell 分析器保持保守语义
 
-POSIX、PowerShell 和 cmd 拥有对应分析器。分析器识别只读命令、纯观察命令、写命令、文件路径、管道、重定向、变量、glob、命令替换和组合控制语法。
+POSIX、PowerShell 和 cmd 拥有对应分析器。分析器只承担 deterministic fast path：识别少量确定只读命令、明确 mutation、危险命令、路径与动态 shell 语法；它不充当第二个 reviewer。POSIX fast path 覆盖常见 `rg/fd/find` 和只读 Git 子命令。
 
-`rm -rf /`、主机级关机/重启、权限提升、`git reset --hard`、强制 `git clean` 等危险命令直接拒绝。未知命令、动态路径和待确认的 wrapper 根据当前模式进入 ask 或 deny。静态分析表达“已确认的效果”，OS sandbox 负责实际进程边界。
+`rm -rf /`、主机级关机/重启、权限提升、`git reset --hard`、强制 `git clean` 等危险命令直接拒绝。已知 mutation 与未知命令、动态路径、待确认 wrapper 分开表达：mutation policy 由 mode 决定（Plan deny，Build/Act ask），unresolved effect 进入当前 mode 的 reviewer；显式危险命令始终 deny。静态分析只表达“已确认的效果”，OS sandbox 负责实际进程边界。
 
 ### 7.6 审批、授权和自动 reviewer
 
@@ -490,7 +491,7 @@ POSIX、PowerShell 和 cmd 拥有对应分析器。分析器识别只读命令�
 
 session grant 使用进程内 session store；permanent grant 使用 `.cade/approval_grants.json`，通过 file lock、临时文件、fsync 和 replace 写入。用户界面负责展示与选择，PermissionEngine 负责 grant 查询和写入。
 
-Build 的自动 reviewer 在独立 provider 会话中工作，接收有界 transcript、精确 action、工作目录和 turn id。reviewer 的证据规则把 system/user 内容视作授权证据，把 assistant、tool call、tool result、approval reason 和 planned arguments 视作需要审查的证据；高风险动作需要足够授权，critical 风险拒绝，超时和 provider failure 进入 failed-closed 路径。
+Plan/Build 的自动 reviewer 在独立 provider 会话中工作，接收有界 transcript、精确 action、工作目录、turn id 与 execution mode。Plan authority 明确禁止 reviewer 批准实现性 source/config mutation；有界检查产生的 cache/build artifact 可以按风险判断。reviewer 的证据规则把 system/user 内容视作授权证据，把 assistant、tool call、tool result、approval reason 和 planned arguments 视作需要审查的证据；高风险动作需要足够授权，critical 风险拒绝，超时和 provider failure 进入 failed-closed 路径。
 
 ### 7.7 Linux OS sandbox
 
@@ -573,7 +574,7 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 - 结果最多返回 10 条。
 - 文件 inode、mtime、size 组成索引签名，变化触发重建。
 
-记忆写入支持显式 add、update、delete；标题或正文重复被拒绝；文件锁、临时文件、fsync 和 replace 保证原子更新。恢复 session 时可以按最多 6000 token 读取记忆概览；普通 turn 只接收记忆使用协议，模型通过 `search_memory` 按需检索。session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实和可复用方案。
+记忆写入支持显式 add、update、delete；标题或正文重复被拒绝；文件锁、临时文件、fsync 和 replace 保证原子更新。恢复 session 时可以按最多 6000 token 读取记忆概览；普通 turn 只接收记忆使用协议，模型通过 `recall` 按需检索。session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实和可复用方案。
 
 ### 9.3 MCP 采用延迟发现与运行时快照
 

@@ -87,6 +87,9 @@ class _DefaultToolGateMode:
     def check_call(self, call: ToolCall) -> PermissionDecision:
         return "ask"
 
+    def filter_tools(self, registry: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
+        return registry
+
 
 class AgentHarness:
     """通用 agent 运行时包装。
@@ -145,6 +148,7 @@ class AgentHarness:
             default_mode_rulesets=gate.default_mode_rulesets,
             mode_fallbacks=gate.mode_fallbacks,
             shell_unresolved_policies=gate.shell_unresolved_policies,
+            shell_mutation_policies=gate.shell_mutation_policies,
             tool_path_extractors=gate.tool_path_extractors,
         )
         self.audit_logger = gate_runtime.audit_logger
@@ -167,8 +171,8 @@ class AgentHarness:
     def _build_active_registry(
         self, registry: tuple[ToolSpec, ...]
     ) -> tuple[ToolSpec, ...]:
-        """返回当前 turn 使用的工具集。子类可实现模式过滤。"""
-        return registry
+        """返回当前 turn 使用的工具集，由 gate 的 mode authority 过滤。"""
+        return self._gate.filter_tools(registry)
 
     def _build_context_messages(
         self,

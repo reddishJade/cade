@@ -23,6 +23,7 @@ from .utils import (
     is_external_path,
     is_git_path,
     is_inside_path,
+    is_protected_workspace_metadata_write,
     is_sensitive_path,
     validate_symlinks_can_resolve,
 )
@@ -277,6 +278,27 @@ class PathBoundaryPolicyEvaluator:
                 metadata=_deny_metadata(
                     "git_metadata",
                     "Use Git commands instead of accessing .git metadata directly.",
+                ),
+            )
+
+        if is_protected_workspace_metadata_write(
+            check_path,
+            tool=action.tool,
+            access=target.access,
+        ):
+            return Constraint(
+                decision="deny",
+                source="boundary",
+                reason=f"protected workspace metadata is read-only: {original_path}",
+                target_pattern=check_path,
+                operation=action.operation,
+                access=target.access,
+                metadata=_deny_metadata(
+                    "protected_workspace_metadata",
+                    (
+                        "Use Cade-managed interfaces for workspace metadata. "
+                        "Only write/edit of .cade/plans/*.md is writable by model tools."
+                    ),
                 ),
             )
 

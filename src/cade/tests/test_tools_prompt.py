@@ -33,7 +33,7 @@ class TestBuildToolPrompt:
         assert build_tool_prompt(()) == "(none)"
 
     def test_single_tool(self) -> None:
-        tool = _make_tool("read_file", snippet="Read a file")
+        tool = _make_tool("read", snippet="Read a file")
         result = build_tool_prompt((tool,))
         assert "read_file: Read a file" in result
 

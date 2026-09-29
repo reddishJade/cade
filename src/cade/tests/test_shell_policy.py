@@ -14,6 +14,56 @@ def test_read_only_pipeline_exposes_literal_paths_without_approval() -> None:
     assert analysis.unresolved_effects == ()
 
 
+def test_quoted_rg_glob_is_not_treated_as_shell_expansion() -> None:
+    analysis = analyze_shell_command("rg needle src -g '*.py'")
+
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == ["src"]
+
+
+def test_fd_is_read_only_but_exec_mode_requires_review() -> None:
+    read_only = analyze_shell_command("fd parser src")
+    executing = analyze_shell_command("fd parser src -x echo {}")
+
+    assert read_only.unresolved_effects == ()
+    assert [target.value for target in read_only.resolved_paths] == ["src"]
+    assert [effect.reason for effect in executing.unresolved_effects] == [
+        "wrapper_command"
+    ]
+
+
+def test_read_only_git_commands_do_not_require_review() -> None:
+    for command in (
+        "git status --short",
+        "git diff --stat",
+        "git log --oneline -10",
+        "git show HEAD",
+        "git -C src status",
+    ):
+        analysis = analyze_shell_command(command)
+        assert analysis.unresolved_effects == ()
+
+
+def test_git_read_subcommand_with_effectful_option_requires_review() -> None:
+    for command in (
+        "git diff --output=changes.patch",
+        "git diff --ext-diff",
+        "git -c diff.external=helper diff",
+    ):
+        analysis = analyze_shell_command(command)
+        assert [effect.reason for effect in analysis.unresolved_effects] == [
+            "wrapper_command"
+        ]
+
+
+def test_mutating_git_command_requires_review() -> None:
+    analysis = analyze_shell_command("git commit -am 'update'")
+
+    assert [effect.reason for effect in analysis.unresolved_effects] == [
+        "wrapper_command"
+    ]
+
+
 def test_unknown_command_requires_approval_without_guessing_side_effects() -> None:
     action = ActionExtractor().extract(
         "bash",
@@ -93,7 +143,18 @@ def test_recursive_root_delete_is_denied_but_scoped_delete_requires_approval() -
     )
 
     root_constraints = ShellAnalysisPolicyEvaluator().evaluate(root_action)
-    scoped_constraints = ShellAnalysisPolicyEvaluator().evaluate(scoped_action)
+    build_constraints = ShellAnalysisPolicyEvaluator().evaluate(
+        scoped_action,
+        mutation_policy="ask",
+    )
+    plan_constraints = ShellAnalysisPolicyEvaluator().evaluate(
+        scoped_action,
+        mutation_policy="deny",
+    )
 
     assert [constraint.decision for constraint in root_constraints] == ["deny"]
-    assert [constraint.decision for constraint in scoped_constraints] == ["ask"]
+    assert [constraint.decision for constraint in build_constraints] == ["ask"]
+    assert [constraint.decision for constraint in plan_constraints] == ["deny"]
+    assert [effect.reason for effect in scoped_action.unresolved_effects] == [
+        "mutation"
+    ]

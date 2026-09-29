@@ -60,7 +60,7 @@ def test_extract_responses_instructions() -> None:
 def test_to_responses_tools() -> None:
     tools = [
         ToolDefinition(
-            name="read_file",
+            name="read",
             description="Read file contents",
             parameters={
                 "type": "object",
@@ -73,7 +73,7 @@ def test_to_responses_tools() -> None:
     assert len(formatted) == 1
     tool_entry = formatted[0]
     assert tool_entry["type"] == "function"
-    assert tool_entry["name"] == "read_file"
+    assert tool_entry["name"] == "read"
     assert tool_entry["description"] == "Read file contents"
     assert tool_entry["parameters"]["additionalProperties"] is False
     assert tool_entry["strict"] is True
@@ -90,7 +90,7 @@ def test_to_responses_input_conversion() -> None:
                     "id": "call_001",
                     "type": "function",
                     "function": {
-                        "name": "read_file",
+                        "name": "read",
                         "arguments": '{"path": "test.txt"}',
                     },
                 }
@@ -116,7 +116,7 @@ def test_to_responses_input_conversion() -> None:
     # 2. Tool call
     assert items[1]["type"] == "function_call"
     assert items[1]["call_id"] == "call_001"
-    assert items[1]["name"] == "read_file"
+    assert items[1]["name"] == "read"
     assert items[1]["arguments"] == '{"path": "test.txt"}'
 
     # 3. Assistant text message

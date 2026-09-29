@@ -9,9 +9,11 @@ from cade.coding_agent.tools.apply_patch import (
     _find_sequence,
     _header_path,
     _patch_text,
+    build_apply_patch_tool,
     extract_patch_paths,
     parse_patch,
 )
+from cade.harness.execution_env import LocalFileSystem
 
 
 class TestParsePatch:
@@ -132,3 +134,57 @@ class TestExtractPatchPaths:
 
     def test_non_dict_returns_empty(self) -> None:
         assert extract_patch_paths("not a dict") == ()
+
+
+class _FailOnWriteFileSystem(LocalFileSystem):
+    def __init__(self, fail_on_write: int) -> None:
+        self._fail_on_write = fail_on_write
+        self._writes = 0
+
+    def write_bytes(self, path, data) -> None:
+        self._writes += 1
+        if self._writes == self._fail_on_write:
+            raise OSError("injected write failure")
+        super().write_bytes(path, data)
+
+
+def test_apply_patch_rolls_back_all_paths_after_mid_patch_failure(tmp_path) -> None:
+    (tmp_path / "a.txt").write_text("old-a\n", encoding="utf-8")
+    (tmp_path / "move.txt").write_text("old-move\n", encoding="utf-8")
+    (tmp_path / "delete.txt").write_text("old-delete\n", encoding="utf-8")
+    (tmp_path / "fail.txt").write_text("old-fail\n", encoding="utf-8")
+
+    patch = """*** Begin Patch
+*** Update File: a.txt
+@@
+-old-a
++new-a
+*** Add File: nested/new.txt
++created
+*** Update File: move.txt
+*** Move to: moved.txt
+@@
+-old-move
++new-move
+*** Delete File: delete.txt
+*** Update File: fail.txt
+@@
+-old-fail
++new-fail
+*** End Patch"""
+
+    tool = build_apply_patch_tool(
+        tmp_path,
+        operations=_FailOnWriteFileSystem(fail_on_write=4),
+    )
+
+    with pytest.raises(RuntimeError, match="all affected paths were rolled back"):
+        tool.handler({"patch_text": patch})
+
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "old-a\n"
+    assert (tmp_path / "move.txt").read_text(encoding="utf-8") == "old-move\n"
+    assert (tmp_path / "delete.txt").read_text(encoding="utf-8") == "old-delete\n"
+    assert (tmp_path / "fail.txt").read_text(encoding="utf-8") == "old-fail\n"
+    assert not (tmp_path / "moved.txt").exists()
+    assert not (tmp_path / "nested" / "new.txt").exists()
+    assert not (tmp_path / "nested").exists()

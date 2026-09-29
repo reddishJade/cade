@@ -7,7 +7,10 @@ from pathlib import Path
 from cade.agent.types import ApprovalRequest
 from cade.coding_agent.execution_modes import (
     DEFAULT_MODE_FALLBACKS,
+    DEFAULT_SHELL_MUTATION_POLICIES,
     DEFAULT_SHELL_UNRESOLVED_POLICIES,
+    ActPolicy,
+    BuildPolicy,
     ExecutionModeState,
     PlanPolicy,
     build_default_mode_rulesets,
@@ -37,11 +40,27 @@ class TestDefaultModeRulesets:
             "act": "ask",
         }
         assert DEFAULT_SHELL_UNRESOLVED_POLICIES == {
+            "plan": "ask",
+            "build": "ask",
+            "act": "ask",
+        }
+        assert DEFAULT_SHELL_MUTATION_POLICIES == {
+            "plan": "deny",
             "build": "ask",
             "act": "ask",
         }
         build_shell = next(rule for rule in rulesets["build"] if rule.action == "bash")
-        assert build_shell.effect == "ask"
+        act_shell = next(rule for rule in rulesets["act"] if rule.action == "bash")
+        assert build_shell.effect == "allow"
+        assert act_shell.effect == "allow"
+        assert not any(rule.action == "mcp__*" for rule in rulesets["build"])
+        assert any(rule.action == "mcp_tool_search" for rule in rulesets["build"])
+        plan_shell = next(
+            rule
+            for rule in rulesets["plan"]
+            if rule.action == "bash" and rule.command is None
+        )
+        assert plan_shell.effect == "allow"
         plan_patterns = {
             rule.resource_pattern
             for rule in rulesets["plan"]
@@ -50,13 +69,73 @@ class TestDefaultModeRulesets:
         assert (tmp_path / ".cade" / "plans" / "*.md").as_posix() in plan_patterns
 
 
+def _tool(name: str):
+    from cade.agent.types import ToolSpec
+
+    return ToolSpec(name=name, description="", input_hint="", handler=lambda d, _: "")
+
+
+class TestDefaultCodingSurface:
+    def test_build_hides_structured_search_helpers(self) -> None:
+        tools = tuple(
+            _tool(name)
+            for name in (
+                "read",
+                "write",
+                "edit",
+                "patch",
+                "bash",
+                "grep",
+                "glob",
+                "find",
+                "ls",
+                "websearch",
+            )
+        )
+        names = {tool.name for tool in BuildPolicy().filter_tools(tools)}
+        assert {"read", "write", "edit", "patch", "bash"} <= names
+        assert "websearch" in names
+        assert not names & {
+            "grep",
+            "glob",
+            "find",
+            "ls",
+        }
+
+    def test_act_hides_structured_search_helpers(self) -> None:
+        tools = tuple(
+            _tool(name)
+            for name in (
+                "read",
+                "write",
+                "edit",
+                "patch",
+                "bash",
+                "grep",
+                "glob",
+            )
+        )
+        names = {tool.name for tool in ActPolicy().filter_tools(tools)}
+        assert names == {"read", "write", "edit", "patch", "bash"}
+
+    def test_plan_uses_bash_instead_of_structured_search_helpers(self) -> None:
+        tools = (
+            _tool("read"),
+            _tool("bash"),
+            _tool("grep"),
+            _tool("glob"),
+        )
+        names = {tool.name for tool in PlanPolicy().filter_tools(tools)}
+        assert names == {"read", "bash"}
+
+
 class TestPlanPolicy:
     def test_filter_keeps_read_tools(self) -> None:
         from cade.agent.types import ToolSpec
 
         tools = (
             ToolSpec(
-                name="read_file", description="", input_hint="", handler=lambda d, _: ""
+                name="read", description="", input_hint="", handler=lambda d, _: ""
             ),
             ToolSpec(
                 name="bash", description="", input_hint="", handler=lambda d, _: ""
@@ -64,8 +143,8 @@ class TestPlanPolicy:
         )
         filtered = PlanPolicy().filter_tools(tools)
         names = {t.name for t in filtered}
-        assert "read_file" in names
-        assert "bash" not in names
+        assert "read" in names
+        assert "bash" in names
 
 
 class TestExecutionModeState:
@@ -110,16 +189,52 @@ class TestExecutionModeState:
             audit_logger=None,
             session_id="test",
             shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
+            shell_mutation_policies=DEFAULT_SHELL_MUTATION_POLICIES,
         )
 
+        state.set_mode("plan")
+        plan_snapshot = gate.snapshot()
         state.set_mode("build")
         build_snapshot = gate.snapshot()
         state.set_mode("act")
         act_snapshot = gate.snapshot()
 
+        assert plan_snapshot.shell_unresolved_policy == "ask"
+        assert plan_snapshot.shell_mutation_policy == "deny"
+        assert plan_snapshot.approvals_reviewer == "auto_review"
+        assert plan_snapshot.approval_callback is auto
         assert build_snapshot.shell_unresolved_policy == "ask"
+        assert build_snapshot.shell_mutation_policy == "ask"
         assert build_snapshot.approvals_reviewer == "auto_review"
         assert build_snapshot.approval_callback is auto
         assert act_snapshot.shell_unresolved_policy == "ask"
+        assert act_snapshot.shell_mutation_policy == "ask"
         assert act_snapshot.approvals_reviewer == "user"
         assert act_snapshot.approval_callback is user
+
+    def test_subagent_gate_inherits_mode_shell_authority(self) -> None:
+        state = ExecutionModeState(initial_mode="plan")
+        gate = ToolGate(
+            mode_state=state,
+            user_approval_callback=None,
+            auto_approval_callback=None,
+            permission_policy=None,
+            hook_manager=None,
+            audit_logger=None,
+            session_id="parent",
+            shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
+            shell_mutation_policies=DEFAULT_SHELL_MUTATION_POLICIES,
+        )
+
+        child = gate.fork_for_subagent("child")
+        snapshot = child.snapshot()
+
+        assert snapshot.mode_name == "plan"
+        assert snapshot.shell_unresolved_policy == "ask"
+        assert snapshot.shell_mutation_policy == "deny"
+
+        state.set_mode("act")
+        act_snapshot = child.snapshot()
+        assert act_snapshot.mode_name == "act"
+        assert act_snapshot.shell_mutation_policy == "ask"
+        assert act_snapshot.approvals_reviewer == "user"

@@ -168,7 +168,7 @@ class TestDefaultContextAssembler:
     def test_budget_includes_prompt_and_tool_tokens(self) -> None:
         tool = ToolSpecAdapter(
             ToolSpec(
-                name="read_file",
+                name="read",
                 description="Read a file.",
                 input_hint="path",
                 handler=lambda _data, _update=None: "contents",

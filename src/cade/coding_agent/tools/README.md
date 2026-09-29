@@ -6,29 +6,28 @@
 
 ## 1. 工具矩阵与职责分类
 
+日常 model-facing coding surface 保持为五个 primitive：
+
 ```
-                              ToolSpec (契约与元数据)
-                                       │
-            ┌──────────────────────────┼──────────────────────────┐
-            ▼                          ▼                          ▼
-      [并发只读工具]              [串行写操作工具]             [人机与系统工具]
-- read_file                - write_file                - bash (沙箱执行)
-- glob_files / find_files  - edit_file (SHA256指纹)    - question (交互确认)
-- grep_search              - apply_patch               - subagent (任务委派)
-- websearch / webfetch                                 - cygpath (路径转换)
+read / write / edit / patch / bash
 ```
+
+`grep / glob / find / ls` 作为可选结构化搜索实现保留，用于受限环境与消融实验；
+正常 Plan / Build / Act 代码探索由 `bash` 组合 `rg`、`fd`、`git` 等原生命令。
+交互、Web 与运行时能力（如 `question`、`webfetch`、`websearch`、`delegate`）
+按产品功能独立注册。
 
 ### 工具文件明细
 - **代码读写与精准编辑**：
   - `read_file.py`：安全读取文件内容，支持分片与行范围。
   - `write_file.py`：创建新文件或覆写已有文件。
-  - `file_handlers.py`：实现核心的 `edit_file`。强制校验 **SHA256 指纹**，若文件在读取后被外部修改则拒绝写入，彻底根除脏写冲突。
+  - `file_handlers.py`：实现 model-facing `edit`。强制校验 **SHA256 指纹**，若文件在读取后被外部修改则拒绝写入，彻底根除脏写冲突。
   - `apply_patch.py`：高效解析并应用标准 Unified Diff 补丁。
   - `text_edit.py`：基于行范围和精确匹配的替换辅助引擎。
   - `file_image.py`：多模态图片文件支持与 Base64 提取。
 - **文件检索与代码搜索**：
-  - `glob_search.py`：高性能文件树通配符检索（`glob_files`、`find_files`）。
-  - `grep_search.py`：基于 Ripgrep 的代码内容搜索（`grep_search`）。
+  - `glob_search.py`：高性能文件树通配符检索（model-facing `glob`、`find`、`ls`）。
+  - `grep_search.py`：基于 Ripgrep 的代码内容搜索（model-facing `grep`）。
   - `file_index.py` / `_search_utils.py`：工程目录索引构建与过滤支持。
 - **环境交互与进程执行**：
   - `bash.py`：执行终端命令。自动对接底层 Bubblewrap 沙箱或系统原生 Shell，控制超时与进程组清理。
@@ -49,8 +48,8 @@
 
 ## 2. 架构不变量与设计禁忌
 
-- **Read-Before-Edit 铁律**：`edit_file` 工具必须校验文件的预读取 SHA256 指纹；模型未曾读取过的文件严禁直接发起局部编辑。
+- **Read-Before-Edit 铁律**：`edit` 工具必须校验文件的预读取 SHA256 指纹；模型未曾读取过的文件严禁直接发起局部编辑。
 - **并发与副作用分区**：
-  - 只读工具（`read_file`、`grep_search`、`glob_files` 等）声明并发安全，由调度器并行触发。
-  - 具有文件写（`write_file`、`edit_file`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
+  - 只读工具（`read` 及可选 `grep/glob/find/ls`）声明并发安全，由调度器并行触发。
+  - 具有文件写（`write`、`edit`、`patch`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
 - **统一异常契约**：工具发生 IO 错误、找不到路径或语法错误时，必须返回清晰的文本错误说明，严禁直接抛出未捕获的 Python 异常导致循环终结。

@@ -572,29 +572,6 @@ def _emit_tool_end(
 # ── 工具看门狗 ──
 
 
-DEFAULT_MUTATION_TOOLS: frozenset[str] = frozenset(
-    {
-        "write_file",
-        "edit_file",
-        "bash",
-        "create_file",
-        "delete_file",
-        "move_file",
-        "rename_file",
-    }
-)
-
-DEFAULT_READ_TOOLS: frozenset[str] = frozenset(
-    {
-        "read_file",
-        "grep_search",
-        "glob_files",
-        "list_dir",
-        "find_files",
-    }
-)
-
-
 def tool_call_signature(call: ToolCallContent) -> str:
     args_str = json.dumps(call.arguments or {}, sort_keys=True, default=str)
     return f"{call.name}:{args_str}"
@@ -603,30 +580,6 @@ def tool_call_signature(call: ToolCallContent) -> str:
 def tool_calls_signature(calls: list[ToolCallContent]) -> str:
     parts = [tool_call_signature(c) for c in calls]
     return "|".join(sorted(parts))
-
-
-def is_file_mutation_tool(
-    tool_name: str,
-    mutation_tools: frozenset[str] | None = None,
-) -> bool:
-    return tool_name in (
-        mutation_tools if mutation_tools is not None else DEFAULT_MUTATION_TOOLS
-    )
-
-
-def is_file_read_tool(
-    tool_name: str,
-    read_tools: frozenset[str] | None = None,
-) -> bool:
-    return tool_name in (read_tools if read_tools is not None else DEFAULT_READ_TOOLS)
-
-
-def should_clear_read_history(
-    new_calls: list[ToolCallContent],
-    read_history: list[str],
-    mutation_tools: frozenset[str] | None = None,
-) -> bool:
-    return any(is_file_mutation_tool(c.name, mutation_tools) for c in new_calls)
 
 
 def is_tool_productive_default(

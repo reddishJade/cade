@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from cade.agent.types import ToolSpec
 from cade.ai.events import ToolCall
 
 from ..security.approval import ApprovalsReviewer
@@ -24,6 +25,8 @@ class ToolGateMode(Protocol):
     def approvals_reviewer(self) -> ApprovalsReviewer: ...
 
     def check_call(self, call: ToolCall) -> PermissionDecision: ...
+
+    def filter_tools(self, registry: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]: ...
 
 
 class RuntimeModeState(ToolGateMode, Protocol):

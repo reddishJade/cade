@@ -99,14 +99,14 @@ def test_surface_message_codec_round_trips_tool_pairs() -> None:
             content=[
                 ToolCallContent(
                     id="call-1",
-                    name="read_file",
+                    name="read",
                     arguments={"path": "README.md"},
                 )
             ]
         ),
         ToolResultMessage(
             tool_call_id="call-1",
-            tool_name="read_file",
+            tool_name="read",
             content="contents",
         ),
     ]

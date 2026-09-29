@@ -269,7 +269,7 @@ def test_provider_request_records_fingerprint_without_wire_payload(
         SimpleNamespace(
             metadata={
                 "messages": [{"role": "system", "content": "rules"}],
-                "tools": [{"name": "read_file", "parameters": {}}],
+                "tools": [{"name": "read", "parameters": {}}],
                 "provider": {"model": "test-model", "transport": "test"},
                 "prompt_digest": "prompt-hash",
                 "request_digest": "request-hash",

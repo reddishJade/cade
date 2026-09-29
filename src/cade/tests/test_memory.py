@@ -178,6 +178,7 @@ def test_memory_tool_is_small_and_read_only(tmp_path: Path) -> None:
 
     result = tool.handler({"query": "provider timeout", "limit": 3})
 
+    assert tool.name == "recall"
     assert "Retry rule" in result
     assert "path=" in result
     assert set(tool.schema["properties"]) == {"query", "limit", "scope", "layer"}

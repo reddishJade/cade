@@ -33,7 +33,7 @@ def test_custom_tool_profile_extracts_declared_path_target() -> None:
 def test_apply_patch_uses_injected_path_extractor() -> None:
     extractor = ActionExtractor()
     action = extractor.extract(
-        "apply_patch",
+        "patch",
         {"patch_text": "opaque"},
         ("patch", "path"),
         path_extractor=lambda _tool_input: ("src/old.py", "src/new.py"),

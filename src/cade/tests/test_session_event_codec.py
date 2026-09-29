@@ -21,7 +21,7 @@ def test_encode_tool_use_event_has_versioned_envelope() -> None:
     event = ToolUseStructuredEvent(
         "tool_use",
         2,
-        ToolCall(id="call-1", name="read_file", input={"path": "README.md"}),
+        ToolCall(id="call-1", name="read", input={"path": "README.md"}),
     )
 
     encoded = encode_session_event(event)
@@ -31,7 +31,7 @@ def test_encode_tool_use_event_has_versioned_envelope() -> None:
     assert encoded["step"] == 2
     assert encoded["data"] == {
         "id": "call-1",
-        "name": "read_file",
+        "name": "read",
         "input": {"path": "README.md"},
     }
 
@@ -52,9 +52,7 @@ def test_encode_assistant_and_final_payloads() -> None:
                 answer="done",
                 messages=[],
                 steps=1,
-                tool_calls=[
-                    ToolCall(id="call-1", name="read_file", input={"path": "a"})
-                ],
+                tool_calls=[ToolCall(id="call-1", name="read", input={"path": "a"})],
                 run_state=RunState(
                     messages=[{"role": "tool", "content": "large result"}]
                 ),

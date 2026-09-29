@@ -14,7 +14,7 @@ class TestDecorateCitableMessages:
     def test_with_citation_sources(self) -> None:
         msg = ToolResultMessage(
             tool_call_id="c1",
-            tool_name="read_file",
+            tool_name="read",
             content="line1\nline2",
             metadata={
                 CITATION_SOURCES_METADATA_KEY: [

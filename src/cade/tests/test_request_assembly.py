@@ -49,7 +49,7 @@ def test_request_assembly_is_the_complete_provider_envelope() -> None:
     collectors.register(_Collector())
     tool = ToolSpecAdapter(
         ToolSpec(
-            name="read_file",
+            name="read",
             description="Read one local file.",
             input_hint="path",
             handler=lambda _data, _update=None: "contents",
@@ -76,11 +76,11 @@ def test_request_assembly_is_the_complete_provider_envelope() -> None:
         "user",
     ]
     assert assembly.wire_messages[1]["content"] == "current architecture note"
-    assert [tool.name for tool in assembly.tools] == ["read_file"]
+    assert [tool.name for tool in assembly.tools] == ["read"]
     assert [(trace.block_id, trace.included) for trace in assembly.context_trace] == [
         ("note-current", True),
         ("diff-old", False),
-        ("read_file", True),
+        ("read", True),
     ]
     assert all(len(trace.content_digest) == 64 for trace in assembly.context_trace)
     assert assembly.context_trace[0].provenance == "AGENTS.md"

@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 
 """当前任务上下文的轻量记录与提示词渲染。"""
 
@@ -45,24 +46,26 @@ class ContextualRetrievalState:
         self._tool_calls: deque[RecentToolCall] = deque(maxlen=max_tool_calls)
         self._render_cache: str | None = None
         self._dirty = True
+        self._lock = RLock()
 
     def record_file(self, path: Path | str) -> None:
         """记录文件为当前上下文相关，去重并维护 LRU 队列。"""
         text = self._display(path)
         if not text:
             return
-        if text in self._file_set:
-            self._files.remove(text)
-        else:
-            self._file_set.add(text)
-        self._files.append(text)
-        self._active_file = text
-        while len(self._files) > self.max_files:
-            removed = self._files.popleft()
-            self._file_set.discard(removed)
-            if self._active_file == removed:
-                self._active_file = self._files[-1] if self._files else None
-        self._dirty = True
+        with self._lock:
+            if text in self._file_set:
+                self._files.remove(text)
+            else:
+                self._file_set.add(text)
+            self._files.append(text)
+            self._active_file = text
+            while len(self._files) > self.max_files:
+                removed = self._files.popleft()
+                self._file_set.discard(removed)
+                if self._active_file == removed:
+                    self._active_file = self._files[-1] if self._files else None
+            self._dirty = True
 
     def record_tool_result(self, tool: str, content: str) -> None:
         """记录工具结果摘要，用于下一轮 system prompt。"""
@@ -71,8 +74,9 @@ class ContextualRetrievalState:
             return
         if len(clean) > 240:
             clean = clean[:237] + "..."
-        self._tool_results.append(RecentToolResult(tool=tool, summary=clean))
-        self._dirty = True
+        with self._lock:
+            self._tool_results.append(RecentToolResult(tool=tool, summary=clean))
+            self._dirty = True
 
     def record_tool_call(
         self,
@@ -87,73 +91,81 @@ class ContextualRetrievalState:
         clean_input = " ".join(input_brief.strip().split())
         if len(clean_input) > 160:
             clean_input = clean_input[:157] + "..."
-        self._tool_calls.append(
-            RecentToolCall(
-                tool=tool,
-                input_brief=clean_input,
-                status=status,
-                approval_scope=approval_scope,
-                target_path=target_path,
-                timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
+        with self._lock:
+            self._tool_calls.append(
+                RecentToolCall(
+                    tool=tool,
+                    input_brief=clean_input,
+                    status=status,
+                    approval_scope=approval_scope,
+                    target_path=target_path,
+                    timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
+                )
             )
-        )
-        self._dirty = True
+            self._dirty = True
 
     def clear(self) -> None:
         """清空当前 session 投影，供切换或重建会话时使用。"""
-        self._files.clear()
-        self._file_set.clear()
-        self._active_file = None
-        self._tool_results.clear()
-        self._tool_calls.clear()
-        self._render_cache = None
-        self._dirty = True
+        with self._lock:
+            self._files.clear()
+            self._file_set.clear()
+            self._active_file = None
+            self._tool_results.clear()
+            self._tool_calls.clear()
+            self._render_cache = None
+            self._dirty = True
 
     def render(self) -> str:
         """渲染为 system prompt 的 contextual-retrieval 块。"""
-        if not self._dirty and self._render_cache is not None:
-            return self._render_cache
-        lines = [
-            "<contextual-retrieval>",
-            "This block contains only context already made relevant by the current task.",
-            "Use it to orient tool choices; do not treat it as a replacement for exact search or file reads.",
-            "For ambiguous references such as 'this file' or 'it', prefer active_file as the first candidate, then verify before editing.",
-        ]
-        if self._active_file:
-            lines.append(f"active_file: {self._active_file}")
-        if self._files:
-            lines.append("recent_files:")
-            lines.extend(f"- {path}" for path in self._files)
-        if self._tool_results:
-            lines.append("recent_tool_results:")
-            lines.extend(
-                f"- {result.tool}: {result.summary}" for result in self._tool_results
-            )
-        if self._tool_calls:
-            lines.append("recent_tool_calls:")
-            for call in self._tool_calls:
-                approval = (
-                    f" approval={call.approval_scope}" if call.approval_scope else ""
+        with self._lock:
+            if not self._dirty and self._render_cache is not None:
+                return self._render_cache
+            lines = [
+                "<contextual-retrieval>",
+                "This block contains only context already made relevant by the current task.",
+                "Use it to orient tool choices; do not treat it as a replacement for exact search or file reads.",
+                "For ambiguous references such as 'this file' or 'it', prefer active_file as the first candidate, then verify before editing.",
+            ]
+            if self._active_file:
+                lines.append(f"active_file: {self._active_file}")
+            if self._files:
+                lines.append("recent_files:")
+                lines.extend(f"- {path}" for path in self._files)
+            if self._tool_results:
+                lines.append("recent_tool_results:")
+                lines.extend(
+                    f"- {result.tool}: {result.summary}"
+                    for result in self._tool_results
                 )
-                target = f" target={call.target_path}" if call.target_path else ""
-                lines.append(
-                    f"- {call.tool} status={call.status}{approval}{target}: {call.input_brief}"
-                )
-        lines.append("</contextual-retrieval>")
-        rendered = "\n".join(lines)
-        self._render_cache = rendered
-        self._dirty = False
-        return rendered
+            if self._tool_calls:
+                lines.append("recent_tool_calls:")
+                for call in self._tool_calls:
+                    approval = (
+                        f" approval={call.approval_scope}"
+                        if call.approval_scope
+                        else ""
+                    )
+                    target = f" target={call.target_path}" if call.target_path else ""
+                    lines.append(
+                        f"- {call.tool} status={call.status}{approval}{target}: {call.input_brief}"
+                    )
+            lines.append("</contextual-retrieval>")
+            rendered = "\n".join(lines)
+            self._render_cache = rendered
+            self._dirty = False
+            return rendered
 
     @property
     def active_file(self) -> str | None:
         """返回当前最相关文件。"""
-        return self._active_file
+        with self._lock:
+            return self._active_file
 
     @property
     def recent_files(self) -> tuple[str, ...]:
         """返回最近相关文件列表。"""
-        return tuple(self._files)
+        with self._lock:
+            return tuple(self._files)
 
     def _display(self, path: Path | str) -> str:
         candidate = Path(path)
