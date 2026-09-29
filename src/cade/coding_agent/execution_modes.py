@@ -19,7 +19,7 @@ ExecutionMode = Literal["plan", "build", "act"]
 
 # Structured search helpers remain registered for Plan/read-only and experiments,
 # but ordinary Build/Act coding relies on bash for rg/find/ls composition.
-_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "list", "grep"})
+_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
 
 
 class ExecutionPolicy(Protocol):
@@ -109,7 +109,7 @@ class PlanPolicy:
 
 
 class BuildPolicy:
-    """build: 默认使用最小 coding surface；shell 与未知动作进入审批。"""
+    """build: 最小 coding surface；确定只读 shell 直行，其余副作用进入自动审批。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
         return tuple(
@@ -122,7 +122,7 @@ class BuildPolicy:
 
 
 class ActPolicy:
-    """act: 默认使用最小 coding surface，写入和 shell 默认 ask。"""
+    """act: 最小 coding surface；写入和未解析/有副作用 shell 进入用户审批。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
         return tuple(
@@ -181,17 +181,18 @@ def mode_notice(mode: str) -> str:
     if mode == "build":
         return (
             '<execution-mode name="build">\n'
-            "Build Mode is active. All tools are enabled. Structured project "
-            "file writes run directly; shell and unmatched actions are reviewed "
-            "automatically without pausing for user approval. Hard safety "
-            "boundaries always apply.\n"
+            "Build Mode is active. Structured project writes and proven read-only "
+            "shell commands run directly; shell commands with unresolved or mutating "
+            "effects are reviewed automatically. Hard safety boundaries always "
+            "apply.\n"
             "</execution-mode>"
         )
     if mode == "act":
         return (
             '<execution-mode name="act">\n'
-            "Act Mode is active. Read tools run directly; writes and shell "
-            "commands require user approval.\n"
+            "Act Mode is active. Read tools and proven read-only shell commands "
+            "run directly; structured writes and shell commands with unresolved or "
+            "mutating effects require user approval.\n"
             "</execution-mode>"
         )
     return ""
@@ -206,7 +207,7 @@ def build_default_mode_rulesets(
         Rule(action="glob", effect="allow"),
         Rule(action="grep", effect="allow"),
         Rule(action="find", effect="allow"),
-        Rule(action="list", effect="allow"),
+        Rule(action="ls", effect="allow"),
         Rule(action="webfetch", effect="allow"),
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),
@@ -226,9 +227,7 @@ def build_default_mode_rulesets(
     ask_write_rules = tuple(
         Rule(action=rule.action, effect="ask") for rule in write_rules
     )
-    ask_shell_rules = tuple(
-        Rule(action=action, effect="ask") for action in ("bash", "shell")
-    )
+    allow_shell_rules = (Rule(action="bash", effect="allow"),)
 
     plan_rules = read_rules + (
         Rule(action="bash", effect="allow"),
@@ -276,10 +275,10 @@ def build_default_mode_rulesets(
         )
     return {
         "plan": plan_rules,
-        # Sandbox 不消除项目内破坏和语义风险，Build 仍审查任意 shell 命令。
-        "build": read_rules + write_rules + ask_shell_rules,
-        # Act 以 ask 为兜底；显式放行只读工具，其他工具需用户审批。
-        "act": read_rules + ask_write_rules + ask_shell_rules,
+        # 已确认只读 shell 直接执行；未知或有副作用的 shell 由 analyzer 产生 ask。
+        "build": read_rules + write_rules + allow_shell_rules,
+        # Act 的结构化写入仍 ask；shell 只有未解析/有副作用时进入用户审批。
+        "act": read_rules + ask_write_rules + allow_shell_rules,
     }
 
 
