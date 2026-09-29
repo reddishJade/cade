@@ -1,7 +1,7 @@
 """Plan / Build / Act 的工具可见性策略与三态 ruleset 初始化。
 
-PlanPolicy.filter_tools() 暴露 _PLAN_TOOLS，外加 write_file/edit_file（限 .cade/plans/*.md）。
-提供默认 ruleset；Build 的结构化项目读写直接执行，shell 与未知动作自动审批。
+Plan 保留完整只读探索能力和 bash，仅允许结构化写入计划文件。
+Build/Act 默认使用最小 coding surface；权限层决定 shell 与写入是否审批。
 """
 
 from __future__ import annotations
@@ -19,9 +19,7 @@ ExecutionMode = Literal["plan", "build", "act"]
 
 # Structured search helpers remain registered for Plan/read-only and experiments,
 # but ordinary Build/Act coding relies on bash for rg/find/ls composition.
-_STRUCTURED_SEARCH_TOOLS = frozenset(
-    {"glob", "find", "list", "grep"}
-)
+_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "list", "grep"})
 
 
 class ExecutionPolicy(Protocol):
@@ -55,7 +53,11 @@ class ExecutionModeState:
             return "auto_review"
         if self._approval_router == "user":
             return "user"
-        return "auto_review" if self._current_mode == "build" else "user"
+        return (
+            "auto_review"
+            if self._current_mode in {"plan", "build"}
+            else "user"
+        )
 
     def set_mode(self, mode: ExecutionMode) -> None:
         """设置当前执行模式。"""
@@ -92,7 +94,7 @@ class PlanPolicy:
             "find",
             "list",
             "grep",
-            "search_tools",
+            "bash",
             "webfetch",
             "websearch",
             "question",
@@ -177,8 +179,11 @@ def mode_notice(mode: str) -> str:
         return (
             '<execution-mode name="plan">\n'
             "Plan Mode is active. Inspect and produce an action plan only. "
-            "Do not modify code or run shell commands. You may create or update "
-            "plan notes under .cade/plans/*.md.\n"
+            "Do not modify project code. Bash is available for exploration: "
+            "known read-only commands run directly, explicit mutating commands "
+            "are blocked, and commands with unresolved effects are reviewed "
+            "automatically. You may create or update plan notes under "
+            ".cade/plans/*.md.\n"
             "</execution-mode>"
         )
     if mode == "build":
@@ -234,6 +239,12 @@ def build_default_mode_rulesets(
     )
 
     plan_rules = read_rules + (
+        Rule(action="bash", effect="allow"),
+        Rule(action="bash", effect="deny", command="cp"),
+        Rule(action="bash", effect="deny", command="mkdir"),
+        Rule(action="bash", effect="deny", command="mv"),
+        Rule(action="bash", effect="deny", command="rm"),
+        Rule(action="bash", effect="deny", command="touch"),
         Rule(
             action="write",
             effect="allow",
@@ -288,6 +299,7 @@ DEFAULT_MODE_FALLBACKS: dict[str, PermissionDecision] = {
 
 
 DEFAULT_SHELL_UNRESOLVED_POLICIES: dict[str, PermissionDecision] = {
+    "plan": "ask",
     "build": "ask",
     "act": "ask",
 }
