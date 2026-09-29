@@ -145,6 +145,7 @@ class AgentHarness:
             default_mode_rulesets=gate.default_mode_rulesets,
             mode_fallbacks=gate.mode_fallbacks,
             shell_unresolved_policies=gate.shell_unresolved_policies,
+            shell_mutation_policies=gate.shell_mutation_policies,
             tool_path_extractors=gate.tool_path_extractors,
         )
         self.audit_logger = gate_runtime.audit_logger
