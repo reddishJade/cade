@@ -727,7 +727,7 @@ class _TuiState:
         label = self._tool_label(name, raw_input)
 
         self.log.append(_LogEntry("tool", f"● {label}", tool_id=tool_id))
-        if name in {"todowrite", "subagent"}:
+        if name == "subagent":
             text = tool_call_text(name, label, raw_input).plain
             self.log.append(_LogEntry("tool-detail", f"  ⎿  {text.strip()}"))
 

@@ -78,7 +78,6 @@ _TOOL_ACTION_PROFILES: dict[str, tuple[str, str]] = {
     "bash": ("shell", "none"),
     "shell": ("shell", "none"),
     "load_skill": ("skill", "skill"),
-    "todowrite": ("write", "none"),
     "webfetch": ("read", "none"),
     "websearch": ("read", "none"),
     "question": ("read", "none"),
@@ -147,8 +146,6 @@ class ToolGateSnapshot:
 class ToolGate:
     """工具执行门控：HITL 审批、权限检查、准入决策。"""
 
-    PROGRESS_TOOL_NAMES = frozenset()
-
     def __init__(
         self,
         mode_state: ToolGateMode,
@@ -204,7 +201,6 @@ class ToolGate:
         self._session_grant_store = session_grant_store
         self._session_grant_store_provider = session_grant_store_provider
         self._permanent_grant_store = permanent_grant_store
-        self._progress_steps_without_update: int = 0
         self._last_perm_results: dict[str, PermissionEngineResult] = {}
 
     def _resolve_session_store(self) -> GrantStore | None:
@@ -460,8 +456,6 @@ class ToolGate:
         def after_tool(
             ctx: AfterToolCallContext, _signal: CancellationSignal | None
         ) -> AfterToolCallResult | None:
-            if ctx.tool_call.name in self.PROGRESS_TOOL_NAMES:
-                self._progress_steps_without_update = 0
             action_input = stringify_tool_input(ctx.args)
             result_text = tool_result_text(ctx)
             emit_tool_hook(
@@ -513,16 +507,6 @@ class ToolGate:
             )
 
         return is_productive
-
-    # ── 进度跟踪 ──
-
-    def check_progress_reminder(self) -> bool:
-        """检查是否需要发送进度提醒。返回 True 表示应发送提醒。"""
-        self._progress_steps_without_update += 1
-        if self._progress_steps_without_update >= 5:
-            self._progress_steps_without_update = 0
-            return True
-        return False
 
     # ── 内部方法 ──
 

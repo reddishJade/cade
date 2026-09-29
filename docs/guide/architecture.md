@@ -26,11 +26,11 @@ flowchart TD
 各层级职责自上而下严格解耦，应用内核通过统一装配工厂（Assembly）注入能力：
 
 1. **三端一体交互层 (`src/cade/cli/`, `src/cade/server/`)**：
-   - **TUI 工作台**（默认入口）：提供类 IDE 的全屏分屏视图、Diff 实时审查看板与任务看板；
+   - **TUI 工作台**（默认入口）：提供类 IDE 的全屏分屏视图与 Diff 实时审查看板；
    - **CLI REPL**：极轻量行交互，支持快捷键、`@` 文件补全、`!` 穿透与 CI 脚本自动化；
    - **Web 工作台**：基于 FastAPI 与 WebSocket 实时双向流，支持多端可视化管理。
 2. **应用产品层 (`src/cade/coding_agent/`)**：
-   承载与编码任务直接绑定的业务语义。管理 Plan/Build/Act 状态机、系统 Prompt 拼装与任务清单（TODO）。
+   承载与编码任务直接绑定的业务语义。管理 Plan/Build/Act 状态机、系统 Prompt 拼装与目标验收。
 3. **运行时支撑与安全层 (`src/cade/harness/`)**：
    提供底层的安全与持久化地基。通过 Linux Bubblewrap 隔离 Shell 命令执行，通过追加写 JSONL 保证全量事实留存，并集成 MCP 外部协议。
 4. **智能驱动与上下文核心 (`src/cade/agent/`)**：

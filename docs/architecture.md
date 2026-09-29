@@ -146,8 +146,8 @@ allowance；目前没有可靠的工具输出上限或历史分布契约，不�
 
 `context_lifetime=durable` 的工具结果可通过 `context_key` 声明状态替换关系。
 同一键只有最新的成功版本受保护；旧版本改为 history 索引，混合并行组中
-不能整体移除的旧结果显式标记为过期。todowrite 使用 `session-todo` 键，
-清空清单也是有效的新状态。无键的持久结果保留为独立事实，不猜测其替换关系。
+不能整体移除的旧结果显式标记为过期。无键的持久结果保留为独立事实，
+不猜测其替换关系。
 
 准入以最终请求为依据：若持久状态和新增证据使预测超预算，先收紧旧证据
 投影，再将旧的完整工具交互替换为带调用 ID 的 history 索引；近期完整组和
@@ -206,7 +206,7 @@ replay/fork/undo 的分支语义保持独立于请求裁剪。
 `context_window_reset` 保存完整、类型化的 surface replacement、来源 entry IDs、generation
 和指纹。replayer 只按日志顺序应用 replacement；旧窗口不生成摘要。
 `final` 不复制已经存在于语义事件中的 messages 和 tool-call 参数，只保存最终回答、
-计数、终止信息、metrics，以及恢复 mode/Goal/todo 所需的 run metadata。
+计数、终止信息、metrics，以及恢复 mode/Goal 所需的 run metadata。
 只有 `inbox/claimed` 中的 typed message 会进入模型 surface；普通命令记录为
 `command` event，不会伪装成用户消息。
 

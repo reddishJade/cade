@@ -15,7 +15,7 @@
 - read_file                - write_file                - bash (沙箱执行)
 - glob_files / find_files  - edit_file (SHA256指纹)    - question (交互确认)
 - grep_search              - apply_patch               - subagent (任务委派)
-- websearch / webfetch     - todowrite                 - cygpath (路径转换)
+- websearch / webfetch                                 - cygpath (路径转换)
 ```
 
 ### 工具文件明细
@@ -36,7 +36,6 @@
   - `cygpath.py`：针对 Windows 环境下 MSYS/Cygwin/POSIX 风格路径的自动互转。
 - **协同与任务流**：
   - `subagent.py`：子代理派发工具，支持多子任务批量并发执行并归集结果。
-  - `todowrite.py`：维护当前任务的 TODO 清单，驱动多步骤目标逐步达成。
   - `question.py`：人机交互工具，向用户主动提出选择题或确认事项。
 - **外部网络能力**：
   - `webfetch.py`：抓取指定 URL 页面并转为精简 Markdown。

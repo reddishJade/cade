@@ -18,13 +18,11 @@ from cade.coding_agent.tools import (
     build_grep_tool,
     build_question_tool,
     build_read_file_tool,
-    build_todowrite_tool,
     build_webfetch_tool,
     build_websearch_tool,
     build_write_file_tools,
 )
 from cade.harness.execution_env import Shell
-from cade.harness.session_todo import SessionTodoState
 
 if TYPE_CHECKING:
     from cade.coding_agent.tools import ShellSpec
@@ -39,7 +37,6 @@ def build_project_scoped_registry(
     cancel_event: threading.Event | None = None,
     shell: Shell | None = None,
     skill_registry: SkillRegistry | None = None,
-    todo_state: SessionTodoState | None = None,
 ) -> tuple[ToolSpec, ...]:
     registry: tuple[ToolSpec, ...] = ()
     registry += (
@@ -72,7 +69,6 @@ def build_project_scoped_registry(
             shell=shell,
         ),
     )
-    registry += (build_todowrite_tool(todo_state),)
     if skill_registry is not None and skill_registry.available_names():
         from cade.harness.skills import build_load_skill_tool
 

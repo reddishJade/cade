@@ -1148,7 +1148,7 @@ if CurrentRatio >= 0.95:
 
         <h3><span class="lz">换窗时的四步确定性对冲流程</span><span class="le">Four-Step Deterministic Rollover Lifecycle</span></h3>
         <ol>
-          <li><span class="lz"><strong>目标与约束完整继承（Target Retention）</strong>：保留最初的用户核心需求指令、当前任务清单（Todo items）与关键约束；</span><span class="le"><strong>Goal & Constraint Retention</strong>: The original user objective, active planning tasks, and key constraints carry over completely;</span></li>
+          <li><span class="lz"><strong>目标与约束完整继承（Target Retention）</strong>：保留最初的用户核心需求指令、当前目标与关键约束；</span><span class="le"><strong>Goal & Constraint Retention</strong>: The original user objective, current goal, and key constraints carry over completely;</span></li>
           <li><span class="lz"><strong>中间工具冗余安全对冲（Tool Output Pruning）</strong>：已执行完成的巨量中间输出（如搜索返回的 800 行代码片段、长文本目录树）被剥离活动视窗，仅保留执行结论；</span><span class="le"><strong>Intermediate Output Pruning</strong>: Bulky intermediate payloads (e.g. 800-line search dumps and directory scans) are purged from active view, retaining only operation statuses;</span></li>
           <li><span class="lz"><strong>持久记忆分层挂载（Durable Memory Injection）</strong>：将本轮中沉淀的代码库假设自动同步至持久记忆库，并在新窗口建立时由系统提示词重新加载；</span><span class="le"><strong>Durable Memory Injection</strong>: Validated project invariants are committed to long-term memory and freshly loaded into the new window;</span></li>
           <li><span class="lz"><strong>新视窗平滑接力</strong>：开发者无感继续交互，模型拥有充沛的新窗口容量推进复杂工程重构。</span><span class="le"><strong>Seamless Window Handoff</strong>: The developer continues the conversation without interruption, while the LLM gains fresh token headspace.</span></li>
@@ -2009,7 +2009,7 @@ def post_tool_call(tool_name: str, args: dict, result: dict):
           <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">TUI 终端全屏工作台</span><span class="le">TUI Workbench</span></span>
         </div>
         <h1><span class="lz">TUI 终端全屏沉浸式工作台 (默认)</span><span class="le">TUI Full-Screen Terminal Workbench (Default)</span></h1>
-        <p class="lead-text"><span class="lz">Cade 默认启动的终端交互界面。分屏布局、实时代码 Diff 审查视窗、交互式待办进度看板与极速键盘导航。</span><span class="le">The default interface for Cade. Split-pane layout, live diff preview pane, interactive task progress board, and keyboard navigation.</span></p>
+        <p class="lead-text"><span class="lz">Cade 默认启动的终端交互界面。分屏布局、实时代码 Diff 审查视窗与极速键盘导航。</span><span class="le">The default interface for Cade. Split-pane layout, live diff preview pane, and keyboard navigation.</span></p>
 
         <h2><span class="lz">启动与视窗布局</span><span class="le">Startup & Split-Pane Architecture</span></h2>
         <p><span class="lz">在任何项目目录下直接运行 <code>cade</code>，系统将自动进入全屏 TUI 终端工作台：</span><span class="le">Run <code>cade</code> directly in any project folder to enter the full-screen TUI workbench:</span></p>
@@ -2033,8 +2033,8 @@ cade --resume     <span class="comment"># <span class="lz">交互式选择历史
             <p><span class="lz">右侧视窗即时以红绿并排或统一行级对比展示代码修改。工具执行 <code>replace_file_content</code> 时即时联动，支持全屏展开与逐段审查。</span><span class="le">Renders live color-coded diffs as the agent modifies files. Synchronized with <code>replace_file_content</code> for precision code review.</span></p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">任务待办看板</span><span class="le">Task Board & Status</span></span> <span class="badge">Bottom Dock</span></div>
-            <p><span class="lz">底部固定看板实时追踪多步重构规划进度；顶部状态栏显示当前执行模式（Plan/Build/Act）、Provider 模型与 Token 消耗水位。</span><span class="le">Bottom dock tracks multi-step task progress; header status bar monitors active mode (Plan/Build/Act), provider, and context watermarks.</span></p>
+            <div class="card-title"><span><span class="lz">运行状态</span><span class="le">Runtime Status</span></span> <span class="badge">Status Bar</span></div>
+            <p><span class="lz">顶部状态栏显示当前执行模式（Plan/Build/Act）、Provider 模型与 Token 消耗水位。</span><span class="le">The header status bar shows the active mode (Plan/Build/Act), provider, and context watermarks.</span></p>
           </div>
         </div>
 
@@ -2178,10 +2178,6 @@ cade web --no-open                    <span class="comment"># <span class="lz">�
           <div class="card">
             <div class="card-title"><span><span class="lz">Monaco 并排 Diff 审查</span><span class="le">Monaco Side-by-Side Diff</span></span> <span class="badge">Visual Diff</span></div>
             <p><span class="lz">集成 Monaco Editor（VS Code 核心编辑器）。Agent 执行文件修改时，以高对比度红绿并排高亮呈现精确差异，支持逐行审查与一键撤销。</span><span class="le">Powered by Monaco Editor. Renders high-contrast side-by-side diff highlights for inspection, with one-click patch approvals and reverts.</span></p>
-          </div>
-          <div class="card">
-            <div class="card-title"><span><span class="lz">实时任务看板</span><span class="le">Live Planning Kanban</span></span> <span class="badge">Task Kanban</span></div>
-            <p><span class="lz">实时呈现当前任务规划状态机：待执行（Todo）、执行中（In Progress）与已完成（Done）。自动将复杂的重构拆解为清晰的进度卡片。</span><span class="le">Visualizes planning state machines: Pending, In-Progress, and Completed tasks, deconstructing complex refactors into verifiable milestones.</span></p>
           </div>
           <div class="card">
             <div class="card-title"><span><span class="lz">WebSocket 实时流式管道</span><span class="le">WebSocket Event Stream</span></span> <span class="badge">Low Latency</span></div>

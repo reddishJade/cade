@@ -17,7 +17,6 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 | **`find_files`** | 只读并发池 | `pattern`, `path`, `max_results` | 模糊查找包含特定文件名的项目文件 |
 | **`list_dir`** | 只读并发池 | `path`, `depth`, `max_entries` | 结构化遍历指定目录下的子文件与目录树 |
 | **`bash`** | 串行写屏障 | `command`, `timeout_seconds` | 在 Linux 沙箱或本地隔离环境中执行 Shell 脚本 |
-| **`todowrite`** | 状态串行 | `todos: [...]` | 维护结构化待办列表，在 TUI 与上下文中实时展示 |
 | **`webfetch`** | 只读并发池 | `url`, `selector` | 抓取指定网页文档内容，提取纯文本或 Markdown |
 | **`websearch`** | 只读并发池 | `query` | 调用搜索引擎检索外部最新开源库文档与问题解法 |
 | **`question`** | 交互门控 | `question`, `options` | 向人类用户提出结构化交互问题（单选/多选/输入） |
