@@ -12,6 +12,7 @@ from cade.agent.request import DefaultRequestAssembler
 from cade.agent.types import ToolOutput, ToolSpec
 from cade.ai.events import FinalMessage, Message, ProviderEvent, TextDelta
 from cade.ai.types import StreamOptions, ToolDefinition
+from cade.coding_agent.execution_modes import ExecutionModeState
 from cade.coding_agent.tools.subagent import (
     BUILD_SUBAGENT_PROMPTS,
     _bounded_prompt,
@@ -99,6 +100,7 @@ def _manager(
     tmp_path: Path,
     provider: _Provider,
     tools: tuple[ToolSpec, ...] = (),
+    gate: ToolGate | None = None,
 ) -> SubagentSessionManager:
     store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
     store.ensure_metadata("parent task")
@@ -119,7 +121,7 @@ def _manager(
         request_assembler=DefaultRequestAssembler(),
         runtime_context_provider=None,
     )
-    manager.bind_parent(lambda: composition, _gate(), CancellationToken())
+    manager.bind_parent(lambda: composition, gate or _gate(), CancellationToken())
     return manager
 
 
@@ -218,6 +220,61 @@ async def test_one_shot_child_has_independent_durable_session(tmp_path: Path) ->
         message.get("role") == "user" and "child task only" in str(message)
         for message in provider.requests[0]
     )
+
+
+@pytest.mark.asyncio
+async def test_continuable_child_surface_tracks_parent_execution_mode(
+    tmp_path: Path,
+) -> None:
+    provider = _Provider()
+    state = ExecutionModeState(initial_mode="plan")
+    gate = ToolGate(
+        mode_state=state,
+        user_approval_callback=None,
+        auto_approval_callback=None,
+        permission_policy=None,
+        hook_manager=None,
+        audit_logger=None,
+        session_id="parent",
+    )
+    tools = tuple(
+        _tool(name)
+        for name in (
+            "read",
+            "write",
+            "edit",
+            "patch",
+            "bash",
+            "grep",
+            "glob",
+            "find",
+            "ls",
+        )
+    )
+    manager = _manager(tmp_path, provider, tools, gate=gate)
+
+    created = await manager.execute(
+        description="mode-aware child",
+        prompt="inspect only",
+        subagent_type="coding",
+        mode="continuable",
+        run_id="run-1",
+        batch_id="batch-1",
+        task_index=1,
+    )
+
+    assert set(provider.tool_requests[0]) == {"read", "write", "edit", "bash"}
+    state.set_mode("act")
+
+    await manager.send(created.child_session_id, "continue in act")
+
+    assert set(provider.tool_requests[1]) == {
+        "read",
+        "write",
+        "edit",
+        "patch",
+        "bash",
+    }
 
 
 @pytest.mark.asyncio
