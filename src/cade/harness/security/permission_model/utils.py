@@ -189,6 +189,33 @@ def is_git_path(path: str) -> bool:
     return ".git" in parts
 
 
+def is_protected_workspace_metadata_write(
+    path: str,
+    *,
+    tool: str,
+    access: PermissionAccess,
+) -> bool:
+    """Return whether a model-facing structured write targets protected metadata."""
+    if access not in {"write", "delete"}:
+        return False
+    parts = tuple(part for part in path.replace("\\", "/").split("/") if part)
+    if ".agents" in parts:
+        return True
+    try:
+        cade_index = parts.index(".cade")
+    except ValueError:
+        return False
+    relative = parts[cade_index + 1 :]
+    if (
+        tool in {"write", "edit"}
+        and len(relative) == 2
+        and relative[0] == "plans"
+        and relative[1].endswith(".md")
+    ):
+        return False
+    return True
+
+
 def is_sensitive_path(path: str, *, access: PermissionAccess = "read") -> bool:
     name = Path(path).name
 
