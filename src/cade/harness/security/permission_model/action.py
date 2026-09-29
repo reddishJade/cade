@@ -73,23 +73,15 @@ class ActionExtractor:
         if tool_name == "read":
             return self._path_action(tool_name, tool_input, "read", "read", "read")
         if tool_name == "write":
-            return self._path_action(
-                tool_name, tool_input, "write", "write", "write"
-            )
+            return self._path_action(tool_name, tool_input, "write", "write", "write")
         if tool_name == "edit":
-            return self._path_action(
-                tool_name, tool_input, "edit", "edit", "write"
-            )
+            return self._path_action(tool_name, tool_input, "edit", "edit", "write")
         if tool_name == "patch":
             return self._apply_patch_action(tool_name, tool_input, path_extractor)
         if tool_name == "bash":
             return self._bash_action(tool_name, tool_input)
         if tool_name == "shell":
             return self._shell_action(tool_name, tool_input)
-        if tool_name == "delete_file":
-            return self._path_action(
-                tool_name, tool_input, "write", "delete_file", "write"
-            )
         if tool_name in ("grep", "glob", "find", "list"):
             return self._path_action(tool_name, tool_input, "read", tool_name, "read")
         if tool_name == "load_skill":
