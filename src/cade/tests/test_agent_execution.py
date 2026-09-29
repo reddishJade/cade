@@ -30,6 +30,7 @@ from cade.agent.types import (
     AgentToolResult,
     TextContent,
     ToolCallContent,
+    ToolSpec,
     ToolSpecAdapter,
 )
 from cade.coding_agent.tools.bash import build_bash_tool
@@ -77,6 +78,25 @@ class _MockTool(AgentTool):
         from cade.agent.types import AgentToolResult, TextContent
 
         return AgentToolResult(content=[TextContent(text="ok")])
+
+
+def test_tool_spec_adapter_preserves_execution_mode() -> None:
+    parallel = ToolSpec(
+        name="read",
+        description="",
+        input_hint="",
+        handler=lambda _data, _update: "",
+        execution_mode="parallel",
+    )
+    sequential = ToolSpec(
+        name="write",
+        description="",
+        input_hint="",
+        handler=lambda _data, _update: "",
+    )
+
+    assert ToolSpecAdapter(parallel).execution_mode == "parallel"
+    assert ToolSpecAdapter(sequential).execution_mode is None
 
 
 class TestPartitionToolCalls:
