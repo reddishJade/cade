@@ -134,9 +134,9 @@ def parse_patch(patch_text: str) -> tuple[PatchHunk, ...]:
     if lines and lines[-1] == "":
         lines.pop()
     if not lines or lines[0] != "*** Begin Patch":
-        raise ValueError("apply_patch verification failed: missing *** Begin Patch")
+        raise ValueError("patch verification failed: missing *** Begin Patch")
     if lines[-1] != "*** End Patch":
-        raise ValueError("apply_patch verification failed: missing *** End Patch")
+        raise ValueError("patch verification failed: missing *** End Patch")
     if len(lines) == 2:
         raise ValueError("patch rejected: empty patch")
 
@@ -152,12 +152,12 @@ def parse_patch(patch_text: str) -> tuple[PatchHunk, ...]:
             hunk, index = _parse_delete_hunk(lines, index)
         else:
             raise ValueError(
-                f"apply_patch verification failed: unexpected line {index + 1}: {line}"
+                f"patch verification failed: unexpected line {index + 1}: {line}"
             )
         hunks.append(hunk)
 
     if not hunks:
-        raise ValueError("apply_patch verification failed: no hunks found")
+        raise ValueError("patch verification failed: no hunks found")
     return tuple(hunks)
 
 
@@ -202,12 +202,12 @@ def _parse_add_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
         line = lines[index]
         if not line.startswith("+"):
             raise ValueError(
-                f"apply_patch verification failed: Add File line {index + 1} must start with +"
+                f"patch verification failed: Add File line {index + 1} must start with +"
             )
         add_lines.append(line[1:])
         index += 1
     if not add_lines:
-        raise ValueError("apply_patch verification failed: Add File requires content")
+        raise ValueError("patch verification failed: Add File requires content")
     return PatchHunk(kind="add", path=path, add_lines=tuple(add_lines)), index
 
 
@@ -240,12 +240,12 @@ def _parse_update_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
             continue
         if not line:
             raise ValueError(
-                f"apply_patch verification failed: update line {index + 1} is missing an operation prefix"
+                f"patch verification failed: update line {index + 1} is missing an operation prefix"
             )
         op = line[0]
         if op not in {" ", "+", "-"}:
             raise ValueError(
-                f"apply_patch verification failed: invalid update operation {op!r} on line {index + 1}"
+                f"patch verification failed: invalid update operation {op!r} on line {index + 1}"
             )
         if op in {"+", "-"}:
             saw_change = True
@@ -256,10 +256,10 @@ def _parse_update_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
         sections.append(PatchSection(current_anchor, tuple(current_lines)))
     if not sections and move_path is None:
         raise ValueError(
-            "apply_patch verification failed: Update File requires changes"
+            "patch verification failed: Update File requires changes"
         )
     if not saw_change and move_path is None:
-        raise ValueError("apply_patch verification failed: Update File has no edits")
+        raise ValueError("patch verification failed: Update File has no edits")
     return (
         PatchHunk(
             kind="move" if move_path is not None else "update",
@@ -280,7 +280,7 @@ def _parse_delete_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
 def _header_path(line: str, prefix: str) -> str:
     path = line.removeprefix(prefix).strip()
     if not path:
-        raise ValueError(f"apply_patch verification failed: empty path in {prefix}")
+        raise ValueError(f"patch verification failed: empty path in {prefix}")
     return path
 
 
@@ -318,7 +318,7 @@ def _plan_add(
 ) -> FileChange:
     if operations.exists(path):
         raise ValueError(
-            f"apply_patch verification failed: file already exists: {display}"
+            f"patch verification failed: file already exists: {display}"
         )
     after = "\n".join(hunk.add_lines)
     if after and not after.endswith("\n"):
@@ -368,7 +368,7 @@ def _plan_update(
         move_display = display_path(root, move_path)
         if move_path != path and operations.exists(move_path):
             raise ValueError(
-                f"apply_patch verification failed: move target already exists: {move_display}"
+                f"patch verification failed: move target already exists: {move_display}"
             )
         kind = "move"
     return FileChange(
@@ -410,7 +410,7 @@ def _apply_sections(
             match = _find_sequence(lines, old_lines, 0)
         if match is None:
             raise ValueError(
-                f"apply_patch verification failed: context not found in {display_path}"
+                f"patch verification failed: context not found in {display_path}"
             )
         lines[match : match + len(old_lines)] = list(new_lines)
         cursor = match + len(new_lines)
@@ -455,7 +455,7 @@ def _apply_changes(
     changes: tuple[FileChange, ...],
 ) -> ToolOutput:
     if not changes:
-        raise ValueError("apply_patch verification failed: no changes")
+        raise ValueError("patch verification failed: no changes")
 
     def mutate() -> ToolOutput:
         snapshots = _snapshot_affected_paths(operations, changes)
@@ -475,11 +475,11 @@ def _apply_changes(
             if rollback_failures:
                 detail = ", ".join(rollback_failures)
                 raise RuntimeError(
-                    "apply_patch failed and rollback was incomplete for: "
+                    "patch failed and rollback was incomplete for: "
                     f"{detail}. Original error: {exc}"
                 ) from exc
             raise RuntimeError(
-                f"apply_patch failed; all affected paths were rolled back: {exc}"
+                f"patch failed; all affected paths were rolled back: {exc}"
             ) from exc
 
         if context_state is not None:
@@ -606,7 +606,7 @@ def _existing_text(
 ) -> tuple[str, str]:
     if not operations.exists(path) or not operations.is_file(path):
         raise ValueError(
-            f"apply_patch verification failed: failed to read file: {display}"
+            f"patch verification failed: failed to read file: {display}"
         )
     if matches_blocked_pattern(path):
         raise ValueError(f"path is blocked: {display}")
