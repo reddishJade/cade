@@ -560,14 +560,14 @@ def _rollback_changes(
                 operations.write_bytes(snapshot.path, snapshot.data or b"")
             elif operations.exists(snapshot.path):
                 operations.remove_file(snapshot.path)
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             failures.append(f"{snapshot.path}: {exc}")
 
     for directory in missing_dirs:
         try:
             if operations.exists(directory):
                 operations.remove_dir(directory)
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             # Never delete unrelated state to force rollback completion. If a directory
             # cannot be removed safely, report it as the remaining partial state.
             failures.append(f"{directory}: {exc}")
