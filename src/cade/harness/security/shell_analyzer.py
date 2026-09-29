@@ -61,7 +61,16 @@ _GIT_READ_SUBCOMMANDS = frozenset(
         "describe",
     }
 )
-_GIT_GLOBAL_OPTIONS_WITH_VALUES = frozenset({"-C", "--git-dir", "--work-tree", "-c"})
+_GIT_GLOBAL_OPTIONS_WITH_VALUES = frozenset({"-C", "--git-dir", "--work-tree"})
+_GIT_UNSAFE_READ_OPTIONS = frozenset(
+    {
+        "-c",
+        "--ext-diff",
+        "--textconv",
+        "--output",
+        "--open-files-in-pager",
+    }
+)
 _FD_OPTIONS_WITH_VALUES = frozenset(
     {
         "-d",
@@ -541,6 +550,14 @@ def _git_read_analysis(
     while index < len(args):
         arg = args[index]
         option = arg.split("=", 1)[0]
+        if option in _GIT_UNSAFE_READ_OPTIONS:
+            return (
+                paths,
+                UnresolvedEffect(
+                    reason="wrapper_command",
+                    fragment=f"git option requires approval: {option}",
+                ),
+            )
         if option in _GIT_GLOBAL_OPTIONS_WITH_VALUES:
             if "=" in arg:
                 value = arg.split("=", 1)[1]
@@ -568,6 +585,23 @@ def _git_read_analysis(
         break
 
     if subcommand in _GIT_READ_SUBCOMMANDS:
+        remaining = args[index + 1 :]
+        unsafe = next(
+            (
+                arg.split("=", 1)[0]
+                for arg in remaining
+                if arg.split("=", 1)[0] in _GIT_UNSAFE_READ_OPTIONS
+            ),
+            None,
+        )
+        if unsafe is not None:
+            return (
+                paths,
+                UnresolvedEffect(
+                    reason="wrapper_command",
+                    fragment=f"git option requires approval: {unsafe}",
+                ),
+            )
         return (paths, None)
     return (
         paths,
