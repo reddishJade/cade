@@ -455,7 +455,7 @@ ToolGate 在每个 turn 创建冻结 snapshot，把当前模式、规则、审�
 
 三种执行模式分别表达各自的自主性边界：
 
-- **Plan**：代码探索核心为 `read + bash`；已确认只读 shell 直接执行，常见显式 mutation 被规则拒绝，未解析 shell 进入 auto reviewer；`write`、`edit` 仅允许计划文件与 NOTE.md；fallback 为 deny。
+- **Plan**：代码探索核心为 `read + bash`；已确认只读 shell 直接执行，analyzer 确认的 mutation 由 mode-level mutation policy 拒绝，未解析 shell 进入 auto reviewer；`write`、`edit` 仅允许计划文件与 NOTE.md；fallback 为 deny。
 - **Build**：日常 coding surface 为 `read / write / edit / patch / bash`；结构化项目写入和已确认只读 shell 直接执行，未解析或可能有副作用的 shell 进入 auto reviewer；fallback 为 ask。
 - **Act**：使用同一最小 coding surface；只读和已确认只读 shell 直接执行，结构化写入以及未解析/有副作用 shell 进入用户审批；fallback 为 ask。
 
@@ -477,7 +477,7 @@ Plan 具有最大 investigation turn 计数，达到上限后自动进入 Build 
 
 POSIX、PowerShell 和 cmd 拥有对应分析器。分析器只承担 deterministic fast path：识别少量确定只读命令、明确 mutation、危险命令、路径与动态 shell 语法；它不充当第二个 reviewer。POSIX fast path 覆盖常见 `rg/fd/find` 和只读 Git 子命令。
 
-`rm -rf /`、主机级关机/重启、权限提升、`git reset --hard`、强制 `git clean` 等危险命令直接拒绝。未知命令、动态路径和待确认的 wrapper 形成 unresolved effect，再由当前 mode 路由到 reviewer；显式危险命令直接 deny。静态分析表达“已确认的效果”，OS sandbox 负责实际进程边界。
+`rm -rf /`、主机级关机/重启、权限提升、`git reset --hard`、强制 `git clean` 等危险命令直接拒绝。已知 mutation 与未知命令、动态路径、待确认 wrapper 分开表达：mutation policy 由 mode 决定（Plan deny，Build/Act ask），unresolved effect 进入当前 mode 的 reviewer；显式危险命令始终 deny。静态分析只表达“已确认的效果”，OS sandbox 负责实际进程边界。
 
 ### 7.6 审批、授权和自动 reviewer
 
