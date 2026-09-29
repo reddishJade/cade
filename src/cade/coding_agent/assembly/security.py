@@ -46,7 +46,7 @@ _PERMISSION_TOOLS: dict[str, tuple[str, ...]] = {
     "edit": ("write", "edit", "patch"),
     "shell": ("bash", "shell"),
     "web": ("websearch", "webfetch"),
-    "subagent": ("subagent",),
+    "subagent": ("delegate",),
     "skill": ("load_skill",),
 }
 
