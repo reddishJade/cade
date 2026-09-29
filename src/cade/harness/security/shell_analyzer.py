@@ -45,6 +45,7 @@ _UNSAFE_CONTROL = frozenset({"&", "(", ")"})
 _REDIRECTIONS = frozenset({"<", ">", "<<", ">>", "<<<"})
 _FIND_EXECUTORS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
 _FIND_FILE_OUTPUT_ACTIONS = frozenset({"-fprint", "-fprint0", "-fprintf", "-fls"})
+_RG_EXTERNAL_PROGRAM_OPTIONS = frozenset({"--pre", "--hostname-bin"})
 _GIT_READ_SUBCOMMANDS = frozenset(
     {
         "status",
@@ -201,6 +202,24 @@ def _analyze_posix(command: str) -> ShellAnalysis:
         if name in _POSIX_NO_EFFECT_COMMANDS:
             continue
         if name in _POSIX_READ_COMMANDS:
+            if name == "rg":
+                external_option = next(
+                    (
+                        option
+                        for arg in args
+                        if (option := arg.split("=", 1)[0])
+                        in _RG_EXTERNAL_PROGRAM_OPTIONS
+                    ),
+                    None,
+                )
+                if external_option is not None:
+                    unresolved.append(
+                        UnresolvedEffect(
+                            reason="wrapper_command",
+                            fragment=f"rg option executes a program: {external_option}",
+                        )
+                    )
+                    continue
             paths.extend(_read_paths(name, args))
             continue
         if name in _POSIX_MUTATING_COMMANDS:
