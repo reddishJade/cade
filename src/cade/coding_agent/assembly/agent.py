@@ -52,7 +52,6 @@ from cade.harness.observability import (
 from cade.harness.security.permission_model import PolicyEvaluator
 from cade.harness.session.inbox import SessionInbox
 from cade.harness.session.recorder import SessionRecorder
-from cade.harness.session_todo import SessionTodoState
 
 from ..prompting import CORE_IDENTITY
 from ..runtime import CodingAgentRuntimeConfig
@@ -134,7 +133,6 @@ def build_agent(
     external_hook_runner: ExternalHookRunner | None = None,
     memory_manager: Any | None = None,
     session_history: Any | None = None,
-    todo_state: SessionTodoState | None = None,
     auto_approval_callback: ApprovalCallback | None = None,
 ) -> CodingAgentHarness:
     from cade.harness.memory import MemoryManager
@@ -217,9 +215,6 @@ def build_agent(
         contextual_state=contextual_state,
         modules=runtime_config.prompt.modules,
         memory_manager=memory_manager,
-        todo_context_provider=(
-            todo_state.render_context if todo_state is not None else None
-        ),
         identity=CORE_IDENTITY,
     )
     gate = GateConfig(
@@ -275,6 +270,5 @@ def build_agent(
             skill_registry=skill_registry,
             memory_manager=memory_manager,
             session_history=session_history,
-            todo_state=todo_state,
         ),
     )

@@ -56,7 +56,7 @@ latest durable context-window replacement
 ```
 
 The latest final event already contains the structured coding run state. Resume
-restores its execution mode and todo list after rebuilding message history.
+restores its execution mode and goal after rebuilding message history.
 Older exact evidence remains available through `history` list/search/read/around.
 
 ## Invariants

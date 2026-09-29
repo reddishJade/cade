@@ -222,10 +222,6 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
             f"grep /{pattern}/" + (f" in {path}" if path != "." else "")
         )
 
-    if name == "todowrite":
-        todos = _todo_items(raw_input)
-        return f"todo list ({len(todos)})" if todos else name
-
     if name == "subagent":
         tasks = _subagent_tasks(raw_input)
         if tasks:
@@ -257,15 +253,10 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
 
 def tool_call_text(name: str, label: str, raw_input: ToolInput | str) -> Text:
     """渲染工具调用摘要。"""
-    if isinstance(raw_input, dict):
-        if name == "todowrite":
-            rendered = _todo_list_text(raw_input)
-            if rendered is not None:
-                return rendered
-        if name == "subagent":
-            rendered = _subagent_list_text(raw_input)
-            if rendered is not None:
-                return rendered
+    if isinstance(raw_input, dict) and name == "subagent":
+        rendered = _subagent_list_text(raw_input)
+        if rendered is not None:
+            return rendered
     return Text(f"  → {label}", style=CLI_COLOR_TOOL)
 
 
@@ -288,45 +279,6 @@ def _subagent_list_text(raw_input: ToolInput) -> Text | None:
         text.append(f"    [{index}] ", style=CLI_COLOR_DIM)
         text.append(label, style=CLI_COLOR_TOOL)
         text.append(f" [{agent_type}]", style=CLI_COLOR_DIM)
-    return text
-
-
-def _todo_items(raw_input: ToolInput) -> list[dict[str, Any]]:
-    todos = raw_input.get("todos", [])
-    if not isinstance(todos, list):
-        return []
-    return [item for item in todos if isinstance(item, dict)]
-
-
-def _todo_list_text(raw_input: ToolInput) -> Text | None:
-    todos = _todo_items(raw_input)
-    if not todos:
-        return None
-    icons = {
-        "completed": "✓",
-        "in_progress": "◌",
-        "pending": "·",
-        "cancelled": "✕",
-    }
-    styles = {
-        "completed": CLI_COLOR_SUCCESS,
-        "in_progress": CLI_COLOR_WARNING,
-        "pending": CLI_COLOR_TOOL,
-        "cancelled": CLI_COLOR_ERROR,
-    }
-    text = Text(f"  → Todo list ({len(todos)})", style=CLI_COLOR_TOOL)
-    for item in todos:
-        status = str(item.get("status", ""))
-        content = str(item.get("content", "")).strip()
-        if not content:
-            continue
-        priority = str(item.get("priority", "")).strip()
-        suffix = f" [{priority}]" if priority else ""
-        item_style = styles.get(status, CLI_COLOR_INFO)
-        text.append("\n")
-        text.append(f"    {icons.get(status, '?')} ", style=item_style)
-        text.append(content, style=item_style)
-        text.append(suffix, style=CLI_COLOR_DIM)
     return text
 
 

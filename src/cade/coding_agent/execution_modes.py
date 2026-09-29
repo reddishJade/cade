@@ -204,7 +204,6 @@ def build_default_mode_rulesets(
         Rule(action="webfetch", effect="allow"),
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),
-        Rule(action="todowrite", effect="allow"),
         Rule(action="load_skill", effect="allow"),
         Rule(action="subagent", effect="allow"),
         Rule(action="search_memory", effect="allow"),

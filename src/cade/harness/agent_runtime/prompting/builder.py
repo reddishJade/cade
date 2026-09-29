@@ -253,7 +253,6 @@ def build_runtime_context_provider(
     modules: tuple[str, ...] | None = None,
     shell_spec: ShellInfo | None = None,
     memory_manager: MemoryManager | None = None,
-    todo_context_provider: Callable[[], str] | None = None,
     identity: str = "",
 ) -> Callable[[str], list[str]]:
     """构建每轮运行时上下文和稳定的长任务记忆协议。"""
@@ -282,10 +281,6 @@ def build_runtime_context_provider(
                 )
             )
         ]
-        if todo_context_provider is not None:
-            rendered_todo = todo_context_provider()
-            if rendered_todo:
-                parts.append(rendered_todo)
         if memory_manager is not None:
             parts.append(render_memory_protocol(memory_manager))
         return parts

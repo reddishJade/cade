@@ -24,7 +24,6 @@ from cade.harness.agent_runtime.context_window import (
 from cade.harness.agent_runtime.subagents import SubagentSessionManager
 from cade.harness.config import CadeRuntimeConfig
 from cade.harness.execution_env import Shell
-from cade.harness.session_todo import SessionTodoState
 
 from .security import build_shell_from_security
 
@@ -105,7 +104,6 @@ def _build_base_project_registry(
     shell: Shell | None,
     skill_registry: SkillRegistry | None,
     contextual_state: ContextualRetrievalState | None = None,
-    todo_state: SessionTodoState | None = None,
 ) -> tuple[ToolSpec, ...]:
     return build_project_scoped_registry(
         project_root=project_root,
@@ -114,7 +112,6 @@ def _build_base_project_registry(
         cancel_event=cancel_event,
         shell=shell,
         skill_registry=skill_registry,
-        todo_state=todo_state,
     )
 
 
@@ -180,7 +177,6 @@ def build_tool_registry(
     skills_dir: Path | None = None,
     memory_manager: Any | None = None,
     session_history: Any | None = None,
-    todo_state: SessionTodoState | None = None,
     context_window_controller: ContextWindowController | None = None,
 ) -> tuple[
     tuple[ToolSpec, ...],
@@ -205,7 +201,6 @@ def build_tool_registry(
         shell,
         skill_registry,
         contextual_state=contextual_state,
-        todo_state=todo_state,
     )
     mcp_runtime_registry = McpRuntimeRegistry()
     mcp_runtime_registry.configure_runtime(

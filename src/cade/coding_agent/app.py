@@ -24,7 +24,6 @@ from cade.harness.observability import ExternalHookDiagnostic, ExternalHookRunne
 from cade.harness.session import SessionStore
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import replay_session
-from cade.harness.session_todo import SessionTodoState
 
 from . import assembly as _assembly
 from .assembly import (
@@ -375,7 +374,6 @@ def build_app(
             model_profiles=cfg.runtime_config.provider.model_profiles,
         )
     )
-    todo_state = SessionTodoState()
     external_hook_runner = (
         ExternalHookRunner(cfg.runtime_config.hooks.entries, project_root)
         if cfg.runtime_config.hooks.entries
@@ -398,7 +396,6 @@ def build_app(
         skills_dir=cfg.skills_dir,
         memory_manager=memory_manager,
         session_history=infra.session_history,
-        todo_state=todo_state,
         context_window_controller=infra.context_window_controller,
     )
 
@@ -435,7 +432,6 @@ def build_app(
         external_hook_runner=external_hook_runner,
         memory_manager=memory_manager,
         session_history=infra.session_history,
-        todo_state=todo_state,
         auto_approval_callback=auto_approval_callback,
     )
 

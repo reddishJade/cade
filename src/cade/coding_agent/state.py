@@ -14,12 +14,11 @@ type ExecutionModeName = Literal["plan", "build", "act"]
 
 @dataclass(frozen=True)
 class CodingRunState(RunState):
-    """包含编码执行模式与任务列表的运行状态。"""
+    """包含编码执行模式与目标的运行状态。"""
 
     current_mode: ExecutionModeName = "act"
     last_agent: str = "main"
     needs_follow_up: bool = False
-    todos: list[dict[str, Any]] | None = None
     goal: GoalState | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -29,7 +28,6 @@ class CodingRunState(RunState):
             "current_mode": self.current_mode,
             "last_agent": self.last_agent,
             "needs_follow_up": self.needs_follow_up,
-            "todos": self.todos or [],
             "goal": self.goal.to_dict() if self.goal is not None else None,
         }
 
@@ -42,18 +40,11 @@ class CodingRunState(RunState):
         current_mode: ExecutionModeName = (
             mode if mode in {"plan", "build", "act"} else "act"
         )
-        raw_todos = payload.get("todos", [])
-        todos = (
-            [dict(item) for item in raw_todos if isinstance(item, Mapping)]
-            if isinstance(raw_todos, list)
-            else []
-        )
         return cls(
             messages=RunState.from_dict(payload).messages,
             current_mode=current_mode,
             last_agent=str(payload.get("last_agent", "main")),
             needs_follow_up=bool(payload.get("needs_follow_up", False)),
-            todos=todos,
             goal=(
                 GoalState.from_dict(payload["goal"])
                 if isinstance(payload.get("goal"), Mapping)

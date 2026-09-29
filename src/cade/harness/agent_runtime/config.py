@@ -24,7 +24,6 @@ from ...agent.messages import (
     AgentMessage,
     AssistantMessage,
     SystemMessage,
-    UserMessage,
 )
 from ...agent.request import (
     DefaultRequestAssembler,
@@ -437,16 +436,6 @@ def build_loop_config(
         return False
 
     def prepare_next_turn_fn() -> AgentLoopTurnUpdate | None:
-        if gate.check_progress_reminder():
-            steer(
-                UserMessage(
-                    content=(
-                        "<reminder>You have gone several turns without updating "
-                        "task progress. Use todowrite to "
-                        "record progress before continuing.</reminder>"
-                    )
-                )
-            )
         if mode_state is not None and mode_state.check_plan_timeout():
             steer(
                 SystemMessage(

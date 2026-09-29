@@ -53,7 +53,6 @@ class CodingAgentHarness(AgentHarness):
         self._mode = ExecutionModeState(initial_mode=runtime.initial_mode)
         self._memory_manager = runtime.memory_manager
         self._session_history = runtime.session_history
-        self._todo_state = runtime.todo_state
         self._goal_session_id = runtime.gate.session_id
         super().__init__(composition, runtime)
         self._goal = GoalController(lambda: self.provider)
@@ -119,11 +118,6 @@ class CodingAgentHarness(AgentHarness):
                 messages=result.messages,
                 current_mode=self._mode.current_mode,
                 goal=self._goal.state,
-                todos=(
-                    self._todo_state.to_dicts()
-                    if self._todo_state is not None
-                    else None
-                ),
             ),
         )
 
@@ -136,7 +130,7 @@ class CodingAgentHarness(AgentHarness):
         self.restore_run_state_metadata(run_state)
 
     def restore_run_state_metadata(self, payload: object) -> None:
-        """恢复模式与 todo，但不替换已经重建好的消息历史。"""
+        """恢复模式与目标，但不替换已经重建好的消息历史。"""
         run_state = (
             payload
             if isinstance(payload, CodingRunState)
@@ -145,16 +139,12 @@ class CodingAgentHarness(AgentHarness):
         self._mode.set_mode(run_state.current_mode)
         if run_state.goal is not None:
             self._goal.restore(run_state.goal)
-        if self._todo_state is not None:
-            self._todo_state.replace(run_state.todos or [])
 
     def clear_history(self) -> None:
         super().clear_history()
         self._goal.clear()
         if self._coding_runtime.skill_registry is not None:
             self._coding_runtime.skill_registry.clear_activations()
-        if self._todo_state is not None:
-            self._todo_state.replace([])
 
     # ── 编码特定公共 API ──
 

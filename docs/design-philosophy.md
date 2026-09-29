@@ -19,7 +19,7 @@ Cade 把每项能力放入明确的拥有者：
 1. Agent 核心循环拥有模型调用、工具调度、重试、续写和终止编排。
 2. AI 层拥有 provider 协议、服务适配、模型元数据、费用和流事件。
 3. 通用 harness 拥有运行生命周期、取消、输入调度、结果翻译和运行时组合。
-4. `coding_agent` 拥有编码工具、执行模式、技能激活、记忆、todo 和目标验收。
+4. `coding_agent` 拥有编码工具、执行模式、技能激活、记忆和目标验收。
 5. session 层拥有事实记录、分支、surface、inbox、恢复和文件快照。
 6. security 层拥有 Action 提取、权限裁决、授权、审批和边界策略。
 7. CLI、TUI 和 Web 拥有输入、审批交互、事件展示和视口管理。
@@ -106,7 +106,7 @@ Agent 层拥有：
 - 把同步 API 与异步流 API 接合。
 - 处理 provider fallback、hook、审计和结果构建。
 
-`CodingAgentHarness` 在此基础上加入 plan/build/act、技能激活、todo、目标验收和编码产品状态。领域能力位于产品层，通用生命周期位于 harness 层。
+`CodingAgentHarness` 在此基础上加入 plan/build/act、技能激活、目标验收和编码产品状态。领域能力位于产品层，通用生命周期位于 harness 层。
 
 ### 2.4 装配层：在运行前组合能力，在运行中消费快照
 
