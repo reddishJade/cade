@@ -66,6 +66,7 @@ def build_glob_tools(
             description="Find project files by glob pattern. Use **/*.py for recursive search.",
             input_hint='JSON: {"path": ".", "pattern": "**/*.py", "max_results": 100}',
             handler=glob_files,
+            execution_mode="parallel",
             prompt_guidelines=(
                 "Use **/*.py for recursive Python file search.",
                 "Combine path (directory) + pattern (glob) for narrower results.",
@@ -100,6 +101,7 @@ def build_glob_tools(
             ),
             input_hint='JSON: {"path": ".", "pattern": "*.py", "max_results": 100}',
             handler=find_files,
+            execution_mode="parallel",
             prompt_guidelines=(
                 "Use find to locate files by name when you don't know the directory.",
                 "Basename-only patterns (e.g. '*.py') search all subdirectories.",
@@ -132,6 +134,7 @@ def build_glob_tools(
             description="List directory contents. Entries sorted alphabetically, '/' suffix for directories. Includes dotfiles.",
             input_hint='JSON: {"path": "src/cade", "limit": 100}',
             handler=list_dir,
+            execution_mode="parallel",
             prompt_guidelines=(
                 "Use ls to explore directory contents before reading files.",
                 "Limit defaults to 500 entries; raise it for large directories.",
