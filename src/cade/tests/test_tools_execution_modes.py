@@ -53,6 +53,8 @@ class TestDefaultModeRulesets:
         act_shell = next(rule for rule in rulesets["act"] if rule.action == "bash")
         assert build_shell.effect == "allow"
         assert act_shell.effect == "allow"
+        assert not any(rule.action == "mcp__*" for rule in rulesets["build"])
+        assert any(rule.action == "mcp_tool_search" for rule in rulesets["build"])
         plan_shell = next(
             rule
             for rule in rulesets["plan"]
