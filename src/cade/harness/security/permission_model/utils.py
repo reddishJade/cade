@@ -206,14 +206,12 @@ def is_protected_workspace_metadata_write(
     except ValueError:
         return False
     relative = parts[cade_index + 1 :]
-    if (
+    return not (
         tool in {"write", "edit"}
         and len(relative) == 2
         and relative[0] == "plans"
         and relative[1].endswith(".md")
-    ):
-        return False
-    return True
+    )
 
 
 def is_sensitive_path(path: str, *, access: PermissionAccess = "read") -> bool:
