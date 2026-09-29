@@ -255,9 +255,7 @@ def _parse_update_hunk(lines: list[str], index: int) -> tuple[PatchHunk, int]:
     if current_lines:
         sections.append(PatchSection(current_anchor, tuple(current_lines)))
     if not sections and move_path is None:
-        raise ValueError(
-            "patch verification failed: Update File requires changes"
-        )
+        raise ValueError("patch verification failed: Update File requires changes")
     if not saw_change and move_path is None:
         raise ValueError("patch verification failed: Update File has no edits")
     return (
@@ -317,9 +315,7 @@ def _plan_add(
     display: str,
 ) -> FileChange:
     if operations.exists(path):
-        raise ValueError(
-            f"patch verification failed: file already exists: {display}"
-        )
+        raise ValueError(f"patch verification failed: file already exists: {display}")
     after = "\n".join(hunk.add_lines)
     if after and not after.endswith("\n"):
         after += "\n"
@@ -605,9 +601,7 @@ def _existing_text(
     display: str,
 ) -> tuple[str, str]:
     if not operations.exists(path) or not operations.is_file(path):
-        raise ValueError(
-            f"patch verification failed: failed to read file: {display}"
-        )
+        raise ValueError(f"patch verification failed: failed to read file: {display}")
     if matches_blocked_pattern(path):
         raise ValueError(f"path is blocked: {display}")
     return _read_text(path, operations)
