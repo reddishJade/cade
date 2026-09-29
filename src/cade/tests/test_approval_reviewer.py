@@ -62,6 +62,7 @@ def _request() -> ApprovalRequest:
         transcript=("<user trust=trusted>\nRun the project's focused tests.\n</user>"),
         working_directory="/workspace/project",
         turn_id="session:turn:1",
+        execution_mode="plan",
     )
 
 
@@ -128,6 +129,7 @@ def test_auto_reviewer_allows_once_and_receives_full_evidence() -> None:
     assert provider.options == [None]
     prompt = str(provider.requests[0][0][-1]["content"])
     assert "pytest -q" in prompt
+    assert '"execution_mode": "plan"' in prompt
     assert "Run the project's focused tests." in prompt
     assert "/workspace/project" in prompt
     assert "session:turn:1" in prompt
