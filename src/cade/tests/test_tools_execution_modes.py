@@ -44,7 +44,9 @@ class TestDefaultModeRulesets:
             "act": "ask",
         }
         build_shell = next(rule for rule in rulesets["build"] if rule.action == "bash")
-        assert build_shell.effect == "ask"
+        act_shell = next(rule for rule in rulesets["act"] if rule.action == "bash")
+        assert build_shell.effect == "allow"
+        assert act_shell.effect == "allow"
         plan_shell = next(
             rule
             for rule in rulesets["plan"]
@@ -84,7 +86,7 @@ class TestDefaultCodingSurface:
                 "grep",
                 "glob",
                 "find",
-                "list",
+                "ls",
                 "websearch",
             )
         )
@@ -95,7 +97,7 @@ class TestDefaultCodingSurface:
             "grep",
             "glob",
             "find",
-            "list",
+            "ls",
         }
 
     def test_act_hides_structured_search_helpers(self) -> None:
