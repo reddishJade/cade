@@ -118,7 +118,9 @@ class BuildPolicy:
     """build: 默认使用最小 coding surface；shell 与未知动作进入审批。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tuple(tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS)
+        return tuple(
+            tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS
+        )
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # check_call 返回 allow，实际决策由 RuleMatcher 完成
@@ -129,7 +131,9 @@ class ActPolicy:
     """act: 默认使用最小 coding surface，写入和 shell 默认 ask。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tuple(tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS)
+        return tuple(
+            tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS
+        )
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # check_call 返回 allow，实际决策由 RuleMatcher 完成
