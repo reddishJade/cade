@@ -250,9 +250,9 @@ continuable 模式、persona、provider model 和初始 composition ID。session
 `parent_id` 提供无需激活 child 的 lineage 枚举。
 
 `subagent` 创建新 child。并行 batch 只允许 one-shot；需要后续对话时显式创建
-continuable child，再用 `subagent_continue` 按 child session ID 提交 FIFO turn。
+continuable child，再用 `delegate` 按 child session ID 提交 FIFO turn。
 进程中没有 activation 时，manager 从 child log 重建 surface 后冷恢复同一个
-session。`subagent_list` 只读取 descriptor，不启动模型。Cade 当前只实现 spawn，
+session。session surface / runtime state 只读取 descriptor，不启动模型。Cade 当前只实现 spawn，
 不会复制父 transcript；任务 prompt 必须自包含。
 
 durable session ID、进程内 `activation_id` 和单次 run ID 是三个不同层级。每次
