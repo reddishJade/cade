@@ -313,7 +313,6 @@ def _build_delegate_tool(manager: SubagentSessionManager) -> ToolSpec:
     )
 
 
-
 def _parse_tasks(data: dict[str, Any]) -> list[dict[str, str]] | str:
     raw_tasks = data.get("tasks")
     if raw_tasks is None:
