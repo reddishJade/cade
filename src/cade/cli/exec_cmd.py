@@ -10,12 +10,14 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 from urllib.parse import urlparse
 
 from cade.agent.results import TerminationReason
+from cade.agent.types import ApprovalRequest
+from cade.coding_agent.execution_modes import ExecutionModeState
 from cade.harness.agent_runtime.config import resolve_context_policy
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
@@ -23,6 +25,7 @@ from cade.harness.agent_runtime.events import (
     ToolUseStructuredEvent,
 )
 from cade.harness.config import CadeRuntimeConfig, resolve_config_path
+from cade.harness.security import HITLResult
 from cade.harness.session.schema import SESSION_EVENT_SCHEMA_VERSION
 from cade.server.serialize import event_to_dict, to_jsonable
 
@@ -210,6 +213,7 @@ def run_exec(
             _configure_model(app, config, args)
             _validate_model_endpoint(app.get_model_info())
             _restore_exec_session(app, args)
+            _install_exec_approval(app, config)
             return _consume_exec_run(app, prompt, config, args, emitter)
         except KeyboardInterrupt:
             emitter.completed(status="cancelled", exit_code=130)
@@ -251,19 +255,69 @@ def _validate_approval(config: CadeRuntimeConfig, args: argparse.Namespace) -> N
     if args.approval == "interactive" and not sys.stdin.isatty():
         raise ExecValidationError("interactive approval requires a TTY")
     security = config.security
-    mode = config.execution_modes.default_mode
-    routes_to_user = security.approval_router == "user" or (
-        security.approval_router == "mode" and mode != "build"
-    )
     if (
         security.approval_policy == "on-request"
-        and routes_to_user
+        and _exec_reviewer(config) == "user"
         and not sys.stdin.isatty()
     ):
         raise ExecValidationError(
             "resolved approval policy requires a TTY; use --approval auto-review, "
             "--approval never, or --approval deny"
         )
+
+
+def _exec_reviewer(config: CadeRuntimeConfig) -> str:
+    """沿用执行模式的 reviewer 选择，避免 CLI 维护另一套路由规则。"""
+    return ExecutionModeState(
+        initial_mode=config.execution_modes.default_mode,
+        approval_router=config.security.approval_router,
+    ).approvals_reviewer
+
+
+def _install_exec_approval(app: Any, config: CadeRuntimeConfig) -> None:
+    """仅在当前 exec 需要人工审批时安装终端回调。"""
+    if (
+        config.security.approval_policy == "on-request"
+        and _exec_reviewer(config) == "user"
+    ):
+        app.agent.user_approval_callback = _ExecApprovalHandler()
+
+
+@contextlib.contextmanager
+def _approval_terminal() -> Iterator[tuple[TextIO, TextIO]]:
+    """优先使用控制终端，避免 JSONL 标准输出和重定向错误流吞掉提示。"""
+    with contextlib.ExitStack() as stack:
+        try:
+            terminal = stack.enter_context(
+                Path("/dev/tty").open("r+", encoding="utf-8")
+            )
+        except OSError:
+            yield sys.stdin, sys.stderr
+        else:
+            yield terminal, terminal
+
+
+class _ExecApprovalHandler:
+    """把一次权限请求转换为简短的终端批准或拒绝。"""
+
+    def __call__(self, request: ApprovalRequest) -> HITLResult:
+        with _approval_terminal() as (reader, writer):
+            action = json.dumps(request.action_input, ensure_ascii=False, indent=2)
+            if len(action) > 4000:
+                action = action[:4000] + "\n... (truncated)"
+            writer.write(
+                f"\nCade approval ({request.execution_mode or 'unknown mode'})\n"
+                f"Tool: {request.tool.name}\n"
+                f"Reason: {request.reason}\n"
+                f"Directory: {request.working_directory or '(current)'}\n"
+                f"Arguments: {action}\n"
+                "Approve once? [y/N] "
+            )
+            writer.flush()
+            answer = reader.readline().strip().casefold()
+        if answer in {"y", "yes"} and "once" in request.allowed_scopes:
+            return HITLResult("allow", "once")
+        return HITLResult("deny", "once")
 
 
 def _configure_model(

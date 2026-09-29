@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+from contextlib import nullcontext
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from cade.agent.results import TerminationReason
+from cade.agent.types import ToolSpec
 from cade.ai.events import ProviderFailure, ToolCall
+from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.harness.agent_runtime.events import (
     FinalStructuredEvent,
     TextDeltaStructuredEvent,
@@ -22,6 +26,7 @@ from cade.harness.agent_runtime.events import (
 )
 from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.harness.config import CadeRuntimeConfig
+from cade.harness.security.permissions import PermissionEngine, PermissionEngineConfig
 from cade.main import parse_args
 
 
@@ -477,6 +482,130 @@ def test_exec_rejects_interactive_approval_without_tty(
     assert payload["status"] == "validation_error"
     assert "requires a TTY" in payload["error"]["message"]
     assert not built
+
+
+# 失效情形：Plan 错认人工审批、Act 误放行无 TTY、显式人工路由失效。
+@pytest.mark.parametrize(
+    ("mode", "router", "expected_status"),
+    [
+        ("plan", "mode", 0),
+        ("build", "mode", 0),
+        ("act", "mode", 6),
+        ("plan", "user", 6),
+        ("plan", "auto", 0),
+    ],
+)
+def test_exec_preflight_uses_mode_reviewer(
+    monkeypatch, tmp_path: Path, capsys, mode: str, router: str, expected_status: int
+) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    args = parse_args(
+        ["exec", "--project-root", str(tmp_path), "--mode", mode, "inspect"]
+    )
+    config = CadeRuntimeConfig()
+    config = config.model_copy(
+        update={
+            "security": config.security.model_copy(update={"approval_router": router})
+        }
+    )
+    monkeypatch.setattr("cade.cli.exec_cmd.sys.stdin.isatty", lambda: False)
+    app = _App([FinalStructuredEvent(type="final", step=1, data=_final_result())])
+
+    status = run_exec(args, config, lambda *_args: app)
+
+    assert status == expected_status
+    assert app.closed is (expected_status == 0)
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["exit_code"] == status
+
+
+# 失效情形：有 TTY 却无 callback、批准未传入权限引擎、拒绝污染 JSONL stdout。
+@pytest.mark.parametrize(
+    ("tool_name", "action_input", "answer", "expected_decision", "expected_exit"),
+    [
+        ("write", {"path": "report.txt", "content": "ok"}, "y\n", "allow", 0),
+        ("bash", {"command": "touch report.txt"}, "y\n", "allow", 0),
+        ("bash", {"command": "touch report.txt"}, "n\n", "deny", 5),
+    ],
+)
+def test_exec_interactive_approval_drives_act_permission_engine(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+    tool_name: str,
+    action_input: dict[str, str],
+    answer: str,
+    expected_decision: str,
+    expected_exit: int,
+) -> None:
+    from cade.cli.exec_cmd import run_exec
+
+    terminal_output = StringIO()
+    monkeypatch.setattr("cade.cli.exec_cmd.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(
+        "cade.cli.exec_cmd._approval_terminal",
+        lambda: nullcontext((StringIO(answer), terminal_output)),
+        raising=False,
+    )
+    args = parse_args(
+        [
+            "exec",
+            "--project-root",
+            str(tmp_path),
+            "--mode",
+            "act",
+            "--approval",
+            "interactive",
+            "change it",
+        ]
+    )
+    app = _App([])
+    decisions: list[str] = []
+
+    def events(_prompt: str):
+        engine = PermissionEngine(
+            PermissionEngineConfig(
+                project_root=tmp_path,
+                mode_ruleset=build_default_mode_rulesets(tmp_path)["act"],
+                mode_fallback="ask",
+                shell_mutation_policy="ask",
+                execution_mode="act",
+            )
+        )
+        result = engine.decide(
+            tool_name,
+            action_input,
+            tool_spec=ToolSpec(tool_name, "", "", lambda _data, _update: ""),
+            approval_callback=app.agent.user_approval_callback,
+            approvals_reviewer="user",
+        )
+        decisions.append(result.decision)
+        if result.blocked:
+            yield ToolResultStructuredEvent(
+                type="tool_result",
+                step=1,
+                data=ToolResultBlock(
+                    tool_use_id="approval-test",
+                    content=result.reason,
+                    status="error",
+                    approval_denied=True,
+                ),
+            )
+        yield FinalStructuredEvent(type="final", step=2, data=_final_result())
+
+    monkeypatch.setattr(app, "ask_stream", events)
+
+    status = run_exec(args, CadeRuntimeConfig(), lambda *_args: app)
+
+    assert status == expected_exit
+    assert decisions == [expected_decision]
+    assert "Approve once" in terminal_output.getvalue()
+    assert tool_name in terminal_output.getvalue()
+    assert "report.txt" in terminal_output.getvalue()
+    assert all(
+        isinstance(json.loads(line), dict)
+        for line in capsys.readouterr().out.splitlines()
+    )
 
 
 def test_exec_deny_stops_on_first_permission_denial(tmp_path: Path, capsys) -> None:
