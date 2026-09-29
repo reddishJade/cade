@@ -222,7 +222,7 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
             f"grep /{pattern}/" + (f" in {path}" if path != "." else "")
         )
 
-    if name == "subagent":
+    if name == "delegate":
         tasks = _subagent_tasks(raw_input)
         if tasks:
             return f"subagent tasks ({len(tasks)})"
@@ -253,7 +253,7 @@ def brief_input(name: str, raw_input: ToolInput | str) -> str:
 
 def tool_call_text(name: str, label: str, raw_input: ToolInput | str) -> Text:
     """渲染工具调用摘要。"""
-    if isinstance(raw_input, dict) and name == "subagent":
+    if isinstance(raw_input, dict) and name == "delegate":
         rendered = _subagent_list_text(raw_input)
         if rendered is not None:
             return rendered
