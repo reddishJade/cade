@@ -45,6 +45,42 @@ _UNSAFE_CONTROL = frozenset({"&", "(", ")"})
 _REDIRECTIONS = frozenset({"<", ">", "<<", ">>", "<<<"})
 _FIND_EXECUTORS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
 _FIND_FILE_OUTPUT_ACTIONS = frozenset({"-fprint", "-fprint0", "-fprintf", "-fls"})
+_FD_READ_FLAGS = frozenset(
+    {
+        "-H",
+        "--hidden",
+        "-I",
+        "--no-ignore",
+        "--no-require-git",
+        "-g",
+        "--glob",
+        "-s",
+        "--case-sensitive",
+        "-i",
+        "--ignore-case",
+        "-a",
+        "--absolute-path",
+        "-p",
+        "--full-path",
+        "-0",
+        "--print0",
+    }
+)
+_FD_READ_OPTIONS_WITH_VALUES = frozenset(
+    {
+        "-d",
+        "--max-depth",
+        "--min-depth",
+        "-e",
+        "--extension",
+        "-E",
+        "--exclude",
+        "--max-results",
+        "-t",
+        "--type",
+        "--color",
+    }
+)
 _RG_EXTERNAL_PROGRAM_OPTIONS = frozenset({"--pre", "--hostname-bin"})
 _GIT_READ_SUBCOMMANDS = frozenset(
     {
@@ -187,6 +223,12 @@ def _analyze_posix(command: str) -> ShellAnalysis:
     for segment in segments:
         name, args = _command_and_args(segment)
         if name is None:
+            continue
+        if name == "fd":
+            fd_paths, fd_effect = _fd_analysis(args)
+            paths.extend(fd_paths)
+            if fd_effect is not None:
+                unresolved.append(fd_effect)
             continue
         if name == "find":
             find_paths, find_effects = _find_analysis(args)
@@ -612,6 +654,45 @@ def _find_paths(args: list[str]) -> list[Target]:
             break
         paths.append(_path_target(arg))
     return paths
+
+
+def _fd_analysis(args: list[str]) -> tuple[list[Target], UnresolvedEffect | None]:
+    """仅对已知只读参数提取 fd 搜索根，其他形式交给审查。"""
+    positional: list[str] = []
+    options_enabled = True
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if options_enabled and arg == "--":
+            options_enabled = False
+            index += 1
+            continue
+        if options_enabled and arg.startswith("-") and arg != "-":
+            option, separator, value = arg.partition("=")
+            if option in _FD_READ_FLAGS and not separator:
+                index += 1
+                continue
+            if option in _FD_READ_OPTIONS_WITH_VALUES:
+                if separator and value:
+                    index += 1
+                    continue
+                if (
+                    not separator
+                    and index + 1 < len(args)
+                    and not args[index + 1].startswith("-")
+                ):
+                    index += 2
+                    continue
+            return (
+                [],
+                UnresolvedEffect(
+                    reason="wrapper_command",
+                    fragment=f"fd option requires approval: {arg}",
+                ),
+            )
+        positional.append(arg)
+        index += 1
+    return ([_path_target(path) for path in positional[1:]], None)
 
 
 def _find_analysis(args: list[str]) -> tuple[list[Target], list[UnresolvedEffect]]:

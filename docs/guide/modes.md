@@ -40,7 +40,7 @@ Cade 设计了三种执行模式（Execution Modes），用来在**全自动开�
 ```
 
 - **自动文件修改**：修改、新建文件不再打扰用户，Agent 自行闭环完成。
-- **Shell 审查机制（Reviewer）**：`rg`、只读 Git 等可证明只读的命令直接运行；`fd` 以及静态确认的 mutation 或未知副作用命令进入独立 Reviewer。
+- **Shell 审查机制（Reviewer）**：常见只读 `rg`/`fd` 搜索与只读 Git 命令直接运行；`fd` 的未知或可执行选项，以及静态确认的 mutation 和未知副作用命令进入独立 Reviewer。
 
 ### 2.3 Act 模式：人工安全锁
 

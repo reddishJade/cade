@@ -53,14 +53,38 @@ def test_rg_external_program_option_reaches_permission_review() -> None:
     assert [constraint.decision for constraint in constraints] == ["ask"]
 
 
+# 失效情形：常见只读搜索反复审查，或选项值被误认为搜索根。
 @pytest.mark.parametrize(
     "command",
-    ["fd parser src", "fd parser src -x echo {}", "fd --exec=echo parser src"],
+    [
+        "fd parser src",
+        "fd -e py parser src",
+        "fd --type file --max-results 20 parser src",
+        "fd --color=never --glob '*.py' src",
+        "fd -- -x src",
+    ],
 )
-def test_fd_requires_review_without_a_partial_option_parser(command: str) -> None:
+def test_fd_known_read_only_forms_run_without_review(command: str) -> None:
     analysis = analyze_shell_command(command)
 
-    assert analysis.resolved_paths == ()
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == ["src"]
+
+
+# 失效情形：执行动作、执行别名或未知选项被部分参数解析器放行。
+@pytest.mark.parametrize(
+    "command",
+    [
+        "fd parser src -x echo {}",
+        "fd --exec=echo parser src",
+        "fd -X echo {}",
+        "fd --list-details parser src",
+        "fd --unknown parser src",
+    ],
+)
+def test_fd_effectful_or_unknown_options_require_review(command: str) -> None:
+    analysis = analyze_shell_command(command)
+
     assert [effect.reason for effect in analysis.unresolved_effects] == [
         "wrapper_command"
     ]
