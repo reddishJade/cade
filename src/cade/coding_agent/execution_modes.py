@@ -17,6 +17,12 @@ from cade.harness.security.permissions import PermissionDecision
 
 ExecutionMode = Literal["plan", "build", "act"]
 
+# Structured search helpers remain registered for Plan/read-only and experiments,
+# but ordinary Build/Act coding relies on bash for rg/find/ls composition.
+_STRUCTURED_SEARCH_TOOLS = frozenset(
+    {"glob_files", "find_files", "list_dir", "grep_search", "search_tools"}
+)
+
 
 class ExecutionPolicy(Protocol):
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]: ...
@@ -109,10 +115,10 @@ class PlanPolicy:
 
 
 class BuildPolicy:
-    """build: 项目内结构化读写直接执行，shell 与未知动作进入审批。"""
+    """build: 默认使用最小 coding surface；shell 与未知动作进入审批。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tools
+        return tuple(tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS)
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # check_call 返回 allow，实际决策由 RuleMatcher 完成
@@ -120,10 +126,10 @@ class BuildPolicy:
 
 
 class ActPolicy:
-    """act: 全部工具可见，写入和 shell 默认 ask。"""
+    """act: 默认使用最小 coding surface，写入和 shell 默认 ask。"""
 
     def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tools
+        return tuple(tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS)
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # check_call 返回 allow，实际决策由 RuleMatcher 完成
