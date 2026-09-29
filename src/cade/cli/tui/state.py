@@ -727,7 +727,7 @@ class _TuiState:
         label = self._tool_label(name, raw_input)
 
         self.log.append(_LogEntry("tool", f"● {label}", tool_id=tool_id))
-        if name == "subagent":
+        if name == "delegate":
             text = tool_call_text(name, label, raw_input).plain
             self.log.append(_LogEntry("tool-detail", f"  ⎿  {text.strip()}"))
 
@@ -815,7 +815,7 @@ class _TuiState:
         return None
 
     def _handle_tool_update(self, tool_name: str, partial: str) -> None:
-        if tool_name == "subagent":
+        if tool_name == "delegate":
             for line in partial.splitlines():
                 self._record_subagent_update(line.strip())
 
