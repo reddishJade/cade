@@ -44,6 +44,18 @@ def test_read_only_git_commands_do_not_require_review() -> None:
         assert analysis.unresolved_effects == ()
 
 
+def test_git_read_subcommand_with_effectful_option_requires_review() -> None:
+    for command in (
+        "git diff --output=changes.patch",
+        "git diff --ext-diff",
+        "git -c diff.external=helper diff",
+    ):
+        analysis = analyze_shell_command(command)
+        assert [effect.reason for effect in analysis.unresolved_effects] == [
+            "wrapper_command"
+        ]
+
+
 def test_mutating_git_command_requires_review() -> None:
     analysis = analyze_shell_command("git commit -am 'update'")
 
