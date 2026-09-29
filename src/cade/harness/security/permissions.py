@@ -168,7 +168,9 @@ class PermissionEngineConfig:
     mode_fallback: PermissionDecision = "ask"
     """Default decision when no rule matches: plan='deny', build/act='ask'."""
     shell_unresolved_policy: ShellUnresolvedPolicy = "ask"
-    """Mode-level decision when shell effects cannot be determined statically; dangerous commands are always denied."""
+    """Mode-level decision when shell effects cannot be determined statically."""
+    shell_mutation_policy: ShellUnresolvedPolicy = "ask"
+    """Mode-level decision for shell commands statically known to mutate state."""
     approval_policy: ApprovalPolicy = "on-request"
     """Whether ask decisions can be sent to a reviewer; never deterministically denies when no grant matches."""
     execution_mode: str = ""
@@ -355,7 +357,8 @@ class PermissionEngine:
 
             shell_constraints = ShellAnalysisPolicyEvaluator().evaluate(
                 action,
-                self._config.shell_unresolved_policy,
+                unresolved_policy=self._config.shell_unresolved_policy,
+                mutation_policy=self._config.shell_mutation_policy,
             )
 
         rules = rule_merge(
