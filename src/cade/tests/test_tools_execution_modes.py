@@ -72,7 +72,7 @@ class TestDefaultCodingSurface:
                 "glob",
                 "find",
                 "list",
-                                "websearch",
+                "websearch",
             )
         )
         names = {tool.name for tool in BuildPolicy().filter_tools(tools)}
@@ -83,7 +83,7 @@ class TestDefaultCodingSurface:
             "glob",
             "find",
             "list",
-                    }
+        }
 
     def test_act_hides_structured_search_helpers(self) -> None:
         tools = tuple(
