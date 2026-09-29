@@ -311,9 +311,7 @@ def test_patch_cannot_use_plan_file_metadata_exception(tmp_path: Path) -> None:
             mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
             mode_fallback="ask",
             execution_mode="build",
-            tool_path_extractors={
-                "patch": lambda _data: (".cade/plans/refactor.md",)
-            },
+            tool_path_extractors={"patch": lambda _data: (".cade/plans/refactor.md",)},
         )
     )
 
