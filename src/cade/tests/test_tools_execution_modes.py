@@ -114,7 +114,7 @@ class TestDefaultCodingSurface:
         names = {tool.name for tool in ActPolicy().filter_tools(tools)}
         assert names == {"read", "write", "edit", "patch", "bash"}
 
-    def test_plan_keeps_bash_and_structured_search_helpers(self) -> None:
+    def test_plan_uses_bash_instead_of_structured_search_helpers(self) -> None:
         tools = (
             _tool("read"),
             _tool("bash"),
@@ -122,7 +122,7 @@ class TestDefaultCodingSurface:
             _tool("glob"),
         )
         names = {tool.name for tool in PlanPolicy().filter_tools(tools)}
-        assert names == {"read", "bash", "grep", "glob"}
+        assert names == {"read", "bash"}
 
 
 class TestPlanPolicy:
