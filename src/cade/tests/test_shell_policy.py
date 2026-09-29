@@ -23,6 +23,36 @@ def test_quoted_rg_glob_is_not_treated_as_shell_expansion() -> None:
     assert [target.value for target in analysis.resolved_paths] == ["src"]
 
 
+# 失效情形：等号形式或分离参数形式的外部程序选项被误判为只读。
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rg --pre=helper needle src",
+        "rg --pre helper needle src",
+        "rg --hostname-bin=helper needle src",
+        "rg --hostname-bin helper needle src",
+    ],
+)
+def test_rg_external_program_options_require_review(command: str) -> None:
+    analysis = analyze_shell_command(command)
+
+    assert [effect.reason for effect in analysis.unresolved_effects] == [
+        "wrapper_command"
+    ]
+
+
+def test_rg_external_program_option_reaches_permission_review() -> None:
+    action = ActionExtractor().extract(
+        "bash",
+        {"command": "rg --pre=helper needle src"},
+        ("shell", "none"),
+    )
+
+    constraints = ShellAnalysisPolicyEvaluator().evaluate(action)
+
+    assert [constraint.decision for constraint in constraints] == ["ask"]
+
+
 @pytest.mark.parametrize(
     "command",
     ["fd parser src", "fd parser src -x echo {}", "fd --exec=echo parser src"],
