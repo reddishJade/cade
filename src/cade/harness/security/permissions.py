@@ -171,6 +171,8 @@ class PermissionEngineConfig:
     """Mode-level decision when shell effects cannot be determined statically; dangerous commands are always denied."""
     approval_policy: ApprovalPolicy = "on-request"
     """Whether ask decisions can be sent to a reviewer; never deterministically denies when no grant matches."""
+    execution_mode: str = ""
+    """Execution mode attached to approval requests so reviewers can enforce mode authority."""
 
 
 class PermissionEngine:
@@ -680,6 +682,7 @@ class PermissionEngine:
                 else ""
             ),
             turn_id=approval_turn_id,
+            execution_mode=self._config.execution_mode,
         )
         hitl = approval_callback(request)
         approval_source = (
