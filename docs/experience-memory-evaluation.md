@@ -16,6 +16,9 @@ E2E 覆盖可见写入后新 session recall、弱查询和标识符子串排除�
 anchor、缺字段/空字段/重复字段排除、人工调整字段顺序、只读无副作用、resume
 保留普通规则而排除经验，以及 ContextPolicy 裁剪后完整证据仍在历史。
 此外，真实待审批 bash 确认固定人工 router 只调用本地回调，没有 reviewer inference。
+approval_router 漏传属于独立基础缺陷，由
+[`a36af79f`](https://github.com/reddishJade/cade/commit/a36af79f) 单独修复并进入
+dev/main，不计入 Memory 功能改动；实验分支继承这项基础修复。
 
 按仓库 testing.md，E2E 源码和运行轨迹是 local-only，不提交到 origin。复现：
 

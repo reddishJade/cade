@@ -36,8 +36,10 @@ Build 默认允许结构化项目写入；Act 默认要求审批；Plan 只允�
 
 真实 eval 暴露了另一个接线缺陷：CodingAgentHarness 创建 ExecutionModeState
 时没有传入配置的 approval_router，Build 因此忽略强制人工审批配置。这会导致
-实验产生额外 reviewer 请求。本增量补上传参；E2E 用真实待审批工具确认仅调用
-显式人工回调，eval 启动时也检查该回调，首轮诊断试跑不进入正式 A/B。
+实验产生额外 reviewer 请求。这属于独立基础缺陷，不计入 Memory 进展，已通过
+[`a36af79f`](https://github.com/reddishJade/cade/commit/a36af79f) 单独修复并进入
+dev/main。E2E 用真实待审批工具确认仅调用显式人工回调，eval 启动时也检查该
+回调，首轮诊断试跑不进入正式 A/B。
 
 系统提示仍引用旧名 search_memory，这是一个实际可修复的小缺口。
 `parsing.py` 仅剥离 `- Evidence:` 等旧 bullet metadata；新约定采用无 bullet 的
@@ -234,7 +236,6 @@ Host 不从 history 自动提取经验，不判断 Evidence 指针真实性。Se
 | `src/cade/harness/memory/manager.py` | recall 的 Experience gate、历史提示、resume 排除 |
 | `src/cade/harness/memory/tools.py` | 稀疏查询和完整来源提示 |
 | `src/cade/harness/agent_runtime/prompting/builder.py` | 修正 recall 名称，指导可见写入、scope、form 和使用前检查 |
-| `src/cade/coding_agent/harness.py` | 修复 approval_router 漏传，使实验无需 reviewer inference |
 | `src/cade/harness/memory/README.md` | 更新模块职责、数据流及链接 |
 | `docs/guide/memory.md` | 修正过时路径/能力描述，解释真实读写行为 |
 | `docs/memory-architecture.md` | Experience 的边界、ContextPolicy 复用和恢复行为 |
