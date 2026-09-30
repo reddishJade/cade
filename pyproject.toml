@@ -46,9 +46,10 @@ pythonpath = [".", "src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*", "*Test", "*Tests"]
 asyncio_mode = "auto"
-addopts = "-m 'not mcp_external'"
+addopts = "-m 'not mcp_external and not e2e'"
 markers = [
     "mcp_external: requires npx and network access to run a pinned official MCP server",
+    "e2e: runs a real Cade workflow and writes a trace under e2e-results/",
 ]
 
 [project.scripts]

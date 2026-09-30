@@ -2,48 +2,45 @@
 
 ## 质量标准
 
-测试对象是组装后的 Cade，而不只是单个函数。每项行为至少在最接近其风险的
-层级验证；跨层不变量必须有契约测试。
+测试对象优先是用户实际运行的 Cade 工作流。默认测试套件只保留不能安全地由
+E2E 覆盖的针对性回归；不会为了提高断言数量而测试内部对象形状、简单计算或
+实现细节。
 
 ## 测试层级
 
-### 纯逻辑测试
+### E2E
 
-用于 parser、codec、权限规则、路径计算、事件投影和渲染摘要。测试应确定、
-快速，不访问外部 provider 或终端。
+`src/cade/tests/e2e/` 中的测试使用真实 `build_app()`、真实 session 存储、真实
+工具和真实终端边界；只在 provider 的网络边界使用确定性的协议驱动器。每项
+测试都要在 `e2e-results/` 保存 JSON trace、复现命令和关键观察结果。
 
-### 组件契约测试
+```sh
+uv run pytest src/cade/tests/e2e --override-ini 'addopts=' -m e2e -q --tb=short
+```
 
-验证相邻层之间的完整数据：
+默认命令排除 E2E，因为终端、沙箱和 provider 环境并非每台开发机都有：
 
-- ToolOutput -> AgentToolResult -> ToolResultMessage；
-- runtime event -> session codec -> replay；
-- context-window replacement -> current surface -> restart；
-- provider 实际请求 -> hook 完整 envelope 与 session 请求指纹；
-- composition generation -> run snapshot -> `provider_request.composition_id`；
-- subagent lifecycle -> parent session ledger；
-- child descriptor/index lineage -> 独立 session surface -> cold continuation；
-- child activation ownership -> authority non-expansion -> child-first teardown；
-- render intent -> CLI/TUI projection。
+```sh
+uv run pytest src/cade/tests -q --tb=short
+```
 
-### 真实组合测试
+### 必要的针对性测试
 
-`test_app_composition.py` 使用真实 `build_app()`、真实 registry、真实 session
-存储和 replay。只在网络边界替换 provider，不能替换 app builder、loader、
-recorder 或 replayer。该测试必须覆盖：
+只有以下行为允许保留窄范围测试：
 
-1. 最小 app 成功组装；
-2. 第一轮请求与回答落盘；
-3. hook envelope 与 provider 实际输入一致，session 保存对应指纹和规模；
-4. 新 app 从相同 session 恢复；
-5. 第二轮 provider 能看到第一轮上下文。
+- 安全策略的硬拒绝、审批范围和路径越界；
+- 进程崩溃/撕裂写入后的 session 恢复；
+- 凭据和 session 文件的权限保护。
+
+这类测试必须说明 E2E 无法安全或确定地覆盖的失效方式，并断言用户可观察的
+安全结果，而不是私有函数的中间值。
 
 ### 外部依赖验证
 
 真实 provider、终端 UI、MCP server 和平台相关 shell 行为按需手工验证。
 不能用 HTTP 200、mock loader 或另一个服务实例代替用户实际运行路径。
 
-`src/cade/tests/test_*_e2e.py` 是本地专用测试源码，已由 `.gitignore` 排除，
+`src/cade/tests/e2e/` 是本地专用测试源码，已由 `.gitignore` 排除，
 不会进入 origin 或分发包。它们使用 pytest 临时目录保存 trace、终端截图和
 复现步骤；有相应终端、沙箱或 provider 环境时在开发机运行。新克隆的仓库
 不包含这些文件，origin CI 只运行静态检查、命令行启动检查和打包。
