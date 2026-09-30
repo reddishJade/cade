@@ -16,6 +16,7 @@ from cade.harness.memory import (
     MemoryLayerFilter,
     MemoryManager,
     build_memory_block,
+    memory_write_rejection,
 )
 from cade.harness.security import (
     FileGrantStore,
@@ -837,6 +838,12 @@ def _add_memory(manager: MemoryManager, payload: str) -> bool:
 
     block = build_memory_block(title, body)
     memory_layer = cast(MemoryLayer, layer)
+    rejection = memory_write_rejection(
+        block, layer=memory_layer, project_root=manager.root
+    )
+    if rejection:
+        print(f"Memory was rejected: {rejection}")
+        return False
     if not manager.add_memory_block(
         block,
         layer=memory_layer,
@@ -864,6 +871,12 @@ def _update_memory(manager: MemoryManager, payload: str) -> bool:
 
     memory_layer = cast(MemoryLayer, layer)
     block = build_memory_block(title, body)
+    rejection = memory_write_rejection(
+        block, layer=memory_layer, project_root=manager.root
+    )
+    if rejection:
+        print(f"Memory was rejected: {rejection}")
+        return False
     if not manager.update_memory_block(title, block, layer=memory_layer):
         print("Memory was not updated because it was missing, empty, or duplicate.")
         return False

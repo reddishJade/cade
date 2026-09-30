@@ -43,6 +43,7 @@ from cade.harness.agent_runtime.context_window import (
 )
 from cade.harness.agent_runtime.prompting import build_runtime_context_provider
 from cade.harness.config import AgentConfig, CadeRuntimeConfig
+from cade.harness.memory import MemoryHintCollector, MemoryHintState
 from cade.harness.observability import (
     ExternalHookRunner,
     HookManager,
@@ -65,6 +66,7 @@ from .security import (
 )
 
 if TYPE_CHECKING:
+    from cade.harness.memory import MemoryManager
     from cade.harness.skills import SkillRegistry
 
 
@@ -132,7 +134,8 @@ def build_agent(
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = (),
     skill_registry: SkillRegistry | None = None,
     external_hook_runner: ExternalHookRunner | None = None,
-    memory_manager: Any | None = None,
+    memory_manager: MemoryManager | None = None,
+    memory_hint_state: MemoryHintState | None = None,
     session_history: Any | None = None,
     auto_approval_callback: ApprovalCallback | None = None,
 ) -> CodingAgentHarness:
@@ -170,6 +173,17 @@ def build_agent(
     context_collectors.register_section(
         make_collector_section("notes", NotesCollector(project_root))
     )
+    if contextual_state is not None:
+        context_collectors.register_section(
+            make_collector_section(
+                "memory_hints",
+                MemoryHintCollector(
+                    memory_manager,
+                    recent_files=lambda: contextual_state.recent_files,
+                    state=memory_hint_state,
+                ),
+            )
+        )
     if skill_registry is not None:
         from cade.harness.skills import SkillIndexCollector
 

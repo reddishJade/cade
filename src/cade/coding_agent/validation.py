@@ -18,6 +18,7 @@ from cade.agent.context import (
 )
 from cade.agent.messages import ToolResultMessage
 from cade.agent.types import TerminalRenderIntent, TextContent
+from cade.harness.memory import ValidationEvidence
 from cade.harness.session.tree_store import TreeSessionRepo
 
 
@@ -67,6 +68,46 @@ def workspace_fingerprint(project_root: Path) -> str | None:
         return digest.hexdigest()
     except OSError:
         return None
+
+
+def latest_validation_evidence(store: TreeSessionRepo) -> ValidationEvidence | None:
+    """返回最近一次显式验证执行的成功事实，供 remember 绑定证据。
+
+    只认**最近**一条 `purpose=validation` 结果：它必须退出码为 0。如果最近一次
+    验证失败或没有退出码，就返回 None —— 不能用更早的成功掩盖当前的失败，
+    否则 remember 会把"刚刚验证过"写成不成立的结论。
+    """
+    for entry in reversed(store.build_branch()):
+        content = entry.content
+        if not isinstance(content, dict) or content.get("type") != "tool_result":
+            continue
+        data = content.get("data")
+        if not isinstance(data, dict):
+            continue
+        metadata = data.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        if metadata.get("purpose") != "validation":
+            continue
+        exit_code = metadata.get("exit_code", data.get("exit_code"))
+        if isinstance(exit_code, bool) or not isinstance(exit_code, int):
+            return None
+        if exit_code != 0:
+            return None
+        intent = data.get("render_intent")
+        command = str(intent.get("command", "")) if isinstance(intent, dict) else ""
+        state = metadata.get("validation_state")
+        file_state = "unknown"
+        if isinstance(state, dict):
+            file_state = (
+                "unchanged" if state.get("before") == state.get("after") else "changed"
+            )
+        return ValidationEvidence(
+            message_id=entry.id,
+            command=command,
+            exit_code=exit_code,
+            file_state=file_state,
+        )
+    return None
 
 
 class ValidationCollector:

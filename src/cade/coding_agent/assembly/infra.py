@@ -11,7 +11,7 @@ from cade.harness.agent_runtime.context_window import (
     ContextWindowRollover,
 )
 from cade.harness.config import CadeRuntimeConfig, resolve_config_path
-from cade.harness.memory import MemoryManager
+from cade.harness.memory import MemoryHintState, MemoryManager
 from cade.harness.session import SessionHistory, SessionInbox, SessionStore
 from cade.harness.session.recorder import SessionRecorder
 
@@ -24,6 +24,7 @@ class SharedInfra:
     cancellation_token: CancellationToken
     context_window_controller: ContextWindowController
     context_rollover: ContextWindowRollover
+    memory_hint_state: MemoryHintState
     memory_manager: MemoryManager
     session_history: SessionHistory
     session_inbox: SessionInbox
@@ -40,6 +41,7 @@ def build_shared_infra(
     context_window_controller = ContextWindowController()
 
     memory_manager = MemoryManager(project_root)
+    memory_hint_state = MemoryHintState()
 
     configured_sessions_dir = runtime_config.paths.sessions_dir
     if sessions_dir is not None:
@@ -70,6 +72,7 @@ def build_shared_infra(
         cancellation_token=cancellation_token,
         context_window_controller=context_window_controller,
         context_rollover=context_rollover,
+        memory_hint_state=memory_hint_state,
         memory_manager=memory_manager,
         session_history=session_history,
         session_inbox=session_inbox,

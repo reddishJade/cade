@@ -314,14 +314,28 @@ def render_memory_protocol(manager: MemoryManager) -> str:
             "The lossless session transcript is the source of truth for exact history.",
             f"Project memory: {manager.memory_file}",
             f"User memory: {manager.user_memory_file}",
-            "Use search_memory before asking the user to repeat prior decisions.",
+            (
+                "Memory is a historical hint, never current truth: files, tests and "
+                "git outrank it. recall returns an index — read one record with "
+                "memory_id before relying on it, and prefer anchor=<path> when you "
+                "already know the file. state=changed or missing means re-verify; "
+                "evidence=claim means no recorded validation event backs it."
+            ),
+            (
+                "After a verification command succeeds, call remember in your next "
+                "step: it stamps that validation event and the anchor content "
+                "snapshot, so it must come after the result. Experiences are "
+                "project-scoped; never store progress, guesses, or transcript. Read "
+                "the original event with history read "
+                "session=<id> message_id=<validation id> when provenance matters."
+            ),
             (
                 "Use history list_windows/search/read/around for exact details from "
                 "older context windows."
             ),
             (
-                "Only persist durable user rules, architecture decisions, and verified "
-                "cross-session facts. Do not store current task progress here."
+                "Persist only durable user rules, architecture decisions, verified "
+                "facts, and reusable experiences."
             ),
             "</long-horizon-memory>",
         )
@@ -332,14 +346,18 @@ def render_memory_overview(
     manager: MemoryManager,
     max_tokens: int = 6000,
 ) -> str:
-    """渲染预算控制的记忆概览，用于恢复会话时注入。"""
+    """渲染预算控制的记忆概览，用于恢复会话时注入。
+
+    Experience 只交付指针，正文留给显式 recall；坏记录只剩修复线索。
+    """
     packets = manager.read_budgeted(max_tokens=max_tokens, layer="all")
     if not packets:
         return ""
     lines = [
         "<memory-overview>",
-        "Cross-session project memory. These are prior learnings and decisions",
-        "from previous sessions. Treat them as background context.",
+        "Cross-session project memory. Rules and decisions are records; experiences",
+        "are pointers that need recall with memory_id before you rely on them.",
+        "Treat all of it as background context and verify against the repository.",
     ]
     lines.extend(packets)
     lines.append("</memory-overview>")

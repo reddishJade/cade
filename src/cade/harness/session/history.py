@@ -91,6 +91,18 @@ class SessionHistory:
             raise ValueError(f"invalid session id: {session_id!r}")
         self.session_id = session_id
 
+    def for_session(self, session_id: str) -> SessionHistory:
+        """返回绑定到指定 session 的只读视图，用于跨 session 证据回溯。"""
+        other = SessionHistory(self.sessions_dir, artifacts_dir=self.artifacts_dir)
+        other.set_session_id(session_id)
+        return other
+
+    def has_session(self, session_id: str) -> bool:
+        """只接受合法 session id，并把路径固定在本目录下。"""
+        if not _SESSION_ID.fullmatch(session_id):
+            return False
+        return (self.sessions_dir / f"session-{session_id}.jsonl").is_file()
+
     def search(
         self,
         query: str,
@@ -245,8 +257,14 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
         _on_update: Callable[[str], None] | None = None,
     ) -> str:
         operation = str(data.get("operation", "search"))
+        target = history
+        requested = str(data.get("session", "")).strip()
+        if requested:
+            if not history.has_session(requested):
+                return f"No session transcript for session={requested!r}."
+            target = history.for_session(requested)
         if operation == "list_windows":
-            windows = history.list_windows(limit=_bounded(data.get("limit"), 20, 100))
+            windows = target.list_windows(limit=_bounded(data.get("limit"), 20, 100))
             if not windows:
                 return "No context window transitions in the current session."
             return "\n".join(_render_window(window) for window in windows)
@@ -254,7 +272,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             query = str(data.get("query", "")).strip()
             if not query:
                 return "query is required for history search"
-            entries = history.search(
+            entries = target.search(
                 query,
                 limit=_bounded(data.get("limit"), 5, 20),
                 include_artifacts=data.get("include_artifacts") is True,
@@ -264,7 +282,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             message_id = str(data.get("message_id", "")).strip()
             if not message_id:
                 return "message_id is required for history read"
-            result = history.read(
+            result = target.read(
                 message_id,
                 offset=_bounded(data.get("offset"), 0, 1_000_000_000),
                 max_chars=_bounded(data.get("max_chars"), 8_000, 20_000),
@@ -276,7 +294,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             message_id = str(data.get("message_id", "")).strip()
             if not message_id:
                 return "message_id is required for history around"
-            entries = history.around(
+            entries = target.around(
                 message_id,
                 before=_bounded(data.get("before"), 3, 20),
                 after=_bounded(data.get("after"), 3, 20),
@@ -296,19 +314,19 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="history",
             description=(
-                "List context windows, search the current session's lossless "
-                "transcript, page through one exact record, or inspect neighbors. "
-                "Search returns bounded excerpts and match offsets when an exact term "
-                "occurs in a large record; use those offsets for targeted reads."
+                "List context windows, search a session's lossless transcript, page "
+                "through one exact record, or inspect neighbors. Pass session to "
+                "dereference evidence recorded by an earlier session. Search returns "
+                "bounded excerpts and match offsets when an exact term occurs in a "
+                "large record; use those offsets for targeted reads."
                 " Default search excludes retrieval echoes, runtime reminders and "
                 "audit/reset copies; include_derived=true searches all records."
             ),
             input_hint=(
                 'JSON: {"operation":"list_windows"}, '
                 '{"operation":"search","query":"timeout","limit":5}, '
-                '{"operation":"read","message_id":"abc123","offset":0,'
-                '"max_chars":8000}, or {"operation":"around",'
-                '"message_id":"abc123","before":3,"after":3}'
+                '{"operation":"read","message_id":"abc123","session":"9f2c1a7b"}, or '
+                '{"operation":"around","message_id":"abc123","before":3,"after":3}'
             ),
             handler=handle,
             schema={
@@ -320,6 +338,13 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                     },
                     "query": {"type": "string"},
                     "message_id": {"type": "string"},
+                    "session": {
+                        "type": "string",
+                        "description": (
+                            "Session id from a memory evidence pointer; reads that "
+                            "session's transcript instead of the current one."
+                        ),
+                    },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                     "include_artifacts": {"type": "boolean"},
                     "include_derived": {"type": "boolean"},
@@ -337,7 +362,9 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             },
             prompt_snippet=(
                 "After a context reset, use list_windows/search to locate evidence, "
-                "then read for exact content. If a page is marked omitted from the request, "
+                "then read for exact content. Memory evidence pointers carry "
+                "session=<id> and validation=<message_id>: pass both to read the "
+                "original event. If a page is marked omitted from the request, "
                 "reduce max_chars and retry the same offset; next_offset describes "
                 "the stored page, not the admitted preview. History is the source of truth."
             ),

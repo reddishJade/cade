@@ -15,6 +15,7 @@ from cade.coding_agent.tools.subagent import (
     BUILD_SUBAGENT_PROMPTS,
     build_subagent_tools,
 )
+from cade.coding_agent.validation import latest_validation_evidence
 from cade.harness.agent_runtime import CancellationToken, ContextualRetrievalState
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
@@ -97,7 +98,9 @@ def _extend_registry_with_features(
     mcp_runtime_registry: McpRuntimeRegistry,
     runtime_config: CadeRuntimeConfig,
     memory_manager: Any | None = None,
+    memory_hint_state: Any | None = None,
     session_history: Any | None = None,
+    session_recorder: SessionRecorder | None = None,
     context_window_controller: ContextWindowController | None = None,
 ) -> tuple[ToolSpec, ...]:
     from cade.harness.mcp import build_mcp_tools
@@ -106,10 +109,22 @@ def _extend_registry_with_features(
 
     from cade.harness.memory import MemoryManager, build_memory_tools
 
-    if memory_manager is not None:
-        registry += build_memory_tools(memory_manager)
-    else:
-        registry += build_memory_tools(MemoryManager(project_root))
+    if memory_manager is None:
+        memory_manager = MemoryManager(project_root)
+    session_id_provider = (
+        (lambda: session_history.session_id) if session_history is not None else None
+    )
+    validation_provider = (
+        (lambda: latest_validation_evidence(session_recorder.store))
+        if session_recorder is not None
+        else None
+    )
+    registry += build_memory_tools(
+        memory_manager,
+        session_id_provider=session_id_provider,
+        validation_provider=validation_provider,
+        hint_state=memory_hint_state,
+    )
     if session_history is not None:
         from cade.harness.session import build_history_tools
 
@@ -129,6 +144,7 @@ def build_tool_registry(
     shell: Shell | None = None,
     skills_dir: Path | None = None,
     memory_manager: Any | None = None,
+    memory_hint_state: Any | None = None,
     session_history: Any | None = None,
     context_window_controller: ContextWindowController | None = None,
 ) -> tuple[
@@ -166,7 +182,9 @@ def build_tool_registry(
         mcp_runtime_registry,
         runtime_config,
         memory_manager=memory_manager,
+        memory_hint_state=memory_hint_state,
         session_history=session_history,
+        session_recorder=session_recorder,
         context_window_controller=context_window_controller,
     )
 

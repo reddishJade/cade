@@ -395,6 +395,7 @@ def build_app(
         cancel_event=infra.cancellation_token,
         skills_dir=cfg.skills_dir,
         memory_manager=memory_manager,
+        memory_hint_state=infra.memory_hint_state,
         session_history=infra.session_history,
         context_window_controller=infra.context_window_controller,
     )
@@ -431,6 +432,7 @@ def build_app(
         skill_registry=skill_registry,
         external_hook_runner=external_hook_runner,
         memory_manager=memory_manager,
+        memory_hint_state=infra.memory_hint_state,
         session_history=infra.session_history,
         auto_approval_callback=auto_approval_callback,
     )

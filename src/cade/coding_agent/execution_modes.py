@@ -222,6 +222,7 @@ def build_default_mode_rulesets(
         Rule(action="write", effect="allow"),
         Rule(action="edit", effect="allow"),
         Rule(action="patch", effect="allow"),
+        Rule(action="remember", effect="allow"),
     )
     ask_write_rules = tuple(
         Rule(action=rule.action, effect="ask") for rule in write_rules
