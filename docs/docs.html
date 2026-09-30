@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>cade — 开发者技术文档与参考手册</title>
-  <meta name="description" id="metaDesc" content="Cade 官方技术文档：统一内核架构、无损历史与动态投影、95% 无摘要换窗、持久化分层记忆、执行模式、内置工具体系、权限安全与三端工作台。">
+  <meta name="description" id="metaDesc" content="Cade 官方技术文档：统一内核架构、无损历史与动态投影、95% 无摘要换窗、按需 Memory、执行模式、内置工具体系、权限安全与三端工作台。">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23141413'/%3E%3Cpath d='M18 20 L30 32 L18 44' stroke='%23d97757' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='34' y='40' width='14' height='6' rx='3' fill='%23e8e6dc'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -667,7 +667,7 @@
         <div class="sidebar-title"><span class="lz">三大核心支柱</span><span class="le">Core Pillars</span></div>
         <a href="#sessions" class="sidebar-link"><span class="lz">无损历史与动态投影 (/undo)</span><span class="le">Lossless History & Projections</span></a>
         <a href="#context" class="sidebar-link"><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Context Rollover</span></a>
-        <a href="#memory" class="sidebar-link"><span class="lz">持久化分层记忆系统</span><span class="le">Durable Memory</span></a>
+        <a href="#memory" class="sidebar-link"><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></a>
       </div>
 
       <div class="sidebar-group">
@@ -720,8 +720,8 @@
             <p><span class="lz">当上下文触达窗口阈值（默认 95%）时，系统自动对冲冗余并无损继承核心任务目标，彻底摆脱模型自我总结带来的信息衰减与幻觉蔓延。</span><span class="le">Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs, preventing degradation from heuristic summaries.</span></p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">持久化分层记忆系统</span><span class="le">Durable Hierarchical Memory</span></span> <span class="badge">Pillar 3</span></div>
-            <p><span class="lz">全局用户偏好与仓库级架构约定跨会话持久留存，自动在系统提示词中分层组装，无需重复向 Agent 交代背景。</span><span class="le">User preferences and repository rules are durably partitioned and automatically assembled into system prompts across sessions without manual re-prompting.</span></p>
+            <div class="card-title"><span><span class="lz">按需 Memory</span><span class="le">On-Demand Memory</span></span> <span class="badge">Pillar 3</span></div>
+            <p><span class="lz">昂贵经验保存为 workspace Markdown，按需使用既有工具搜索、沿原始 History 来源核验；正常 turn 和恢复不加载 Memory。</span><span class="le">Costly findings live in workspace Markdown, searched with existing tools and checked against original history. Normal turns and resume do not load Memory.</span></p>
           </div>
         </div>
 
@@ -734,7 +734,7 @@ flowchart LR
     A["用户输入与任务目标"] --> B["统一运行时内核"]
     B --> C["无损事件流与动态投影"]
     C --> D["95% 换窗对冲引擎"]
-    C --> E["分层记忆加载器"]
+    C -->|显式保存| E["Workspace Memory"]
     B --> F["三端工作台: TUI / CLI / Web"]
           </script>
           <script type="text/mermaid" data-lang="en">
@@ -742,7 +742,7 @@ flowchart LR
     A["User Inputs & Objectives"] --> B["Unified Runtime Kernel"]
     B --> C["Lossless Event Stream"]
     C --> D["95% Rollover Engine"]
-    C --> E["Durable Memory Loader"]
+    C -->|Explicit save| E["Workspace Memory"]
     B --> F["Tri-Workbenches: TUI / CLI / Web"]
           </script>
           <div class="mermaid-output"></div>
@@ -1150,7 +1150,7 @@ if CurrentRatio >= 0.95:
         <ol>
           <li><span class="lz"><strong>目标与约束完整继承（Target Retention）</strong>：保留最初的用户核心需求指令、当前目标与关键约束；</span><span class="le"><strong>Goal & Constraint Retention</strong>: The original user objective, current goal, and key constraints carry over completely;</span></li>
           <li><span class="lz"><strong>中间工具冗余安全对冲（Tool Output Pruning）</strong>：已执行完成的巨量中间输出（如搜索返回的 800 行代码片段、长文本目录树）被剥离活动视窗，仅保留执行结论；</span><span class="le"><strong>Intermediate Output Pruning</strong>: Bulky intermediate payloads (e.g. 800-line search dumps and directory scans) are purged from active view, retaining only operation statuses;</span></li>
-          <li><span class="lz"><strong>持久记忆分层挂载（Durable Memory Injection）</strong>：将本轮中沉淀的代码库假设自动同步至持久记忆库，并在新窗口建立时由系统提示词重新加载；</span><span class="le"><strong>Durable Memory Injection</strong>: Validated project invariants are committed to long-term memory and freshly loaded into the new window;</span></li>
+          <li><span class="lz"><strong>按需读取原始历史</strong>：新窗口可通过 history 工具定位原始证据；Memory 不随换窗自动保存或加载；</span><span class="le"><strong>History on Demand</strong>: The new window can use history tools to locate original evidence; rollover does not automatically save or load Memory;</span></li>
           <li><span class="lz"><strong>新视窗平滑接力</strong>：开发者无感继续交互，模型拥有充沛的新窗口容量推进复杂工程重构。</span><span class="le"><strong>Seamless Window Handoff</strong>: The developer continues the conversation without interruption, while the LLM gains fresh token headspace.</span></li>
         </ol>
 
@@ -1176,7 +1176,7 @@ if CurrentRatio >= 0.95:
           </a>
           <a href="#memory" class="page-nav-btn next">
             <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">持久化分层记忆系统</span><span class="le">Durable Memory</span> →</span>
+            <span class="page-nav-title"><span class="lz">按需 Memory</span><span class="le">Durable Memory</span> →</span>
           </a>
         </div>
       </article>
@@ -1184,78 +1184,25 @@ if CurrentRatio >= 0.95:
       <!-- ================= 7. MEMORY ================= -->
       <article id="memory" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">持久化分层记忆系统</span><span class="le">Durable Memory</span></span>
+          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></span>
         </div>
-        <h1><span class="lz">核心支柱 3：持久化分层记忆系统</span><span class="le">Core Pillar 3: Durable Hierarchical Memory</span></h1>
-        <p class="lead-text"><span class="lz">跨越单一会话周期的事实沉淀。清晰分离全局个人偏好与仓库工程约定，自动在系统提示词中分层组装。</span><span class="le">Cross-session fact retention engineered for real development. Cleanly separates personal developer habits from repository engineering invariants.</span></p>
+        <h1><span class="lz">核心支柱 3：按需 Memory</span><span class="le">Core Pillar 3: On-Demand Memory</span></h1>
+        <p class="lead-text"><span class="lz">保存昂贵才获得、可能再次有用的少量 workspace 知识。每条 Memory 是 .cade/memory/ 内一个可编辑 Markdown 文件。</span><span class="le">Keep a few costly, reusable workspace findings. Each Memory is an editable Markdown file in .cade/memory/.</span></p>
 
-        <h2><span class="lz">两层分层架构设计</span><span class="le">Two-Tier Memory Architecture</span></h2>
-        <p><span class="lz">Cade 将记忆明确区分为两种物理维度，互不干扰且拥有不同的版本控制策略：</span><span class="le">Cade physically separates memory into two distinct tiers with independent versioning and scoping:</span></p>
+        <h2><span class="lz">范围与职责</span><span class="le">Scope and Responsibilities</span></h2>
+        <p><span class="lz">只保存当前 workspace 的经验。Repository/Git/Tests 判定当前事实，Event History 保存完整历史，NOTE.md 保存任务状态，Skills 保存可复用方法。</span><span class="le">Memory is scoped to the current workspace. Repository/Git/Tests establish current facts, Event History preserves history, NOTE.md holds task state, and Skills hold reusable methods.</span></p>
 
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th><span class="lz">记忆层级</span><span class="le">Memory Tier</span></th>
-                <th><span class="lz">物理落盘位置</span><span class="le">Storage Location</span></th>
-                <th><span class="lz">典型存储内容</span><span class="le">Typical Contents</span></th>
-                <th><span class="lz">版本控制与生命周期</span><span class="le">Lifecycle & Git</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong><span class="lz">全局用户层 (User Tier)</span><span class="le">Global User Tier</span></strong></td>
-                <td><code>~/.cade/memory.md</code></td>
-                <td><span class="lz">开发者的个人编码喜好：如“优先使用 Python 3.12 类型标注”、“严禁在注释中写废话”、“单元测试优先使用 pytest”。</span><span class="le">Personal habits: "Prefer Python 3.12 syntax", "No boilerplate docstrings", "Use pytest for tests".</span></td>
-                <td><span class="lz">用户本机持久留存，跨所有项目生效；不提交至 Git。</span><span class="le">Persists globally across all local repos; not committed to Git.</span></td>
-              </tr>
-              <tr>
-                <td><strong><span class="lz">项目工程层 (Project Tier)</span><span class="le">Project Repository Tier</span></strong></td>
-                <td><code>&lt;project_root&gt;/.cade/memory.md</code></td>
-                <td><span class="lz">特定代码库的架构共识：如“构建命令为 make build”、“禁止直接修改 proto 生成的代码”、“数据库迁移使用 alembic”。</span><span class="le">Repository invariants: "Build with make build", "Never touch proto generated files", "Use alembic for migrations".</span></td>
-                <td><span class="lz">跟随项目代码版本管理，可提交至 Git 仓库供全团队共享。</span><span class="le">Committed to repository Git for team-wide sharing.</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <h2><span class="lz">显式保存与来源</span><span class="le">Explicit Saves and Sources</span></h2>
+        <p><span class="lz"><code>save_memory(path, markdown, sources)</code> 校验 Agent 显式提供的 Session/entry 引用并原子写入。覆盖需完整旧文本 <code>expected_content</code>。Host 只替换保留标记内的末尾来源 footer，不解析正文；来源存在不证明结论正确。</span><span class="le"><code>save_memory(path, markdown, sources)</code> validates explicit Session/entry references and writes atomically. Replacements require the full previous <code>expected_content</code>. The Host replaces only the marked source footer and does not parse the body; existing sources do not prove conclusions.</span></p>
+        <p><span class="lz">Memory 自身不发起模型调用、后台整理或额外推理；工具结果后的正常 Agent loop 由现有运行时决定。</span><span class="le">Memory initiates no model calls, background organization, or extra inference. The existing runtime governs the normal Agent loop after a tool result.</span></p>
 
-        <h2><span class="lz">系统提示词自动装配与检索机制</span><span class="le">Prompt Assembly & Retrieval Mechanism</span></h2>
-        <p><span class="lz">当每次启动交互或换窗时，运行时装配器会依照如下优先级完成记忆加载：</span><span class="le">At session bootstrap or context rollover, the runtime assembler compiles memory into system prompts in deterministic order:</span></p>
+        <h2><span class="lz">按需读取与核验</span><span class="le">Read and Revalidate on Demand</span></h2>
+        <p><span class="lz">普通任务、恢复及换窗不扫描或加载 Memory。出现明确历史需求或昂贵的重复排查时，用既有 <code>bash</code> 执行 <code>rg "timeout" .cade/memory</code>，再读取具体文件、按 <code>session_id + entry_id</code> 读取原始 History，并检查当前代码和验证结果。Memory 不改变默认 tool surface。</span><span class="le">Normal turns, resume, and rollover do not scan or load Memory. For explicit historical needs or costly repeated investigation, use existing <code>bash</code> with <code>rg "timeout" .cade/memory</code>, read a file, follow <code>session_id + entry_id</code> into original History, and check current code and validation results. Memory does not expand the default tool surface.</span></p>
+        <p><span class="lz">精确 History 读取不依赖导航 cache；共享目录使用日志首条记录的 workspace 绑定。跨 Session 的 <code>around</code> 只沿祖先支持 <code>before</code>，不切换当前 Session/head。读取结果服从 ContextPolicy；Git SHA 不代表未提交 workspace。</span><span class="le">Exact History reads do not depend on the navigation cache; shared stores use the first log record's workspace binding. Cross-session <code>around</code> supports ancestor <code>before</code> only, without switching Session/head. Read evidence follows ContextPolicy; Git SHA does not capture an uncommitted workspace.</span></p>
 
-        <div class="mermaid-container">
-          <script type="text/mermaid" data-lang="zh">
-flowchart LR
-    SYS["基础系统提示词 (Base System Prompt)"]
-    U_MEM["全局用户记忆 (~/.cade/memory.md)"]
-    P_MEM["项目工程记忆 (.cade/memory.md)"]
-    PROMPT["最终组装提示词 (Final Assembled Prompt)"]
-
-    SYS --> PROMPT
-    U_MEM -->|注入用户编码习惯| PROMPT
-    P_MEM -->|高优先级覆盖规范| PROMPT
-          </script>
-          <script type="text/mermaid" data-lang="en">
-flowchart LR
-    SYS["Base System Prompt"]
-    U_MEM["Global User Memory (~/.cade/memory.md)"]
-    P_MEM["Project Repository Memory (.cade/memory.md)"]
-    PROMPT["Final Assembled Prompt"]
-
-    SYS --> PROMPT
-    U_MEM -->|Inject User Preferences| PROMPT
-    P_MEM -->|High-Priority Project Rules| PROMPT
-          </script>
-          <div class="mermaid-output"></div>
-        </div>
-
-        <h2><span class="lz">记忆管理与交互指令</span><span class="le">Memory Management & Slash Commands</span></h2>
-        <p><span class="lz">你可以直接在日常开发对话中管理记忆，也可以通过文本编辑器直接维护 Markdown 文件：</span><span class="le">You can manage memories directly from conversational slash commands or edit the Markdown files directly in any editor:</span></p>
-        <ul>
-          <li><span class="lz"><code>/memory</code>：列出当前项目生效的全部记忆内容与层级；</span><span class="le"><code>/memory</code>: Display all active memories for the current project;</span></li>
-          <li><span class="lz"><code>/memory add [内容]</code>：快速将一条新规则沉淀至当前项目的工程记忆中；</span><span class="le"><code>/memory add [text]</code>: Append a new rule to the repository project memory;</span></li>
-          <li><span class="lz"><code>/memory global [内容]</code>：将一条偏好保存至全局用户记忆库；</span><span class="le"><code>/memory global [text]</code>: Save a preference to your global user memory;</span></li>
-          <li><span class="lz"><strong>直接编辑 Markdown</strong>：直接打开 <code>.cade/memory.md</code> 进行修改，Cade 在下一次模型推理前会自动重载。</span><span class="le"><strong>Direct Markdown Editing</strong>: Edit <code>.cade/memory.md</code> in your editor; changes hot-reload automatically before the next turn.</span></li>
-        </ul>
+        <h2><span class="lz">查看与修订</span><span class="le">Inspect and Edit</span></h2>
+        <p><span class="lz"><code>/memory</code> 只显示目录位置。用户可用编辑器修改或删除文件；Agent 用 <code>save_memory</code> 修订，不增加状态机、索引或后台维护。</span><span class="le"><code>/memory</code> only shows the directory. Users may edit or delete files in an editor; the Agent revises through <code>save_memory</code>, with no state machine, index, or background maintenance.</span></p>
+        <p><a href="guide/memory.md"><span class="lz">完整参数与示例</span><span class="le">Full parameters and examples</span></a></p>
 
         <div class="page-nav">
           <a href="#context" class="page-nav-btn">
@@ -1341,7 +1288,7 @@ flowchart LR
         <div class="page-nav">
           <a href="#memory" class="page-nav-btn">
             <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">持久化分层记忆系统</span><span class="le">Durable Memory</span></span>
+            <span class="page-nav-title">← <span class="lz">按需 Memory</span><span class="le">Durable Memory</span></span>
           </a>
           <a href="#slash-commands" class="page-nav-btn next">
             <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
@@ -1397,8 +1344,8 @@ flowchart LR
               </tr>
               <tr>
                 <td><code>/memory</code></td>
-                <td><code>[add|global|clear]</code></td>
-                <td><span class="lz">查看或管理跨会话持久记忆（全局个人偏好与项目工程规范）。</span><span class="le">List, add, or inspect durable memory (both user and repository tiers).</span></td>
+                <td>-</td>
+                <td><span class="lz">只显示当前 workspace 的 Memory 目录位置，不扫描或加载文件。</span><span class="le">Show the workspace Memory directory without scanning or loading files.</span></td>
               </tr>
               <tr>
                 <td><code>/model</code></td>
@@ -1433,7 +1380,7 @@ flowchart LR
               <tr>
                 <td><code>/clear</code></td>
                 <td>-</td>
-                <td><span class="lz">清空当前活动上下文视窗，可选择性归档核心结论至持久记忆。</span><span class="le">Reset active context window; optionally archive findings to memory.</span></td>
+                <td><span class="lz">清空当前活动上下文视窗，不自动保存或加载 Memory。</span><span class="le">Reset the active context window without automatically saving or loading Memory.</span></td>
               </tr>
               <tr>
                 <td><code>/help</code></td>
@@ -2374,8 +2321,8 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
       var metaDesc = document.querySelector('meta[name="description"]');
       if (metaDesc) {
         metaDesc.content = lang === 'zh'
-          ? 'Cade 官方技术文档：统一内核架构、无损历史与动态投影、95% 无摘要换窗、持久化分层记忆、执行模式、内置工具体系、权限安全与三端工作台。'
-          : 'Cade Official Technical Documentation: Unified runtime architecture, lossless history & projections, 95% summary-free context rollover, durable hierarchical memory, execution modes, tools, and workbenches.';
+          ? 'Cade 官方技术文档：统一内核架构、无损历史与动态投影、95% 无摘要换窗、按需 Memory、执行模式、内置工具体系、权限安全与三端工作台。'
+          : 'Cade Official Technical Documentation: Unified runtime architecture, lossless history & projections, 95% summary-free context rollover, on-demand workspace memory, execution modes, tools, and workbenches.';
       }
       reRenderAllVisibleDiagrams();
     }

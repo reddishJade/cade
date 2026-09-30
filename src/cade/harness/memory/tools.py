@@ -14,6 +14,8 @@ from cade.agent.types import LocationRenderIntent, ToolInput, ToolOutput, ToolSp
 from cade.harness.session import SessionHistory
 
 _MAX_FILE_BYTES = 1_000_000
+_SOURCES_START = "<!-- cade:memory:sources -->"
+_SOURCES_END = "<!-- /cade:memory:sources -->"
 
 
 def build_save_memory_tool(
@@ -35,7 +37,7 @@ def build_save_memory_tool(
         if not isinstance(markdown, str) or not markdown.strip():
             raise ValueError("markdown must be nonempty text")
         sources = _normalize_sources(history, data.get("sources"))
-        content = markdown.rstrip() + "\n\n## Sources\n" + "\n".join(sources) + "\n"
+        content = _with_sources_footer(markdown, sources)
         if len(content.encode("utf-8")) > _MAX_FILE_BYTES:
             raise ValueError("Memory exceeds the ordinary text-file size limit")
         expected = data.get("expected_content")
@@ -69,6 +71,7 @@ def build_save_memory_tool(
             "Save a workspace Memory Markdown file with explicit history sources. "
             "This validates references, not your conclusions. No model calls are made "
             "inside this tool. To replace a file, read it and supply exact expected_content."
+            " Full markdown may include the reserved source footer; it will be replaced."
         ),
         input_hint=(
             'JSON: {"path":".cade/memory/timeout.md","markdown":"# ...",'
@@ -103,7 +106,8 @@ def build_save_memory_tool(
             (
                 "Memory lives in .cade/memory/. Do not scan or read it by default. "
                 "For explicit history needs or expensive repeated investigation, use ordinary "
-                "grep/read with that exact directory, then dereference history sources "
+                "bash with rg on that exact directory, then read files and dereference "
+                "history sources "
                 "as needed and check current code/configuration/tests before applying a conclusion."
             ),
             (
@@ -114,6 +118,32 @@ def build_save_memory_tool(
                 "Git HEAD does not describe uncommitted code or prove applicability."
             ),
         ),
+    )
+
+
+def _with_sources_footer(markdown: str, sources: list[str]) -> str:
+    """只替换末尾保留标记内的来源，不解析 Agent 正文。"""
+    body, marker, footer = markdown.partition(_SOURCES_START + "\n")
+    if marker:
+        if (
+            not body.endswith("\n")
+            or _SOURCES_END in body
+            or _SOURCES_START in body + footer
+            or footer.count(_SOURCES_END) != 1
+            or not footer.rstrip().endswith("\n" + _SOURCES_END)
+        ):
+            raise ValueError("Invalid reserved source footer; keep it at the end")
+    elif _SOURCES_START in body or _SOURCES_END in body:
+        raise ValueError("Invalid reserved source footer markers")
+    return (
+        body.rstrip()
+        + "\n\n"
+        + _SOURCES_START
+        + "\n## Sources\n"
+        + "\n".join(sources)
+        + "\n"
+        + _SOURCES_END
+        + "\n"
     )
 
 

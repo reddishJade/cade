@@ -384,7 +384,7 @@ Git 工程中的每个用户 turn 可以建立 pre/post tree snapshot。快照�
 
 ### 6.4 搜索：发现与阅读分工
 
-`grep` 作为普通只读内容搜索在各模式可用，包括显式 Memory 搜索；`glob`、`find`、`ls` 保留为可选目录搜索实现。目录浏览仍可用 `bash` 组合 `rg`、`fd`、`git` 等原生命令。`glob`/`find` 的文件发现优先使用 `fd`，回退到 `rg` 和 Python walk；`grep` 的内容搜索优先使用 `rg`，回退到 Python grep。
+`grep`、`glob`、`find`、`ls` 保留为可选结构化搜索实现，不因 Memory 成为默认工具。默认搜索通过 `bash` 组合 `rg`、`fd`、`git` 等原生命令。`glob`/`find` 的文件发现优先使用 `fd`，回退到 `rg` 和 Python walk；`grep` 的内容搜索优先使用 `rg`，回退到 Python grep。
 
 结果拥有数量上限、长行截断、尾部截断和 metadata。项目文件补全使用最多 5000 个文件与 75 ms 时间预算的短生命周期索引。
 

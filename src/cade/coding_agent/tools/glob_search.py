@@ -178,10 +178,6 @@ def _glob_files(
     fd: str | None,
     rg: str | None,
 ) -> str:
-    if _search_utils.is_explicit_memory_path(root, base):
-        return _glob_with_python(
-            root, base, pattern, max_results, recursive_basename=False
-        )
     if fd:
         try:
             return _glob_with_fd(root, base, pattern, max_results, fd)
@@ -204,10 +200,6 @@ def _find_files(
     if "/" not in normalized:
         normalized = f"**/{normalized}"
 
-    if _search_utils.is_explicit_memory_path(root, base):
-        return _glob_with_python(
-            root, base, normalized, max_results, recursive_basename=True
-        )
     if fd:
         try:
             return _glob_with_fd(root, base, normalized, max_results, fd)

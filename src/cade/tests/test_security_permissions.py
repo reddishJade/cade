@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from cade.agent.types import ApprovalRequest, ToolSpec
 from cade.coding_agent.assembly.security import (
+    permission_policy_from_security,
     sensitive_path_overrides_from_security,
 )
 from cade.coding_agent.execution_modes import build_default_mode_rulesets
@@ -165,6 +166,17 @@ def test_memory_symlink_cannot_redirect_save_into_sessions(tmp_path: Path) -> No
     sessions.mkdir(parents=True)
     (tmp_path / ".cade" / "memory").symlink_to(sessions, target_is_directory=True)
     result = _engine(tmp_path, "build").decide(
+        "save_memory", {"path": ".cade/memory/source.md"}
+    )
+    assert result.decision == "deny"
+
+
+def test_memory_save_obeys_the_existing_edit_permission(tmp_path: Path) -> None:
+    """保存 Memory 不能绕过用户对普通写入能力的明确禁用。"""
+    policy = permission_policy_from_security(
+        SecurityRuntimeConfig.model_validate({"permissions": {"edit": "deny"}})
+    )
+    result = _engine(tmp_path, "build", static_policy=policy).decide(
         "save_memory", {"path": ".cade/memory/source.md"}
     )
     assert result.decision == "deny"

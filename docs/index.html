@@ -779,7 +779,7 @@
           <span><span class="lz">TUI / CLI / Web 三端</span><span class="le">Tri-Workbenches</span></span>
           <span><span class="lz">95% 平滑换窗</span><span class="le">95% Rollover</span></span>
           <span><span class="lz">/undo 无损回滚</span><span class="le">/undo Revert</span></span>
-          <span><span class="lz">持久分层记忆</span><span class="le">Durable Memory</span></span>
+          <span><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></span>
         </div>
       </div>
 
@@ -799,8 +799,8 @@
 
   <div class="marquee" aria-hidden="true">
     <div class="marquee-track">
-      <span>read_file</span><span>write_file</span><span>edit_file</span><span>apply_patch</span><span>glob_files</span><span>find_files</span><span>list_dir</span><span>grep_search</span><span>websearch</span><span>webfetch</span><span>question</span><span>bash</span><span>search_tools</span><span>subagent</span><span>history</span><span>search_memory</span><span>load_skill</span><span>mcp__server__tool</span>
-      <span>read_file</span><span>write_file</span><span>edit_file</span><span>apply_patch</span><span>glob_files</span><span>find_files</span><span>list_dir</span><span>grep_search</span><span>websearch</span><span>webfetch</span><span>question</span><span>bash</span><span>search_tools</span><span>subagent</span><span>history</span><span>search_memory</span><span>load_skill</span><span>mcp__server__tool</span>
+      <span>read_file</span><span>write_file</span><span>edit_file</span><span>apply_patch</span><span>glob_files</span><span>find_files</span><span>list_dir</span><span>grep_search</span><span>websearch</span><span>webfetch</span><span>question</span><span>bash</span><span>search_tools</span><span>subagent</span><span>history</span><span>save_memory</span><span>load_skill</span><span>mcp__server__tool</span>
+      <span>read_file</span><span>write_file</span><span>edit_file</span><span>apply_patch</span><span>glob_files</span><span>find_files</span><span>list_dir</span><span>grep_search</span><span>websearch</span><span>webfetch</span><span>question</span><span>bash</span><span>search_tools</span><span>subagent</span><span>history</span><span>save_memory</span><span>load_skill</span><span>mcp__server__tool</span>
     </div>
   </div>
 
@@ -832,8 +832,8 @@
         </article>
         <article class="feature reveal">
           <span class="feature-num">04</span>
-          <h3><span class="lz">持久化分层记忆系统</span><span class="le">Durable Hierarchical Memory</span></h3>
-          <p><span class="lz">全局个人习惯（~/.cade/memory.md）与项目工程约定（.cade/memory.md）分层持久落盘，跨会话按需自动装配至系统提示词，告别重复背景交代。</span><span class="le">User preferences and repository rules are durably partitioned, automatically assembled into system prompts across sessions without manual re-prompting.</span></p>
+          <h3><span class="lz">按需 Memory</span><span class="le">On-Demand Memory</span></h3>
+          <p><span class="lz">少量昂贵经验保存为 .cade/memory/ 内的可编辑 Markdown。Agent 按需搜索、读取历史来源并核验当前代码，普通 turn 和恢复不加载 Memory。</span><span class="le">A few costly findings live in editable workspace Markdown. Search on demand, follow history sources, and revalidate current code; ordinary turns and resume do not load Memory.</span></p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">05</span>
@@ -949,7 +949,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
         <div class="workflow-card reveal">
           <div class="workflow-icon">◈</div>
           <h3><span class="lz">跨会话长期记忆</span><span class="le">Long-horizon memory</span></h3>
-          <p><span class="lz">项目约定与个人偏好持久化落盘，Agent 在需要时通过 BM25 自主检索，告别多轮对话中重复输入背景。</span><span class="le">Store durable project rules and user preferences; the agent searches memory on-demand without cluttering turn context.</span></p>
+          <p><span class="lz">可复用经验留在 workspace Markdown，使用既有 bash + rg 按需搜索；来源只证明历史存在，使用前仍需核对当前代码。</span><span class="le">Keep reusable findings in workspace Markdown and search with existing bash + rg. Sources establish that history exists; current applicability still needs verification.</span></p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⚡</div>
@@ -1001,7 +1001,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/memory</div>
-          <div class="cmd-desc"><span class="lz">检索或添加长期记忆</span><span class="le">Search or add long-term memory</span></div>
+          <div class="cmd-desc"><span class="lz">显示 Memory 目录位置</span><span class="le">Show the Memory directory</span></div>
         </div>
       </div>
       <p class="cmd-more reveal">
@@ -1086,7 +1086,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
             <span class="le">Cade Official Developer Documentation Hub</span>
           </h3>
           <p>
-            <span class="lz">涵盖系统设计哲学、统一内核架构、无损历史与动态投影 (/undo)、95% 无摘要换窗机制、持久化分层记忆、三端工作台 (TUI/CLI/Web) 以及全套 Slash 指令与配置参考手册。</span>
+            <span class="lz">涵盖系统设计哲学、统一内核架构、无损历史与动态投影 (/undo)、95% 无摘要换窗机制、按需 Memory、三端工作台 (TUI/CLI/Web) 以及全套 Slash 指令与配置参考手册。</span>
             <span class="le">Comprehensive reference covering unified kernel architecture, lossless history & projections (/undo), 95% summary-free context rollover, durable memory, tri-workbenches (TUI/CLI/Web), and full slash commands.</span>
           </p>
           <div class="docs-hero-cta">
@@ -1101,7 +1101,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
           <div class="topic-chip"><span class="chip-dot"></span><span class="lz">设计哲学与核心机制</span><span class="le">Philosophy & Overview</span></div>
           <div class="topic-chip"><span class="chip-dot"></span><span class="lz">无损历史与动态投影</span><span class="le">Lossless History</span></div>
           <div class="topic-chip"><span class="chip-dot"></span><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Rollover</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">持久化分层记忆系统</span><span class="le">Durable Memory</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></div>
           <div class="topic-chip"><span class="chip-dot"></span><span class="lz">TUI / CLI / Web 工作台</span><span class="le">Tri-Workbenches</span></div>
           <div class="topic-chip"><span class="chip-dot"></span><span class="lz">Plan / Build / Act 模式</span><span class="le">Execution Modes</span></div>
           <div class="topic-chip"><span class="chip-dot"></span><span class="lz">MCP 服务与 Skills 扩展</span><span class="le">MCP & Skills</span></div>
