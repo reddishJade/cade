@@ -231,9 +231,6 @@ class AgentHarness:
         """构建 turn 结果。子类可覆盖以注入 current_mode 等。"""
         return build_structured_result(visible_result)
 
-    def _post_run(self, final: AgentHarnessResult) -> None:
-        """turn 完成后的子类钩子。例如记忆反馈。"""
-
     # ── 公共 API ──
 
     @property
@@ -587,7 +584,6 @@ class AgentHarness:
                 else result
             )
             final = self._build_result(visible_result)
-            self._post_run(final)
             yield final_event(
                 result.steps,
                 final,
