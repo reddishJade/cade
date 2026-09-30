@@ -2,9 +2,10 @@
 
 ## Purpose
 
-Memory exists to let one logical coding task survive bounded model windows and
-process restarts. It is not a knowledge-management product and does not assign
-behavioral scores to individual notes.
+Memory preserves durable knowledge across coding sessions, while working notes
+and history let a logical task survive bounded windows and process restarts.
+Experience is a historical hint that requires current repository checks.
+Memory does not assign behavioral scores to individual notes.
 
 ## Storage layers
 
@@ -15,7 +16,8 @@ behavioral scores to individual notes.
 3. **Working note** is project-root `NOTE.md`. It contains the current goal,
    confirmed decisions, verification status, unresolved issues, and next action.
 4. **Project memory** is `MEMORY.md`. It contains only durable project rules,
-   architecture decisions, and verified cross-session facts.
+   architecture decisions, verified cross-session facts, and expensive-to-learn
+   coding experiences with applicability and evidence pointers.
 5. **User memory** is `~/.cade/memory/MEMORY.md`. It contains durable
    cross-project preferences.
 
@@ -30,6 +32,17 @@ of truth when a note needs evidence.
 The system prompt tells the agent where memory lives and when to use it. It does
 not automatically inject search results on every turn. The agent calls the
 read-only `recall` tool when prior project knowledge may matter.
+Experience uses a plain `Type: experience` body convention with Problem, Root
+cause, Fix pattern, Applies when, Anchors, and Evidence. Only complete records
+with a literal anchor in the explicit query participate in search. Scope terms
+cannot bypass this gate. Current repository evidence must be checked before use.
+See [the design audit](experience-memory-design.md) for history and limitations.
+
+There is no dedicated Agent memory-write capability. Ordinary file tools can
+visibly edit MEMORY.md under existing permissions; user CLI CRUD uses the
+manager's lock and atomic replacement. File-tool writes do not acquire that
+manager lock. Tool calls continue the Agent loop, so a standalone memory write
+can add a visible provider round trip. No memory background inference runs.
 
 ### Rollover
 
@@ -37,8 +50,9 @@ Cade uses the provider profile's `context_window` override when present;
 otherwise it reads the active model's registered context window. Automatic
 rollover begins at 95% or at the output-reserve boundary, whichever comes
 first. The old window is closed without a summary. Startup context, activated
-skills, and the latest real user request form the new working set. The full
-assistant/tool trajectory is released even inside a running task. At 80% of
+skills, and the latest real user request form the new working set. Protected
+state and a bounded recent complete interaction may also be retained; older
+assistant/tool evidence remains retrievable from history. At 80% of
 the rollover budget, provider usage triggers a reminder to save NOTE.md;
 missing notes do not block model-requested or automatic rollover. The typed event
 records the replacement, source entry IDs, a monotonic generation, and a stable
@@ -58,6 +72,10 @@ latest durable context-window replacement
 The latest final event already contains the structured coding run state. Resume
 restores its execution mode and goal after rebuilding message history.
 Older exact evidence remains available through `history` list/search/read/around.
+The overview excludes every explicitly marked Experience, including incomplete
+ones. Explicit recall results remain disposable tool evidence under the existing
+ContextPolicy budget; full results remain in history even when request previews
+are cropped. The current history tool reads only the bound session branch.
 
 ## Invariants
 
@@ -65,7 +83,8 @@ Older exact evidence remains available through `history` list/search/read/around
 - Surface replacements are isolated by session branch.
 - Resume never drops the verbatim transcript tail.
 - Memory search is deterministic BM25 over project and user files.
-- Writes are explicit and atomically replace the target file.
+- Manager CRUD writes are explicit and atomically replace the target file;
+  ordinary file tools retain their existing write semantics.
 - Existing governance metadata is ignored; retired legacy records stay excluded.
 
 ## Explicit non-goals

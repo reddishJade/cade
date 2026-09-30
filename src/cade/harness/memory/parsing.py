@@ -54,6 +54,46 @@ class MemoryRecord:
         return f"{self.title}\n{self.body}"
 
 
+def is_experience(record: MemoryRecord) -> bool:
+    """正文中的显式类型只控制经验准入，不恢复旧 metadata 模型。"""
+    return re.search(r"(?mi)^Type:[ \t]*experience[ \t]*$", record.body) is not None
+
+
+def experience_matches(record: MemoryRecord, query: str) -> bool:
+    """要求完整经验正文及原始查询中的 literal anchor；不把词重叠当适用性。"""
+    matches = list(
+        re.finditer(
+            r"(?mi)^(Type|Problem|Root cause|Fix pattern|Applies when|Anchors|Evidence):"
+            r"[ \t]*(.*)$",
+            record.body,
+        )
+    )
+    fields: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        key = match.group(1).casefold()
+        end = (
+            matches[index + 1].start() if index + 1 < len(matches) else len(record.body)
+        )
+        value = record.body[match.start(2) : end].strip()
+        if key in fields or not value:
+            return False
+        fields[key] = value
+    if len(fields) != 7 or fields["type"].casefold() != "experience":
+        return False
+    if "\n" in fields["anchors"]:
+        return False
+    anchors = (part.strip().strip("`") for part in fields["anchors"].split(";"))
+    return any(
+        anchor
+        and re.search(
+            rf"(?<![\w./:-]){re.escape(anchor.casefold())}(?![\w./:-])",
+            query.casefold(),
+        )
+        is not None
+        for anchor in anchors
+    )
+
+
 def parse_memory_blocks(text: str, *, layer: str) -> list[MemoryRecord]:
     """把 Markdown 中的 H2 节解析为独立记录。"""
     matches = list(re.finditer(r"(?m)^##[ \t]+(.+?)[ \t]*$", text))

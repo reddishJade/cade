@@ -1,7 +1,8 @@
 """面向长任务的最小持久记忆。
 
-MEMORY.md 是唯一事实源。检索只使用确定性的 BM25；会话连续性由
-session surface 负责，不在长期记忆中维护反馈、效用或生命周期状态。
+MEMORY.md 是持久记忆的事实载体，当前代码事实以仓库为准。
+检索使用确定性的 BM25；会话连续性由 session surface 负责，
+不在长期记忆中维护反馈、效用或生命周期状态。
 """
 
 from __future__ import annotations
@@ -17,7 +18,13 @@ from typing import Literal
 import filelock
 from rank_bm25 import BM25Okapi
 
-from .parsing import MemoryRecord, parse_memory_blocks, tokenize
+from .parsing import (
+    MemoryRecord,
+    experience_matches,
+    is_experience,
+    parse_memory_blocks,
+    tokenize,
+)
 
 type MemoryLayer = Literal["project", "user"]
 type MemoryLayerFilter = Literal["all", "project", "user"]
@@ -110,6 +117,8 @@ class MemoryManager:
             raw_scores,
             strict=True,
         ):
+            if is_experience(record) and not experience_matches(record, normalized):
+                continue
             exact = lowered in record.search_text.casefold()
             overlap = len(set(query_tokens).intersection(document_tokens))
             if not exact and overlap == 0:
@@ -140,6 +149,8 @@ class MemoryManager:
         selected: list[str] = []
         remaining = max_tokens
         for record in self.read_memory_records(layer):
+            if is_experience(record):
+                continue
             packet = self.render_prompt_packet(record)
             cost = estimate_tokens(packet)
             if cost > remaining:
@@ -272,9 +283,16 @@ class MemoryManager:
     def render_search_result(self, record: MemoryRecord) -> str:
         """渲染 memory 工具结果。"""
         path = self._memory_file(record.layer)
+        caution = (
+            "Historical experience, not current repository truth. Revalidate anchors "
+            "and applicability on the current branch before using the fix pattern.\n"
+            if is_experience(record)
+            else ""
+        )
         return (
             f"[{record.layer}] {record.title} "
-            f"(score={record.score:.3f}, path={path})\n{record.block.strip()}"
+            f"(score={record.score:.3f}, path={path})\n"
+            f"{caution}{record.block.strip()}"
         )
 
     def _memory_file(self, layer: MemoryLayer | str) -> Path:

@@ -1,37 +1,64 @@
-# 长期记忆（Memory）系统
+# 长期记忆（Memory）
 
-为了避免在每次新会话中重复向 Agent 交代团队约定或代码偏好，Cade 提供了三层长期记忆机制。它能够跨越不同会话，持久化记住架构决策、技术栈约束与编码偏好。
+Cade 将跨会话知识保存为可检查、可编辑的 Markdown。当前任务进度和下一步
+属于根目录 `NOTE.md`；完整对话和工具事实属于 append-only Session/Event History。
 
----
+| Scope | 文件 | 内容 |
+| --- | --- | --- |
+| project | `<项目根目录>/MEMORY.md` | 项目规则、带理由的架构决策、验证过的跨会话事实和昂贵调查经验 |
+| user | `~/.cade/memory/MEMORY.md` | 跨项目个人偏好与约束 |
 
-## 1. 记忆的三层架构
+H2 标题开始一条记录。同一知识保留一个 authoritative copy。
 
-| 层级 | 作用范围 | 存储位置 | 适用内容 |
-| :--- | :--- | :--- | :--- |
-| **Global 记忆** | 用户跨项目全局生效 | `~/.config/cade/memory.md` | 个人习惯（如“使用中文写注释”、“倾向使用函数式编程”） |
-| **Project 记忆** | 当前代码仓库全体成员生效 | `<项目根目录>/.cade/memory.md` | 项目专属约束（如“数据库只用 PostgreSQL”、“所有导出接口需加类型校验”） |
-| **Session 记忆** | 仅在当前会话生命周期内生效 | 内存与当前 Session JSONL | 本轮任务的临时上下文决策 |
+## 读取与写入
 
----
+正常 turn 不自动加载 top-k。Agent 在具体历史约束或重复调查可能有帮助时显式
+调用只读 `recall`；检索是本地确定性 BM25，没有 embedding 或 provider 调用。
+resume 首轮在独立预算中加载普通 durable records，Experience 始终按需读取。
+所有内容仍受整体 ContextPolicy 输入和工具证据预算约束。
 
-## 2. 记忆的注入与检索
+用户可直接编辑文件或使用 CLI：
 
-- **关键摘要常驻**：每次对话发起前，Cade 会自动将项目记忆的核心条目提取作为上下文前置补充注入系统 Prompt；
-- **语义搜索召回**：当用户提出的问题涉及特定的历史决策时，Agent 会利用 BM25 或向量语义检索主动从记忆库中召回最匹配的历史偏好。
-
----
-
-## 3. 记忆管理命令
-
-在终端中，你可以通过 `/memory` 命令快速增删改查：
-
-```bash
-/memory list            # 查看当前项目和全局已记住的所有规则与偏好
-/memory add [内容]      # 追加一条新的记忆条目（自动写入 .cade/memory.md）
-/memory search [关键词] # 检索记忆库中与特定技术或模块相关的历史记录
-```
-例如：
 ```text
-> /memory add 本项目所有新加的 API 接口必须通过 pydantic 进行入参强校验
-已将新规则持久化至项目记忆。
+/memory list [all|project|user]
+/memory search <query>
+/memory add [project|user] <title> | <durable note>
+/memory update [project|user] <title> | <durable note>
+/memory delete [project|user] <title>
 ```
+
+CLI 条目 CRUD 带文件锁并原子更新；外部编辑会使检索索引失效。Agent 没有专用
+memory_write，复用普通 write/edit/patch：沿现有权限、执行模式和 diff 呈现路径，
+不会获得额外外部目录写权限。一次独立工具写入通常还需要后续可见模型轮次，
+没有后台提取、recap 或 consolidation。
+
+## Experience 的正文约定
+
+只记录昂贵调查后验证过、能指导其他任务的经验，保留因果和适用边界。
+不要复制 transcript、代码变更总结、目录地图或当前待办。
+
+```markdown
+## 具体问题的可复用经验
+Type: experience
+Problem: 问题类别和可识别症状。
+Root cause: 验证得到的真正根因。
+Fix pattern: 已验证有效的处理原则，保留必要的因果细节。
+Applies when: 当前实现必须满足的条件，以及不适用的边界。
+Anchors: src/example.py; affected_symbol; exact error signature
+Evidence: commit:<真实 SHA>; test:<实际命令和结果>
+```
+
+也可使用真实 session/event 或 tool-call 指针；不要编造来源 ID。当前 `history`
+工具只查询绑定 session 的 branch，跨 session 指针暂不能直接通过它读取。
+
+使用无 bullet 的标签，正文可续行，Anchors 单行且用分号分隔 literal。
+只有标签完整、非空、不重复，并且 recall 的原始 query 含完整 anchor 时，经验
+才参与排序；scope 补词不能绕过这一限制。优先 `limit=1`。宽泛词重叠、字段齐全
+和检索 score 都不能证明质量或当前适用性。
+
+经验是历史线索。采用之前读当前分支文件、检查 symbol 和适用条件，必要时
+重跑针对性验证；当前代码、git 和测试优先。结果被预算裁剪时，先读取完整记录。
+不匹配就拒绝；失效记录显式更新或删除。没有 confidence、TTL、自动 stale
+状态、使用计数或自动 Skill promotion。
+
+设计和历史依据见 [Experience 设计审查](../experience-memory-design.md)。

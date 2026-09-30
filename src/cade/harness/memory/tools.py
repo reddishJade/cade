@@ -43,7 +43,10 @@ def build_memory_tools(manager: MemoryManager) -> tuple[ToolSpec, ...]:
             name="recall",
             description=(
                 "Search durable project and user memory for prior rules, "
-                "architecture decisions, verified facts, and reusable solutions."
+                "architecture decisions, verified facts, and coding experiences. "
+                "For experiences, include a concrete file, symbol, or error anchor "
+                "in query; a broad topic or scope alone is insufficient. "
+                "Experiences are historical hints requiring current-code validation."
             ),
             input_hint=(
                 'JSON: {"query": "provider timeout", "limit": 3, '
@@ -72,7 +75,10 @@ def build_memory_tools(manager: MemoryManager) -> tuple[ToolSpec, ...]:
             },
             prompt_snippet=(
                 "Use recall before asking the user to repeat prior "
-                "project decisions or constraints."
+                "project decisions or constraints, or when a concrete anchor suggests "
+                "repeating an expensive investigation. Prefer limit=1 for experience. "
+                "If a result is omitted or truncated, retrieve the complete record "
+                "before using it."
             ),
         ),
     )

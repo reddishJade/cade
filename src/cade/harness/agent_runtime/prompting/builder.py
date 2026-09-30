@@ -314,14 +314,38 @@ def render_memory_protocol(manager: MemoryManager) -> str:
             "The lossless session transcript is the source of truth for exact history.",
             f"Project memory: {manager.memory_file}",
             f"User memory: {manager.user_memory_file}",
-            "Use search_memory before asking the user to repeat prior decisions.",
+            "Use recall before asking the user to repeat prior decisions.",
             (
                 "Use history list_windows/search/read/around for exact details from "
                 "older context windows."
             ),
             (
-                "Only persist durable user rules, architecture decisions, and verified "
-                "cross-session facts. Do not store current task progress here."
+                "Persist durable user rules, decisions with rationale, verified facts, "
+                "or coding experience that was expensive to learn. Keep one "
+                "authoritative copy: project experience in project memory, "
+                "cross-project personal preferences in user memory. Current task "
+                "progress belongs in NOTE.md; exact trajectories belong in history."
+            ),
+            (
+                "Recall experience only when a concrete file, symbol, or error suggests "
+                "prior investigation may help; do not search on every task by default. "
+                "Experience is a historical hint: current files, git and tests take "
+                "precedence. Check anchors and applicability on the current branch "
+                "before adopting a fix. Reject a mismatching experience. If the "
+                "result was truncated, read the complete record before using it."
+            ),
+            (
+                "After verifying an expensive root cause and fix, you may visibly "
+                "save a reusable lesson using ordinary write/edit tools under their "
+                "existing permissions. Explain what is being saved. Use one H2 block "
+                "with plain labels: Type: experience, Problem:, Root cause:, "
+                "Fix pattern:, Applies when:, Anchors:, Evidence:. Put concrete "
+                "literal anchors on one line, separated by semicolons. Include real "
+                "commit or session/event pointers and the validation command/result; "
+                "never invent evidence IDs. Preserve causal detail and boundaries, "
+                "without transcripts, slogans, cheap code facts or task summaries. "
+                "Update or delete an invalid record explicitly. Do not automatically "
+                "promote experience into a skill."
             ),
             "</long-horizon-memory>",
         )

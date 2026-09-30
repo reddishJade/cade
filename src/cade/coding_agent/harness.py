@@ -50,7 +50,9 @@ class CodingAgentHarness(AgentHarness):
         runtime: CodingAgentRuntimeConfig,
     ) -> None:
         self._coding_runtime = runtime
-        self._mode = ExecutionModeState(initial_mode=runtime.initial_mode)
+        self._mode = ExecutionModeState(
+            initial_mode=runtime.initial_mode, approval_router=runtime.approval_router
+        )
         self._memory_manager = runtime.memory_manager
         self._session_history = runtime.session_history
         self._goal_session_id = runtime.gate.session_id

@@ -1,44 +1,36 @@
-# Cade Harness Memory — 长期事实与分层记忆系统
+# Cade Harness Memory
 
-本目录负责跨会话的长期事实记忆管理，专注于解决：**如何在长周期、多会话的研发过程中，低成本沉淀并按需检索跨会话的架构决策与用户偏好，同时防止无脑盲注导致 Token 膨胀。**
+本目录管理透明、可编辑的跨会话 Markdown 知识：项目规则、架构决策、个人偏好、
+验证过的事实，以及昂贵调查得到的 coding experience。
 
----
+| 层 | 事实载体 | 职责 |
+| --- | --- | --- |
+| 项目 Memory | `./MEMORY.md` | 项目 durable knowledge 和 Experience |
+| 用户 Memory | `~/.cade/memory/MEMORY.md` | 跨项目个人偏好与约束 |
+| 工作状态 | `./NOTE.md` | 当前任务 frontier/checkpoint |
+| Session/Event History | append-only session tree | 完整对话和工具事实 |
 
-## 1. 核心架构与记忆分层
+## 数据流
 
-Cade 建立了清晰的记忆层级体系，严格区分长期稳定事实与短期执行状态：
+正常任务验证根因与修复 → 可见普通文件写入 → H2 Markdown record → 显式
+`recall` → 普通工具结果 → ContextPolicy 证据预算 → 使用前检查当前代码。
 
-```
-    [项目级记忆]                      [用户级记忆]
-  ./MEMORY.md                      ~/.cade/memory/
-(项目架构、技术栈规范)             (全局个人偏好、编码习惯)
-        │                                 │
-        └────────────────┬────────────────┘
-                         ▼
-                MemoryManager (BM25 索引)
-                         │
-        ┌────────────────┴────────────────┐
-        ▼                                 ▼
-build_memory_block()             recall 工具
-(仅在 Resume/Rebuild 时注入)      (Agent 运行期只读按需检索)
-```
+- [manager.py](manager.py)：两个 scope、确定性 BM25、文件签名/index invalidation，
+  CLI CRUD 使用文件锁和原子更新。普通文件工具保留自己的写入语义。
+- [parsing.py](parsing.py)：H2 记录和最小 Experience 正文约定；不扩展 MemoryRecord。
+- [tools.py](tools.py)：只读 recall，没有写入或 provider 副作用。
 
-### 核心设计原则
-1. **长期记忆 vs 短期状态**：
-   - `MEMORY.md` 仅沉淀经过验证的架构决策、用户规则与稳定事实；
-   - 正在执行的当前进度与下一步动作必须由项目根目录的 `NOTE.md` 记录；
-   - 历史事件的唯一精确事实源是 `session` 的追加写事件账本。
-2. **低频按需检索**：
-   - 运行时**不会在每轮交互中自动盲注检索结果**；仅在显式调用 `recall` 工具，或在会话重建（resume/rebuild）时才按独立 Token 预算注入关键上下文。
+Experience 使用 `Type: experience` 和六项非空正文标签：Problem、Root cause、
+Fix pattern、Applies when、Anchors、Evidence。只有原始 query 命中完整 literal
+anchor 才参与排序。字段完整不代表真实或适用；当前文件、git 和测试优先。
 
-### 核心文件与职责
-- **记忆管理 ([manager.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/manager.py))**：`MemoryManager` 维护基于 BM25 的本地倒排索引，管理项目层（`MemoryLayer.PROJECT`）与用户层（`MemoryLayer.USER`）的隔离。
-- **条目解析 ([parsing.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/parsing.py))**：将 Markdown 文档中的标题、列表与元数据解析为结构化的 `MemoryRecord`。
-- **工具生成 ([tools.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/tools.py))**：构建只读、并发安全的 `recall` 工具。
+正常 turn 不自动 top-k 注入。resume 在独立预算中加载普通 durable records，
+排除 Experience；已经存在于原始历史的经验仍按既有历史恢复。完整 recall 输出
+保存在事实历史，请求中的预览由共享 ContextPolicy 控制。
 
----
+不创建 episodic store、candidate 目录、状态机、使用计数、embedding、reranker、
+后台提取或 consolidation；不自动把经验晋升为 Skill。
 
-## 2. 架构不变量与设计禁忌
-
-- **纯文本透明化**：记忆数据完全以人类可读可编辑的 Markdown 文件存在，严禁使用专有二进制格式阻碍用户审查。
-- **只读并发安全**：`recall` 工具必须声明为只读且并发安全，不得产生写操作副作用。
+详见 [设计审查](../../../../docs/experience-memory-design.md)、
+[架构](../../../../docs/memory-architecture.md) 和
+[使用指南](../../../../docs/guide/memory.md)。
