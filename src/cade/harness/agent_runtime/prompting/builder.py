@@ -314,14 +314,24 @@ def render_memory_protocol(manager: MemoryManager) -> str:
             "The lossless session transcript is the source of truth for exact history.",
             f"Project memory: {manager.memory_file}",
             f"User memory: {manager.user_memory_file}",
-            "Use search_memory before asking the user to repeat prior decisions.",
             (
-                "Use history list_windows/search/read/around for exact details from "
-                "older context windows."
+                "Memory is a historical hint, never current truth: files, git and "
+                "tests outrank it. Recall with anchor=<path> before changing a file "
+                "that may have bitten this project before, and use recall before "
+                "asking the user to repeat prior decisions."
             ),
             (
-                "Only persist durable user rules, architecture decisions, and verified "
-                "cross-session facts. Do not store current task progress here."
+                "After a fix that cost real investigation, call remember in the same "
+                "assistant message as your verification step. Never store progress, "
+                "guesses, transcript, or confidence/status bookkeeping."
+            ),
+            (
+                "Use history list_windows/search/read/around for exact details from "
+                "older context windows, and quote its message_id in evidence."
+            ),
+            (
+                "Persist only durable user rules, architecture decisions, verified "
+                "facts, and reusable experiences."
             ),
             "</long-horizon-memory>",
         )
@@ -332,14 +342,18 @@ def render_memory_overview(
     manager: MemoryManager,
     max_tokens: int = 6000,
 ) -> str:
-    """渲染预算控制的记忆概览，用于恢复会话时注入。"""
+    """渲染预算控制的记忆概览，用于恢复会话时注入。
+
+    Experience 只交付指针，正文留给显式 recall，避免历史经验挤占恢复预算。
+    """
     packets = manager.read_budgeted(max_tokens=max_tokens, layer="all")
     if not packets:
         return ""
     lines = [
         "<memory-overview>",
         "Cross-session project memory. These are prior learnings and decisions",
-        "from previous sessions. Treat them as background context.",
+        "from previous sessions; bounded entries are pointers, not full records.",
+        "Treat them as background context and verify against the repository.",
     ]
     lines.extend(packets)
     lines.append("</memory-overview>")

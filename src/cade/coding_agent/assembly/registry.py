@@ -106,10 +106,14 @@ def _extend_registry_with_features(
 
     from cade.harness.memory import MemoryManager, build_memory_tools
 
-    if memory_manager is not None:
-        registry += build_memory_tools(memory_manager)
-    else:
-        registry += build_memory_tools(MemoryManager(project_root))
+    if memory_manager is None:
+        memory_manager = MemoryManager(project_root)
+    session_id_provider = (
+        (lambda: session_history.session_id) if session_history is not None else None
+    )
+    registry += build_memory_tools(
+        memory_manager, session_id_provider=session_id_provider
+    )
     if session_history is not None:
         from cade.harness.session import build_history_tools
 

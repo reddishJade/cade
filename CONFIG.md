@@ -424,7 +424,7 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 
 项目工具实现注册为 `read`、`write`、`edit`、`patch`、`glob`、`find`、
 `ls`、`grep`、`websearch`、`webfetch`、`question`、`bash`。运行时按功能
-追加 `delegate`、`recall`、`history`、`rollover`；发现 skill 时注册
+追加 `delegate`、`recall`、`remember`、`history`、`rollover`；发现 skill 时注册
 `load_skill`；MCP 使用 `mcp_tool_search` 延迟发现并注册
 `mcp__{server}__{tool}` 动态工具。Build/Act 默认不向模型暴露
 `grep/glob/find/ls`，日常代码搜索交给 `bash` 组合 `rg/fd/git` 等原生命令。
@@ -435,9 +435,17 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 `html` 输出格式，自动解压 gzip/deflate，最多读取 5MB，并在截断时标记结果。
 运行时不会按每轮用户问题自动检索 Memory。Agent 通过 `recall` 按需合并
 检索项目根 `MEMORY.md` 与 `~/.cade/memory/MEMORY.md`；resume/rebuild 才会在
-独立预算内注入相关记忆。
-`recall` 的 schema 接受必填 `query`，以及可选 `limit`（1-10）、
-`scope` 和 `layer`（`all` / `project` / `user`）；工具标记为只读。
+独立预算内注入记忆概览，其中经验只注入指针行。
+`recall` 的 schema 接受可选 `query` 与 `anchor`（至少提供其一），以及
+`limit`（1-10）、`scope` 和 `layer`（`all` / `project` / `user`）；带 `anchor`
+时只返回声明了该仓库相对路径锚点的经验；工具标记为只读。
+`remember` 写入一条经验，必填 `title`、`root_cause`、`fix`、`applies_when`、
+`anchors`，可选 `evidence` 与 `layer`（`project` / `user`）；`commit` 与
+`session` 由工具盖章。缺字段、锚点路径不存在或携带退休治理字段的记录会被拒绝。
+Plan 模式不暴露 `remember`，Build 允许，Act 需要审批。
+每轮最多注入一个 `LOW` 优先级 `<memory-hints>` 指针块（最多 3 行），
+仅当经验的文件/目录锚点与本 session 读写过的文件相交，或 `err=` 签名在
+最近的失败输出/用户消息中原样出现时才会出现。
 MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺少这些
 协商元数据的旧缓存会自动重新发现。
 

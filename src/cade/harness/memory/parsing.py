@@ -18,7 +18,8 @@ _LEGACY_METADATA = {
     "status",
     "validity",
     "supersedes",
-    "evidence",
+    # `evidence` 不在此列：Experience 记录把溯源指针放在这一行，
+    # 继续剥离会让写下的证据在解析阶段静默消失。
     "retrieval-count",
     "injection-count",
     "reference-count",
@@ -36,6 +37,7 @@ _RETIRED_LEGACY_STATUSES = {
     "superseded",
     "obsolete",
 }
+_FIELD_LINE = re.compile(r"^[ \t]*-?[ \t]*([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,23 @@ def _strip_legacy_metadata(body: str) -> str:
             continue
         lines.append(line.rstrip())
     return "\n".join(lines).strip()
+
+
+def field_lines(body: str) -> dict[str, str]:
+    """读取正文里的 `key: value` 字段行，兼容 `- key: value` 写法。
+
+    只做语法读取，不判断字段含义：普通记录里的散文行不会因此改变行为。
+    """
+    fields: dict[str, str] = {}
+    for line in body.splitlines():
+        match = _FIELD_LINE.match(line)
+        if match is None:
+            continue
+        key = match.group(1).strip().casefold()
+        value = match.group(2).strip()
+        if key and value and key not in fields:
+            fields[key] = value
+    return fields
 
 
 def tokenize(text: str) -> list[str]:
