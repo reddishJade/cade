@@ -23,6 +23,9 @@
 
 ## Task Scope & Completion
 
+Follow [HUMAN.md](HUMAN.md) for communication, decision checkpoints, and handoffs
+with the maintainer.
+
 Read code and documentation relevant to the change; expand context when a
 dependency or uncertainty warrants it. Routine edits do not require a full
 repository review or external design research.
