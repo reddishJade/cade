@@ -69,6 +69,17 @@ _MODELS: dict[str, dict[str, Model]] = {
             cost=Cost(input=2, output=10, cache_read=0.20),
             reasoning_efforts=GPT_6_REASONING_EFFORTS,
         ),
+        "gpt-6.1-sol": Model(
+            id="gpt-6.1-sol",
+            name="GPT-6.1 Sol",
+            api="openai-responses",
+            provider="openai",
+            reasoning=True,
+            context_window=1_050_000,
+            max_tokens=128_000,
+            cost=Cost(input=2, output=10, cache_read=0.10),
+            reasoning_efforts=GPT_6_REASONING_EFFORTS,
+        ),
         "gpt-6-luna": Model(
             id="gpt-6-luna",
             name="GPT-6 Luna",
@@ -242,6 +253,7 @@ _TRANSPORT_CONTEXT_WINDOWS: Final[dict[str, dict[str, int]]] = {
     "openai_codex": {
         "gpt-6-astra": 272_000,
         "gpt-6-sol": 272_000,
+        "gpt-6.1-sol": 272_000,
         "gpt-6-luna": 272_000,
         "gpt-5.6-sol": 272_000,
         "gpt-5.6-terra": 272_000,
