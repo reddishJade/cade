@@ -91,7 +91,6 @@ from .state import (
 from .widgets import (
     TuiCompletionControl,
     TuiInputLexer,
-    TuiOutputControl,
     TuiPromptSession,
     tui_input_prompt,
 )
@@ -221,7 +220,7 @@ class _CadeTui:
         self._agent_event_drain_scheduled = False
 
         # ── UI 组件 ──
-        self._output_control = TuiOutputControl(self._scroll_by)
+        self._output_control = FormattedTextControl(text="", focusable=False)
         self._output = Window(
             self._output_control,
             wrap_lines=True,
@@ -405,7 +404,8 @@ class _CadeTui:
             key_bindings=self._bindings(),
             full_screen=False,
             erase_when_done=True,
-            mouse_support=Condition(self._should_capture_mouse),
+            # 保留终端原生的鼠标选择、复制和右键行为；历史使用键盘翻页。
+            mouse_support=False,
             enable_page_navigation_bindings=False,
             before_render=lambda _app: self._prepare_frame(),
             style=Style.from_dict(TUI_STYLES),
@@ -1861,10 +1861,6 @@ class _CadeTui:
         return max(
             0, self._state.line_count(self._output_width()) - self._output_height()
         )
-
-    def _should_capture_mouse(self) -> bool:
-        """仅在 TUI 仍有可滚动历史时捕获滚轮。"""
-        return self._scrollback < self._max_scrollback()
 
     def _scroll_by(self, amount: int) -> None:
         self._scrollback = max(
