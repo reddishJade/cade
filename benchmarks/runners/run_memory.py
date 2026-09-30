@@ -1,11 +1,14 @@
 """三臂记忆经验评测：none / relevant / irrelevant。
 
 每个任务都在隔离工作区中运行三次：不注入 `MEMORY.md`、注入与 fixture 故障
-相关的经验记录、注入锚定在另一个文件上的无关记录。种子文件在确定性初始
-提交之前写入，因此基线工作区始终干净，`git diff HEAD` 只反映本次会话的改动。
-relevant 臂的记录用 `{commit}` 占位，运行器把它解析为基线提交并追加一个
-确定性提交，使真实提示读出 `state=unchanged`；irrelevant 臂保留不可解析的
-陈旧提交，读出 `state=unknown`。
+相关的经验记录、注入锚定在另一个文件上的无关诱饵加一条陈旧记录。种子文件在
+确定性初始提交之前写入，因此基线工作区始终干净，`git diff HEAD` 只反映本次
+会话的改动。
+
+新鲜度来自内容快照而不是 git commit：relevant 臂用 `{anchor_state}` 占位，
+运行器按锚点文件的实际内容解析，提示读出 `state=unchanged`；irrelevant 臂的
+陈旧记录带一个不匹配的摘要，读出 `state=changed`（记录确实会触发，这正是负
+迁移要测的情形）。
 """
 
 from __future__ import annotations
@@ -41,7 +44,6 @@ from benchmarks.runners._long_horizon import (
     RunOptions,
     _benchmark_runtime_config,
     _build_benchmark_app,
-    _commit_workspace,
     _prepare_workspace,
     _repeated_read_calls,
     _run_git,
@@ -55,15 +57,16 @@ from benchmarks.runners.progress import (
 )
 from cade.ai.events import Message
 from cade.harness.config import CadeRuntimeConfig
-from cade.harness.memory import MemoryManager, select_hints
-from cade.harness.memory.experience import render_hint_line
+from cade.harness.memory import MemoryManager, anchor_snapshot, select_hints
+from cade.harness.memory.experience import parse_experience, render_hint_line
+from cade.harness.memory.parsing import parse_memory_blocks
 from cade.harness.session import SessionStore
 
 Arm = Literal["none", "relevant", "irrelevant"]
 
 ARMS: tuple[Arm, ...] = ("none", "relevant", "irrelevant")
 MEMORY_FILE = Path("MEMORY.md")
-_COMMIT_PLACEHOLDER = "{commit}"
+_SNAPSHOT_PLACEHOLDER = "{anchor_state}"
 _MEMORY_BLOCK_MARKER = "<memory-hints"
 _READ_TOOLS = frozenset({"read", "read_file"})
 _WRITE_TOOLS = frozenset({"write", "edit"})
@@ -205,9 +208,8 @@ def run_memory_attempt(
         task.workspace,
         workspace,
         {MEMORY_FILE: seed_source} if seed_source is not None else None,
+        _resolve_memory_snapshot if arm == "relevant" else None,
     )
-    if arm == "relevant":
-        baseline_commit = _resolve_memory_commit(workspace, baseline_commit)
     initial_worktree_clean = not _run_git(workspace, "status", "--porcelain")
     initial_state = capture_initial_state(workspace, task.state_checks)
     memory_before = _file_digest(workspace / MEMORY_FILE)
@@ -402,25 +404,15 @@ def _dry_run(tasks: list[LongHorizonTask], args: argparse.Namespace) -> None:
                 task.workspace,
                 workspace,
                 {MEMORY_FILE: seed_source} if seed_source is not None else None,
+                _resolve_memory_snapshot if arm == "relevant" else None,
             )
-            if arm == "relevant":
-                commit = _resolve_memory_commit(workspace, commit)
             clean = not _run_git(workspace, "status", "--porcelain")
             digest = _file_digest(workspace / MEMORY_FILE)
             hint_state, hint_line = _seeded_hint(workspace, spec.anchor_path)
-            anchor_diff = _run_git(
-                workspace,
-                "diff",
-                "--name-only",
-                commit,
-                "--",
-                spec.anchor_path,
-            )
             print(
                 f"  arm {arm}: seed={seed_source.name if seed_source else 'none'} "
                 f"commit={commit[:12]} worktree_clean={clean} "
                 f"memory_sha256={digest or 'absent'} "
-                f"anchor_diff={anchor_diff or 'empty'} "
                 f"hint_state={hint_state or 'none'}"
             )
             if hint_line:
@@ -445,23 +437,31 @@ def _seed_source(spec: MemoryScenarioSpec, arm: Arm) -> Path | None:
     return None
 
 
-def _resolve_memory_commit(workspace: Path, baseline_commit: str) -> str:
-    """把相关记录中的 `{commit}` 解析为基线提交，并追加确定性提交。
+def _resolve_memory_snapshot(workspace: Path) -> None:
+    """把相关记录里的 `{anchor_state}` 解析为锚点文件的真实内容快照。
 
-    第一个提交（基线）已经包含锚点文件的当前内容，因此记录里的指针保持
-    有效；替换占位符后的内容作为第二个提交，让工作区重新保持干净。
+    快照必须在工作区存在之后才能算，所以占位符由运行器解析；解析只改
+    MEMORY.md 的内容，不追加提交，工作区保持干净。
     """
     memory_path = workspace / MEMORY_FILE
     content = memory_path.read_text(encoding="utf-8")
-    if _COMMIT_PLACEHOLDER not in content:
+    if _SNAPSHOT_PLACEHOLDER not in content:
         raise ValueError(
-            f"relevant seed must contain {_COMMIT_PLACEHOLDER}: {memory_path}"
+            f"relevant seed must contain {_SNAPSHOT_PLACEHOLDER}: {memory_path}"
         )
+    anchors = tuple(
+        anchor.value
+        for record in parse_memory_blocks(content, layer="project")
+        for anchor in parse_experience(record).anchors  # type: ignore[union-attr]
+        if anchor.kind == "file"
+    )
+    snapshot = anchor_snapshot(anchors, workspace)
+    if snapshot is None:
+        raise ValueError(f"anchor snapshot could not be computed: {memory_path}")
     memory_path.write_text(
-        content.replace(_COMMIT_PLACEHOLDER, baseline_commit),
+        content.replace(_SNAPSHOT_PLACEHOLDER, snapshot),
         encoding="utf-8",
     )
-    return _commit_workspace(workspace, "benchmark: resolve memory commit pointer")
 
 
 def _seeded_hint(workspace: Path, anchor_path: str) -> tuple[str | None, str | None]:

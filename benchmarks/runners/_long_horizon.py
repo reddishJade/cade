@@ -326,11 +326,13 @@ def _prepare_workspace(
     source: Path,
     workspace: Path,
     seed_files: Mapping[Path, Path] | None = None,
+    seed_prepare: Callable[[Path], None] | None = None,
 ) -> str:
     """复制 fixture，并创建不受父仓库影响的确定性 Git 基线。
 
     种子文件在初始提交之前写入，因此基线工作区始终是干净的：
-    `git diff HEAD` 不包含实验预置内容。
+    `git diff HEAD` 不包含实验预置内容。`seed_prepare` 在写入种子之后、提交之前
+    运行，用于把只能在真实工作区里算出的内容（例如锚点内容快照）解析进种子。
     """
     shutil.copytree(source, workspace, ignore=shutil.ignore_patterns(".git"))
     for relative_target, seed_source in (seed_files or {}).items():
@@ -341,6 +343,8 @@ def _prepare_workspace(
         target = workspace / relative_target
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(seed_source, target)
+    if seed_prepare is not None:
+        seed_prepare(workspace)
     _run_git(workspace, "init", "--quiet")
     _run_git(workspace, "config", "user.name", "Cade Benchmark")
     _run_git(workspace, "config", "user.email", "benchmark@local.invalid")

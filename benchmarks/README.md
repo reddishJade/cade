@@ -141,22 +141,26 @@ three times against isolated workspace copies:
 - **none** seeds no `MEMORY.md`; this is the no-memory baseline;
 - **relevant** seeds the task's `memory/relevant.md`, an experience that matches
   the fixture failure, as `<workspace>/MEMORY.md`. Its `evidence` line carries a
-  literal `{commit}` placeholder: the runner resolves it to the baseline commit
-  and lands the result in a second deterministic commit, so the anchor file is
-  unchanged against the recorded commit and the hint renders
-  `state=unchanged`;
+  literal `{anchor_state}` placeholder: the runner resolves it to the sha256
+  snapshot of the anchor file's actual content inside the prepared workspace, so
+  the hint renders `state=unchanged`;
 - **irrelevant** seeds the task's `memory/irrelevant.md`: one decoy experience
   anchored on an unrelated subsystem that never fires, plus one stale experience
   that does fire on the task's real anchor but names a wrong root cause and a
-  wrong fix location. Its `commit=deadbeef0` pointer stays unresolvable, so that
-  hint renders `state=unknown` even though it fires.
+  wrong fix location. Its `anchor_state` is a well-formed but non-matching
+  digest, so that hint renders `state=changed` while still firing — the
+  negative-transfer case.
 
-`MEMORY.md` is written before the deterministic Git baseline commit, so the
-fixture starts with a clean `git diff HEAD` and the record itself is part of the
-baseline rather than an uncommitted experiment artifact. The relevant arm adds
-exactly one further deterministic commit for the resolved pointer, so its
-workspace is clean as well. `--dry-run` prints the resolved commit, the anchor
-diff, and the hint state observed through the real hint API for each arm.
+Freshness is content-based, not commit-based: it compares the recorded sha256
+snapshot against the current file bytes, so an uncommitted working tree is
+described correctly and a fixture never needs a synthetic commit history.
+
+`MEMORY.md` is written before the deterministic Git baseline commit, and the
+placeholder is resolved before that commit as well, so every arm starts with a
+clean `git diff HEAD` and the record itself is part of the baseline rather than
+an uncommitted experiment artifact. `--dry-run` prints the resolved commit, the
+worktree cleanliness, and the hint state observed through the real hint API for
+each arm.
 
 Run all tasks of the included fixtures:
 
@@ -215,6 +219,8 @@ warning on stderr; they do not fail the run.
   trusts the stale record edits the wrong file;
 - `remember_calls` counts `remember` tool calls; the report also keeps
   `memory_file_changed` in the raw record so agent-written memory is visible.
+  Arm seeds are hand-authored, so a successful `remember` in any arm is
+  agent-written memory and must not be confused with the seeded record.
 
 Every report row carries its own cohort size, and means are computed only
 across complete task/repeat triplets; raw attempt records are never pooled
