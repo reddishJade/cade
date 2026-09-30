@@ -562,7 +562,7 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 
 技能的 `allowed-tools` 以 advisory 方式披露，权限 bypass 明确保持关闭。项目技能默认等待 `trust_project_skills` 开启，显式目录拥有最高优先级。
 
-### 9.2 记忆承担跨 session 的可复用事实
+### 9.2 记忆承担跨 session 的可复用事实与经验
 
 当前记忆实现使用两个 Markdown 事实文件：项目 `MEMORY.md` 与用户 `~/.cade/memory/MEMORY.md`。每个 H2 section 形成 `MemoryRecord`，记录 layer、title、body 和稳定 memory id。
 
@@ -573,8 +573,15 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 - 项目层在相同条件下优先于用户层。
 - 结果最多返回 10 条。
 - 文件 inode、mtime、size 组成索引签名，变化触发重建。
+- `recall` 额外的 `anchor` 参数按仓库相对路径确定性过滤经验，不参与打分。
 
-记忆写入支持显式 add、update、delete；标题或正文重复被拒绝；文件锁、临时文件、fsync 和 replace 保证原子更新。恢复 session 时可以按最多 6000 token 读取记忆概览；普通 turn 只接收记忆使用协议，模型通过 `recall` 按需检索。session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实和可复用方案。
+经验（Experience）把"昂贵获得的排障知识"结构化，但仍然是历史提示而非当前事实：H2 标题是问题，正文记录 `root_cause`、`fix`、`applies_when`、`anchors` 与 `evidence`；`commit` 与 `session` 由 `remember` 工具机械盖章。所有写入路径共用同一套确定性校验：缺字段、锚点不存在、携带已退休治理字段的记录一律拒绝，校验 gate 的是消费而不是晋升，因此不存在 candidate/quarantine 状态。
+
+记忆读取仍然是渐进披露：普通回合只注入使用协议；每轮最多注入 3 行指针，且只在锚点与本 session 真实读写文件（或失败输出中的原样错误签名）相交时出现，优先级为 LOW，预算紧张时先被丢弃；经验正文必须由显式 `recall` 取回。恢复会话时经验同样只恢复指针，避免历史经验挤占预算。
+
+新鲜度不落盘：`state=unchanged|changed|unknown` 每次读取时用 `git diff --name-only <evidence commit> -- <anchors>` 现算，与验证事实使用同一类"当前仓库对照"思路。
+
+memory 路径上没有任何模型调用：没有 judge、reranker、摘要、embedding 或后台整理。恢复 session 时可以按最多 6000 token 读取记忆概览；session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实与可复用经验。
 
 ### 9.3 MCP 采用延迟发现与运行时快照
 
