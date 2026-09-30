@@ -19,7 +19,7 @@ import platform
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from cade.agent.types import ToolSpec
 from cade.harness.config import DEFAULT_PROMPT_MODULES
@@ -36,9 +36,6 @@ from .identity import (
 )
 from .token_budget import MAX_CWD_ENTRIES
 from .tools import build_tool_guidelines, build_tool_prompt
-
-if TYPE_CHECKING:
-    from cade.harness.memory import MemoryManager
 
 type PromptCacheKey = tuple[object, ...]
 
@@ -252,10 +249,9 @@ def build_runtime_context_provider(
     contextual_state: ContextualRetrievalState | None = None,
     modules: tuple[str, ...] | None = None,
     shell_spec: ShellInfo | None = None,
-    memory_manager: MemoryManager | None = None,
     identity: str = "",
 ) -> Callable[[str], list[str]]:
-    """构建每轮运行时上下文和稳定的长任务记忆协议。"""
+    """构建每轮运行时上下文和当前任务的工作笔记指引。"""
     builder = prompt_builder or SystemPromptBuilder()
     root = project_root.resolve()
 
@@ -281,69 +277,16 @@ def build_runtime_context_provider(
                 )
             )
         ]
-        if memory_manager is not None:
-            parts.append(render_memory_protocol(memory_manager))
+        parts.append(
+            "NOTE.md owns current task state. Keep status, next action, constraints and "
+            "verification evidence first and concise; only its first 4 KiB is injected. "
+            "Update it after meaningful edits/verification and before context rollover. "
+            "On recovery, reconcile it with current code and history, then continue "
+            "unfinished work; a completed task should be reported as complete."
+        )
         return parts
 
     return provide
-
-
-def render_memory_protocol(manager: MemoryManager) -> str:
-    """告诉 Agent 如何使用长期记忆，不在每轮自动塞入检索结果。"""
-    return "\n".join(
-        (
-            "<long-horizon-memory>",
-            "NOTE.md is the explicit working-state index for the current task.",
-            (
-                "Keep its execution frontier first and concise: current status, next "
-                "action, user constraints, completed work, remaining work, and "
-                "verification evidence (commands, results, relevant files). Only the "
-                "first 4 KiB is injected; replace obsolete status instead of appending "
-                "another investigation diary."
-            ),
-            (
-                "Update that frontier after meaningful edits or verification, and "
-                "before further investigation when a context-budget reminder arrives. "
-                "Create a minimal checkpoint before broad investigation; unknown "
-                "progress can be recorded as unknown. "
-                "On recovery, continue the next unfinished action. Reuse verified "
-                "results when relevant files are unchanged; repeat checks only for "
-                "changed code or unresolved uncertainty. If the original task is "
-                "already complete, report completion instead of starting over."
-            ),
-            "The lossless session transcript is the source of truth for exact history.",
-            f"Project memory: {manager.memory_file}",
-            f"User memory: {manager.user_memory_file}",
-            "Use search_memory before asking the user to repeat prior decisions.",
-            (
-                "Use history list_windows/search/read/around for exact details from "
-                "older context windows."
-            ),
-            (
-                "Only persist durable user rules, architecture decisions, and verified "
-                "cross-session facts. Do not store current task progress here."
-            ),
-            "</long-horizon-memory>",
-        )
-    )
-
-
-def render_memory_overview(
-    manager: MemoryManager,
-    max_tokens: int = 6000,
-) -> str:
-    """渲染预算控制的记忆概览，用于恢复会话时注入。"""
-    packets = manager.read_budgeted(max_tokens=max_tokens, layer="all")
-    if not packets:
-        return ""
-    lines = [
-        "<memory-overview>",
-        "Cross-session project memory. These are prior learnings and decisions",
-        "from previous sessions. Treat them as background context.",
-    ]
-    lines.extend(packets)
-    lines.append("</memory-overview>")
-    return "\n".join(lines)
 
 
 def _environment_info(project_root: Path, shell_spec: ShellInfo | None = None) -> str:

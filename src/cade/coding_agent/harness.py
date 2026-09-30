@@ -53,7 +53,6 @@ class CodingAgentHarness(AgentHarness):
         self._mode = ExecutionModeState(
             initial_mode=runtime.initial_mode, approval_router=runtime.approval_router
         )
-        self._memory_manager = runtime.memory_manager
         self._session_history = runtime.session_history
         self._goal_session_id = runtime.gate.session_id
         super().__init__(composition, runtime)
@@ -84,19 +83,11 @@ class CodingAgentHarness(AgentHarness):
         question: str,
         composition: AgentComposition,
     ) -> list[AgentMessage]:
-        memory_overview: str | None = None
-        if self._resumed_notice is not None and self._memory_manager is not None:
-            from cade.harness.agent_runtime.prompting.builder import (
-                render_memory_overview,
-            )
-
-            memory_overview = render_memory_overview(self._memory_manager)
         return build_turn_context_messages(
             question,
             composition,
             self._resumed_notice,
             mode_notice=mode_notice(self._mode.current_mode),
-            memory_overview=memory_overview,
         )
 
     def _build_loop_config_extras(self) -> dict:

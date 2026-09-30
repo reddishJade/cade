@@ -11,12 +11,6 @@ import questionary
 
 from cade.agent.messages import AgentMessage
 from cade.agent.types import ToolSpec
-from cade.harness.memory import (
-    MemoryLayer,
-    MemoryLayerFilter,
-    MemoryManager,
-    build_memory_block,
-)
 from cade.harness.security import (
     FileGrantStore,
     InMemoryGrantStore,
@@ -762,146 +756,12 @@ def cmd_skill(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_memory(cmd: str, ctx: CommandContext) -> bool:
-    """检索、列出或显式维护项目级与用户级记忆。"""
-    manager = MemoryManager(ctx.project_root)
-    parts = cmd.split(maxsplit=2)
-    action = parts[1].lower() if len(parts) >= 2 else "list"
-    payload = parts[2].strip() if len(parts) >= 3 else ""
-
-    if action == "list":
-        return _list_memory(manager, payload)
-    if action == "search":
-        return _search_memory(manager, payload)
-    if action == "add":
-        return _add_memory(manager, payload)
-    if action == "update":
-        return _update_memory(manager, payload)
-    if action == "delete":
-        return _delete_memory(manager, payload)
-
-    print("Usage: /memory list [all|project|user]")
-    print("       /memory search <query>")
-    print("       /memory add [project|user] <title> | <durable note>")
-    print("       /memory update [project|user] <title> | <durable note>")
-    print("       /memory delete [project|user] <title>")
-    print("Example: /memory add project Retry policy | Retry providers at most twice.")
-    return False
-
-
-def _list_memory(manager: MemoryManager, raw_layer: str) -> bool:
-    """列出指定记忆层级中的标题。"""
-    layer = raw_layer.lower() or "all"
-    if layer not in {"all", "project", "user"}:
-        print("Memory layer must be one of: all, project, user.")
-        return False
-
-    records = manager.read_memory_records(layer=cast(MemoryLayerFilter, layer))
-    if not records:
-        print("No memory records found.")
-        return False
-
-    print(f"Memory records ({len(records)}):")
-    for record in records:
-        print(f"  [{record.layer}] {record.title}")
-    return False
-
-
-def _search_memory(manager: MemoryManager, query: str) -> bool:
-    """打印跨层级记忆检索结果。"""
-    if not query:
-        print("Usage: /memory search <query>")
-        return False
-
-    records = manager.search_memory_records(query, limit=5)
-    if not records:
-        print(f"No memory matching {query!r}.")
-        return False
-
-    for record in records:
-        print(f"[{record.layer}] score={record.score:.3f}")
-        print(record.block.strip())
-        print()
-    return False
-
-
-def _add_memory(manager: MemoryManager, payload: str) -> bool:
-    """解析单行 Markdown 记忆并写入指定层级。"""
-    layer, value = _parse_memory_layer(payload)
-
-    title, separator, body = value.partition("|")
-    if not separator:
-        title, body = _split_memory_shorthand(value)
-    if not title.strip() or not body.strip():
-        print("Usage: /memory add [project|user] <title> | <durable note>")
-        return False
-
-    block = build_memory_block(title, body)
-    memory_layer = cast(MemoryLayer, layer)
-    if not manager.add_memory_block(
-        block,
-        layer=memory_layer,
-    ):
-        print(
-            "Memory was rejected because it is empty or duplicates an existing entry."
-        )
-        return False
-
-    memory_file = (
-        manager.memory_file if layer == "project" else manager.user_memory_file
+    """显示本地 Memory 目录，不扫描或载入文件。"""
+    print(f"Memory: {ctx.project_root.resolve() / '.cade' / 'memory'}")
+    print(
+        "Use ordinary read/search or your editor; save_memory records explicit sources."
     )
-    print(f"Added {layer} memory: {title}")
-    print(f"Path: {memory_file}")
     return False
-
-
-def _update_memory(manager: MemoryManager, payload: str) -> bool:
-    """按标题更新一条持久记忆。"""
-    layer, value = _parse_memory_layer(payload)
-    title, separator, body = value.partition("|")
-    if not separator or not title.strip() or not body.strip():
-        print("Usage: /memory update [project|user] <title> | <durable note>")
-        return False
-
-    memory_layer = cast(MemoryLayer, layer)
-    block = build_memory_block(title, body)
-    if not manager.update_memory_block(title, block, layer=memory_layer):
-        print("Memory was not updated because it was missing, empty, or duplicate.")
-        return False
-    print(f"Updated {layer} memory: {title.strip()}")
-    return False
-
-
-def _delete_memory(manager: MemoryManager, payload: str) -> bool:
-    """按标题删除一条持久记忆。"""
-    layer, title = _parse_memory_layer(payload)
-    if not title.strip():
-        print("Usage: /memory delete [project|user] <title>")
-        return False
-    if not manager.delete_memory_block(title, layer=cast(MemoryLayer, layer)):
-        print(f"Memory not found: {title.strip()}")
-        return False
-    print(f"Deleted {layer} memory: {title.strip()}")
-    return False
-
-
-def _parse_memory_layer(payload: str) -> tuple[str, str]:
-    """解析可选的 project/user 层级前缀。"""
-    first, separator, remainder = payload.partition(" ")
-    if separator and first.lower() in {"project", "user"}:
-        return first.lower(), remainder.strip()
-    return "project", payload
-
-
-def _split_memory_shorthand(text: str) -> tuple[str, str]:
-    """将自然语言记忆简写拆成标题和正文。"""
-    for separator in ("：", ":"):
-        title, found, body = text.partition(separator)
-        if found and title.strip() and body.strip():
-            return title.strip(), body.strip()
-    words = text.split(maxsplit=1)
-    if len(words) == 2:
-        return words[0].strip(), words[1].strip()
-    return text.strip(), text.strip()
 
 
 def cmd_exit(cmd: str, ctx: CommandContext) -> bool:
@@ -917,7 +777,6 @@ class _ContextSummary:
     model_name: str
     spent: float
     free: int
-    memory_text: str
     skill_count: int
     instruction_files: list[str]
     skill_source_dirs: list[tuple[str, str]]
@@ -1069,11 +928,6 @@ def _compute_context_summary(
         if tokens := role_counts.get(key, 0):
             categories.append((label, tokens))
 
-    memory_manager = MemoryManager(project_root)
-    memory_text = "\n".join(memory_manager.read_memory_blocks())
-    if memory_text:
-        categories.append(("Memory files", estimate_tokens(memory_text)))
-
     skill_count = 0
     runtime = getattr(agent, "_runtime", None)
     skill_registry = getattr(runtime, "skill_registry", None) if runtime else None
@@ -1172,7 +1026,6 @@ def _compute_context_summary(
         model_name=model_name,
         spent=spent,
         free=free,
-        memory_text=memory_text,
         skill_count=skill_count,
         instruction_files=instruction_files,
         skill_source_dirs=skill_source_dirs,
@@ -1216,14 +1069,6 @@ def cmd_context(cmd: str, ctx: CommandContext) -> bool:
         free_pct = summary.free / summary.context_window * 100
         print(
             f"   □ {'Free space':<18} {_format_token(summary.free):>7} ({free_pct:.1f}%)"
-        )
-
-    if summary.memory_text:
-        block_count = max(1, summary.memory_text.count("## "))
-        print("\n Memory files \u00b7 /memory")
-        print(
-            f" \u2514 {block_count} blocks"
-            f" \u00b7 {_format_token(len(summary.memory_text))} chars"
         )
 
     if summary.instruction_files:
@@ -1680,9 +1525,7 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/memory": CommandEntry(
         handler=cmd_memory,
-        desc="List, search, or add project and user memory.",
-        args_desc="list [all|project|user] | search <query> | add ...",
-        accepts_args=True,
+        desc="Show the local Memory directory.",
         group=COMMAND_GROUP_INFO,
     ),
     "/rename": CommandEntry(

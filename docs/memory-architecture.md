@@ -1,94 +1,28 @@
-# Long-horizon memory architecture
+# Cade Memory vNext 架构
 
-## Purpose
+Memory 是 `.cade/memory/` 内少量可编辑 Markdown 文件，保存昂贵才获得、可能再次
+有用的 workspace 知识。路径用于定位，无独立 ID、索引、manifest 或全局 scope。
 
-Memory exists to let one logical coding task survive bounded model windows and
-process restarts. It is not a knowledge-management product and does not assign
-behavioral scores to individual notes.
+`Event History → 少量持久 Memory → 普通 search/read → 原始 evidence → 当前代码/验证`。
 
-## Storage layers
+- Repository/Git/Tests 判定当前事实；NOTE.md 保存任务状态；Skills 保存方法。
+- `save_memory(path, markdown, sources)` 校验显式引用、限制路径、原子写入及检测冲突。
+  覆盖另带通用文件前置条件 `expected_content`；正文无内容 schema 或字段 gate。
+- Host 只规范化显式来源，并补充与调用天然绑定的信息；省略的 Session ID 绑定当前
+  Session。不会推断哪些测试证明了哪些结论，也不会自动收集 Git/diff/snapshot。
+- History 独立提供同 workspace 内 `session_id + entry_id` 精确读取和祖先邻域，复用
+  artifact/page，不切换 Session/head，不增加全局搜索。
+- `.cade/memory/` 仅保存工具可写，普通 read/search 可显式读取。默认项目搜索排除它，
+  其他 `.cade/**` 和隐藏目录保护保持有效。
+- 正常任务和恢复不读取、扫描或注入 Memory。固定能力指引和工具 schema 是常量成本。
+- Memory 读取是普通 evidence，受 ContextPolicy 约束；失效结论直接编辑文件。
+- Memory 自身不发起模型调用、后台整理或额外推理。保存是普通 Agent tool call，
+  后续正常 Agent loop 按运行时既有语义继续。
 
-1. **Transcript** is the lossless history. Session JSONL keeps user messages,
-   assistant messages, and tool events.
-2. **Session surface** is the disposable model working set. Each rollover
-   appends a typed replacement event without rewriting older entries.
-3. **Working note** is project-root `NOTE.md`. It contains the current goal,
-   confirmed decisions, verification status, unresolved issues, and next action.
-4. **Project memory** is `MEMORY.md`. It contains only durable project rules,
-   architecture decisions, and verified cross-session facts.
-5. **User memory** is `~/.cade/memory/MEMORY.md`. It contains durable
-   cross-project preferences.
+来源存在不证明解释正确；Git SHA 不代表完整执行现场。来源应回到当时的错误、
+代码观察/修改和实际验证结果，使用前核对当前代码、配置和环境。
 
-The layers have different jobs. Current progress and next actions belong in
-`NOTE.md`, never in project or user memory. The transcript remains the source
-of truth when a note needs evidence.
+不做 retrieval service、向量/BM25、逐轮 hint、生命周期、计数器、自动 promotion、
+历史副本或来源保留策略。协议测试不替代任务收益评估。
 
-## Runtime flow
-
-### Normal turns
-
-The system prompt tells the agent where memory lives and when to use it. It does
-not automatically inject search results on every turn. The agent calls the
-read-only `recall` tool when prior project knowledge may matter.
-
-### Rollover
-
-Cade uses the provider profile's `context_window` override when present;
-otherwise it reads the active model's registered context window. Automatic
-rollover begins at 95% or at the output-reserve boundary, whichever comes
-first. The old window is closed without a summary. Startup context, activated
-skills, and the latest real user request form the new working set. The full
-assistant/tool trajectory is released even inside a running task. At 80% of
-the rollover budget, provider usage triggers a reminder to save NOTE.md;
-missing notes do not block model-requested or automatic rollover. The typed event
-records the replacement, source entry IDs, a monotonic generation, and a stable
-fingerprint.
-
-### Resume
-
-Cade restores:
-
-```text
-latest durable context-window replacement
-+ transcript entries appended after the replacement
-+ NOTE.md working state
-+ budgeted project and user memory
-```
-
-The latest final event already contains the structured coding run state. Resume
-restores its execution mode and goal after rebuilding message history.
-Older exact evidence remains available through `history` list/search/read/around.
-
-## Invariants
-
-- Markdown is the source of truth for durable memory.
-- Surface replacements are isolated by session branch.
-- Resume never drops the verbatim transcript tail.
-- Memory search is deterministic BM25 over project and user files.
-- Writes are explicit and atomically replace the target file.
-- Existing governance metadata is ignored; retired legacy records stay excluded.
-
-## Explicit non-goals
-
-Do not add these without evidence from real long-running task failures:
-
-- embeddings or vector databases;
-- per-record utility, adoption, success, or failure counters;
-- confidence and validity state machines;
-- automatic promotion based on inferred model behavior;
-- multi-factor reranking;
-- online explain/metrics platforms for a local Markdown search;
-- automatic retrieval injection on every user turn.
-
-## Stop point
-
-The implemented surface/history cycle is the product boundary:
-
-- rollover never summarizes the previous window;
-- malformed or tool-unbalanced replacements are rejected;
-- `history list_windows/search/read/around` retrieves exact details older than
-  the current working set.
-
-Early background extraction and automatic project-memory promotion are not
-planned. They require evidence from real long-running task failures and must
-not expand the per-record Memory model.
+使用说明及参数见 [Memory vNext](guide/memory.md)。

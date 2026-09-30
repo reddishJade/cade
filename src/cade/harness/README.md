@@ -21,7 +21,7 @@ Harness 层连接了底层的 `agent` 循环与上层的具体领域产品，提
        ▼                         ▼                         ▼
  [执行与安全]               [会话与记忆]               [协议与扩展]
 - execution_env (沙箱/FS)   - session (事件账本/树)    - mcp (MCP 客户端)
-- security (权限引擎/规则)   - memory (长期事实/BM25)  - skills (两阶段发现)
+- security (权限引擎/规则)   - memory (显式 Markdown 保存)  - skills (两阶段发现)
 - observability (审计/Hook)
 ```
 
@@ -34,7 +34,7 @@ Harness 层连接了底层的 `agent` 循环与上层的具体领域产品，提
 | **[execution_env/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/README.md)** | 文件系统抽象与基于 Bubblewrap 的 Linux 命名空间隔离命令沙箱 |
 | **[observability/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/observability/README.md)** | JSONL 结构化审计日志、敏感数据自动脱敏、链路追踪与内部/外部生命周期 Hooks |
 | **[mcp/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/mcp/README.md)** | 基于 Stdio 的 Model Context Protocol 协议集成与动态工具注册 |
-| **[memory/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/README.md)** | 项目级与用户级 Markdown 长期事实持久化与 BM25 检索支持 |
+| **[memory/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/README.md)** | workspace Markdown 保存及显式 History 来源校验 |
 | **[skills/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/README.md)** | 技能自动发现、`SKILL.md` 解析与两阶段轻量注入/按需激活机制 |
 | **`auth/`** | 宿主凭据文件存储及登录/登出编排；Provider OAuth 与刷新规则由 `cade.ai.auth` 提供 |
 

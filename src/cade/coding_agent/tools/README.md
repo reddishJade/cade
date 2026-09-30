@@ -12,7 +12,7 @@
 read / write / edit / patch / bash
 ```
 
-`grep / glob / find / ls` 作为可选结构化搜索实现保留，用于受限环境与消融实验；
+`grep` 在各模式提供普通内容搜索；`glob / find / ls` 保留为可选目录搜索实现；
 正常 Plan / Build / Act 代码探索由 `bash` 组合 `rg`、`fd`、`git` 等原生命令。
 交互、Web 与运行时能力（如 `question`、`webfetch`、`websearch`、`delegate`）
 按产品功能独立注册。
@@ -50,6 +50,6 @@ read / write / edit / patch / bash
 
 - **Read-Before-Edit 铁律**：`edit` 工具必须校验文件的预读取 SHA256 指纹；模型未曾读取过的文件严禁直接发起局部编辑。
 - **并发与副作用分区**：
-  - 只读工具（`read` 及可选 `grep/glob/find/ls`）声明并发安全，由调度器并行触发。
+  - 只读工具（`read`、`grep` 及可选 `glob/find/ls`）声明并发安全，由调度器并行触发。
   - 具有文件写（`write`、`edit`、`patch`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
 - **统一异常契约**：工具发生 IO 错误、找不到路径或语法错误时，必须返回清晰的文本错误说明，严禁直接抛出未捕获的 Python 异常导致循环终结。

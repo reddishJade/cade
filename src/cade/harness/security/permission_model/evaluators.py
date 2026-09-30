@@ -297,7 +297,8 @@ class PathBoundaryPolicyEvaluator:
                     "protected_workspace_metadata",
                     (
                         "Use Cade-managed interfaces for workspace metadata. "
-                        "Only write/edit of .cade/plans/*.md is writable by model tools."
+                        "Use write/edit for .cade/plans/*.md or save_memory for "
+                        ".cade/memory/*.md. Other metadata remains protected."
                     ),
                 ),
             )

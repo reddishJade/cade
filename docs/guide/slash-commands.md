@@ -87,7 +87,7 @@
 | :--- | :--- | :--- |
 | `/tool` | `/tool [list\|info <name>]` | 列出当前所有可用工具及其只读/串行分类 |
 | `/skill` | `/skill [list\|load <name>]` | 查看当前项目或全局可用的技能包并手动加载 |
-| `/memory` | `/memory [list\|add\|search]` | 管理长期记忆（三层记忆查看、添加新规则、向量语义检索） |
+| `/memory` | `/memory` | 显示 workspace 的 `.cade/memory/` 目录位置，不扫描文件 |
 | `/mcp` | `/mcp [status\|reload]` | 检查外部 MCP 服务的连通状态或热重载连接 |
 
 ---

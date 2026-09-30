@@ -43,6 +43,18 @@ def enumerate_search_files(
     """枚举可搜索文件，依次使用 fd、ripgrep 和 Python walk。"""
     if not base.exists():
         raise FileNotFoundError(f"Path not found: {_display(root, base)}")
+    if is_explicit_memory_path(root, base):
+        candidates = base.iterdir() if base.is_dir() else (base,)
+        return sorted(
+            (
+                path
+                for path in candidates
+                if not path.is_symlink()
+                and path.is_file()
+                and is_explicit_memory_path(root, path)
+            ),
+            key=lambda path: path.name.casefold(),
+        )
     if base.is_file():
         return (
             []
@@ -72,6 +84,20 @@ def enumerate_search_files(
             except FileNotFoundError:
                 pass
     return _enumerate_with_python(root, base, respect_fdignore=respect_fdignore)
+
+
+def is_explicit_memory_path(root: Path, path: Path) -> bool:
+    """只有显式 Memory 目录或直接 Markdown 文件获得搜索例外。"""
+    try:
+        parts = path.resolve().relative_to(root.resolve()).parts
+    except ValueError:
+        return False
+    return parts == (".cade", "memory") or (
+        len(parts) == 3
+        and parts[:2] == (".cade", "memory")
+        and parts[2].endswith(".md")
+        and not parts[2].startswith(".")
+    )
 
 
 def _enumerate_with_fd(root: Path, base: Path, fd: str) -> list[Path]:

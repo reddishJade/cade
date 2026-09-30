@@ -384,7 +384,7 @@ Git 工程中的每个用户 turn 可以建立 pre/post tree snapshot。快照�
 
 ### 6.4 搜索：发现与阅读分工
 
-`glob`、`find`、`ls` 与 `grep` 保留为可选结构化搜索实现，供受限环境和消融实验使用。正常 Build/Act/Plan coding surface 依赖 `bash` 组合 `rg`、`fd`、`git` 等原生命令；结构化 helper 不默认占据 model tool schema。`glob`/`find` 的文件发现优先使用 `fd`，回退到 `rg` 和 Python walk；`grep` 的内容搜索优先使用 `rg`，回退到 Python grep。
+`grep` 作为普通只读内容搜索在各模式可用，包括显式 Memory 搜索；`glob`、`find`、`ls` 保留为可选目录搜索实现。目录浏览仍可用 `bash` 组合 `rg`、`fd`、`git` 等原生命令。`glob`/`find` 的文件发现优先使用 `fd`，回退到 `rg` 和 Python walk；`grep` 的内容搜索优先使用 `rg`，回退到 Python grep。
 
 结果拥有数量上限、长行截断、尾部截断和 metadata。项目文件补全使用最多 5000 个文件与 75 ms 时间预算的短生命周期索引。
 
@@ -562,19 +562,19 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 
 技能的 `allowed-tools` 以 advisory 方式披露，权限 bypass 明确保持关闭。项目技能默认等待 `trust_project_skills` 开启，显式目录拥有最高优先级。
 
-### 9.2 记忆承担跨 session 的可复用事实
+### 9.2 Memory 保存少量可核验的跨 Session 知识
 
-当前记忆实现使用两个 Markdown 事实文件：项目 `MEMORY.md` 与用户 `~/.cade/memory/MEMORY.md`。每个 H2 section 形成 `MemoryRecord`，记录 layer、title、body 和稳定 memory id。
+Memory 是 `.cade/memory/` 内可编辑的 Markdown 文件。`save_memory` 接收正文和显式
+History 引用，校验路径及来源，原子保存并检测覆盖冲突。正文不解析为记录字段。
+Host 不推断证据与结论关系，只补充当前调用天然绑定的信息。
 
-检索使用确定性的 BM25：
+普通任务及恢复不扫描或注入 Memory。Agent 按需用普通搜索/读取定位少量正文，
+必要时通过 History 的 `session_id + entry_id` 精确读取原始事件，再核对当前代码与
+验证。History 不切换当前 Session/head，也不增加全局检索。Git SHA 只辅助定位，
+不代表未提交 workspace 或结论有效性。Memory 读取是普通 evidence，服从 ContextPolicy。
 
-- 英文、代码、路径、中文字符和中文 bigram 进入 token 序列。
-- exact match 与 token overlap 增强结果分数。
-- 项目层在相同条件下优先于用户层。
-- 结果最多返回 10 条。
-- 文件 inode、mtime、size 组成索引签名，变化触发重建。
-
-记忆写入支持显式 add、update、delete；标题或正文重复被拒绝；文件锁、临时文件、fsync 和 replace 保证原子更新。恢复 session 时可以按最多 6000 token 读取记忆概览；普通 turn 只接收记忆使用协议，模型通过 `recall` 按需检索。session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实和可复用方案。
+Memory 自身不发起模型调用、后台整理或额外推理；工具结果后的正常 Agent loop
+由现有运行时语义决定。没有索引、生命周期、计数器或历史副本。
 
 ### 9.3 MCP 采用延迟发现与运行时快照
 

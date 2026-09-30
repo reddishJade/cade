@@ -1,4 +1,4 @@
-"""当前 session 原始轨迹的只读检索。"""
+"""当前 branch 检索及跨 Session 原始事件的精确读取。"""
 
 from __future__ import annotations
 
@@ -69,22 +69,32 @@ class ContextWindowRecord:
     """session transcript 中一次换窗事件。"""
 
     window_id: str
-    event_message_id: str
+    event_entry_id: str
     trigger: str
     created_at: str
 
 
 class SessionHistory:
-    """读取当前 branch 的 lossless JSONL 历史。"""
+    """检索当前 branch，并按稳定来源精确读取 workspace 历史。"""
 
     def __init__(
         self,
         sessions_dir: Path,
+        *,
+        project_root: Path,
         artifacts_dir: Path | None = None,
     ) -> None:
         self.sessions_dir = sessions_dir
         self.artifacts_dir = artifacts_dir or _default_artifacts_dir(sessions_dir)
         self.session_id: str | None = None
+        self.project_root = project_root.resolve()
+
+    def get_entry(self, session_id: str, entry_id: str) -> HistoryEntry | None:
+        """按稳定来源定位 entry，不受当前 head 或会话切换影响。"""
+        return next(
+            (entry for entry in self._entries(session_id) if entry.id == entry_id),
+            None,
+        )
 
     def set_session_id(self, session_id: str) -> None:
         if not _SESSION_ID.fullmatch(session_id):
@@ -125,19 +135,25 @@ class SessionHistory:
 
     def around(
         self,
-        message_id: str,
+        entry_id: str,
         *,
         before: int = 3,
         after: int = 3,
+        session_id: str | None = None,
     ) -> list[HistoryEntry]:
         """返回指定记录附近的 branch 原文。"""
-        branch = self._branch()
+        if session_id is None:
+            branch = self._branch()
+        else:
+            by_id = {entry.id: entry for entry in self._entries(session_id)}
+            branch = []
+            current = by_id.get(entry_id)
+            while current is not None:
+                branch.append(current)
+                current = by_id.get(current.parent_id or "")
+            branch.reverse()
         index = next(
-            (
-                position
-                for position, entry in enumerate(branch)
-                if entry.id == message_id
-            ),
+            (position for position, entry in enumerate(branch) if entry.id == entry_id),
             None,
         )
         if index is None:
@@ -148,15 +164,20 @@ class SessionHistory:
 
     def read(
         self,
-        message_id: str,
+        entry_id: str,
         *,
         offset: int = 0,
         max_chars: int = 8_000,
+        session_id: str | None = None,
     ) -> HistoryRead | None:
         """按字符范围读取一条记录，不使用预览截断。"""
-        entry = next(
-            (entry for entry in self._branch() if entry.id == message_id),
-            None,
+        entry = (
+            self.get_entry(session_id, entry_id)
+            if session_id is not None
+            else next(
+                (entry for entry in self._branch() if entry.id == entry_id),
+                None,
+            )
         )
         if entry is None:
             return None
@@ -187,7 +208,7 @@ class SessionHistory:
             windows.append(
                 ContextWindowRecord(
                     window_id=window_id,
-                    event_message_id=entry.id,
+                    event_entry_id=entry.id,
                     trigger=str(data.get("trigger", "")),
                     created_at=entry.created_at,
                 )
@@ -218,6 +239,49 @@ class SessionHistory:
             for entry in branch
         ]
 
+    def _entries(self, session_id: str) -> list[HistoryEntry]:
+        """只读取许可目录中的指定会话，并检查 workspace 所属关系。"""
+        if not _SESSION_ID.fullmatch(session_id):
+            raise ValueError(f"invalid session id: {session_id!r}")
+        path = self.sessions_dir / f"session-{session_id}.jsonl"
+        if path.is_symlink() or not path.resolve().is_relative_to(
+            self.sessions_dir.resolve()
+        ):
+            raise ValueError("History session path escapes its store")
+        index_path = self.sessions_dir.parent / "session_index.json"
+        if self.sessions_dir.name != "sessions":
+            index_path = self.sessions_dir / "session_index.json"
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("sessions"), list
+        ):
+            raise TypeError("Invalid session index; workspace scope cannot be checked")
+        metadata = next(
+            (
+                item
+                for item in payload["sessions"]
+                if isinstance(item, dict) and item.get("id") == session_id
+            ),
+            None,
+        )
+        project_path = metadata.get("project_path") if metadata else None
+        if (
+            not isinstance(project_path, str)
+            or Path(project_path).resolve() != self.project_root
+        ):
+            raise ValueError("History session does not belong to this workspace")
+        return [
+            HistoryEntry(
+                id=entry.id,
+                parent_id=entry.parent_id,
+                type=entry.type,
+                content=entry.content,
+                created_at=entry.created_at,
+                artifacts_dir=self.artifacts_dir,
+            )
+            for entry in read_session_entries(path)
+        ]
+
     def _head_id(self, session_id: str) -> str | None:
         index_dir = (
             self.sessions_dir.parent
@@ -245,6 +309,13 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
         _on_update: Callable[[str], None] | None = None,
     ) -> str:
         operation = str(data.get("operation", "search"))
+        session_id = data.get("session_id")
+        if session_id is not None and (
+            not isinstance(session_id, str) or not session_id
+        ):
+            raise ValueError("session_id must be a nonempty string")
+        if session_id is not None and operation not in {"read", "around"}:
+            raise ValueError("session_id is only supported for exact read/around")
         if operation == "list_windows":
             windows = history.list_windows(limit=_bounded(data.get("limit"), 20, 100))
             if not windows:
@@ -261,31 +332,36 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                 include_derived=data.get("include_derived") is True,
             )
         elif operation == "read":
-            message_id = str(data.get("message_id", "")).strip()
-            if not message_id:
-                return "message_id is required for history read"
+            entry_id = str(data.get("entry_id", "")).strip()
+            if not entry_id:
+                return "entry_id is required for history read"
             result = history.read(
-                message_id,
+                entry_id,
                 offset=_bounded(data.get("offset"), 0, 1_000_000_000),
                 max_chars=_bounded(data.get("max_chars"), 8_000, 20_000),
+                session_id=session_id,
             )
             if result is None:
-                return "No matching history in the current session."
-            return _render_exact_read(result)
+                return "No matching history entry."
+            return (
+                f"[session_id={session_id or history.session_id}]\n"
+                + _render_exact_read(result)
+            )
         elif operation == "around":
-            message_id = str(data.get("message_id", "")).strip()
-            if not message_id:
-                return "message_id is required for history around"
+            entry_id = str(data.get("entry_id", "")).strip()
+            if not entry_id:
+                return "entry_id is required for history around"
             entries = history.around(
-                message_id,
+                entry_id,
                 before=_bounded(data.get("before"), 3, 20),
                 after=_bounded(data.get("after"), 3, 20),
+                session_id=session_id,
             )
         else:
             return "operation must be one of: list_windows, search, read, around"
         if not entries:
-            return "No matching history in the current session."
-        return "\n\n".join(
+            return "No matching history entry."
+        return f"[session_id={session_id or history.session_id}]\n" + "\n\n".join(
             _render_entry(
                 entry, query=str(data.get("query", "")) if operation == "search" else ""
             )
@@ -298,6 +374,9 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             description=(
                 "List context windows, search the current session's lossless "
                 "transcript, page through one exact record, or inspect neighbors. "
+                "Supply session_id for an exact read in another workspace-local session, "
+                "including abandoned branches; around then follows only the anchor "
+                "ancestry, with no descendants. This never switches the session/head. "
                 "Search returns bounded excerpts and match offsets when an exact term "
                 "occurs in a large record; use those offsets for targeted reads."
                 " Default search excludes retrieval echoes, runtime reminders and "
@@ -306,9 +385,9 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             input_hint=(
                 'JSON: {"operation":"list_windows"}, '
                 '{"operation":"search","query":"timeout","limit":5}, '
-                '{"operation":"read","message_id":"abc123","offset":0,'
+                '{"operation":"read","entry_id":"abc123","offset":0,'
                 '"max_chars":8000}, or {"operation":"around",'
-                '"message_id":"abc123","before":3,"after":3}'
+                '"entry_id":"abc123","before":3,"after":3}'
             ),
             handler=handle,
             schema={
@@ -319,7 +398,11 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                         "enum": ["list_windows", "search", "read", "around"],
                     },
                     "query": {"type": "string"},
-                    "message_id": {"type": "string"},
+                    "entry_id": {"type": "string"},
+                    "session_id": {
+                        "type": "string",
+                        "description": "Exact read/around only; omitted means current branch.",
+                    },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                     "include_artifacts": {"type": "boolean"},
                     "include_derived": {"type": "boolean"},
@@ -358,7 +441,7 @@ def _render_entry(entry: HistoryEntry, *, query: str = "") -> str:
         offset = max(0, match.start() - 400)
         excerpt = content[offset : offset + 1200]
         return (
-            f"[message_id={entry.id} type={entry.type} at={entry.created_at} "
+            f"[entry_id={entry.id} type={entry.type} at={entry.created_at} "
             f"match_offset={match.start()} excerpt_offset={offset}]\n{excerpt}"
         )
     if len(content) > 2000:
@@ -367,13 +450,13 @@ def _render_entry(entry: HistoryEntry, *, query: str = "") -> str:
             + f"\n[…{len(content) - 2000} chars omitted…]\n"
             + content[-800:]
         )
-    return f"[message_id={entry.id} type={entry.type} at={entry.created_at}]\n{content}"
+    return f"[entry_id={entry.id} type={entry.type} at={entry.created_at}]\n{content}"
 
 
 def _render_exact_read(result: HistoryRead) -> str:
     next_offset = str(result.next_offset) if result.next_offset is not None else "end"
     return (
-        f"[message_id={result.entry.id} type={result.entry.type} "
+        f"[entry_id={result.entry.id} type={result.entry.type} "
         f"at={result.entry.created_at} offset={result.offset} "
         f"total_chars={result.total_chars} next_offset={next_offset}]\n"
         f"{result.content}"
@@ -382,7 +465,7 @@ def _render_exact_read(result: HistoryRead) -> str:
 
 def _render_window(window: ContextWindowRecord) -> str:
     return (
-        f"[window_id={window.window_id} event_message_id={window.event_message_id} "
+        f"[window_id={window.window_id} event_entry_id={window.event_entry_id} "
         f"trigger={window.trigger} at={window.created_at}]"
     )
 

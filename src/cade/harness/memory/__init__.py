@@ -1,19 +1,5 @@
-"""面向长任务连续性的文件式记忆。"""
+"""按需使用的 workspace Memory 保存能力。"""
 
-from .manager import (
-    MemoryLayer,
-    MemoryLayerFilter,
-    MemoryManager,
-    build_memory_block,
-)
-from .parsing import MemoryRecord
-from .tools import build_memory_tools
+from .tools import build_save_memory_tool
 
-__all__ = [
-    "MemoryLayer",
-    "MemoryLayerFilter",
-    "MemoryManager",
-    "MemoryRecord",
-    "build_memory_block",
-    "build_memory_tools",
-]
+__all__ = ["build_save_memory_tool"]

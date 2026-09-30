@@ -17,9 +17,8 @@ from cade.harness.security.permissions import PermissionDecision
 
 ExecutionMode = Literal["plan", "build", "act"]
 
-# Structured search helpers remain registered for Plan/read-only and experiments,
-# but ordinary Build/Act coding relies on bash for rg/find/ls composition.
-_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
+# grep 提供不依赖 shell 的按需内容搜索；目录浏览仍由 shell 负责。
+_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls"})
 
 
 class ExecutionPolicy(Protocol):
@@ -86,12 +85,12 @@ class PlanPolicy:
     _PLAN_TOOLS = frozenset(
         {
             "read",
+            "grep",
             "bash",
             "webfetch",
             "websearch",
             "question",
             "history",
-            "recall",
             "rollover",
         }
     )
@@ -213,7 +212,6 @@ def build_default_mode_rulesets(
         Rule(action="question", effect="allow"),
         Rule(action="load_skill", effect="allow"),
         Rule(action="delegate", effect="allow"),
-        Rule(action="recall", effect="allow"),
         Rule(action="history", effect="allow"),
         Rule(action="rollover", effect="allow"),
         Rule(action="mcp_tool_search", effect="allow"),
@@ -222,6 +220,7 @@ def build_default_mode_rulesets(
         Rule(action="write", effect="allow"),
         Rule(action="edit", effect="allow"),
         Rule(action="patch", effect="allow"),
+        Rule(action="save_memory", effect="allow"),
     )
     ask_write_rules = tuple(
         Rule(action=rule.action, effect="ask") for rule in write_rules

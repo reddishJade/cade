@@ -29,7 +29,7 @@
 - [模型与 Provider 接入指南](providers.md) —— OpenAI、DeepSeek、GLM、MiMo 与本地私有模型
 - [MCP 外部服务与工具扩展](mcp.md) —— 接入 GitHub、PostgreSQL 等外部生态工具
 - [Skills 技能扩展系统](skills.md) —— 编写项目专属最佳实践知识库（SKILL.md）
-- [长期记忆（Memory）系统](memory.md) —— 全局与项目级记忆沉淀
+- [长期记忆（Memory）系统](memory.md) —— workspace 中少量可核验知识
 - [Subagents 子代理协作机制](subagents.md) —— 长任务分治与独立上下文隔离
 - [外部生命周期 Hooks](hooks.md) —— 在关键节点触发自定义脚本与自动化流程
 

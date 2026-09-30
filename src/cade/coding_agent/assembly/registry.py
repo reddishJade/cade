@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from cade.agent.types import ToolSpec
 from cade.ai.providers.base import ModelProvider
@@ -28,6 +28,7 @@ from .security import build_shell_from_security
 
 if TYPE_CHECKING:
     from cade.harness.mcp import McpRuntimeRegistry
+    from cade.harness.session import SessionHistory
     from cade.harness.session.recorder import SessionRecorder
     from cade.harness.skills import SkillRegistry
 
@@ -96,24 +97,22 @@ def _extend_registry_with_features(
     project_root: Path,
     mcp_runtime_registry: McpRuntimeRegistry,
     runtime_config: CadeRuntimeConfig,
-    memory_manager: Any | None = None,
-    session_history: Any | None = None,
+    session_history: SessionHistory | None = None,
     context_window_controller: ContextWindowController | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[ToolSpec, ...]:
     from cade.harness.mcp import build_mcp_tools
 
     registry += build_mcp_tools(project_root, mcp_runtime_registry)
 
-    from cade.harness.memory import MemoryManager, build_memory_tools
-
-    if memory_manager is not None:
-        registry += build_memory_tools(memory_manager)
-    else:
-        registry += build_memory_tools(MemoryManager(project_root))
     if session_history is not None:
+        from cade.harness.memory import build_save_memory_tool
         from cade.harness.session import build_history_tools
 
         registry += build_history_tools(session_history)
+        registry += (
+            build_save_memory_tool(project_root, session_history, cancel_event),
+        )
     if context_window_controller is not None:
         registry += build_new_context_tool(context_window_controller, project_root)
     return registry
@@ -128,8 +127,7 @@ def build_tool_registry(
     cancel_event: CancellationToken | None = None,
     shell: Shell | None = None,
     skills_dir: Path | None = None,
-    memory_manager: Any | None = None,
-    session_history: Any | None = None,
+    session_history: SessionHistory | None = None,
     context_window_controller: ContextWindowController | None = None,
 ) -> tuple[
     tuple[ToolSpec, ...],
@@ -165,9 +163,9 @@ def build_tool_registry(
         project_root,
         mcp_runtime_registry,
         runtime_config,
-        memory_manager=memory_manager,
         session_history=session_history,
         context_window_controller=context_window_controller,
+        cancel_event=cancel_event,
     )
 
     child_registry = _build_child_registry(

@@ -1,37 +1,74 @@
-# 长期记忆（Memory）系统
+# Memory vNext
 
-为了避免在每次新会话中重复向 Agent 交代团队约定或代码偏好，Cade 提供了三层长期记忆机制。它能够跨越不同会话，持久化记住架构决策、技术栈约束与编码偏好。
+Memory 保存当前 workspace 中昂贵才获得、可能再次有用、可以核验的知识。
+一条 Memory 是 `.cade/memory/` 内一个 Markdown 文件，文件路径用于定位。
+没有用户全局层、索引、manifest、生命周期或后台整理；不同 clone/worktree 独立。
 
----
+## 保存
 
-## 1. 记忆的三层架构
+Agent 通过普通工具调用保存任意 Markdown 正文和显式来源：
 
-| 层级 | 作用范围 | 存储位置 | 适用内容 |
-| :--- | :--- | :--- | :--- |
-| **Global 记忆** | 用户跨项目全局生效 | `~/.config/cade/memory.md` | 个人习惯（如“使用中文写注释”、“倾向使用函数式编程”） |
-| **Project 记忆** | 当前代码仓库全体成员生效 | `<项目根目录>/.cade/memory.md` | 项目专属约束（如“数据库只用 PostgreSQL”、“所有导出接口需加类型校验”） |
-| **Session 记忆** | 仅在当前会话生命周期内生效 | 内存与当前 Session JSONL | 本轮任务的临时上下文决策 |
-
----
-
-## 2. 记忆的注入与检索
-
-- **关键摘要常驻**：每次对话发起前，Cade 会自动将项目记忆的核心条目提取作为上下文前置补充注入系统 Prompt；
-- **语义搜索召回**：当用户提出的问题涉及特定的历史决策时，Agent 会利用 BM25 或向量语义检索主动从记忆库中召回最匹配的历史偏好。
-
----
-
-## 3. 记忆管理命令
-
-在终端中，你可以通过 `/memory` 命令快速增删改查：
-
-```bash
-/memory list            # 查看当前项目和全局已记住的所有规则与偏好
-/memory add [内容]      # 追加一条新的记忆条目（自动写入 .cade/memory.md）
-/memory search [关键词] # 检索记忆库中与特定技术或模块相关的历史记录
+```json
+{
+  "path": ".cade/memory/provider-timeout.md",
+  "markdown": "# Provider timeout\n\n说明观察到的症状、适用条件、根因或约束、处理结果，以及下次检查的代码或验证入口。",
+  "sources": [
+    {"session_id": "20260930-100000", "entry_id": "abc123def456"}
+  ]
+}
 ```
-例如：
-```text
-> /memory add 本项目所有新加的 API 接口必须通过 pydantic 进行入参强校验
-已将新规则持久化至项目记忆。
+
+示例中的 ID 应替换为 `history` 返回的真实 ID。`sources` 可以引用错误、代码观察、
+修改和验证结果；只有 Agent 显式给出的事件才成为来源。省略 `session_id` 时机械绑定
+当前 Session。Host 校验并规范化引用，只有与当前调用天然绑定、无需推断的信息
+才自动补充。文件尾部记录可读的来源；引用存在不能证明正文解释正确。
+
+正文没有必填标题、字段或 parser。建议保留条件、原因、有效措施和核验入口，
+不把普通任务总结或容易从当前代码获得的事实写入 Memory。
+
+Memory 自身不发起任何模型调用、后台整理或额外推理。`save_memory` 是普通 Agent
+工具调用；工具结果之后是否继续正常 Agent loop，由现有运行时语义决定。
+
+覆盖已有文件时，先读取它，再通过 `expected_content` 提供完整旧正文（含来源尾注）
+作为文件写入前置条件。未提供前置条件不会覆盖已有文件；内容变化时拒绝写入，
+重新读取后再修订。Cade 保存调用之间使用文件锁，临时文件原子提交；外部编辑器
+不参与该锁，首版不承诺与任意外部编辑器之间的事务隔离。
+
+## 按需读取与核验
+
+普通任务及 Session 恢复不扫描或注入 Memory。用户有历史需求，或 Agent 判断重复
+排查昂贵时，先用普通 `grep` 显式搜索 `.cade/memory/`，再 `read` 具体文件。
+`grep` 在 Plan/Build/Act 中可用，目录例外只作用于 `.cade/memory/` 的直接 Markdown
+文件，不放宽其他隐藏目录策略。默认项目搜索排除 Memory。
+
+来源是 History 的通用精确读取接口：
+
+```json
+{"operation":"read","session_id":"20260930-100000","entry_id":"abc123def456","offset":0,"max_chars":8000}
 ```
+
+```json
+{"operation":"around","session_id":"20260930-100000","entry_id":"abc123def456","before":3}
+```
+
+显式 `session_id` 时，读取同 workspace 的指定原始事件；邻域沿锚点的祖先 branch，
+不返回其他后继分支。读取复用 artifact 和分页，不切换当前 Session/head。
+不指定 Session 的 search/read/around 仍操作当前 branch；不提供跨 Session 搜索。
+缺失或无效的 artifact 会明确报错，预览不冒充完整证据。
+
+使用结论前检查当前代码、配置或环境，并按当前决策验证。Git SHA 可辅助定位，
+不能代表当时未提交的 workspace，也不证明经验仍适用。必要的代码/diff/验证
+证据留在 History；Memory 不复制历史或自动抓取快照。
+
+读取结果是普通 evidence，ContextPolicy 可以裁剪或回收；原始读取结果仍在 Session。
+旧结论变化时直接读取并修订文件，不增加 stale/supersedes 状态。用户也可用编辑器
+修改或删除文件；Git 只为纳入版本控制的文件提供额外历史。
+
+`/memory` 仅显示目录位置，不扫描文件。普通文件写入工具不能写 `.cade/memory/`，
+Agent 保存必须经过 `save_memory`，并遵守当前执行模式的写入权限。
+
+## 验证边界
+
+首版协议测试验证存储、权限、来源读取、正常路径 I/O 和 ContextPolicy 行为，
+不能证明模型任务表现改善。收益评估应保持模型、任务和 History 能力一致，
+覆盖重复问题、条件变化和无关任务，并计入写入、搜索、核验及从未复用的 Memory 成本。
