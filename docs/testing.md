@@ -50,6 +50,9 @@ Retain narrowly scoped tests only for these behaviors:
 - Hard denials by security policy, approval scope, and path boundary violations.
 - Session recovery after process crashes or torn writes.
 - Permission protection for credential and session files.
+- Memory file conflicts and durable provenance reads, including workspace
+  ownership, navigation-cache loss, and missing evidence artifacts. Keep these
+  regressions committed and runnable without a provider or sandbox service.
 
 These tests must explain which failure modes E2E cannot cover safely or
 deterministically. Assert security outcomes observable by users, rather than

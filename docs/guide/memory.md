@@ -23,6 +23,19 @@ Agent 通过普通工具调用保存任意 Markdown 正文和显式来源：
 当前 Session。Host 校验并规范化引用，只有与当前调用天然绑定、无需推断的信息
 才自动补充。文件尾部记录可读的来源；引用存在不能证明正文解释正确。
 
+Host 只管理一块保留标记包围的末尾 footer：
+
+```markdown
+<!-- cade:memory:sources -->
+## Sources
+- session_id=... entry_id=...
+<!-- /cade:memory:sources -->
+```
+
+更新时可以将读取后的完整文件作为 `markdown`；Host 用本次显式 `sources` 替换该
+footer，不累加来源段。标记外的正文（包括 Agent 自己的 `Sources` 标题）不解析。
+标记保留给 Host；损坏、重复或后面带正文的 footer 会报错，避免静默删除正文。
+
 正文没有必填标题、字段或 parser。建议保留条件、原因、有效措施和核验入口，
 不把普通任务总结或容易从当前代码获得的事实写入 Memory。
 
@@ -37,9 +50,9 @@ Memory 自身不发起任何模型调用、后台整理或额外推理。`save_m
 ## 按需读取与核验
 
 普通任务及 Session 恢复不扫描或注入 Memory。用户有历史需求，或 Agent 判断重复
-排查昂贵时，先用普通 `grep` 显式搜索 `.cade/memory/`，再 `read` 具体文件。
-`grep` 在 Plan/Build/Act 中可用，目录例外只作用于 `.cade/memory/` 的直接 Markdown
-文件，不放宽其他隐藏目录策略。默认项目搜索排除 Memory。
+排查昂贵时，先通过既有 `bash` 执行 `rg "timeout" .cade/memory`，再 `read` 具体文件。
+Memory 不改变默认 tool surface，不为可选 `grep/glob/find` 增加隐藏目录例外。
+默认 `rg "timeout" .` 及普通项目搜索仍排除隐藏的 Memory 目录。
 
 来源是 History 的通用精确读取接口：
 
@@ -52,9 +65,16 @@ Memory 自身不发起任何模型调用、后台整理或额外推理。`save_m
 ```
 
 显式 `session_id` 时，读取同 workspace 的指定原始事件；邻域沿锚点的祖先 branch，
-不返回其他后继分支。读取复用 artifact 和分页，不切换当前 Session/head。
+不返回其他后继分支；显式指定 Session 时只支持 `before`，传入 `after` 会报错。
+不指定 Session 的 `around` 仍支持当前 branch 的 `before/after`。
+读取复用 artifact 和分页，不切换当前 Session/head。
 不指定 Session 的 search/read/around 仍操作当前 branch；不提供跨 Session 搜索。
 缺失或无效的 artifact 会明确报错，预览不冒充完整证据。
+
+精确读取不依赖导航 cache `session_index.json`。默认 `.cade/sessions/` 的目录归属
+可以验证 workspace；新日志首条记录的 `project_path` 随事实一起提交，用于共享或
+自定义 Session 目录的归属核验。缺少这一绑定的外部日志不能靠 cache 推断归属，
+会明确拒绝读取。日志分叉保留 workspace 绑定，不新建索引或来源副本。
 
 使用结论前检查当前代码、配置或环境，并按当前决策验证。Git SHA 可辅助定位，
 不能代表当时未提交的 workspace，也不证明经验仍适用。必要的代码/diff/验证
@@ -65,7 +85,8 @@ Memory 自身不发起任何模型调用、后台整理或额外推理。`save_m
 修改或删除文件；Git 只为纳入版本控制的文件提供额外历史。
 
 `/memory` 仅显示目录位置，不扫描文件。普通文件写入工具不能写 `.cade/memory/`，
-Agent 保存必须经过 `save_memory`，并遵守当前执行模式的写入权限。
+Agent 保存必须经过 `save_memory`，并遵守当前执行模式、`security.permissions.edit`
+及具体工具规则的写入权限。
 
 ## 验证边界
 

@@ -4,7 +4,8 @@
   {"id":"e1","parent_id":null,"type":"event","content":{"type":"inbox/inserted",...}}
   {"id":"e2","parent_id":"e1","type":"event","content":{"type":"inbox/claimed",...}}
 
-新记录在 JSONL 中提交 head_id；session_index.json 只缓存导航及展示元数据。
+新记录在 JSONL 中提交 head_id，首条记录提交 project_path 归属；
+session_index.json 只缓存导航及展示元数据。
 分支只需在同文件中追加不同 parent_id 的 entry。
 """
 
@@ -93,7 +94,9 @@ def _normalize_json_unicode(value: JsonValue) -> JsonValue:
 def _dump_tree_entry(entry: TreeEntryModel) -> str:
     """生成可安全写入 UTF-8 JSONL 的紧凑 JSON。"""
     payload = _normalize_json_unicode(entry.model_dump())
-    return TreeEntryModel.model_validate(payload).model_dump_json()
+    return TreeEntryModel.model_validate(payload).model_dump_json(
+        exclude={"project_path"} if entry.project_path is None else None
+    )
 
 
 class TreeEntryModel(BaseModel):
@@ -104,6 +107,7 @@ class TreeEntryModel(BaseModel):
     content: JsonValue
     created_at: str
     head_id: str | None = None
+    project_path: str | None = None
 
 
 class TreeMetadata(BaseModel):
@@ -585,6 +589,9 @@ class TreeSessionRepo:
                                 type=entry.type,
                                 content=content,
                                 created_at=entry.created_at,
+                                project_path=str(self.project_root)
+                                if index == 0
+                                else None,
                             )
                         )
                         + "\n"
@@ -746,6 +753,8 @@ class TreeSessionRepo:
     def _append_entry(self, entry: TreeEntryModel) -> None:
         """提交事实后才更新索引；追加前清理未提交的半条记录。"""
         _, valid_end = _read_log_tail(self.current_path)
+        if valid_end == 0:
+            entry = entry.model_copy(update={"project_path": str(self.project_root)})
         existed = self.current_path.exists()
         needs_separator = False
         if existed:

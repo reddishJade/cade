@@ -308,6 +308,8 @@ Linux 默认配置要求 PATH 中存在 `bwrap`；缺失时 fail closed。只有
 
 ### 静态权限示例
 
+`edit` 权限组覆盖 `write/edit/patch/save_memory`；保存 Memory 不能绕过写入禁用。
+
 ```json
 {
   "security": {
@@ -424,7 +426,7 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 
 项目工具实现注册为 `read`、`write`、`edit`、`patch`、`glob`、`find`、
 `ls`、`grep`、`websearch`、`webfetch`、`question`、`bash`。运行时按功能
-追加 `delegate`、`recall`、`history`、`rollover`；发现 skill 时注册
+追加 `delegate`、`save_memory`、`history`、`rollover`；发现 skill 时注册
 `load_skill`；MCP 使用 `mcp_tool_search` 延迟发现并注册
 `mcp__{server}__{tool}` 动态工具。Build/Act 默认不向模型暴露
 `grep/glob/find/ls`，日常代码搜索交给 `bash` 组合 `rg/fd/git` 等原生命令。
@@ -433,11 +435,14 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 和 `timeout`。可通过环境变量 `EXA_API_KEY` / `PARALLEL_API_KEY` 或
 `OPENCODE_EXPERIMENTAL_PARALLEL` 切换/鉴权。`webfetch` 支持 `markdown`、`text`、
 `html` 输出格式，自动解压 gzip/deflate，最多读取 5MB，并在截断时标记结果。
-运行时不会按每轮用户问题自动检索 Memory。Agent 通过 `recall` 按需合并
-检索项目根 `MEMORY.md` 与 `~/.cade/memory/MEMORY.md`；resume/rebuild 才会在
-独立预算内注入相关记忆。
-`recall` 的 schema 接受必填 `query`，以及可选 `limit`（1-10）、
-`scope` 和 `layer`（`all` / `project` / `user`）；工具标记为只读。
+Memory 位于当前 workspace 的 `.cade/memory/`，每条是可编辑 Markdown 文件。
+普通 turn 和 resume/rebuild 都不扫描或加载 Memory；Agent 有明确历史需求时
+通过既有 `bash + rg` 显式搜索该目录，再读取文件及 History 来源并核对当前代码。
+`save_memory` 接受 `path`、`markdown`、显式 `sources`，覆盖需完整旧文本
+`expected_content`；Host 校验引用存在并替换末尾来源 footer，不解析正文或验证结论。
+`history` 的 `read/around` 可按 `session_id + entry_id` 精确读取同 workspace 原始
+历史，不切换 Session/head，也不依赖导航 cache。显式 Session 的 `around` 只接受
+`before`。完整参数见 [Memory](docs/guide/memory.md)。
 MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺少这些
 协商元数据的旧缓存会自动重新发现。
 

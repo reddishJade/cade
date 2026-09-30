@@ -46,7 +46,7 @@ cade cli
 ```text
 /plan 分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案
 ```
-* **运行机制**：Agent 处于只读模式，通过 `read`、`grep` 等工具勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
+* **运行机制**：Agent 处于只读模式，通过 `read`、`bash + rg` 勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
 * **安全保证**：此阶段 Agent 无法修改任何业务代码，无法执行任意 Shell 命令。
 
 ### 第二步：审查计划并一键切换到 Build 模式
@@ -118,7 +118,7 @@ Cade 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 st
 Memory 位于 `.cade/memory/`，每个 Markdown 文件保存一条昂贵才获得、可能再次有用的
 项目知识。`/memory` 仅显示目录位置；用户可用编辑器查看、修改或删除文件。
 
-Agent 有历史需求时使用普通 `grep` 显式搜索该目录，再读取正文、沿 History 来源
+Agent 有历史需求时通过既有 `bash` 执行 `rg "关键词" .cade/memory`，再读取正文、沿 History 来源
 回到原始证据并核对当前代码。正常任务和恢复不扫描或注入 Memory。
 
 保存使用 `save_memory`，正文自由表达，来源必须是显式给出的真实 Session/entry

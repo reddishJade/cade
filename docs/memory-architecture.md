@@ -8,12 +8,16 @@ Memory 是 `.cade/memory/` 内少量可编辑 Markdown 文件，保存昂贵才�
 - Repository/Git/Tests 判定当前事实；NOTE.md 保存任务状态；Skills 保存方法。
 - `save_memory(path, markdown, sources)` 校验显式引用、限制路径、原子写入及检测冲突。
   覆盖另带通用文件前置条件 `expected_content`；正文无内容 schema 或字段 gate。
+  Host 仅替换末尾保留标记内的来源 footer，完整文本更新不会重复累加 Sources。
 - Host 只规范化显式来源，并补充与调用天然绑定的信息；省略的 Session ID 绑定当前
   Session。不会推断哪些测试证明了哪些结论，也不会自动收集 Git/diff/snapshot。
 - History 独立提供同 workspace 内 `session_id + entry_id` 精确读取和祖先邻域，复用
   artifact/page，不切换 Session/head，不增加全局搜索。
-- `.cade/memory/` 仅保存工具可写，普通 read/search 可显式读取。默认项目搜索排除它，
-  其他 `.cade/**` 和隐藏目录保护保持有效。
+  显式 Session 的 `around` 只接受 `before`，`after` 仅用于当前 branch。
+- 精确读取不依赖导航 cache：默认 Session 目录提供归属，新日志首条记录的
+  `project_path` 为共享/外部目录提供随日志提交的 workspace 绑定。
+- `.cade/memory/` 仅保存工具可写；按需通过既有 `bash + rg` 搜索、普通 read 读取。
+  默认项目搜索仍排除它，不增加默认工具或可选搜索的 Memory 例外。
 - 正常任务和恢复不读取、扫描或注入 Memory。固定能力指引和工具 schema 是常量成本。
 - Memory 读取是普通 evidence，受 ContextPolicy 约束；失效结论直接编辑文件。
 - Memory 自身不发起模型调用、后台整理或额外推理。保存是普通 Agent tool call，

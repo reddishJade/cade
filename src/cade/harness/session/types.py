@@ -19,6 +19,7 @@ class SessionEntry:
     content: JsonValue
     created_at: str
     head_id: str | None = None
+    project_path: str | None = None
 
 
 @dataclass(frozen=True)

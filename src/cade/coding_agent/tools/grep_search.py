@@ -97,7 +97,6 @@ def _grep(root: Path, rg: str | None, data: dict[str, Any]) -> str:
         raise ValueError("pattern is required")
 
     raw_path = str(data.get("path", ".")).strip()
-    filepath = root
     if raw_path:
         filepath = resolve_absolute_path(root, raw_path)
         if matches_blocked_pattern(filepath):
@@ -111,17 +110,6 @@ def _grep(root: Path, rg: str | None, data: dict[str, Any]) -> str:
     literal = bool(data.get("literal", False))
     context = _validated_int(data, "context", 0, minimum=0)
 
-    if raw_path and _search_utils.is_explicit_memory_path(root, filepath):
-        return _grep_fallback(
-            root,
-            raw_path,
-            pattern,
-            glob_pattern,
-            max_results,
-            ignore_case,
-            literal,
-            context,
-        )
     if rg:
         try:
             return _grep_with_rg(

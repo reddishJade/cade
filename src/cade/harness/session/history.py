@@ -138,10 +138,14 @@ class SessionHistory:
         entry_id: str,
         *,
         before: int = 3,
-        after: int = 3,
+        after: int | None = None,
         session_id: str | None = None,
     ) -> list[HistoryEntry]:
         """返回指定记录附近的 branch 原文。"""
+        if session_id is not None and after is not None:
+            raise ValueError(
+                "after is only supported on the current branch; omit session_id"
+            )
         if session_id is None:
             branch = self._branch()
         else:
@@ -159,7 +163,9 @@ class SessionHistory:
         if index is None:
             return []
         start = max(0, index - min(max(before, 0), 20))
-        end = min(len(branch), index + min(max(after, 0), 20) + 1)
+        end = min(
+            len(branch), index + min(max(after if after is not None else 3, 0), 20) + 1
+        )
         return branch[start:end]
 
     def read(
@@ -248,28 +254,21 @@ class SessionHistory:
             self.sessions_dir.resolve()
         ):
             raise ValueError("History session path escapes its store")
-        index_path = self.sessions_dir.parent / "session_index.json"
-        if self.sessions_dir.name != "sessions":
-            index_path = self.sessions_dir / "session_index.json"
-        payload = json.loads(index_path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict) or not isinstance(
-            payload.get("sessions"), list
-        ):
-            raise TypeError("Invalid session index; workspace scope cannot be checked")
-        metadata = next(
-            (
-                item
-                for item in payload["sessions"]
-                if isinstance(item, dict) and item.get("id") == session_id
-            ),
-            None,
-        )
-        project_path = metadata.get("project_path") if metadata else None
-        if (
-            not isinstance(project_path, str)
-            or Path(project_path).resolve() != self.project_root
+        entries = read_session_entries(path)
+        if not entries:
+            return []
+        owner = entries[0].project_path
+        if owner is not None and (
+            not Path(owner).is_absolute() or Path(owner).resolve() != self.project_root
         ):
             raise ValueError("History session does not belong to this workspace")
+        if (
+            owner is None
+            and self.sessions_dir.resolve() != self.project_root / ".cade" / "sessions"
+        ):
+            raise ValueError(
+                "Cannot verify workspace ownership of this external session"
+            )
         return [
             HistoryEntry(
                 id=entry.id,
@@ -279,7 +278,7 @@ class SessionHistory:
                 created_at=entry.created_at,
                 artifacts_dir=self.artifacts_dir,
             )
-            for entry in read_session_entries(path)
+            for entry in entries
         ]
 
     def _head_id(self, session_id: str) -> str | None:
@@ -354,7 +353,7 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             entries = history.around(
                 entry_id,
                 before=_bounded(data.get("before"), 3, 20),
-                after=_bounded(data.get("after"), 3, 20),
+                after=_bounded(data["after"], 3, 20) if "after" in data else None,
                 session_id=session_id,
             )
         else:
@@ -407,7 +406,12 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                     "include_artifacts": {"type": "boolean"},
                     "include_derived": {"type": "boolean"},
                     "before": {"type": "integer", "minimum": 0, "maximum": 20},
-                    "after": {"type": "integer", "minimum": 0, "maximum": 20},
+                    "after": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20,
+                        "description": "Current branch only; omit with session_id.",
+                    },
                     "offset": {"type": "integer", "minimum": 0},
                     "max_chars": {
                         "type": "integer",

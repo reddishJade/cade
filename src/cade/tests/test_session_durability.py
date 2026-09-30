@@ -85,6 +85,11 @@ repo.append("assistant", "durable after crash")
         "durable after crash",
     ]
     assert len(_history(reopened).search("durable")) == 1
+    store.index_path.unlink()
+    exact = _history(reopened).read(
+        reopened.build_branch()[-1].id, session_id=store.session_id
+    )
+    assert exact is not None and exact.content == "durable after crash"
     _report(reopened, tmp_path)
 
 

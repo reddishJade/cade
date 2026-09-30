@@ -17,8 +17,8 @@ from cade.harness.security.permissions import PermissionDecision
 
 ExecutionMode = Literal["plan", "build", "act"]
 
-# grep 提供不依赖 shell 的按需内容搜索；目录浏览仍由 shell 负责。
-_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls"})
+# 结构化搜索保持可选；默认编码工具通过 bash 组合 rg/find/ls。
+_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
 
 
 class ExecutionPolicy(Protocol):
@@ -85,7 +85,6 @@ class PlanPolicy:
     _PLAN_TOOLS = frozenset(
         {
             "read",
-            "grep",
             "bash",
             "webfetch",
             "websearch",
