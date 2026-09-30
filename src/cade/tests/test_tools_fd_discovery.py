@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from cade.coding_agent.tools import _search_utils
+from cade.coding_agent.tools import _search_utils, glob_search
 from cade.coding_agent.tools.glob_search import build_glob_tools
 from cade.coding_agent.tools.tools_manager import get_tool_path
 
@@ -73,16 +74,23 @@ def test_fdignore_is_consistent_without_fd(
     if backend == "rg":
         monkeypatch.setattr(_search_utils, "get_rg_path", lambda: "rg")
         monkeypatch.setattr(
-            _search_utils,
-            "_enumerate_with_ripgrep",
-            lambda root, base, rg: [root / "fd_only.py", root / "visible.py"],
+            glob_search.subprocess,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess(
+                args=["rg"],
+                returncode=0,
+                stdout=f"{tmp_path / 'fd_only.py'}\n{tmp_path / 'visible.py'}\n",
+                stderr="",
+            ),
         )
     else:
         monkeypatch.setattr(_search_utils, "get_rg_path", lambda: None)
 
-    discovered = _search_utils.enumerate_search_files(tmp_path, tmp_path)
+    tools = {tool.name: tool for tool in build_glob_tools(tmp_path)}
+    result = tools["find"].handler({"pattern": "*.py"}, None)
 
-    assert [path.name for path in discovered] == ["visible.py"]
+    assert str(result) == "visible.py"
+    assert result.metadata == {"count": 1, "truncated": False}
 
 
 def test_python_glob_truncation_uses_path_order(
@@ -99,6 +107,7 @@ def test_python_glob_truncation_uses_path_order(
 
     assert str(result) == "a.py\n... truncated"
     assert result.metadata == {"count": 2, "truncated": True}
+
 
 # 失效情形：搜索根为单个文件时，fd 后端把该文件当作目录而漏掉结果。
 @pytest.mark.skipif(

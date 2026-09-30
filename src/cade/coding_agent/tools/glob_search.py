@@ -284,7 +284,9 @@ def _glob_with_rg(
                 continue
             files.append(path)
 
-    return _render_external_matches(root, files, max_results)
+    return _render_external_matches(
+        root, _search_utils._exclude_fdignored_files(root, files), max_results
+    )
 
 
 def _render_external_matches(root: Path, files: list[Path], max_results: int) -> str:
