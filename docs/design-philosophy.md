@@ -562,7 +562,7 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 
 技能的 `allowed-tools` 以 advisory 方式披露，权限 bypass 明确保持关闭。项目技能默认等待 `trust_project_skills` 开启，显式目录拥有最高优先级。
 
-### 9.2 记忆承担跨 session 的可复用事实
+### 9.2 记忆承担跨 session 的可复用事实与经验
 
 当前记忆实现使用两个 Markdown 事实文件：项目 `MEMORY.md` 与用户 `~/.cade/memory/MEMORY.md`。每个 H2 section 形成 `MemoryRecord`，记录 layer、title、body 和稳定 memory id。
 
@@ -573,8 +573,15 @@ SkillRegistry 先发现 `SKILL.md` frontmatter，保存名称、描述、来源�
 - 项目层在相同条件下优先于用户层。
 - 结果最多返回 10 条。
 - 文件 inode、mtime、size 组成索引签名，变化触发重建。
+- `recall` 额外的 `anchor` 参数按仓库相对路径确定性过滤经验，不参与打分。
 
-记忆写入支持显式 add、update、delete；标题或正文重复被拒绝；文件锁、临时文件、fsync 和 replace 保证原子更新。恢复 session 时可以按最多 6000 token 读取记忆概览；普通 turn 只接收记忆使用协议，模型通过 `recall` 按需检索。session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实和可复用方案。
+经验（Experience）把"昂贵获得的排障知识"结构化，但仍然是历史提示而非当前事实：H2 标题是问题，正文记录 `root_cause`、`fix`、`applies_when`、`anchors` 与 `evidence`。`remember` 不接受模型自述的证据，只接受当前分支上真实成功的验证事件，由 Host 盖章 `validation`/`verify`/`exit_code`/`session` 与锚点内容快照；没有成功验证事件时直接拒绝写入。经验只写项目层，因为仓库相对锚点在别的项目里没有意义。
+
+读取走两段式渐进披露，与 `history` 同构：`recall` 只返回索引行（id、问题、适用条件、锚点、证据档位、新鲜度），`recall memory_id=<id>` 才返回正文。每轮最多注入 3 行 LOW 优先级指针，且只在锚点与本 session 真实读写文件（或失败输出中的原样错误签名）相交时出现；每条经验每个上下文窗口最多自动提示一次，显式召回后不再提示，去重状态只活在运行时窗口里。
+
+新鲜度用内容快照而不是 git commit：写入时对锚点文件取 sha256，读取时重新计算，得到 `unchanged`/`changed`/`missing`/`unknown`。真实工作流是"改完 → 测试通过 → 记录"，此刻修复往往尚未提交，git 基线会在两个方向上都给出错误答案。
+
+校验在读取期同样生效：手工编辑 MEMORY.md 写出的坏经验不会产生提示、不会返回正文、不会在恢复会话时注入，只会作为 `INVALID experience` 索引行等待修复。memory 路径上没有任何模型调用（无 judge、reranker、摘要、embedding 或后台整理）；恢复 session 时可以按最多 6000 token 读取记忆概览，其中经验只出现指针行。session surface 承担当前任务连续性，MemoryManager 承担跨 session 的规则、架构决策、验证事实与可复用经验。
 
 ### 9.3 MCP 采用延迟发现与运行时快照
 
