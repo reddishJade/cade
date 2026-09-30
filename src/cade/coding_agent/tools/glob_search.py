@@ -241,6 +241,7 @@ def _glob_with_rg(
         "--no-ignore-dot",
         "--no-ignore-exclude",
         "--no-ignore-global",
+        "--no-ignore-vcs",
     ]
     for exclude in (
         "!**/.git/**",

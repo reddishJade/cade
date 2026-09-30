@@ -122,3 +122,38 @@ def test_optional_search_accepts_file_path_with_fd(tmp_path: Path) -> None:
     result = tools["find"].handler({"path": "sample.py", "pattern": "*.py"}, None)
 
     assert str(result) == "sample.py"
+
+
+# 失效情形：白名单优先级错误，或嵌套规则恢复已剪枝目录中的文件。
+@pytest.mark.parametrize("nested", [False, True])
+def test_real_backends_share_fdignore_precedence(tmp_path: Path, nested: bool) -> None:
+    fd = shutil.which("fd") or shutil.which("fdfind")
+    rg = shutil.which("rg")
+    if fd is None or rg is None:
+        pytest.skip("需要真实 fd 和 rg")
+    base = tmp_path / "excluded" if nested else tmp_path
+    base.mkdir(exist_ok=True)
+    if nested:
+        (tmp_path / ".fdignore").write_text("excluded/\n", encoding="utf-8")
+        (base / ".fdignore").write_text("!keep.py\n", encoding="utf-8")
+    else:
+        (tmp_path / ".gitignore").write_text("keep.py\n", encoding="utf-8")
+        (tmp_path / ".fdignore").write_text("!keep.py\n", encoding="utf-8")
+    (base / "keep.py").write_text("needle\n", encoding="utf-8")
+    expected = "No files found." if nested else "keep.py"
+    results = [
+        glob_search._glob_with_fd(tmp_path, tmp_path, "**/*.py", 10, fd),
+        glob_search._glob_with_rg(tmp_path, tmp_path, "**/*.py", 10, rg),
+        glob_search._glob_with_python(
+            tmp_path, tmp_path, "**/*.py", 10, recursive_basename=True
+        ),
+    ]
+    assert [str(result) for result in results] == [expected] * 3
+
+    enumerated = _search_utils._exclude_fdignored_files(
+        tmp_path,
+        _search_utils._enumerate_with_ripgrep(
+            tmp_path, tmp_path, rg, respect_fdignore=True
+        ),
+    )
+    assert enumerated == ([] if nested else [base / "keep.py"])

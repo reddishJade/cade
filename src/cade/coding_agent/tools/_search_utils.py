@@ -63,7 +63,9 @@ def enumerate_search_files(
         rg = get_rg_path()
         if rg:
             try:
-                files = _enumerate_with_ripgrep(root, base, rg)
+                files = _enumerate_with_ripgrep(
+                    root, base, rg, respect_fdignore=respect_fdignore
+                )
                 return (
                     _exclude_fdignored_files(root, files) if respect_fdignore else files
                 )
@@ -108,7 +110,9 @@ def _enumerate_with_fd(root: Path, base: Path, fd: str) -> list[Path]:
     return files
 
 
-def _enumerate_with_ripgrep(root: Path, base: Path, rg: str) -> list[Path]:
+def _enumerate_with_ripgrep(
+    root: Path, base: Path, rg: str, *, respect_fdignore: bool = False
+) -> list[Path]:
     command = [
         rg,
         "--files",
@@ -118,6 +122,7 @@ def _enumerate_with_ripgrep(root: Path, base: Path, rg: str) -> list[Path]:
         "--no-ignore-dot",
         "--no-ignore-exclude",
         "--no-ignore-global",
+        *(["--no-ignore-vcs"] if respect_fdignore else []),
         *_rg_exclusion_args(),
         "--",
         str(base),
@@ -162,9 +167,11 @@ def _enumerate_with_python(
             child = directory / dirname
             if child.is_symlink() or _is_search_path_excluded(root, child):
                 continue
-            if _is_ignored(child, ignore_specs, directory=True):
-                continue
-            if respect_fdignore and _is_ignored(child, fdignore_specs, directory=True):
+            if (
+                _is_discovery_ignored(root, child, ignore_specs, fdignore_specs)
+                if respect_fdignore
+                else _is_ignored(child, ignore_specs, directory=True)
+            ):
                 continue
             kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
@@ -173,9 +180,11 @@ def _enumerate_with_python(
             path = directory / filename
             if path.is_symlink() or _is_search_path_excluded(root, path):
                 continue
-            if _is_ignored(path, ignore_specs):
-                continue
-            if respect_fdignore and _is_ignored(path, fdignore_specs):
+            if (
+                _is_discovery_ignored(root, path, ignore_specs, fdignore_specs)
+                if respect_fdignore
+                else _is_ignored(path, ignore_specs)
+            ):
                 continue
             files.append(path.resolve())
     return files
@@ -240,12 +249,47 @@ def _is_ignored(
 
 
 def _is_fdignored(root: Path, path: Path) -> bool:
-    return _is_ignored(path, _load_fdignore_specs(root), directory=path.is_dir())
+    return _is_discovery_ignored(
+        root, path, _load_gitignore_specs(root), _load_fdignore_specs(root)
+    )
 
 
 def _exclude_fdignored_files(root: Path, files: list[Path]) -> list[Path]:
-    specs = _load_fdignore_specs(root)
-    return [path for path in files if not _is_ignored(path, specs)]
+    git_specs = _load_gitignore_specs(root)
+    fd_specs = _load_fdignore_specs(root)
+    return [
+        path
+        for path in files
+        if not _is_discovery_ignored(root, path, git_specs, fd_specs)
+    ]
+
+
+def _is_discovery_ignored(
+    root: Path,
+    path: Path,
+    git_specs: tuple[tuple[Path, pathspec.GitIgnoreSpec], ...],
+    fd_specs: tuple[tuple[Path, pathspec.GitIgnoreSpec], ...],
+) -> bool:
+    """按 fd 的优先级匹配，并在父目录被忽略时停止遍历。"""
+    relative = path.resolve().relative_to(root.resolve())
+    current = root.resolve()
+    for part in relative.parts:
+        current = current / part
+        directory = current.is_dir()
+        ignored = False
+        for spec_root, spec in (*git_specs, *fd_specs):
+            try:
+                candidate = current.relative_to(spec_root).as_posix()
+            except ValueError:
+                continue
+            if directory:
+                candidate += "/"
+            decision = spec.check_file(candidate).include
+            if decision is not None:
+                ignored = decision
+        if ignored:
+            return True
+    return False
 
 
 def build_path_matcher(
