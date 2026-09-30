@@ -1,228 +1,39 @@
-"""权限引擎裁决语义测试。"""
+"""E2E 无法安全穷举的权限硬边界回归。
+
+需要防止的失效方式是危险命令被误放行、模式绕过审批路由、审批范围升级、
+路径逃逸、受保护元数据写入和敏感文件 override 扩大。逐条执行这些场景会
+修改真实文件或触发危险命令，所以在权限引擎边界做窄测试。
+"""
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from cade.agent.types import ApprovalRequest, ToolSpec
-from cade.coding_agent.assembly.security import sensitive_path_overrides_from_security
+from cade.coding_agent.assembly.security import (
+    sensitive_path_overrides_from_security,
+)
 from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.harness.config import SecurityRuntimeConfig
-from cade.harness.security import HITLResult
-from cade.harness.security.permission_model import (
-    Action,
-    Constraint,
-    ExternalDirectory,
-    FileGrantStore,
-    GrantRecord,
-    Rule,
-    SensitivePathOverride,
+from cade.harness.security import (
+    ActionExtractor,
+    HITLResult,
+    ShellAnalysisPolicyEvaluator,
+    analyze_shell_command,
 )
+from cade.harness.security.permission_model import Rule, SensitivePathOverride
 from cade.harness.security.permissions import PermissionEngine, PermissionEngineConfig
 
 
-def _bash_tool() -> ToolSpec:
+def _bash() -> ToolSpec:
     return ToolSpec("bash", "", "", lambda _data, _update: "")
 
 
-def test_build_allows_proven_read_only_git_without_review(tmp_path: Path) -> None:
-    def reject_unexpected_review(_request: ApprovalRequest) -> HITLResult:
-        raise AssertionError("read-only git command should not require review")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="ask",
-            execution_mode="build",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "git log --oneline -10"},
-        tool_spec=_bash_tool(),
-        approval_callback=reject_unexpected_review,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "allow"
-    assert result.blocked is False
-
-
-def test_build_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="ask",
-            execution_mode="build",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "allow"
-    assert result.source == "auto_review"
-    assert [request.execution_mode for request in requests] == ["build"]
-
-
-def test_act_routes_unresolved_shell_to_user_review(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["act"],
-            mode_fallback="ask",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="ask",
-            execution_mode="act",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-        approvals_reviewer="user",
-    )
-
-    assert result.decision == "allow"
-    assert [request.execution_mode for request in requests] == ["act"]
-
-
-def test_plan_allows_proven_read_only_shell_without_review(tmp_path: Path) -> None:
-    def reject_unexpected_review(_request: ApprovalRequest) -> HITLResult:
-        raise AssertionError("read-only shell command should not require review")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
-            mode_fallback="deny",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="deny",
-            execution_mode="plan",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "rg needle src | head -n 20"},
-        tool_spec=_bash_tool(),
-        approval_callback=reject_unexpected_review,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "allow"
-    assert result.blocked is False
-
-
-def test_build_routes_known_mutating_shell_to_auto_review(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="ask",
-            execution_mode="build",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "rm -rf build"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "allow"
-    assert result.source == "auto_review"
-    assert [request.execution_mode for request in requests] == ["build"]
-
-
-def test_plan_denies_explicit_mutating_shell_before_review(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
-            mode_fallback="deny",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="deny",
-            execution_mode="plan",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "rm -rf build"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "deny"
-    assert result.blocked is True
-    assert requests == []
-
-
-# 失效情形：Plan 放行文件输出、Build/Act 绕过各自 reviewer、越界输出被审批覆盖。
-@pytest.mark.parametrize(
-    ("mode", "reviewer", "expected_decision", "expected_reviews"),
-    [
-        ("plan", "auto_review", "deny", 0),
-        ("build", "auto_review", "allow", 1),
-        ("act", "user", "allow", 1),
-    ],
-)
-def test_find_file_output_obeys_mode_mutation_authority(
-    tmp_path: Path,
-    mode: str,
-    reviewer: str,
-    expected_decision: str,
-    expected_reviews: int,
-) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(
+def _engine(tmp_path: Path, mode: str, **kwargs: object) -> PermissionEngine:
+    return PermissionEngine(
         PermissionEngineConfig(
             project_root=tmp_path,
             mode_ruleset=build_default_mode_rulesets(tmp_path)[mode],
@@ -230,337 +41,114 @@ def test_find_file_output_obeys_mode_mutation_authority(
             shell_unresolved_policy="ask",
             shell_mutation_policy="deny" if mode == "plan" else "ask",
             execution_mode=mode,
+            **kwargs,
         )
     )
-    result = engine.decide(
+
+
+def test_read_only_command_is_allowed_without_review(tmp_path: Path) -> None:
+    result = _engine(tmp_path, "build").decide(
         "bash",
-        {"command": "find . -fprint report.txt"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-        approvals_reviewer=reviewer,
-    )
-
-    assert result.decision == expected_decision
-    assert len(requests) == expected_reviews
-
-
-def test_find_file_output_outside_workspace_is_denied(tmp_path: Path) -> None:
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            project_root=tmp_path,
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            shell_mutation_policy="ask",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "find . -fprint ../outside.txt"},
-        tool_spec=_bash_tool(),
-        approval_callback=lambda _request: HITLResult("allow", "once"),
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "deny"
-
-
-def test_plan_routes_unresolved_shell_to_auto_review(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once", rationale="read-only test run")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
-            mode_fallback="deny",
-            shell_unresolved_policy="ask",
-            shell_mutation_policy="deny",
-            execution_mode="plan",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "allow"
-    assert result.source == "auto_review"
-    assert len(requests) == 1
-    assert requests[0].execution_mode == "plan"
-
-
-def test_build_routes_external_mcp_tool_to_auto_review(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    tool = ToolSpec(
-        "mcp__github__create_issue",
-        "Create an issue in an external GitHub repository",
-        "",
-        lambda _data, _update: "",
-    )
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            execution_mode="build",
-        )
-    )
-
-    result = engine.decide(
-        tool.name,
-        {"title": "test"},
-        tool_spec=tool,
-        approval_callback=approve,
-        approvals_reviewer="auto_review",
-    )
-
-    assert result.decision == "allow"
-    assert result.source == "auto_review"
-    assert [request.tool.name for request in requests] == [tool.name]
-
-
-def test_structured_writes_cannot_modify_protected_workspace_metadata(
-    tmp_path: Path,
-) -> None:
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            project_root=tmp_path,
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            execution_mode="build",
-        )
-    )
-
-    for path in (".cade/mcp_config.json", ".agents/skills/project/SKILL.md"):
-        result = engine.decide("write", {"path": path, "content": "x"})
-
-        assert result.decision == "deny"
-        assert result.reason_code == "protected_workspace_metadata"
-        assert result.overrideable is False
-
-
-def test_plan_write_can_use_managed_plan_file_channel(tmp_path: Path) -> None:
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            project_root=tmp_path,
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["plan"],
-            mode_fallback="deny",
-            execution_mode="plan",
-        )
-    )
-
-    result = engine.decide(
-        "write",
-        {"path": ".cade/plans/refactor.md", "content": "# Plan"},
+        {"command": "git log --oneline -10"},
+        tool_spec=_bash(),
+        approval_callback=lambda _request: pytest.fail("unexpected approval"),
     )
 
     assert result.decision == "allow"
     assert result.blocked is False
 
 
-def test_patch_cannot_use_plan_file_metadata_exception(tmp_path: Path) -> None:
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            project_root=tmp_path,
-            mode_ruleset=build_default_mode_rulesets(tmp_path)["build"],
-            mode_fallback="ask",
-            execution_mode="build",
-            tool_path_extractors={"patch": lambda _data: (".cade/plans/refactor.md",)},
-        )
-    )
-
-    result = engine.decide("patch", {"patch_text": "opaque"})
-
-    assert result.decision == "deny"
-    assert result.reason_code == "protected_workspace_metadata"
-
-
-def test_never_policy_rejects_ask_without_calling_reviewer() -> None:
+def test_mode_controls_who_can_approve_an_unresolved_command(tmp_path: Path) -> None:
     requests: list[ApprovalRequest] = []
 
     def approve(request: ApprovalRequest) -> HITLResult:
         requests.append(request)
         return HITLResult("allow", "once")
 
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=(Rule(action="bash", effect="ask"),),
-            mode_fallback="ask",
-            approval_policy="never",
-        )
-    )
-
-    result = engine.decide(
+    build_result = _engine(tmp_path, "build").decide(
         "bash",
         {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
-    )
-
-    assert result.decision == "deny"
-    assert result.reason_code == "approval_policy_never"
-    assert requests == []
-
-
-def test_auto_review_metadata_is_preserved() -> None:
-    def approve(_request: ApprovalRequest) -> HITLResult:
-        return HITLResult(
-            "allow",
-            "once",
-            rationale="Focused local test command.",
-            risk="low",
-            authorization="high",
-        )
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=(Rule(action="bash", effect="ask"),),
-            mode_fallback="ask",
-        )
-    )
-
-    result = engine.decide(
-        "bash",
-        {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
+        tool_spec=_bash(),
         approval_callback=approve,
         approvals_reviewer="auto_review",
     )
-
-    assert result.decision == "allow"
-    assert result.source == "auto_review"
-    assert result.metadata == {
-        "approval_decision": "allow",
-        "approval_scope": "once",
-        "approval_reviewer": "auto_review",
-        "approval_review_status": "completed",
-        "approval_rationale": "Focused local test command.",
-        "approval_risk": "low",
-        "approval_authorization": "high",
-    }
-
-
-def test_build_respects_explicit_user_shell_ask() -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=(Rule(action="bash", effect="allow"),),
-            user_ruleset=(Rule(action="bash", effect="ask"),),
-            mode_fallback="allow",
-            shell_unresolved_policy="allow",
-        )
-    )
-
-    result = engine.decide(
+    act_result = _engine(tmp_path, "act").decide(
         "bash",
         {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
+        tool_spec=_bash(),
         approval_callback=approve,
+        approvals_reviewer="user",
     )
 
-    assert result.decision == "allow"
-    assert len(requests) == 1
+    assert build_result.decision == "allow"
+    assert build_result.source == "auto_review"
+    assert act_result.decision == "allow"
+    assert [request.execution_mode for request in requests] == ["build", "act"]
 
 
-def test_build_respects_explicit_user_shell_deny() -> None:
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            mode_ruleset=(Rule(action="bash", effect="allow"),),
-            user_ruleset=(Rule(action="bash", effect="deny"),),
-            mode_fallback="allow",
-            shell_unresolved_policy="allow",
-        )
-    )
-
-    result = engine.decide("bash", {"command": "pytest -q"})
-
-    assert result.decision == "deny"
-    assert result.blocked is True
-
-
-def test_hook_constraint_uses_the_canonical_resolver() -> None:
-    class DenyProvider:
-        def evaluate(self, action: Action) -> tuple[Constraint, ...]:
-            return (
-                Constraint(
-                    decision="deny",
-                    source="hook",
-                    reason=f"hook denied {action.tool}",
-                ),
-            )
-
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            hook_constraint_providers=(DenyProvider(),),
-            mode_fallback="allow",
-        )
-    )
-
-    result = engine.decide("read", {"path": "README.md"})
-
-    assert result.decision == "deny"
-    assert result.source == "hook"
-
-
-def test_build_keeps_dangerous_shell_command_denied() -> None:
-    requests: list[ApprovalRequest] = []
+def test_plan_and_dangerous_commands_cannot_be_overridden(tmp_path: Path) -> None:
+    reviewer_calls: list[ApprovalRequest] = []
 
     def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
+        reviewer_calls.append(request)
         return HITLResult("allow", "once")
 
-    engine = PermissionEngine(
+    plan_result = _engine(tmp_path, "plan").decide(
+        "bash",
+        {"command": "rm -rf build"},
+        tool_spec=_bash(),
+        approval_callback=approve,
+        approvals_reviewer="auto_review",
+    )
+    dangerous_result = PermissionEngine(
         PermissionEngineConfig(
             mode_ruleset=(Rule(action="bash", effect="allow"),),
             mode_fallback="allow",
             shell_unresolved_policy="allow",
         )
-    )
-
-    result = engine.decide(
+    ).decide(
         "bash",
         {"command": "rm -rf /"},
-        tool_spec=_bash_tool(),
+        tool_spec=_bash(),
         approval_callback=approve,
     )
 
+    assert plan_result.decision == "deny"
+    assert dangerous_result.decision == "deny"
+    assert reviewer_calls == []
+
+
+def test_paths_outside_workspace_are_hard_denied(tmp_path: Path) -> None:
+    result = _engine(tmp_path, "build").decide(
+        "read", {"path": str(tmp_path.parent / "outside.txt")}
+    )
+
     assert result.decision == "deny"
-    assert result.blocked is True
-    assert requests == []
+    assert result.reason_code == "outside_approved_roots"
+    assert result.overrideable is False
 
 
-def test_auto_review_cannot_create_session_grant() -> None:
-    def approve(_request: ApprovalRequest) -> HITLResult:
-        return HITLResult("allow", "session")
+def test_protected_workspace_metadata_cannot_be_written(tmp_path: Path) -> None:
+    result = _engine(tmp_path, "build").decide(
+        "write", {"path": ".cade/mcp_config.json", "content": "x"}
+    )
 
-    engine = PermissionEngine(
+    assert result.decision == "deny"
+    assert result.reason_code == "protected_workspace_metadata"
+    assert result.overrideable is False
+
+
+def test_auto_review_cannot_create_a_session_grant() -> None:
+    result = PermissionEngine(
         PermissionEngineConfig(
             mode_ruleset=(Rule(action="bash", effect="ask"),),
             mode_fallback="ask",
         )
-    )
-
-    result = engine.decide(
+    ).decide(
         "bash",
         {"command": "pytest -q"},
-        tool_spec=_bash_tool(),
-        approval_callback=approve,
+        tool_spec=_bash(),
+        approval_callback=lambda _request: HITLResult("allow", "session"),
         approvals_reviewer="auto_review",
     )
 
@@ -568,87 +156,17 @@ def test_auto_review_cannot_create_session_grant() -> None:
     assert result.reason_code == "invalid_auto_review_scope"
 
 
-def test_unresolved_restricted_path_is_explicit_deny() -> None:
-    engine = PermissionEngine(PermissionEngineConfig(restricted_dirs=("secrets",)))
-
-    result = engine.decide("read", {})
+def test_unresolved_paths_are_denied_when_restricted_dirs_are_configured() -> None:
+    result = PermissionEngine(
+        PermissionEngineConfig(restricted_dirs=("secrets",))
+    ).decide("read", {})
 
     assert result.decision == "deny"
-    assert result.blocked is True
-    assert result.matched_rule == "restricted_dirs"
     assert result.reason_code == "unresolved_path_with_restricted_dirs"
     assert result.overrideable is False
-    assert result.remediation == (
-        "Use a command or tool input with a statically resolvable path."
-    )
-    assert result.reason == (
-        "filesystem paths could not be extracted safely while "
-        "restricted_dirs is configured for tool: read"
-    )
 
 
-def test_external_path_denial_has_actionable_remediation(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    engine = PermissionEngine(PermissionEngineConfig(project_root=tmp_path))
-    outside = tmp_path.parent / "outside.txt"
-
-    result = engine.decide("read", {"path": str(outside)})
-
-    assert result.decision == "deny"
-    assert result.reason_code == "outside_approved_roots"
-    assert result.overrideable is False
-    assert result.remediation == (
-        "Add the directory to external_directories with the required access."
-    )
-    assert not caplog.records
-
-
-def test_multi_target_approval_only_offers_once(tmp_path: Path) -> None:
-    requests: list[ApprovalRequest] = []
-
-    def approve(request: ApprovalRequest) -> HITLResult:
-        requests.append(request)
-        return HITLResult("allow", "once")
-
-    engine = PermissionEngine(PermissionEngineConfig(project_root=tmp_path))
-    tool = ToolSpec("bash", "", "", lambda _data, _update: "")
-
-    result = engine.decide(
-        "bash",
-        {"command": "cp source.txt target.txt"},
-        tool_spec=tool,
-        approval_callback=approve,
-    )
-
-    assert result.decision == "allow"
-    assert requests[0].allowed_scopes == ("once",)
-
-
-def test_invalid_approval_scope_is_rejected_instead_of_downgraded(
-    tmp_path: Path,
-) -> None:
-    def approve(_request: ApprovalRequest) -> HITLResult:
-        return HITLResult("allow", "permanent")
-
-    engine = PermissionEngine(PermissionEngineConfig(project_root=tmp_path))
-    tool = ToolSpec("bash", "", "", lambda _data, _update: "")
-
-    result = engine.decide(
-        "bash",
-        {"command": "cp source.txt target.txt"},
-        tool_spec=tool,
-        approval_callback=approve,
-    )
-
-    assert result.decision == "deny"
-    assert result.blocked is True
-    assert result.reason_code == "invalid_approval_scope"
-    assert result.approval_result is None
-
-
-def test_exact_environment_file_read_override_is_allowed(tmp_path: Path) -> None:
+def test_sensitive_override_is_exact_and_read_only(tmp_path: Path) -> None:
     env_path = tmp_path / ".env"
     engine = PermissionEngine(
         PermissionEngineConfig(
@@ -660,121 +178,53 @@ def test_exact_environment_file_read_override_is_allowed(tmp_path: Path) -> None
         )
     )
 
-    result = engine.decide("read", {"path": str(env_path)})
-
-    assert result.decision == "allow"
-    assert result.blocked is False
-
-
-def test_environment_override_is_exact_and_access_scoped(tmp_path: Path) -> None:
-    env_path = tmp_path / ".env"
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            project_root=tmp_path,
-            sensitive_path_overrides=(
-                SensitivePathOverride(path=env_path, access="read"),
-            ),
-            mode_fallback="allow",
-        )
-    )
-
+    read_result = engine.decide("read", {"path": str(env_path)})
     write_result = engine.decide("write", {"path": str(env_path)})
-    other_result = engine.decide("read", {"path": str(tmp_path / ".env.local")})
+    near_match_result = engine.decide("read", {"path": str(tmp_path / ".env.local")})
 
-    assert write_result.decision == "deny"
+    assert read_result.decision == "allow"
     assert write_result.reason_code == "sensitive_path"
-    assert other_result.decision == "deny"
-    assert other_result.reason_code == "sensitive_path"
+    assert near_match_result.reason_code == "sensitive_path"
 
 
-def test_credential_path_cannot_use_sensitive_override(tmp_path: Path) -> None:
-    key_path = tmp_path / ".ssh" / "id_rsa"
-    engine = PermissionEngine(
-        PermissionEngineConfig(
-            project_root=tmp_path,
-            sensitive_path_overrides=(
-                SensitivePathOverride(path=key_path, access="read"),
-            ),
-            mode_fallback="allow",
-        )
-    )
-
-    result = engine.decide("read", {"path": str(key_path)})
-
-    assert result.decision == "deny"
-    assert result.reason_code == "sensitive_path"
-    assert result.remediation == (
-        "Use a non-sensitive file; credential paths cannot be approved or overridden."
-    )
-
-
-def test_sensitive_override_runtime_config_is_normalized(tmp_path: Path) -> None:
+def test_runtime_sensitive_overrides_require_exact_paths(tmp_path: Path) -> None:
     security = SecurityRuntimeConfig.model_validate(
         {"sensitive_path_overrides": [{"path": ".env", "access": "read"}]}
     )
 
-    overrides = sensitive_path_overrides_from_security(security, tmp_path)
-
-    assert overrides == (SensitivePathOverride(path=tmp_path / ".env", access="read"),)
-
-
-def test_sensitive_override_runtime_config_rejects_globs() -> None:
+    assert sensitive_path_overrides_from_security(security, tmp_path) == (
+        SensitivePathOverride(path=tmp_path / ".env", access="read"),
+    )
     with pytest.raises(ValidationError, match="must be an exact path"):
         SecurityRuntimeConfig.model_validate(
             {"sensitive_path_overrides": [{"path": "**/.env", "access": "read"}]}
         )
 
 
-def test_external_dirs_gate_drops_user_entries_when_disabled() -> None:
-    from cade.coding_agent.assembly.security import external_directories_from_security
+def test_safe_search_classification_does_not_hide_external_programs() -> None:
+    safe = analyze_shell_command("rg needle src | head -n 20")
+    unsafe = analyze_shell_command("rg --pre=helper needle src")
 
-    security = SecurityRuntimeConfig.model_validate(
-        {
-            "non_workspace_access": False,
-            "external_directories": [{"path": "/tmp/reference", "access": "read"}],
-        }
-    )
-
-    dirs = external_directories_from_security(security)
-
-    assert all(d.path != Path("/tmp/reference") for d in dirs)
-
-
-def test_external_dirs_gate_keeps_user_entries_when_enabled() -> None:
-    from cade.coding_agent.assembly.security import external_directories_from_security
-
-    security = SecurityRuntimeConfig.model_validate(
-        {
-            "external_directories": [{"path": "/tmp/reference", "access": "read"}],
-        }
-    )
-
-    dirs = external_directories_from_security(security)
-
-    assert ExternalDirectory(path=Path("/tmp/reference"), access="read") in dirs
-
-
-def test_file_grant_store_preserves_concurrent_updates(tmp_path: Path) -> None:
-    store = FileGrantStore(tmp_path / "grants.json")
-    records = [
-        GrantRecord(
-            capability="read",
-            operation="read",
-            target_kind="path",
-            target_pattern=f"src/file_{index}.py",
-            access="read",
-            decision="allow",
-            scope="permanent",
-            grant_id=f"grant-{index}",
-        )
-        for index in range(20)
+    assert [target.value for target in safe.resolved_paths] == ["src"]
+    assert safe.unresolved_effects == ()
+    assert [effect.reason for effect in unsafe.unresolved_effects] == [
+        "wrapper_command"
     ]
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        tuple(executor.map(store.add, records))
 
-    stored = store.records()
-    assert {record.grant_id for record in stored} == {
-        record.grant_id for record in records
-    }
-    assert store.path.read_text(encoding="utf-8").endswith("\n")
+def test_find_output_is_a_write_and_recursive_root_delete_is_denied() -> None:
+    output = analyze_shell_command("find . -fprint report.txt")
+    action = ActionExtractor().extract(
+        "bash",
+        {"command": "git -C /tmp/repo clean -fdx"},
+        ("shell", "none"),
+    )
+
+    constraints = ShellAnalysisPolicyEvaluator().evaluate(action)
+
+    assert [(path.value, path.access) for path in output.resolved_paths] == [
+        (".", "read"),
+        ("report.txt", "write"),
+    ]
+    assert [effect.reason for effect in output.unresolved_effects] == ["mutation"]
+    assert [constraint.decision for constraint in constraints] == ["deny"]

@@ -25,6 +25,7 @@ uv run ruff check src/ --fix  # lint and apply safe fixes
 uv run ruff format src/       # format source files
 uv run pyright src/           # type-check the package
 uv run pytest src/cade/tests -q --tb=short
+uv run pytest src/cade/tests/e2e --override-ini 'addopts=' -m e2e -q --tb=short
 ```
 
 ## Coding Style & Naming
@@ -52,7 +53,7 @@ verify behavior when automation is impractical. Run a focused test during
 development, for example:
 
 ```sh
-uv run pytest src/cade/tests/test_tools_file_handlers.py -q --tb=short
+uv run pytest src/cade/tests/test_security_permissions.py -q --tb=short
 ```
 
 The `mcp_external` tests require network tooling and are excluded by default.
