@@ -245,15 +245,7 @@ def _analyze_posix(command: str) -> ShellAnalysis:
             continue
         if name in _POSIX_READ_COMMANDS:
             if name == "rg":
-                external_option = next(
-                    (
-                        option
-                        for arg in args
-                        if (option := arg.split("=", 1)[0])
-                        in _RG_EXTERNAL_PROGRAM_OPTIONS
-                    ),
-                    None,
-                )
+                external_option = _rg_external_program_option(args)
                 if external_option is not None:
                     unresolved.append(
                         UnresolvedEffect(
@@ -492,17 +484,21 @@ def _is_root_recursive_delete(args: list[str]) -> bool:
 def _read_paths(command: str, args: list[str]) -> list[Target]:
     positional: list[str] = []
     skip_next = False
+    options_enabled = True
     options_with_values = _read_option_values(command)
     for arg in args:
+        if command == "rg" and options_enabled and arg == "--":
+            options_enabled = False
+            continue
         if skip_next:
             skip_next = False
             continue
         option = arg.split("=", 1)[0]
-        if option in options_with_values:
+        if options_enabled and option in options_with_values:
             if "=" not in arg:
                 skip_next = True
             continue
-        if arg and not arg.startswith("-"):
+        if arg and (not options_enabled or not arg.startswith("-")):
             positional.append(arg)
     if command in {"grep", "rg", "ack"} and positional:
         positional = positional[1:]
@@ -559,6 +555,24 @@ def _read_option_values(command: str) -> frozenset[str]:
             }
         )
     return frozenset()
+
+
+def _rg_external_program_option(args: list[str]) -> str | None:
+    """识别实际生效的 ripgrep 外部程序选项，跳过选项值和 `--` 后内容。"""
+    options_with_values = _read_option_values("rg")
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            break
+        option = arg.split("=", 1)[0]
+        if option in _RG_EXTERNAL_PROGRAM_OPTIONS:
+            return option
+        if option in options_with_values and "=" not in arg:
+            index += 2
+        else:
+            index += 1
+    return None
 
 
 def _mutating_paths(command: str, args: list[str]) -> list[Target]:
