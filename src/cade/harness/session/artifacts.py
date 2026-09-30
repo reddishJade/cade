@@ -80,12 +80,17 @@ def resolve_history_event_content(
     data = content.get("data")
     if not isinstance(data, dict):
         return content
+    reference = data.get("content_artifact")
+    if reference is None:
+        return content
     resolved = resolve_tool_result_artifact(
         artifacts_dir,
-        data.get("content_artifact"),
+        reference,
     )
     if resolved is None:
-        return content
+        raise ValueError(
+            "History artifact is missing or invalid; preview is not evidence."
+        )
     hydrated_data = dict(data)
     hydrated_data["content"] = resolved
     hydrated = dict(content)

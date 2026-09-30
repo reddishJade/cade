@@ -12,7 +12,7 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 | **`edit`** | 串行写屏障 | `path`, `old_text`, `new_text`, `replace_all` | 基于精准定位与防脏写校验的代码块修改 |
 | **`write`** | 串行写屏障 | `path`, `content` | 创建全新文件或全量覆写指定文件内容 |
 | **`patch`** | 串行写屏障 | `patch_text` | 兼容标准 unified diff 补丁应用，适合跨多行修改 |
-| **`grep`** | 可选只读并发工具 | `pattern`, `path`, `glob`, `max_results`, `ignore_case`, `literal`, `context` | 优先通过系统 ripgrep 进行极速全文或正则搜索 |
+| **`grep`** | 普通只读并发工具 | `pattern`, `path`, `glob`, `max_results`, `ignore_case`, `literal`, `context` | 优先通过系统 ripgrep 进行极速全文或正则搜索 |
 | **`glob`** | 可选只读并发工具 | `pattern`, `path`, `max_results` | 按 Glob 通配符（如 `src/**/*.py`）匹配文件路径 |
 | **`find`** | 可选只读并发工具 | `pattern`, `path`, `max_results` | 模糊查找包含特定文件名的项目文件 |
 | **`ls`** | 可选只读并发工具 | `path`, `limit` | 结构化遍历指定目录下的子文件与目录树 |
@@ -21,6 +21,8 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 | **`websearch`** | 只读并发池 | `query` | 调用搜索引擎检索外部最新开源库文档与问题解法 |
 | **`question`** | 交互门控 | `question`, `options` | 向人类用户提出结构化交互问题（单选/多选/输入） |
 | **`delegate`** | 任务委托 | `description`, `prompt`, `mode` / `session_id` / `tasks` | 创建、续接或批量运行 session-backed child agent |
+| **`history`** | 串行只读工具 | `operation`, `entry_id`, `session_id`, `offset`, `max_chars` | 搜索当前 branch；按显式 Session/entry 引用读取原始事件和祖先邻域，不切换当前 head |
+| **`save_memory`** | 串行写屏障 | `path`, `markdown`, `sources`, `expected_content` | 校验显式历史来源，原子保存 `.cade/memory/` 中的 Markdown；来源存在不代表结论正确 |
 
 ---
 
@@ -29,7 +31,7 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 模型在单轮推理中经常会一次性输出多个工具调用（例如同时读取 4 个源文件，或者同时执行搜索）。Cade 的工具执行器（Tools Manager）会自动进行**副作用分类**：
 
 ### 2.1 只读并发池（Read Pool）
-`ToolSpec.execution_mode="parallel"` 的工具才会进入并发批次。当前明确标记为 parallel 的是 `read` 以及可选的 `grep/glob/find/ls`；其余工具默认 sequential。
+`ToolSpec.execution_mode="parallel"` 的工具才会进入并发批次。当前明确标记为 parallel 的是 `read`、`grep` 以及可选的 `glob/find/ls`；其余工具默认 sequential。
 - 这避免把“工具是否只读”的猜测散落到调度器里，调度语义由工具契约显式声明。
 
 ### 2.2 串行写屏障（Serial Write Barrier）

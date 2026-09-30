@@ -138,6 +138,38 @@ def test_protected_workspace_metadata_cannot_be_written(tmp_path: Path) -> None:
     assert result.overrideable is False
 
 
+@pytest.mark.parametrize(
+    ("tool", "path", "allowed"),
+    [
+        ("save_memory", ".cade/memory/timeout.md", True),
+        ("save_memory", ".cade/sessions/timeout.md", False),
+        ("save_memory", ".cade/memory/timeout.json", False),
+        ("save_memory", "nested/.cade/memory/timeout.md", False),
+        ("write", ".cade/memory/timeout.md", False),
+        ("edit", ".cade/memory/timeout.md", False),
+        ("patch", ".cade/memory/timeout.md", False),
+    ],
+)
+def test_memory_write_exception_is_limited_to_save_tool(
+    tmp_path: Path, tool: str, path: str, allowed: bool
+) -> None:
+    """在权限边界穷举例外，避免真实写入受保护的 session 文件。"""
+    spec = ToolSpec(tool, "", "", lambda _data, _update: "")
+    result = _engine(tmp_path, "build").decide(tool, {"path": path}, tool_spec=spec)
+    assert (result.decision == "allow") is allowed
+
+
+def test_memory_symlink_cannot_redirect_save_into_sessions(tmp_path: Path) -> None:
+    """链接别名不得扩大保存能力的目录范围。"""
+    sessions = tmp_path / ".cade" / "sessions"
+    sessions.mkdir(parents=True)
+    (tmp_path / ".cade" / "memory").symlink_to(sessions, target_is_directory=True)
+    result = _engine(tmp_path, "build").decide(
+        "save_memory", {"path": ".cade/memory/source.md"}
+    )
+    assert result.decision == "deny"
+
+
 def test_auto_review_cannot_create_a_session_grant() -> None:
     result = PermissionEngine(
         PermissionEngineConfig(

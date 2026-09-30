@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from cade.agent.context import (
     ContextBlockSource,
@@ -65,6 +65,7 @@ from .security import (
 )
 
 if TYPE_CHECKING:
+    from cade.harness.session import SessionHistory
     from cade.harness.skills import SkillRegistry
 
 
@@ -132,13 +133,10 @@ def build_agent(
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = (),
     skill_registry: SkillRegistry | None = None,
     external_hook_runner: ExternalHookRunner | None = None,
-    memory_manager: Any | None = None,
-    session_history: Any | None = None,
+    session_history: SessionHistory | None = None,
     auto_approval_callback: ApprovalCallback | None = None,
 ) -> CodingAgentHarness:
-    from cade.harness.memory import MemoryManager
 
-    memory_manager = memory_manager or MemoryManager(project_root)
     hook_manager = build_hook_manager(
         contextual_state,
         external_hook_runner,
@@ -215,7 +213,6 @@ def build_agent(
         shell_spec=shell_spec,
         contextual_state=contextual_state,
         modules=runtime_config.prompt.modules,
-        memory_manager=memory_manager,
         identity=CORE_IDENTITY,
     )
     gate = GateConfig(
@@ -270,7 +267,6 @@ def build_agent(
             cancellation_token=cancellation_token,
             project_root=project_root,
             skill_registry=skill_registry,
-            memory_manager=memory_manager,
             session_history=session_history,
         ),
     )

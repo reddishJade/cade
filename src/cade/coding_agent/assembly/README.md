@@ -13,7 +13,7 @@
        ▼                            ▼                            ▼
 build_shared_infra()       build_tool_registry()        build_security_rules()
 - SessionStore             - Builtin Tools              - PermissionEngine
-- MemoryManager            - McpTools                   - Mode Rulesets
+- History            - McpTools                   - Mode Rulesets
 - McpRuntimeRegistry       - mcp_tool_search            - ShellAnalyzer
 - JsonlAuditLogger                  │                            │
        │                            └─────────────┬──────────────┘
@@ -25,7 +25,7 @@ build_shared_infra()       build_tool_registry()        build_security_rules()
 
 ### 模块详细职责
 - **配置解析 ([config.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/config.py))**：`resolve_config` 处理全局、项目级、本地级与环境变量的四层配置覆盖合并，产出不可变的 `ResolvedConfig`。
-- **共享基础设施 ([infra.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/infra.py))**：`build_shared_infra` 构建 `SharedInfra` 实例，初始化会话仓库、BM25 长期记忆管理器、MCP 运行时及审计落盘。
+- **共享基础设施 ([infra.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/infra.py))**：`build_shared_infra` 构建 `SharedInfra` 实例，初始化会话仓库、History 读取、上下文窗口及取消控制。
 - **安全与权限策略 ([security.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/security.py))**：
   - `build_shell_from_security`：依据当前系统与配置构造沙箱 Shell。
   - `mode_rulesets_from_runtime_config`：生成 Plan/Build/Act 三种模式下的初始权限规则集。

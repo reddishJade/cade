@@ -74,6 +74,8 @@ class ActionExtractor:
             return self._path_action(tool_name, tool_input, "read", "read", "read")
         if tool_name == "write":
             return self._path_action(tool_name, tool_input, "write", "write", "write")
+        if tool_name == "save_memory":
+            return self._path_action(tool_name, tool_input, "write", tool_name, "write")
         if tool_name == "edit":
             return self._path_action(tool_name, tool_input, "edit", "edit", "write")
         if tool_name == "patch":

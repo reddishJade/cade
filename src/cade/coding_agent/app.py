@@ -35,7 +35,6 @@ from .working_note import render_working_note_restoration
 if TYPE_CHECKING:
     from cade.harness.agent_runtime.subagents import SubagentSessionManager
     from cade.harness.mcp import McpRuntimeRegistry
-    from cade.harness.memory import MemoryManager
 
 
 @dataclass
@@ -47,7 +46,6 @@ class CadeApp:
     contextual_state: ContextualRetrievalState | None = None
     external_hook_runner: ExternalHookRunner | None = None
 
-    memory_manager: MemoryManager | None = None
     mcp_runtime: McpRuntimeRegistry | None = None
     subagents: SubagentSessionManager | None = None
     session_recorder: SessionRecorder | None = None
@@ -365,9 +363,6 @@ def build_app(
         sessions_dir=sessions_dir,
     )
 
-    # 使用共享的 MemoryManager 实例，确保所有记忆工具使用同一事实源。
-    memory_manager = infra.memory_manager
-
     providers = build_provider_bundle(
         ProviderSettings(
             env_files=cfg.env_files,
@@ -394,7 +389,6 @@ def build_app(
         contextual_state=infra.contextual_state,
         cancel_event=infra.cancellation_token,
         skills_dir=cfg.skills_dir,
-        memory_manager=memory_manager,
         session_history=infra.session_history,
         context_window_controller=infra.context_window_controller,
     )
@@ -430,7 +424,6 @@ def build_app(
         fallback_provider=fallback_provider,
         skill_registry=skill_registry,
         external_hook_runner=external_hook_runner,
-        memory_manager=memory_manager,
         session_history=infra.session_history,
         auto_approval_callback=auto_approval_callback,
     )
@@ -440,7 +433,6 @@ def build_app(
         registry=registry_state,
         contextual_state=infra.contextual_state,
         external_hook_runner=external_hook_runner,
-        memory_manager=memory_manager,
         mcp_runtime=mcp_runtime_registry,
         subagents=subagents,
         session_recorder=infra.session_recorder,

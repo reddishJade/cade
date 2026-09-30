@@ -113,23 +113,16 @@ Cade 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 st
 
 ---
 
-## 6. 长期记忆管理 (Memory)
+## 6. Memory
 
-Cade 内置了分层的长期记忆系统：
-* **项目记忆**：位于项目根目录的 `MEMORY.md`，用于记录跨会话的技术选型、业务约定与关键约束；
-* **用户记忆**：位于 `~/.cade/memory/MEMORY.md`，用于记录个人代码风格偏好。
+Memory 位于 `.cade/memory/`，每个 Markdown 文件保存一条昂贵才获得、可能再次有用的
+项目知识。`/memory` 仅显示目录位置；用户可用编辑器查看、修改或删除文件。
 
-### 查看与检索记忆
-在 REPL 中：
-```text
-# 检索关于认证方式的记忆
-/memory search auth
+Agent 有历史需求时使用普通 `grep` 显式搜索该目录，再读取正文、沿 History 来源
+回到原始证据并核对当前代码。正常任务和恢复不扫描或注入 Memory。
 
-# 列出当前已持久化的所有记忆
-/memory list
-```
-
-Agent 在执行任务时，会根据需要通过 `recall` 工具按需检索，无需每轮浪费 Token 注入完整背景。
+保存使用 `save_memory`，正文自由表达，来源必须是显式给出的真实 Session/entry
+引用。完整参数和修订方式见 [Memory](guide/memory.md)。
 
 ---
 

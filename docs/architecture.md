@@ -281,9 +281,9 @@ intent 保存 run 关联。child 模型失败被解析为 completed/failed/cance
 `build_app()` 是产品组合根，按顺序构造：
 
 1. 已解析配置；
-2. 共享同一 store 的 session recorder/inbox、memory、context window state 和 cancellation；
+2. 共享同一 store 的 session recorder/inbox、History、context window state 和 cancellation；
 3. provider bundle；
-4. 本地工具、MCP、memory/history 和 subagent registry；
+4. 本地工具、MCP、Memory 保存/History 工具和 subagent registry；
 5. 冻结的 `AgentComposition`、会话级 runtime services 和
    `CodingAgentHarness`；
 6. `CadeApp` 生命周期句柄。

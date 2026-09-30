@@ -134,7 +134,6 @@ def build_turn_context_messages(
     composition: AgentComposition,
     resumed_notice: str | None,
     mode_notice: str | None = None,
-    memory_overview: str | None = None,
 ) -> list[AgentMessage]:
     typed: list[AgentMessage] = []
     parts: list[str] = []
@@ -142,8 +141,6 @@ def build_turn_context_messages(
         parts = list(composition.runtime_context_provider(question))
     if resumed_notice is not None:
         parts.append(f"<session-notices>\n{resumed_notice}\n</session-notices>")
-    if memory_overview:
-        parts.append(memory_overview)
     if mode_notice:
         parts.append(mode_notice)
     if parts:

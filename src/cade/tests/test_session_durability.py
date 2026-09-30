@@ -19,7 +19,11 @@ def _reopen(store: SessionStore) -> SessionStore:
 
 
 def _history(store: SessionStore) -> SessionHistory:
-    history = SessionHistory(store.sessions_dir, artifacts_dir=store.artifacts_dir)
+    history = SessionHistory(
+        store.sessions_dir,
+        project_root=store.project_root,
+        artifacts_dir=store.artifacts_dir,
+    )
     history.set_session_id(store.session_id)
     return history
 

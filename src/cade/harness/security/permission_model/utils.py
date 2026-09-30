@@ -206,6 +206,15 @@ def is_protected_workspace_metadata_write(
     except ValueError:
         return False
     relative = parts[cade_index + 1 :]
+    if (
+        tool == "save_memory"
+        and len(parts) == 3
+        and parts[:2] == (".cade", "memory")
+        and parts[2].endswith(".md")
+        and not parts[2].startswith(".")
+        and access == "write"
+    ):
+        return False
     return not (
         tool in {"write", "edit"}
         and len(relative) == 2

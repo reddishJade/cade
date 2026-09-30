@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from cade.harness.agent_runtime.config import AgentRuntimeConfig
-from cade.harness.memory import MemoryManager
 from cade.harness.session import SessionHistory
 from cade.harness.skills import SkillRegistry
 
@@ -20,6 +19,5 @@ class CodingAgentRuntimeConfig(AgentRuntimeConfig):
     initial_mode: ExecutionMode = "act"
     approval_router: Literal["mode", "user", "auto"] = "mode"
     skill_registry: SkillRegistry | None = None
-    memory_manager: MemoryManager | None = None
     session_history: SessionHistory | None = None
     prompt_instructions: tuple[dict, ...] = ()
