@@ -88,6 +88,18 @@ must produce a verifiable, repeatable artifact, such as a saved execution trace
 with reproduction steps. If isolated tests are necessary, document the relevant
 failure modes and write those tests before implementing the code.
 
+- For complex features, use realistic E2E scenarios of medium or high complexity
+  drawn from actual usage, including meaningful failure paths. Do not test only
+  the simplest successful case or add complexity for its own sake.
+- Test expected behavior independently of the implementation. Avoid tautological
+  tests that duplicate implementation logic to compute the expected result.
+- Avoid tests that merely detect source-code or internal-structure changes.
+  Refactoring that preserves behavior should not break tests unless the tested
+  structure is itself an explicit requirement.
+- For bug fixes, add a regression test only when existing behavior tests leave
+  a real coverage gap. Extend an existing test when that covers the gap without
+  duplicating coverage.
+
 Pytest is configured to discover `test_*.py` under `src/cade/tests`, with
 async tests handled automatically by `pytest-asyncio`. Exercise real provider
 and terminal behavior in E2E tests rather than mocking external I/O; manually
