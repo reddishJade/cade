@@ -21,35 +21,22 @@ jobs:
           version: "0.12.19"
           python-version: "3.12"
           enable-cache: true
-      - name: 检查发布标签与包版本
+      - name: Check release tag against package version
         if: startsWith(github.ref, 'refs/tags/v')
         run: test "$GITHUB_REF_NAME" = "v$(uv version --short)"
-      - name: 安装系统依赖
+      - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
-      - name: 安装开发依赖
+      - name: Install development dependencies
         run: uv sync --locked --extra dev
-      - name: Ruff 检查
+      - name: Ruff lint check
         run: uv run --locked ruff check src/
-      - name: Ruff 格式检查
+      - name: Ruff format check
         run: uv run --locked ruff format --check src/
-      - name: Pyright 检查
+      - name: Pyright type check
         run: uv run --locked pyright src/
-      - name: Tool / mode / permission 回归测试
-        run: >
-          uv run --locked pytest -q
-          src/cade/tests/test_agent_execution.py
-          src/cade/tests/test_tools_execution_modes.py
-          src/cade/tests/test_security_permissions.py
-          src/cade/tests/test_shell_policy.py
-          src/cade/tests/test_approval_reviewer.py
-          src/cade/tests/test_tools_apply_patch.py
-          src/cade/tests/test_harness_tool_gate.py
-          src/cade/tests/test_harness_contextual.py
-          src/cade/tests/test_app_composition.py
-          src/cade/tests/test_tools_subagent.py
-          src/cade/tests/test_memory.py
-          src/cade/tests/test_context_window.py
-      - name: 命令行启动检查
+      - name: Regression tests
+        run: uv run --locked pytest -q src/cade/tests
+      - name: CLI startup check
         run: uv run --locked cade --help
-      - name: 构建分发包
+      - name: Build distributions
         run: uv build --no-sources
