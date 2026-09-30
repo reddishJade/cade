@@ -252,6 +252,7 @@ def _build_delegate_tool(manager: SubagentSessionManager) -> ToolSpec:
         ),
         handler=_DelegateHandler(manager),
         schema={
+            "type": "object",
             "oneOf": [
                 {
                     "type": "object",
@@ -301,7 +302,7 @@ def _build_delegate_tool(manager: SubagentSessionManager) -> ToolSpec:
                     "required": ["tasks"],
                     "additionalProperties": False,
                 },
-            ]
+            ],
         },
         prompt_snippet="Delegate bounded work to a child agent",
         prompt_guidelines=(
