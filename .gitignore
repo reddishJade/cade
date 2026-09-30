@@ -1,20 +1,24 @@
 # 本地 Agent、编辑器与项目状态
-.agents/*
-!.agents/notes/
-!.agents/notes/**
-.antigravitycli/
-.cade/
-.claude/
-.codex/
-.crush/
-.vscode/
+/.agents/*
+!/.agents/notes/
+!/.agents/notes/**
+/.antigravitycli/
+/.cade/
+/.claude/
+/.codex/
+/.vscode/
 
 # 本地配置与虚拟环境
 .env
-.local/
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+/.aws/
+/.local/
 .venv*/
-cade.config.json
-opencode.json*
+/cade.config.json
+/opencode.json*
 
 # Python 缓存与构建产物
 __pycache__/
@@ -28,23 +32,30 @@ dist/
 *.spec
 
 # 本地 E2E 测试源码
-src/cade/tests/test_*_e2e.py
-src/cade/tests/e2e/
+/src/cade/tests/test_*_e2e.py
+/src/cade/tests/e2e/
 
 # 测试、E2E 与评测运行产物
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .pytest_cache/
-.benchmark/
-.e2e/
-.eval-repos/
-benchmark-results/
-e2e-results/
-eval-results/
-evals/private/
-logs/
-tmp/
+/.benchmark/
+/.e2e/
+/.eval-repos/
+/benchmark-results/
+/e2e-results/
+/eval-results/
+/evals/private/
+/logs/
+/tmp/
 
 # 本地草稿与诊断输出
-diff.log
-docs/notes/
-verifier-result.json
+/diff.log
+/docs/notes/
+/verifier-result.json
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db

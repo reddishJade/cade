@@ -1,0 +1,4 @@
+# fd 自动读取 .gitignore；这里只维护额外的搜索排除项。
+# 使用 fd --hidden 时仍跳过 Git 内部文件，保留项目配置和架构笔记。
+# 临时搜索所有隐藏及忽略文件可使用 fd --hidden --no-ignore。
+.git/
