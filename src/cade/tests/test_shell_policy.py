@@ -57,6 +57,7 @@ def test_rg_external_program_option_reaches_permission_review() -> None:
     ("command", "expected_paths"),
     [
         ("rg -g --pre needle src", ["src"]),
+        ("rg -g -- needle src", ["src"]),
         ("rg -- needle --hostname-bin", ["--hostname-bin"]),
     ],
 )
@@ -116,9 +117,7 @@ def test_fd_effectful_or_unknown_options_require_review(command: str) -> None:
     ],
 )
 def test_fd_unapproved_options_reach_permission_review(command: str) -> None:
-    action = ActionExtractor().extract(
-        "bash", {"command": command}, ("shell", "none")
-    )
+    action = ActionExtractor().extract("bash", {"command": command}, ("shell", "none"))
 
     constraints = ShellAnalysisPolicyEvaluator().evaluate(action)
 

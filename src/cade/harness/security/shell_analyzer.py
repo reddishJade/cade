@@ -487,11 +487,11 @@ def _read_paths(command: str, args: list[str]) -> list[Target]:
     options_enabled = True
     options_with_values = _read_option_values(command)
     for arg in args:
-        if command == "rg" and options_enabled and arg == "--":
-            options_enabled = False
-            continue
         if skip_next:
             skip_next = False
+            continue
+        if command == "rg" and options_enabled and arg == "--":
+            options_enabled = False
             continue
         option = arg.split("=", 1)[0]
         if options_enabled and option in options_with_values:
