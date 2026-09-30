@@ -61,7 +61,6 @@ def test_file_discovery_falls_back_to_rg_without_fd(
 
     assert discovered == [tmp_path / "sample.py"]
 
-
 @pytest.mark.parametrize("backend", ["rg", "python"])
 def test_fdignore_is_consistent_without_fd(
     tmp_path: Path,

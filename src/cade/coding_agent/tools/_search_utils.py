@@ -65,15 +65,11 @@ def enumerate_search_files(
             try:
                 files = _enumerate_with_ripgrep(root, base, rg)
                 return (
-                    _exclude_fdignored_files(root, files)
-                    if respect_fdignore
-                    else files
+                    _exclude_fdignored_files(root, files) if respect_fdignore else files
                 )
             except FileNotFoundError:
                 pass
-    return _enumerate_with_python(
-        root, base, respect_fdignore=respect_fdignore
-    )
+    return _enumerate_with_python(root, base, respect_fdignore=respect_fdignore)
 
 
 def _enumerate_with_fd(root: Path, base: Path, fd: str) -> list[Path]:
@@ -168,9 +164,7 @@ def _enumerate_with_python(
                 continue
             if _is_ignored(child, ignore_specs, directory=True):
                 continue
-            if respect_fdignore and _is_ignored(
-                child, fdignore_specs, directory=True
-            ):
+            if respect_fdignore and _is_ignored(child, fdignore_specs, directory=True):
                 continue
             kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
