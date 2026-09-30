@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "cache_key_order",
+  "description": "Repair a cache key that follows mapping iteration order, so equivalent parameters miss the same entry.",
+  "workspace": "workspace",
+  "context_window": {
+    "fallback_recent_messages": 6,
+    "fallback_recent_tokens": 2000
+  },
+  "memory": {
+    "anchor_path": "src/cache.py",
+    "stale_anchor_path": "src/render.py",
+    "stale_fix_path": "src/report.py",
+    "relevant": "memory/relevant.md",
+    "irrelevant": "memory/irrelevant.md"
+  },
+  "turns": [
+    {
+      "prompt": "Read TASK.md and run the failing unittest suite to see the current behavior. Do not edit files yet."
+    },
+    {
+      "prompt": "Fix the root cause in src/cache.py so equivalent parameter mappings share one key, then rerun the failing tests."
+    },
+    {
+      "prompt": "Run the full unittest suite and confirm the cache contract in docs/behavior.md still holds."
+    }
+  ],
+  "success_command": {
+    "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-q"],
+    "timeout_seconds": 30
+  },
+  "state_checks": [
+    {
+      "id": "cache-key-fixed",
+      "kind": "file_changed",
+      "path": "src/cache.py"
+    },
+    {
+      "id": "behavior-contract-preserved",
+      "kind": "file_unchanged",
+      "path": "docs/behavior.md"
+    },
+    {
+      "id": "no-parallel-implementation",
+      "kind": "path_absent",
+      "path": "src/cache_v2.py"
+    },
+    {
+      "id": "tests-pass",
+      "kind": "command_succeeds",
+      "command": {
+        "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-q"],
+        "timeout_seconds": 30
+      }
+    }
+  ]
+}

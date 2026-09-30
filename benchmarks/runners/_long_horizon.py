@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -116,11 +116,13 @@ class InstrumentedProvider:
         temperature: float | None,
         calls: list[ProviderCallRecord],
         progress_callback: Callable[[ProgressStage, str], None] | None = None,
+        request_observer: Callable[[list[Message]], None] | None = None,
     ) -> None:
         self._delegate = delegate
         self._temperature = temperature
         self._calls = calls
         self._progress_callback = progress_callback
+        self._request_observer = request_observer
         self._lock = threading.Lock()
         self._request_count = len(calls)
 
@@ -166,6 +168,8 @@ class InstrumentedProvider:
         merged = options or StreamOptions()
         if self._temperature is not None:
             merged = replace(merged, temperature=self._temperature)
+        if self._request_observer is not None:
+            self._request_observer(list(messages))
         started = time.perf_counter()
         input_tokens = 0
         output_tokens = 0
@@ -318,9 +322,25 @@ def _provider_activity_detail(
     return f"{label} · {mode} · elapsed {elapsed:.1f}s · {freshness} · events {events}"
 
 
-def _prepare_workspace(source: Path, workspace: Path) -> str:
-    """复制 fixture，并创建不受父仓库影响的确定性 Git 基线。"""
+def _prepare_workspace(
+    source: Path,
+    workspace: Path,
+    seed_files: Mapping[Path, Path] | None = None,
+) -> str:
+    """复制 fixture，并创建不受父仓库影响的确定性 Git 基线。
+
+    种子文件在初始提交之前写入，因此基线工作区始终是干净的：
+    `git diff HEAD` 不包含实验预置内容。
+    """
     shutil.copytree(source, workspace, ignore=shutil.ignore_patterns(".git"))
+    for relative_target, seed_source in (seed_files or {}).items():
+        if relative_target.is_absolute() or ".." in relative_target.parts:
+            raise ValueError(
+                f"seed target must stay in the workspace: {relative_target}"
+            )
+        target = workspace / relative_target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(seed_source, target)
     _run_git(workspace, "init", "--quiet")
     _run_git(workspace, "config", "user.name", "Cade Benchmark")
     _run_git(workspace, "config", "user.email", "benchmark@local.invalid")
@@ -330,12 +350,24 @@ def _prepare_workspace(source: Path, workspace: Path) -> str:
 
     exclude_path = workspace / ".git" / "info" / "exclude"
     exclude_path.write_text(_BENCHMARK_GIT_EXCLUDES, encoding="utf-8")
-    _run_git(workspace, "add", "--all", "--force", "--", ".")
+    baseline_commit = _commit_workspace(workspace, "benchmark: initial fixture")
+    top_level = Path(_run_git(workspace, "rev-parse", "--show-toplevel")).resolve()
+    if top_level != workspace.resolve():
+        raise RuntimeError(
+            "benchmark Git workspace escaped its fixture root: "
+            f"expected {workspace.resolve()}, got {top_level}"
+        )
+    return baseline_commit
+
+
+def _commit_workspace(workspace: Path, message: str) -> str:
+    """以固定身份与时间提交整个工作区，并返回新的 HEAD。"""
     commit_env = {
         **os.environ,
         "GIT_AUTHOR_DATE": _BENCHMARK_GIT_DATE,
         "GIT_COMMITTER_DATE": _BENCHMARK_GIT_DATE,
     }
+    _run_git(workspace, "add", "--all", "--force", "--", ".")
     _run_git(
         workspace,
         "-c",
@@ -345,15 +377,9 @@ def _prepare_workspace(source: Path, workspace: Path) -> str:
         "--allow-empty",
         "--no-gpg-sign",
         "-m",
-        "benchmark: initial fixture",
+        message,
         env=commit_env,
     )
-    top_level = Path(_run_git(workspace, "rev-parse", "--show-toplevel")).resolve()
-    if top_level != workspace.resolve():
-        raise RuntimeError(
-            "benchmark Git workspace escaped its fixture root: "
-            f"expected {workspace.resolve()}, got {top_level}"
-        )
     return _run_git(workspace, "rev-parse", "HEAD")
 
 
@@ -688,6 +714,7 @@ def _build_benchmark_app(
     options: RunOptions,
     calls: list[ProviderCallRecord],
     progress_callback: Callable[[ProgressStage, str], None] | None = None,
+    request_observer: Callable[[list[Message]], None] | None = None,
 ) -> CadeApp:
     app = build_app(
         project_root=workspace,
@@ -699,6 +726,7 @@ def _build_benchmark_app(
         options.temperature,
         calls,
         progress_callback,
+        request_observer,
     )
     app.agent.replace_primary_provider(instrumented)
     if variant == "baseline":

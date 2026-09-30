@@ -57,6 +57,21 @@ class ContextWindowSpec:
 
 
 @dataclass(frozen=True)
+class MemoryScenarioSpec:
+    """记忆实验所需的种子文件与可观测锚点。
+
+    `stale_anchor_path` 是无关诱饵经验的锚点（用于 `stale_follow`），
+    `stale_fix_path` 是陈旧经验指定的错误修复位置（用于 `stale_hint_acted`）。
+    """
+
+    anchor_path: str
+    stale_anchor_path: str
+    stale_fix_path: str
+    relevant: Path
+    irrelevant: Path
+
+
+@dataclass(frozen=True)
 class LongHorizonTask:
     """一个长程代码任务及其机器判定规则。"""
 
@@ -69,6 +84,7 @@ class LongHorizonTask:
     context_window: ContextWindowSpec
     success_command: CommandSpec
     state_checks: tuple[StateCheckSpec, ...]
+    memory: MemoryScenarioSpec | None = None
 
 
 def load_task(path: Path) -> LongHorizonTask:
@@ -87,6 +103,7 @@ def load_task(path: Path) -> LongHorizonTask:
             "turns",
             "success_command",
             "state_checks",
+            "memory",
         },
         "task manifest",
     )
@@ -113,6 +130,7 @@ def load_task(path: Path) -> LongHorizonTask:
     state_checks = tuple(
         _load_state_check(item, index) for index, item in enumerate(raw_checks, 1)
     )
+    raw_memory = data.get("memory")
     return LongHorizonTask(
         schema_version=schema_version,
         id=task_id,
@@ -123,6 +141,11 @@ def load_task(path: Path) -> LongHorizonTask:
         context_window=_load_context_window(data.get("context_window", {})),
         success_command=success_command,
         state_checks=state_checks,
+        memory=(
+            _load_memory(raw_memory, manifest_path.parent)
+            if raw_memory is not None
+            else None
+        ),
     )
 
 
@@ -227,6 +250,63 @@ def _load_context_window(value: object) -> ContextWindowSpec:
     return ContextWindowSpec(
         fallback_recent_messages=fallback_recent_messages,
         fallback_recent_tokens=fallback_recent_tokens,
+    )
+
+
+def _load_memory(value: object, manifest_dir: Path) -> MemoryScenarioSpec:
+    """校验可选记忆场景；锚点是仓库相对路径，种子文件必须真实存在。"""
+    data = _mapping(value, "memory")
+    _reject_unknown(
+        data,
+        {
+            "anchor_path",
+            "stale_anchor_path",
+            "stale_fix_path",
+            "relevant",
+            "irrelevant",
+        },
+        "memory",
+    )
+    anchor_path = _safe_relative_path(
+        _text(data.get("anchor_path"), "memory.anchor_path")
+    )
+    stale_anchor_path = _safe_relative_path(
+        _text(data.get("stale_anchor_path"), "memory.stale_anchor_path")
+    )
+    stale_fix_path = _safe_relative_path(
+        _text(data.get("stale_fix_path"), "memory.stale_fix_path")
+    )
+    paths = {
+        "memory.anchor_path": anchor_path,
+        "memory.stale_anchor_path": stale_anchor_path,
+        "memory.stale_fix_path": stale_fix_path,
+    }
+    if len(set(paths.values())) != len(paths):
+        raise ValueError(
+            "memory anchor paths must be distinct: " + ", ".join(sorted(paths))
+        )
+    relevant = _resolve_relative(
+        manifest_dir,
+        _text(data.get("relevant"), "memory.relevant"),
+        "memory.relevant",
+    )
+    irrelevant = _resolve_relative(
+        manifest_dir,
+        _text(data.get("irrelevant"), "memory.irrelevant"),
+        "memory.irrelevant",
+    )
+    for field, path in (
+        ("memory.relevant", relevant),
+        ("memory.irrelevant", irrelevant),
+    ):
+        if not path.is_file():
+            raise ValueError(f"{field} does not exist: {path}")
+    return MemoryScenarioSpec(
+        anchor_path=anchor_path,
+        stale_anchor_path=stale_anchor_path,
+        stale_fix_path=stale_fix_path,
+        relevant=relevant,
+        irrelevant=irrelevant,
     )
 
 
