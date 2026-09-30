@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "fd_single_file",
+  "description": "Repair a discovery helper that rejects an explicit single-file input instead of returning that file.",
+  "workspace": "workspace",
+  "context_window": {
+    "fallback_recent_messages": 6,
+    "fallback_recent_tokens": 2000
+  },
+  "memory": {
+    "anchor_path": "src/discover.py",
+    "stale_anchor_path": "src/cache.py",
+    "stale_fix_path": "src/paths.py",
+    "relevant": "memory/relevant.md",
+    "irrelevant": "memory/irrelevant.md"
+  },
+  "turns": [
+    {
+      "prompt": "Read TASK.md and run the failing unittest suite to see the current behavior. Do not edit files yet."
+    },
+    {
+      "prompt": "Fix the root cause in src/discover.py so an explicit single-file path is reported, then rerun the failing test."
+    },
+    {
+      "prompt": "Run the full unittest suite and confirm the contract in docs/behavior.md still holds."
+    }
+  ],
+  "success_command": {
+    "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-q"],
+    "timeout_seconds": 30
+  },
+  "state_checks": [
+    {
+      "id": "discovery-fixed",
+      "kind": "file_changed",
+      "path": "src/discover.py"
+    },
+    {
+      "id": "behavior-contract-preserved",
+      "kind": "file_unchanged",
+      "path": "docs/behavior.md"
+    },
+    {
+      "id": "no-parallel-implementation",
+      "kind": "path_absent",
+      "path": "src/discover_v2.py"
+    },
+    {
+      "id": "tests-pass",
+      "kind": "command_succeeds",
+      "command": {
+        "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-q"],
+        "timeout_seconds": 30
+      }
+    }
+  ]
+}

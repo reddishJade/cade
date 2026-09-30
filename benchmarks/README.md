@@ -132,6 +132,108 @@ completeness. Reports show the cohort size on every row.
 Do not quote percentages from the example until enough paired task runs have
 completed and `usage_complete` is true for the included samples.
 
+## Memory experience benchmark
+
+This benchmark measures whether a stored coding experience changes what the
+Agent does, using the same loop as the long-horizon benchmark. Each task runs
+three times against isolated workspace copies:
+
+- **none** seeds no `MEMORY.md`; this is the no-memory baseline;
+- **relevant** seeds the task's `memory/relevant.md`, an experience that matches
+  the fixture failure, as `<workspace>/MEMORY.md`. Its `evidence` line carries a
+  literal `{commit}` placeholder: the runner resolves it to the baseline commit
+  and lands the result in a second deterministic commit, so the anchor file is
+  unchanged against the recorded commit and the hint renders
+  `state=unchanged`;
+- **irrelevant** seeds the task's `memory/irrelevant.md`: one decoy experience
+  anchored on an unrelated subsystem that never fires, plus one stale experience
+  that does fire on the task's real anchor but names a wrong root cause and a
+  wrong fix location. Its `commit=deadbeef0` pointer stays unresolvable, so that
+  hint renders `state=unknown` even though it fires.
+
+`MEMORY.md` is written before the deterministic Git baseline commit, so the
+fixture starts with a clean `git diff HEAD` and the record itself is part of the
+baseline rather than an uncommitted experiment artifact. The relevant arm adds
+exactly one further deterministic commit for the resolved pointer, so its
+workspace is clean as well. `--dry-run` prints the resolved commit, the anchor
+diff, and the hint state observed through the real hint API for each arm.
+
+Run all tasks of the included fixtures:
+
+```sh
+uv run python -m benchmarks.runners.run_memory benchmarks/tasks/memory \
+  --config cade.config.json \
+  --temperature 0 \
+  --repeat 3
+```
+
+Validate manifests, seeding and the resolved plan without any provider call:
+
+```sh
+uv run python -m benchmarks.runners.run_memory benchmarks/tasks/memory --dry-run
+```
+
+`--dry-run` loads every manifest, prepares one seeded workspace per arm,
+prints each fixture commit, whether the worktree is clean, and the seeded
+`MEMORY.md` digest, then exits 0. It never builds an app or contacts a provider.
+Other flags are `--repeat`, `--keep-workspaces`, `--no-progress`,
+`--output-dir`, and the `--config`/`--temperature` pair used by the long-horizon
+runner to pin the model profile and sampling. A real run makes real API calls
+and costs real money; raw attempt JSON, `summary.json`, and `report.md` are
+written below `benchmark-results/memory/<timestamp>/`. Regenerate a report from
+raw records with:
+
+```sh
+uv run python -m benchmarks.reports.generate_memory_report \
+  benchmark-results/memory/RUN_DIR --output-dir benchmark-results/memory/RUN_DIR
+```
+
+A restricted filesystem can refuse deletion of a prepared workspace. Cleanup
+failures are recorded as `cleanup_errors` in the raw record and reported as a
+warning on stderr; they do not fail the run.
+
+### Reported metrics
+
+- `task_success` comes only from the task's verification command exit code;
+- `provider_call_count` and `input_tokens_total` come from provider usage, and
+  attempts without complete usage are excluded from token means and counted
+  under `usage_complete`;
+- `tool_call_count`, `distinct_files_read`, and `repeated_read_calls` are
+  derived from the session branch; repeated reads are a diagnostic, not a
+  success criterion;
+- `steps_to_anchor` is the 1-based index of the first tool call that mentions
+  `memory.anchor_path`, or `null` when it never does. It is a **diagnostic, not
+  a primary outcome**: both fixtures name the file to modify in `TASK.md` and in
+  the second turn, so all three arms reach the anchor at roughly the same step.
+- `hint_fired` records whether a `memory` context block reached a provider
+  request. It proves injection, not that the Agent read or followed the hint;
+- `stale_follow` records whether the first tool call of the attempt mentions
+  `memory.stale_anchor_path`, the unrelated decoy;
+- `stale_hint_acted` records whether the first `write`/`edit` tool call lands on
+  `memory.stale_fix_path`, the wrong fix location named by the stale experience.
+  Together with `stale_follow` this is the negative-transfer pair: a run that
+  trusts the stale record edits the wrong file;
+- `remember_calls` counts `remember` tool calls; the report also keeps
+  `memory_file_changed` in the raw record so agent-written memory is visible.
+
+Every report row carries its own cohort size, and means are computed only
+across complete task/repeat triplets; raw attempt records are never pooled
+across tasks.
+
+### Honest caveats
+
+- Arm **relevant** consumes an expert-authored experience record. It measures
+  the ceiling of the *consumption* path, not the quality of what `remember`
+  writes for itself; this benchmark does not evaluate agent-authored memory.
+- The two included fixtures are a **wiring example, not evidence**. As with the
+  long-horizon benchmark, add 20-30 such tasks, run multiple repeats, and
+  inspect per-task triplets instead of a pooled mean before quoting anything.
+- Only quote percentages for `task_success`, `provider_call_count`,
+  `tool_call_count`, `repeated_read_calls`, and the negative-transfer pair
+  (`stale_follow`, `stale_hint_acted`) once that task count and those repeats
+  exist. Treat `steps_to_anchor` as a diagnostic.
+- Runs make real API calls, so plan cost before launching `--repeat`.
+
 ## Tool scheduling benchmark
 
 This deterministic ablation measures the production tool scheduler without a

@@ -39,6 +39,24 @@
       }
     },
     "success_command": {"$ref": "#/$defs/command"},
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anchor_path",
+        "stale_anchor_path",
+        "stale_fix_path",
+        "relevant",
+        "irrelevant"
+      ],
+      "properties": {
+        "anchor_path": {"$ref": "#/$defs/relativePath"},
+        "stale_anchor_path": {"$ref": "#/$defs/relativePath"},
+        "stale_fix_path": {"$ref": "#/$defs/relativePath"},
+        "relevant": {"$ref": "#/$defs/relativePath"},
+        "irrelevant": {"$ref": "#/$defs/relativePath"}
+      }
+    },
     "state_checks": {
       "type": "array",
       "items": {
@@ -77,6 +95,11 @@
         },
         "timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
       }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(^|/)\\.\\.(/|$)).+$"
     }
   }
 }
