@@ -37,12 +37,19 @@ def enumerate_search_files(
     root: Path,
     base: Path,
     use_external: bool = True,
+    *,
+    respect_fdignore: bool = True,
 ) -> list[Path]:
     """枚举可搜索文件，依次使用 fd、ripgrep 和 Python walk。"""
     if not base.exists():
         raise FileNotFoundError(f"Path not found: {_display(root, base)}")
     if base.is_file():
-        return [] if _is_search_path_excluded(root, base) else [base]
+        return (
+            []
+            if _is_search_path_excluded(root, base)
+            or (respect_fdignore and _is_fdignored(root, base))
+            else [base]
+        )
     if not base.is_dir():
         raise NotADirectoryError(f"Not a directory: {_display(root, base)}")
 
@@ -56,10 +63,17 @@ def enumerate_search_files(
         rg = get_rg_path()
         if rg:
             try:
-                return _enumerate_with_ripgrep(root, base, rg)
+                files = _enumerate_with_ripgrep(root, base, rg)
+                return (
+                    _exclude_fdignored_files(root, files)
+                    if respect_fdignore
+                    else files
+                )
             except FileNotFoundError:
                 pass
-    return _enumerate_with_python(root, base)
+    return _enumerate_with_python(
+        root, base, respect_fdignore=respect_fdignore
+    )
 
 
 def _enumerate_with_fd(root: Path, base: Path, fd: str) -> list[Path]:
@@ -139,8 +153,11 @@ def _enumerate_with_ripgrep(root: Path, base: Path, rg: str) -> list[Path]:
     return files
 
 
-def _enumerate_with_python(root: Path, base: Path) -> list[Path]:
+def _enumerate_with_python(
+    root: Path, base: Path, *, respect_fdignore: bool = True
+) -> list[Path]:
     ignore_specs = _load_gitignore_specs(root)
+    fdignore_specs = _load_fdignore_specs(root) if respect_fdignore else ()
     files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
         directory = Path(dirpath)
@@ -149,7 +166,11 @@ def _enumerate_with_python(root: Path, base: Path) -> list[Path]:
             child = directory / dirname
             if child.is_symlink() or _is_search_path_excluded(root, child):
                 continue
-            if _is_gitignored(child, ignore_specs, directory=True):
+            if _is_ignored(child, ignore_specs, directory=True):
+                continue
+            if respect_fdignore and _is_ignored(
+                child, fdignore_specs, directory=True
+            ):
                 continue
             kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
@@ -158,7 +179,9 @@ def _enumerate_with_python(root: Path, base: Path) -> list[Path]:
             path = directory / filename
             if path.is_symlink() or _is_search_path_excluded(root, path):
                 continue
-            if _is_gitignored(path, ignore_specs):
+            if _is_ignored(path, ignore_specs):
+                continue
+            if respect_fdignore and _is_ignored(path, fdignore_specs):
                 continue
             files.append(path.resolve())
     return files
@@ -166,6 +189,18 @@ def _enumerate_with_python(root: Path, base: Path) -> list[Path]:
 
 def _load_gitignore_specs(
     root: Path,
+) -> tuple[tuple[Path, pathspec.GitIgnoreSpec], ...]:
+    return _load_ignore_specs(root, ".gitignore")
+
+
+def _load_fdignore_specs(
+    root: Path,
+) -> tuple[tuple[Path, pathspec.GitIgnoreSpec], ...]:
+    return _load_ignore_specs(root, ".fdignore")
+
+
+def _load_ignore_specs(
+    root: Path, ignore_filename: str
 ) -> tuple[tuple[Path, pathspec.GitIgnoreSpec], ...]:
     specs: list[tuple[Path, pathspec.GitIgnoreSpec]] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
@@ -175,9 +210,9 @@ def _load_gitignore_specs(
             for dirname in sorted(dirnames)
             if not dirname.startswith(".") and not (directory / dirname).is_symlink()
         ]
-        if ".gitignore" not in filenames:
+        if ignore_filename not in filenames:
             continue
-        ignore_path = directory / ".gitignore"
+        ignore_path = directory / ignore_filename
         try:
             lines = ignore_path.read_text(
                 encoding="utf-8",
@@ -189,7 +224,7 @@ def _load_gitignore_specs(
     return tuple(specs)
 
 
-def _is_gitignored(
+def _is_ignored(
     path: Path,
     specs: tuple[tuple[Path, pathspec.GitIgnoreSpec], ...],
     *,
@@ -208,6 +243,15 @@ def _is_gitignored(
         if decision is not None:
             ignored = decision
     return ignored
+
+
+def _is_fdignored(root: Path, path: Path) -> bool:
+    return _is_ignored(path, _load_fdignore_specs(root), directory=path.is_dir())
+
+
+def _exclude_fdignored_files(root: Path, files: list[Path]) -> list[Path]:
+    specs = _load_fdignore_specs(root)
+    return [path for path in files if not _is_ignored(path, specs)]
 
 
 def build_path_matcher(

@@ -326,9 +326,7 @@ def _glob_with_python(
         for path in files
         if matcher(path.relative_to(base).as_posix() if base.is_dir() else path.name)
     ]
-    matching_files.sort(
-        key=lambda p: (-_search_utils.mtime_ns(p), _search_utils._display(root, p))
-    )
+    matching_files.sort(key=lambda path: path.as_posix().lower())
     matches = [
         _search_utils._display(root, path) for path in matching_files[:max_results]
     ]

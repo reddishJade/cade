@@ -60,6 +60,45 @@ def test_file_discovery_falls_back_to_rg_without_fd(
 
     assert discovered == [tmp_path / "sample.py"]
 
+@pytest.mark.parametrize("backend", ["rg", "python"])
+def test_fdignore_is_consistent_without_fd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+) -> None:
+    (tmp_path / "visible.py").write_text("content", encoding="utf-8")
+    (tmp_path / "fd_only.py").write_text("content", encoding="utf-8")
+    (tmp_path / ".fdignore").write_text("fd_only.py\n", encoding="utf-8")
+    monkeypatch.setattr(_search_utils, "get_fd_path", lambda: None)
+    if backend == "rg":
+        monkeypatch.setattr(_search_utils, "get_rg_path", lambda: "rg")
+        monkeypatch.setattr(
+            _search_utils,
+            "_enumerate_with_ripgrep",
+            lambda root, base, rg: [root / "fd_only.py", root / "visible.py"],
+        )
+    else:
+        monkeypatch.setattr(_search_utils, "get_rg_path", lambda: None)
+
+    discovered = _search_utils.enumerate_search_files(tmp_path, tmp_path)
+
+    assert [path.name for path in discovered] == ["visible.py"]
+
+
+def test_python_glob_truncation_uses_path_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "z.py").write_text("content", encoding="utf-8")
+    (tmp_path / "a.py").write_text("content", encoding="utf-8")
+    monkeypatch.setattr(_search_utils, "get_fd_path", lambda: None)
+    monkeypatch.setattr(_search_utils, "get_rg_path", lambda: None)
+    tools = {tool.name: tool for tool in build_glob_tools(tmp_path)}
+
+    result = tools["glob"].handler({"pattern": "*.py", "max_results": 1}, None)
+
+    assert str(result) == "a.py\n... truncated"
+    assert result.metadata == {"count": 2, "truncated": True}
 
 # 失效情形：搜索根为单个文件时，fd 后端把该文件当作目录而漏掉结果。
 @pytest.mark.skipif(
