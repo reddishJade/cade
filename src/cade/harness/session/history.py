@@ -249,26 +249,24 @@ class SessionHistory:
         """只读取许可目录中的指定会话，并检查 workspace 所属关系。"""
         if not _SESSION_ID.fullmatch(session_id):
             raise ValueError(f"invalid session id: {session_id!r}")
+        sessions_root = self.sessions_dir.resolve()
         path = self.sessions_dir / f"session-{session_id}.jsonl"
-        if path.is_symlink() or not path.resolve().is_relative_to(
-            self.sessions_dir.resolve()
-        ):
+        if path.is_symlink() or not path.resolve().is_relative_to(sessions_root):
             raise ValueError("History session path escapes its store")
         entries = read_session_entries(path)
         if not entries:
             return []
-        owner = entries[0].project_path
-        if owner is not None and (
-            not Path(owner).is_absolute() or Path(owner).resolve() != self.project_root
-        ):
-            raise ValueError("History session does not belong to this workspace")
-        if (
-            owner is None
-            and self.sessions_dir.resolve() != self.project_root / ".cade" / "sessions"
-        ):
-            raise ValueError(
-                "Cannot verify workspace ownership of this external session"
-            )
+        if sessions_root != self.project_root / ".cade" / "sessions":
+            owner = entries[0].project_path
+            if owner is None:
+                raise ValueError(
+                    "Cannot verify workspace ownership of this external session"
+                )
+            if (
+                not Path(owner).is_absolute()
+                or Path(owner).resolve() != self.project_root
+            ):
+                raise ValueError("History session does not belong to this workspace")
         return [
             HistoryEntry(
                 id=entry.id,

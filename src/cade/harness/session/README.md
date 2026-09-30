@@ -40,7 +40,7 @@
     - `search`：关键词定位过往对话片段；
     - `read`：按 `entry_id` 分页读取完整记录，可显式指定 `session_id` 跨 Session 定位；
     - `around`：查看当前 branch 的前后邻域；显式 Session 仅支持沿锚点祖先的 `before`，拒绝 `after`。
-  - 精确读取不依赖 `session_index.json` 导航 cache。默认目录的 workspace 归属可直接核验；共享/自定义目录使用 JSONL 首条记录随事实提交的 `project_path`。
+  - 精确读取不依赖 `session_index.json` 导航 cache。默认目录以当前物理位置为归属边界，忽略旧 `project_path`，支持 workspace 移动/改名；共享/自定义目录才校验 JSONL 首条记录随事实提交的 `project_path`。指向外部的目录链接也按外部存储验证。
 - **输入排队管道 ([inbox.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/inbox.py))**：`SessionInbox` 处理执行期间进入的并发消息（Busy message queue）。
 - **视图投影 ([surface.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/surface.py))**：将复杂的树形结构投影为终端/Web 易于呈现的线性折叠状态。
 

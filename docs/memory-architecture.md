@@ -14,8 +14,9 @@ Memory 是 `.cade/memory/` 内少量可编辑 Markdown 文件，保存昂贵才�
 - History 独立提供同 workspace 内 `session_id + entry_id` 精确读取和祖先邻域，复用
   artifact/page，不切换 Session/head，不增加全局搜索。
   显式 Session 的 `around` 只接受 `before`，`after` 仅用于当前 branch。
-- 精确读取不依赖导航 cache：默认 Session 目录提供归属，新日志首条记录的
-  `project_path` 为共享/外部目录提供随日志提交的 workspace 绑定。
+- 精确读取不依赖导航 cache：默认 Session 目录以当前物理位置提供归属，忽略
+  旧 `project_path`，移动/改名后来源仍可读取。新日志首条记录的 `project_path`
+  仅为共享/外部目录提供随日志提交的 workspace 绑定。
 - `.cade/memory/` 仅保存工具可写；按需通过既有 `bash + rg` 搜索、普通 read 读取。
   默认项目搜索仍排除它，不增加默认工具或可选搜索的 Memory 例外。
 - 正常任务和恢复不读取、扫描或注入 Memory。固定能力指引和工具 schema 是常量成本。
