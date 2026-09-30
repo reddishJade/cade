@@ -443,6 +443,8 @@ Memory 位于当前 workspace 的 `.cade/memory/`，每条是可编辑 Markdown 
 `history` 的 `read/around` 可按 `session_id + entry_id` 精确读取同 workspace 原始
 历史，不切换 Session/head，也不依赖导航 cache。显式 Session 的 `around` 只接受
 `before`。完整参数见 [Memory](docs/guide/memory.md)。
+默认 `.cade/sessions/` 以当前物理位置确定归属，workspace 移动/改名后不要求修改
+旧 `project_path`；自定义或共享目录才校验日志内持久化的 workspace 绑定。
 MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺少这些
 协商元数据的旧缓存会自动重新发现。
 

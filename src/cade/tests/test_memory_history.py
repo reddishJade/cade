@@ -188,6 +188,53 @@ def test_exact_read_and_ancestry_survive_navigation_cache_loss(
         assert store.index_path.read_bytes() == cache_before
 
 
+@pytest.mark.parametrize("has_binding", [True, False])
+def test_local_provenance_survives_workspace_relocation(
+    tmp_path: Path, has_binding: bool
+) -> None:
+    original = tmp_path / "original"
+    relocated = tmp_path / "relocated"
+    store = SessionStore(original / ".cade/sessions", project_root=original)
+    source = store.append("assistant", "observed before relocation")
+    session = store.session_id
+    if not has_binding:
+        entry = json.loads(store.current_path.read_text(encoding="utf-8"))
+        entry.pop("project_path")
+        store.current_path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    save = build_save_memory_tool(original, _history(store))
+    save.handler(
+        {
+            "path": ".cade/memory/relocation.md",
+            "markdown": "Keep this observation across relocation.",
+            "sources": [{"session_id": session, "entry_id": source}],
+        },
+        None,
+    )
+    log_before = store.current_path.read_bytes()
+    store.index_path.unlink()
+    original.rename(relocated)
+    history = SessionHistory(relocated / ".cade/sessions", project_root=relocated)
+    read = history.read(source, session_id=session)
+    assert read is not None and read.content == "observed before relocation"
+    assert [entry.id for entry in history.around(source, session_id=session)] == [
+        source
+    ]
+    memory_path = relocated / ".cade/memory/relocation.md"
+    previous = memory_path.read_text(encoding="utf-8")
+    build_save_memory_tool(relocated, history).handler(
+        {
+            "path": str(memory_path),
+            "markdown": previous.replace("Keep this", "Reuse this"),
+            "expected_content": previous,
+            "sources": [{"session_id": session, "entry_id": source}],
+        },
+        None,
+    )
+    assert memory_path.read_text(encoding="utf-8").startswith("Reuse this observation")
+    assert (history.sessions_dir / store.current_path.name).read_bytes() == log_before
+    assert not (relocated / ".cade/session_index.json").exists()
+
+
 def test_external_history_uses_durable_workspace_binding(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     store = SessionStore(tmp_path / "shared/sessions", project_root=workspace)
@@ -212,6 +259,14 @@ def test_external_history_uses_durable_workspace_binding(tmp_path: Path) -> None
     partial_fork.current_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Cannot verify workspace"):
         history.read(source, session_id=partial_fork.session_id)
+    local_alias = workspace / ".cade/sessions"
+    local_alias.parent.mkdir(parents=True)
+    local_alias.symlink_to(store.sessions_dir, target_is_directory=True)
+    alias_history = SessionHistory(local_alias, project_root=workspace)
+    with pytest.raises(ValueError, match="Cannot verify workspace"):
+        alias_history.read(source, session_id=partial_fork.session_id)
+    with pytest.raises(ValueError, match="does not belong"):
+        alias_history.read(foreign_source, session_id=foreign.session_id)
 
 
 def test_exact_artifact_pages_and_save_reject_missing_evidence(tmp_path: Path) -> None:

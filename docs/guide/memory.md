@@ -72,8 +72,10 @@ Memory 不改变默认 tool surface，不为可选 `grep/glob/find` 增加隐藏
 缺失或无效的 artifact 会明确报错，预览不冒充完整证据。
 
 精确读取不依赖导航 cache `session_index.json`。默认 `.cade/sessions/` 的目录归属
-可以验证 workspace；新日志首条记录的 `project_path` 随事实一起提交，用于共享或
-自定义 Session 目录的归属核验。缺少这一绑定的外部日志不能靠 cache 推断归属，
+以当前物理位置为边界，不校验日志里旧的 `project_path`；workspace 移动或改名后
+无需修改旧日志，旧 Session 没有该字段也可读取。新日志首条记录的 `project_path`
+随事实一起提交，仅用于共享或自定义 Session 目录的归属核验。指向外部目录的
+符号链接不算默认本地目录。缺少这一绑定的外部日志不能靠 cache 推断归属，
 会明确拒绝读取。日志分叉保留 workspace 绑定，不新建索引或来源副本。
 
 使用结论前检查当前代码、配置或环境，并按当前决策验证。Git SHA 可辅助定位，
