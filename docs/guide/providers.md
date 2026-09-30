@@ -11,7 +11,7 @@ Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务
 | Transport 协议 | 对应适配类 | 适用平台与典型模型 |
 | :--- | :--- | :--- |
 | **`deepseek_chat`** | `DeepSeekProvider` | DeepSeek 官方 API（`deepseek-flash` 默认模型、`deepseek-v4-pro` 旗舰推理） |
-| **`openai_responses`**| `OpenAIResponsesProvider` | OpenAI 最新 Responses 协议（`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6` 系列） |
+| **`openai_responses`**| `OpenAIResponsesProvider` | OpenAI 最新 Responses 协议（`gpt-6-astra`、`gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6` 系列） |
 | **`openai_chat`** | `OpenAIChatProvider` | 标准 OpenAI 格式接口与兼容聚合服务 |
 | **`openai_codex`** | `OpenAICodexResponsesProvider` | ChatGPT / Codex 登录会话与模型通道 |
 | **`chatglm_chat`** | `ChatGLMProvider` | 智谱 AI（`glm-5.1`、`glm-5`、`glm-4.7-flash` 系列）官方 API |
@@ -41,7 +41,7 @@ Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务
 }
 ```
 
-### 示例 B：配置 OpenAI GPT-6
+### 示例 B：配置 OpenAI GPT-6.1 Sol
 
 ```json
 {
@@ -49,7 +49,7 @@ Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务
     "model_profiles": {
       "main": {
         "transport": "openai_responses",
-        "chat_model": "gpt-6-sol",
+        "chat_model": "gpt-6.1-sol",
         "api_key": "sk-your-openai-key",
         "thinking": true,
         "reasoning_effort": "medium"
