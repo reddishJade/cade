@@ -241,6 +241,7 @@ def _glob_with_rg(
         "--no-ignore-dot",
         "--no-ignore-exclude",
         "--no-ignore-global",
+        "--no-ignore-vcs",
     ]
     for exclude in (
         "!**/.git/**",
@@ -284,7 +285,9 @@ def _glob_with_rg(
                 continue
             files.append(path)
 
-    return _render_external_matches(root, files, max_results)
+    return _render_external_matches(
+        root, _search_utils._exclude_fdignored_files(root, files), max_results
+    )
 
 
 def _render_external_matches(root: Path, files: list[Path], max_results: int) -> str:
@@ -326,9 +329,7 @@ def _glob_with_python(
         for path in files
         if matcher(path.relative_to(base).as_posix() if base.is_dir() else path.name)
     ]
-    matching_files.sort(
-        key=lambda p: (-_search_utils.mtime_ns(p), _search_utils._display(root, p))
-    )
+    matching_files.sort(key=lambda path: path.as_posix().lower())
     matches = [
         _search_utils._display(root, path) for path in matching_files[:max_results]
     ]
