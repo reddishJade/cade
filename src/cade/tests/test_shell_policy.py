@@ -91,6 +91,23 @@ def test_rg_external_program_option_reaches_permission_review() -> None:
     assert [constraint.decision for constraint in constraints] == ["ask"]
 
 
+@pytest.mark.parametrize(
+    ("command", "expected_paths"),
+    [
+        ("rg -g --pre needle src", ["src"]),
+        ("rg -g -- needle src", ["src"]),
+        ("rg -- needle --hostname-bin", ["--hostname-bin"]),
+    ],
+)
+def test_rg_external_option_names_in_values_or_paths_are_not_options(
+    command: str, expected_paths: list[str]
+) -> None:
+    analysis = analyze_shell_command(command)
+
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == expected_paths
+
+
 # 失效情形：常见只读搜索反复审查，或选项值被误认为搜索根。
 @pytest.mark.parametrize(
     "command",
@@ -126,6 +143,30 @@ def test_fd_effectful_or_unknown_options_require_review(command: str) -> None:
     assert [effect.reason for effect in analysis.unresolved_effects] == [
         "wrapper_command"
     ]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "fd parser src -x echo {}",
+        "fd --exec=echo parser src",
+        "fd -X echo {}",
+        "fd --unknown parser src",
+    ],
+)
+def test_fd_unapproved_options_reach_permission_review(command: str) -> None:
+    action = ActionExtractor().extract("bash", {"command": command}, ("shell", "none"))
+
+    constraints = ShellAnalysisPolicyEvaluator().evaluate(action)
+
+    assert [constraint.decision for constraint in constraints] == ["ask"]
+
+
+def test_fd_option_value_does_not_hide_dash_prefixed_search_root() -> None:
+    analysis = analyze_shell_command("fd --exclude ignored pattern -- -src")
+
+    assert analysis.unresolved_effects == ()
+    assert [target.value for target in analysis.resolved_paths] == ["-src"]
 
 
 # 失效情形：文件输出漏判、输出路径漏提取、参数缺失误放行、标准输出误判。
