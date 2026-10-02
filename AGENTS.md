@@ -8,7 +8,8 @@
   Avoid speculative abstractions, configuration, and indirection.
 - Build in working, end-to-end increments, starting with the smallest complete
   version. Keep each increment usable and suitable for long-term extension;
-  avoid temporary workarounds intended to be replaced.
+  avoid temporary workarounds intended to be replaced. Do not remove existing
+  working functionality to make way for an unfinished complex design.
 - Keep components modular, with clear responsibilities and boundaries. Place
   behavior in the layer that owns it and separate I/O, computation, and
   presentation.
