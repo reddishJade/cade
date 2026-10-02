@@ -122,7 +122,7 @@ Agent 有历史需求时通过既有 `bash` 执行 `rg "关键词" .cade/memory`
 回到原始证据并核对当前代码。正常任务和恢复不扫描或注入 Memory。
 
 保存使用 `save_memory`，正文自由表达，来源必须是显式给出的真实 Session/entry
-引用。完整参数和修订方式见 [Memory](guide/memory.md)。
+引用。完整参数和修订方式见 [Memory](memory.md)。
 
 ---
 

@@ -1,6 +1,7 @@
 # Cade
 
 Cade 是在你的项目目录中工作的终端编码 Agent：输入任务、查看进度、审批操作，退出后继续上次工作。
+运行机制、状态归属和代码入口见 [架构说明](docs/architecture.md)。
 
 ## 安装和启动
 
@@ -66,7 +67,7 @@ cade web --open              # 浏览器工作台
 - [命令与快捷操作](docs/guide/slash-commands.md) · [启动参数与自动化 exec](docs/guide/cli.md)
 - [模型与 provider](docs/guide/providers.md) · [配置](docs/guide/configuration.md)
 - [技能](docs/guide/skills.md) · [MCP](docs/guide/mcp.md) · [Hooks](docs/guide/hooks.md)
-- [完整使用指南](docs/guide/README.md) · [运行时架构](docs/guide/architecture.md)
+- [完整使用指南](docs/guide/README.md) · [架构说明](docs/architecture.md)
 
 ## 开发与 Python 调用
 
@@ -77,7 +78,7 @@ uv sync --extra dev
 uv run cade
 ```
 
-所有包代码位于 `src/cade/`。开发检查和提交规范见 [AGENTS.md](AGENTS.md)。Python 集成可以直接调用 `build_app`；运行时入口和生命周期见 [架构说明](docs/guide/architecture.md)。
+所有包代码位于 `src/cade/`。开发检查和提交规范见 [AGENTS.md](AGENTS.md)。Python 集成可以直接调用 `build_app`；运行时入口和生命周期见 [架构说明](docs/architecture.md)。
 
 ```python
 from pathlib import Path
