@@ -13,6 +13,10 @@ evidence and detail needed to assess it, with links to files or full output.
 Summarize large JSON payloads, logs, and diffs before presenting raw data. Match
 the language and level of detail to the conversation.
 
+Apply ASD-STE100 (Simplified Technical English) writing principles to all AI
+output, regardless of language. Use short, direct sentences, prefer active
+voice, use consistent terms, and give one action per instruction.
+
 ## Handle Mechanical Work
 
 Perform authorized searches, string replacements, formatting, conversions, and
