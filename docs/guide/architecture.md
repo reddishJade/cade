@@ -1,7 +1,7 @@
 # 运行时阅读入口
 
 [Cade 架构](../architecture.md) 统一说明组件、任务生命周期、状态归属、权限边界
-和代码入口。REPL、TUI、浏览器工作台与 Python 调用共享应用和 harness，用户
+和代码入口。TUI、exec、浏览器工作台与 Python 调用共享应用和 harness，用户
 输入、运行事件、会话记录和宿主操作的关系在该文档中展开。
 
 日常操作按主题查阅 [执行模式](modes.md)、[会话与撤销](sessions.md)、

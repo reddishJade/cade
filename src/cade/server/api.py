@@ -300,7 +300,7 @@ def create_app(
 
 
 def _stats_payload(app: CadeApp, project_root: Path) -> dict[str, object]:
-    """底栏统计：累计用量 + 上下文占用 + 模型/effort（与 REPL 底栏同口径）。"""
+    """底栏统计：累计用量 + 上下文占用 + 模型/effort（与 TUI 使用同一统计服务）。"""
     payload: dict[str, object] = {
         "usage": "",
         "context": "",
@@ -318,15 +318,13 @@ def _stats_payload(app: CadeApp, project_root: Path) -> dict[str, object]:
     with contextlib.suppress(
         AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError
     ):
-        from cade.cli.commands import ReplState
-        from cade.cli.repl_commands import _compute_context_summary
+        from cade.coding_agent.interaction.context_stats import compute_context_summary
 
         agent = getattr(app, "agent", None)
         if agent is not None:
-            state = ReplState()
-            summary = _compute_context_summary(agent, project_root, state)
-            payload["usage"] = state.usage_stats
-            payload["context"] = state.context_usage
+            summary = compute_context_summary(agent, project_root)
+            payload["usage"] = summary.usage_stats
+            payload["context"] = summary.context_usage
             payload["model"] = summary.model_name
     return payload
 
@@ -337,7 +335,9 @@ def _model_payload(app: _ModelInfoApp) -> dict[str, object]:
     transport = _profile_transport(app)
     info["effort"] = str(info.get("reasoning_effort") or "")
     try:
-        from cade.cli.reasoning_effort import reasoning_effort_levels_for_transport
+        from cade.coding_agent.interaction.reasoning_effort import (
+            reasoning_effort_levels_for_transport,
+        )
 
         info["effort_options"] = list(
             reasoning_effort_levels_for_transport(
@@ -371,7 +371,7 @@ def _model_payload(app: _ModelInfoApp) -> dict[str, object]:
         return info
     # 发现失败时回退到注册表预设 + 当前模型
     try:
-        from cade.cli.repl import current_model_options
+        from cade.coding_agent.interaction.models import current_model_options
 
         info["available"] = list(current_model_options(app))
     except (
@@ -399,7 +399,7 @@ def _git_branches_payload(project_root: Path) -> dict[str, object]:
         TypeError,
         ValueError,
     ):
-        from cade.cli.git import git_branch_name
+        from cade.coding_agent.interaction.git import git_branch_name
 
         payload["current"] = git_branch_name(project_root) or ""
 
@@ -520,7 +520,7 @@ def _info_payload(app: CadeApp, project_root: Path) -> dict[str, object]:
     except Exception:  # noqa: BLE001
         payload["mcp"] = []
     try:
-        from cade.cli.git import git_branch_name
+        from cade.coding_agent.interaction.git import git_branch_name
 
         payload["git_branch"] = git_branch_name(project_root)
     except Exception:  # noqa: BLE001

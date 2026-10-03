@@ -13,10 +13,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cade.ai.auth import AuthCredential
-from cade.cli.auth_cmd import (
+from cade.coding_agent.cli.auth_cmd import (
     handle_login_command,
 )
-from cade.cli.setup_wizard import prompt_auth_method
+from cade.coding_agent.modes.tui.setup_wizard import prompt_auth_method
 from cade.harness.auth.manager import AuthManager
 from cade.harness.auth.store import AuthStore
 from cade.main import parse_args
@@ -219,9 +219,12 @@ def test_prompt_auth_method_choices() -> None:
 
 def test_cli_api_key_login_runs_provider_setup(tmp_path: Path) -> None:
     with (
-        patch("cade.cli.auth_cmd.prompt_auth_method", return_value="api_key"),
         patch(
-            "cade.cli.auth_cmd.run_setup_wizard",
+            "cade.coding_agent.modes.tui.setup_wizard.prompt_auth_method",
+            return_value="api_key",
+        ),
+        patch(
+            "cade.coding_agent.modes.tui.setup_wizard.run_setup_wizard",
             return_value=("saved", None),
         ) as wizard,
     ):

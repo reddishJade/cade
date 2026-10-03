@@ -5,15 +5,6 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
-from .cli.config_cmd import handle_config_command
-from .cli.repl import run_repl
-from .cli.repl_tools import final_stop_reason
-from .cli.setup_wizard import (
-    has_valid_config,
-    prompt_login_method,
-    run_setup_wizard,
-)
-from .cli.tui import run_tui
 from .coding_agent.app import build_app
 from .harness.config import discover_runtime_config, resolve_config_path
 
@@ -162,12 +153,8 @@ def _build_web_parser(subparsers) -> None:
     )
 
 
-def _build_cli_parser(subparsers) -> None:
-    subparsers.add_parser("cli", help="Run the interactive command-line REPL")
-
-
 def _build_exec_parser(subparsers) -> None:
-    from .cli.exec_cmd import add_exec_arguments
+    from .coding_agent.modes.exec_mode import add_exec_arguments
 
     exec_parser = subparsers.add_parser(
         "exec",
@@ -177,7 +164,7 @@ def _build_exec_parser(subparsers) -> None:
 
 
 def _build_session_parser(subparsers) -> None:
-    from .cli.session_cmd import add_session_arguments
+    from .coding_agent.cli.session_cmd import add_session_arguments
 
     session_parser = subparsers.add_parser(
         "session",
@@ -190,9 +177,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     effective_argv = list(sys.argv[1:] if argv is None else argv)
     effective_argv = _normalize_exec_resume(effective_argv)
     parser = argparse.ArgumentParser(description="Cade coding agent.")
-    parser.add_argument(
-        "-p", "--prompt", help="Run one prompt and exit (single-shot mode)."
-    )
     parser.add_argument(
         "--project-root", type=Path, default=Path.cwd(), help="Project root directory."
     )
@@ -228,7 +212,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _build_logout_parser(subparsers)
     _build_auth_parser(subparsers)
     _build_tui_parser(subparsers)
-    _build_cli_parser(subparsers)
     _build_exec_parser(subparsers)
     _build_session_parser(subparsers)
     _build_web_parser(subparsers)
@@ -258,17 +241,18 @@ def _normalize_exec_resume(argv: list[str]) -> list[str]:
 
 
 def main() -> int:
-    from .cli.ptk_patch import suppress_windows_ptk_shutdown_noise
-
-    suppress_windows_ptk_shutdown_noise()
     args = parse_args()
     project_root = args.project_root
 
     if args.command == "config":
+        from .coding_agent.cli.config_cmd import handle_config_command
+
         handle_config_command(args, project_root)
         return 0
 
     if args.command == "setup":
+        from .coding_agent.modes.tui.setup_wizard import run_setup_wizard
+
         try:
             run_setup_wizard(project_root)
         except KeyboardInterrupt:
@@ -276,7 +260,7 @@ def main() -> int:
         return 0
 
     if args.command in {"login", "connect"}:
-        from .cli.auth_cmd import handle_login_command
+        from .coding_agent.cli.auth_cmd import handle_login_command
 
         method = (
             getattr(args, "method", "browser")
@@ -290,14 +274,14 @@ def main() -> int:
         )
 
     if args.command == "logout":
-        from .cli.auth_cmd import handle_logout_command
+        from .coding_agent.cli.auth_cmd import handle_logout_command
 
         return handle_logout_command(
             provider=getattr(args, "provider", "openai-codex"),
         )
 
     if args.command == "auth":
-        from .cli.auth_cmd import (
+        from .coding_agent.cli.auth_cmd import (
             handle_login_command,
             handle_logout_command,
             handle_status_command,
@@ -322,7 +306,7 @@ def main() -> int:
         return handle_status_command()
 
     if args.command == "session":
-        from .cli.session_cmd import handle_session_command
+        from .coding_agent.cli.session_cmd import handle_session_command
 
         try:
             runtime_config = discover_runtime_config(project_root, args.config)
@@ -330,6 +314,27 @@ def main() -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 6
         return handle_session_command(args, runtime_config)
+
+    if args.command in {"exec", "web"}:
+        try:
+            runtime_config = discover_runtime_config(project_root, args.config)
+            if args.command == "web":
+                from .server.serve import run_web_server
+
+                return run_web_server(
+                    project_root,
+                    host=args.host,
+                    port=args.port,
+                    config_path=args.config,
+                    runtime_config=runtime_config,
+                    open_browser=args.open,
+                )
+            return _run(args, runtime_config)
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 6 if args.command == "exec" else 1
+
+    from .coding_agent.interaction.credentials import has_valid_config
 
     temp_config: Path | None = None
 
@@ -343,6 +348,11 @@ def main() -> int:
             )
             return 1
 
+        from .coding_agent.modes.tui.setup_wizard import (
+            prompt_login_method,
+            run_setup_wizard,
+        )
+
         try:
             login_method = prompt_login_method()
         except KeyboardInterrupt:
@@ -351,7 +361,7 @@ def main() -> int:
             return 0
 
         if login_method == "auth":
-            from .cli.auth_cmd import handle_login_command
+            from .coding_agent.cli.auth_cmd import handle_login_command
 
             login_status = handle_login_command(
                 method="browser",
@@ -374,17 +384,6 @@ def main() -> int:
 
     try:
         runtime_config = discover_runtime_config(project_root, args.config)
-        if args.command == "web":
-            from .server.serve import run_web_server
-
-            return run_web_server(
-                project_root,
-                host=args.host,
-                port=args.port,
-                config_path=args.config,
-                runtime_config=runtime_config,
-                open_browser=args.open,
-            )
         return _run(args, runtime_config)
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -396,7 +395,7 @@ def main() -> int:
 
 def _run(args, runtime_config) -> int:
     if args.command == "exec":
-        from .cli.exec_cmd import run_exec
+        from .coding_agent.modes.exec_mode import run_exec
 
         return run_exec(args, runtime_config, _build_app_from_config)
 
@@ -407,31 +406,7 @@ def _run(args, runtime_config) -> int:
     )
     app = _build_app_from_config(args.project_root, runtime_config, sessions_dir)
     try:
-        if args.prompt:
-            _restore_single_shot_session(app, args)
-            _print_stream(app.ask_stream(args.prompt))
-            return 0
-        if args.command == "tui":
-            return run_tui(
-                app,
-                session_id=args.session,
-                auto_continue=args.continue_,
-                resume_latest=args.resume,
-                project_root=args.project_root,
-                config_path=args.config,
-            )
-        if args.command == "cli":
-            if args.session:
-                return run_repl(
-                    app,
-                    session_id=args.session,
-                    project_root=args.project_root,
-                )
-            if args.continue_:
-                return run_repl(app, auto_continue=True, project_root=args.project_root)
-            if args.resume:
-                return run_repl(app, resume_latest=True, project_root=args.project_root)
-            return run_repl(app, project_root=args.project_root)
+        from .coding_agent.modes.tui.app import run_tui
 
         return run_tui(
             app,
@@ -447,38 +422,6 @@ def _run(args, runtime_config) -> int:
             close()
 
 
-def _restore_single_shot_session(app, args) -> None:
-    """在单次 prompt 执行前应用与交互宿主相同的 session 选择。"""
-    store = app.session_store
-    selected = None
-    if args.session is not None:
-        selected = store.find_by_id(args.session)
-        if selected is None:
-            raise RuntimeError(f"Session not found: {args.session}")
-        stored = (
-            Path(selected.project_path).resolve() if selected.project_path else None
-        )
-        if stored is None or stored != args.project_root.resolve():
-            raise RuntimeError(
-                f"Session belongs to another project: {selected.project_path}"
-            )
-    elif args.continue_:
-        selected = store.find_latest_for_project(args.project_root)
-    elif args.resume:
-        from .cli.repl_sessions import select_session_interactively
-
-        selected = select_session_interactively(
-            store.list_infos(),
-            "Select session to resume:",
-        )
-        if selected is None:
-            raise RuntimeError("Session resume cancelled")
-    if selected is None:
-        return
-    store.resume(selected.id)
-    app.restore_session()
-
-
 def _build_app_from_config(
     project_root: Path,
     runtime_config,
@@ -489,25 +432,6 @@ def _build_app_from_config(
         runtime_config=runtime_config,
         sessions_dir=sessions_dir,
     )
-
-
-def _print_stream(events) -> None:
-    answer_parts: list[str] = []
-    final_answer = ""
-    stopped_reason: str | None = None
-    for event in events:
-        if event.type == "text_delta":
-            print(str(event.data), end="", flush=True)
-            answer_parts.append(str(event.data))
-        elif event.type == "final":
-            final_answer = event.data.answer
-            stopped_reason = final_stop_reason(event.data)
-    if answer_parts:
-        print()
-    if stopped_reason:
-        print(stopped_reason)
-    elif not answer_parts and final_answer:
-        print(final_answer)
 
 
 if __name__ == "__main__":

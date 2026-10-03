@@ -39,9 +39,9 @@ cade
 | 展开思考 / 工具结果 | Ctrl+T / Ctrl+O |
 | 执行 Shell | `!git status`，仍经过权限审批 |
 
-欢迎区列出常用操作；补全、审批和任务运行时，输入框下方显示对应提示。Alt+Enter 在一些终端中通过 Esc、Enter 实现；空闲时这个组合用于换行。如果终端不传递该组合，使用 `/steer 你的指导`。纠偏在下一次模型请求前生效，不会撤销已执行的工具。
+欢迎区列出常用操作；补全、审批和任务运行时，输入框下方显示对应提示。Alt+Enter 在一些终端中通过 Esc、Enter 实现；空闲时这个组合用于换行。也可以使用 `/steer 你的指导` 提交纠偏。纠偏在下一次模型请求前生效，已执行的工具结果继续保留。
 
-上述忙时默认行为适用于 TUI。传统 REPL（`cade cli`）默认把忙时输入作为纠偏；两种界面均支持 `/queue 消息` 显式排队。`/queue steer|followup|interrupt` 可以调整忙时 Enter 的行为。
+TUI 支持 `/queue 消息` 显式排队。`/queue steer|followup|interrupt` 可以调整忙时 Enter 的行为。
 
 ## 继续上次工作
 
@@ -51,15 +51,14 @@ cade --resume           # 从历史会话中选择
 cade --session ID       # 恢复指定会话
 ```
 
-没有历史任务时，`cade -c` 会提示你开始新任务。在界面内也可以使用 `/resume` 选择会话、`/new` 开始新会话。输入 `/exit` 退出，或在空闲且输入为空时，三秒内连续按两次 Ctrl+C。
+项目会话列表为空时，`cade -c` 会提示你开始新任务。在界面内也可以使用 `/resume` 选择会话、`/new` 开始新会话。输入 `/exit` 退出，或在空闲且输入为空时，三秒内连续按两次 Ctrl+C。
 
 退出后会显示耗时和可复制的恢复命令。会话默认保存在项目的 `.cade/sessions/`。详细恢复、分支和上下文管理见 [会话说明](docs/guide/sessions.md)。
 
 ## 更多入口和配置
 
 ```bash
-cade -p "检查最近修改"       # 单次任务
-cade cli                     # 传统 REPL
+cade exec "检查最近修改"     # 单次任务与自动化
 cade web --open              # 浏览器工作台
 ```
 

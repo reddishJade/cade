@@ -7,7 +7,7 @@
 ## 1. 核心分层与装配架构
 
 ```
-                 CLI / Web Server / External Script
+                 TUI / exec / Web Server / External Script
                                 │
                                 ▼
                        build_app(project_root)
@@ -40,7 +40,7 @@
 
 ## 2. 架构不变量与设计禁忌
 
-- **产品层定位**：本层是产品逻辑装配层，依赖 `harness`、`agent`、`ai`，向外输出供 `cli`、`server` 使用的 `CadeApp`；严禁 `harness` 反向依赖 `coding_agent`。
+- **产品层定位**：本层是产品逻辑装配层，依赖 `harness`、`agent`、`ai`，通过 `CadeApp` 为运行模式和浏览器宿主提供产品服务。依赖方向是产品层 → `harness` → `agent` → `ai`。
 - **只读前置校验**：所有写操作与编辑工具必须遵守工作区路径限制，严禁在未经过 `PermissionEngine` 决策前直接触发操作系统落盘。
 - **短程与长程记忆解耦**：当前正在进行的任务步骤必须通过 `NOTE.md` 维护，少量跨会话知识通过 `.cade/memory/*.md` 按需保存，会话细节无损留存于 Session 账本中。
 
@@ -70,3 +70,7 @@ app.close()
 - **[assembly/](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/assembly/README.md)**：工厂子包，细粒度装配配置、基础设施、安全规则与工具集。
 - **[prompting/](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/prompting/README.md)**：系统身份提示词（`CORE_IDENTITY`）与版本规范。
 - **[tools/](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/tools/README.md)**：全套内置编码工具的实现（文件、检索、Shell、子代理等）。
+
+- **[interaction/](interaction/README.md)**：宿主共用的应用契约、命令操作、输入补全、模型发现与统计服务。
+- **[modes/](modes/README.md)**：TUI 交互适配器和 exec 自动化协议。
+- **[cli/](cli/README.md)**：认证、配置与持久会话的命令行入口处理。
