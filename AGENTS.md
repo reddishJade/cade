@@ -60,6 +60,9 @@ Read the relevant reference when its condition applies, not the entire list:
 
 - Before implementing behavior changes or adding tests, use
   [Testing Guidelines](docs/testing.md) for test design, artifacts, and commands.
+  Prioritize real E2E workflows, integration tests at data/API boundaries, and
+  golden regressions grounded in real examples. Commit reusable test code and
+  curated fixtures; keep execution artifacts out of Git.
   Choose validation by scope and risk; documentation-only edits do not require
   Python checks.
 - For environment setup, repository skill changes, or preparing commits and PRs,
