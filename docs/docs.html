@@ -916,10 +916,14 @@ cade -c</code></pre>
             <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
           </div>
           <pre><code><span class="comment"># 1. <span class="lz">只读规划：让 Agent 勘察当前目录架构并制定计划</span><span class="le">Read-only planning: survey codebase and produce plan</span></span>
-<span class="lz">> /plan 梳理 src/ 目录下的模块依赖，并规划如何添加一个统一的日志脱敏器</span><span class="le">> /plan Survey module dependencies under src/ and design a unified log sanitizer</span>
+<span class="lz">> /mode plan
+> 梳理 src/ 目录下的模块依赖，并规划如何添加一个统一的日志脱敏器</span><span class="le">> /mode plan
+> Survey module dependencies under src/ and design a unified log sanitizer</span>
 
 <span class="comment"># 2. <span class="lz">切换到执行模式：实施落地代码修改</span><span class="le">Switch to execution mode: implement the code changes</span></span>
-<span class="lz">> /act 根据上述规划，新建 src/security/redact.py 并添加单元测试</span><span class="le">> /act Implement src/security/redact.py based on the plan and add unit tests</span>
+<span class="lz">> /mode act
+> 根据上述规划，新建 src/security/redact.py 并添加单元测试</span><span class="le">> /mode act
+> Implement src/security/redact.py based on the plan and add unit tests</span>
 
 <span class="comment"># 3. <span class="lz">安全撤销：如果修改不符合预期，单条指令物理回滚！</span><span class="le">Atomic undo: if changes are unsatisfactory, revert instantly!</span></span>
 > /undo</code></pre>
@@ -1273,15 +1277,16 @@ if CurrentRatio >= 0.95:
           <li><span class="lz"><strong>一键放行/拒绝</strong>：按 <code>y</code> 批准执行，按 <code>n</code> 拒绝并可附带说明原因反馈给模型。</span><span class="le"><strong>Approval Controls</strong>: Press <code>y</code> to approve, <code>n</code> to reject with an optional feedback note sent back to the agent.</span></li>
         </ul>
 
+        <p><span class="lz">空闲时按 Shift+Tab，按 act → build → plan 循环切换。</span><span class="le">Press Shift+Tab while idle to cycle act → build → plan.</span></p>
         <h2><span class="lz">模式切换快捷命令</span><span class="le">Mode Switching Commands</span></h2>
         <div class="code-block">
           <div class="code-header">
             <span>Terminal</span>
             <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
           </div>
-          <pre><code>/plan   <span class="comment"># <span class="lz">进入只读规划模式</span><span class="le">Enter read-only planning mode</span></span>
-/build  <span class="comment"># <span class="lz">进入标准构建开发模式 (默认)</span><span class="le">Enter standard build mode (default)</span></span>
-/act    <span class="comment"># <span class="lz">进入全自动执行推进模式</span><span class="le">Enter automated sprint mode</span></span>
+          <pre><code>/mode plan   <span class="comment"># <span class="lz">进入只读规划模式</span><span class="le">Enter read-only planning mode</span></span>
+/mode build  <span class="comment"># <span class="lz">进入自动实施与验证模式</span><span class="le">Enter automatic implementation and validation mode</span></span>
+/mode act    <span class="comment"># <span class="lz">进入人工审批模式 (默认)</span><span class="le">Enter user approval mode (default)</span></span>
 /mode   <span class="comment"># <span class="lz">查看或交互式选择模式</span><span class="le">Inspect or interactively pick mode</span></span></code></pre>
         </div>
 
@@ -1323,19 +1328,19 @@ if CurrentRatio >= 0.95:
                 <td><span class="lz"><strong>无损原子撤销</strong>：从磁盘快照池瞬时恢复上一步修改的文件，并将上下文视窗回退一轮。</span><span class="le"><strong>Lossless Undo</strong>: Restores pre-edit snapshots to disk and rewinds the context window by one turn.</span></td>
               </tr>
               <tr>
-                <td><code>/plan</code></td>
+                <td><code>/mode plan</code></td>
                 <td>-</td>
                 <td><span class="lz">切换到 Plan 模式，锁定只读，仅进行代码推演与方案分析。</span><span class="le">Switch to Plan mode; locks out file write tools for zero side-effects.</span></td>
               </tr>
               <tr>
-                <td><code>/build</code></td>
+                <td><code>/mode build</code></td>
                 <td>-</td>
                 <td><span class="lz">切换到 Build 模式，开启代码修改，高危操作交互确认。</span><span class="le">Switch to Build mode; enables snapshotted file editing with HITL approvals.</span></td>
               </tr>
               <tr>
-                <td><code>/act</code></td>
-                <td><span class="lz"><code>[任务需求]</code></span><span class="le"><code>[task_description]</code></span></td>
-                <td><span class="lz">切换到 Act 模式或直接单次全自动推进执行任务。</span><span class="le">Switch to Act mode or run an automated implementation sprint.</span></td>
+                <td><code>/mode act</code></td>
+                <td>-</td>
+                <td><span class="lz">切换到 Act 模式，副作用操作交用户审批。</span><span class="le">Switch to Act mode with user approval for mutations.</span></td>
               </tr>
               <tr>
                 <td><code>/context</code></td>
@@ -2065,7 +2070,7 @@ cade cli --model deepseek <span class="comment"># <span class="lz">指定初始�
         <ul>
           <li><span class="lz"><strong>@ 引用精准文件</strong>：在输入中加入 <code>@src/cade/main.py</code>，内核会自动读取并将其精准嵌入提示词，无需模型进行额外探测；</span><span class="le"><strong>@ File Ingestion</strong>: Mentioning <code>@src/cade/main.py</code> reads and embeds file bytes directly into prompt context;</span></li>
           <li><span class="lz"><strong>! 原生 Shell 直达</strong>：以感叹号开头（如 <code>!git status</code> 或 <code>!pytest</code>）直接在本地 Shell 执行命令并展示输出，不消耗大模型 Token；</span><span class="le"><strong>! Raw Shell Escape</strong>: Starting with an exclamation mark (e.g. <code>!git status</code>) executes commands directly on host without consuming LLM tokens;</span></li>
-          <li><span class="lz"><strong>/ Slash 指令执行</strong>：直接键入 <code>/undo</code>、<code>/plan</code>、<code>/act</code> 操控会话；</span><span class="le"><strong>/ Slash Commands</strong>: Execute <code>/undo</code>, <code>/plan</code>, <code>/act</code> directly;</span></li>
+          <li><span class="lz"><strong>/ Slash 指令执行</strong>：直接键入 <code>/undo</code>、<code>/mode plan</code>、<code>/mode act</code> 操控会话；</span><span class="le"><strong>/ Slash Commands</strong>: Execute <code>/undo</code>, <code>/mode plan</code>, <code>/mode act</code> directly;</span></li>
           <li><span class="lz"><strong>Shift+Enter 多行换行</strong>：输入多行长需求或粘贴代码段时保持完整排版。</span><span class="le"><strong>Shift+Enter Multi-line</strong>: Input multi-line requirements or paste code blocks without premature submission.</span></li>
         </ul>
 

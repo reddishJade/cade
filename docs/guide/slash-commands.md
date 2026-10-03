@@ -41,9 +41,7 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/plan` | `/plan [调研目标]` | 切换至 Plan 模式（只读探索，限制写规划文件） |
-| `/build` | `/build` | 切换至 Build 模式（自动修改代码并自动审查运行验证） |
-| `/act` | `/act` | 切换至 Act 模式（默认模式，写文件与 Shell 逐项人工确认） |
+| `/mode` | `/mode [act\|build\|plan]` | 打开模式列表或切换模式；Shift+Tab 按 act → build → plan 循环切换 |
 
 ---
 

@@ -102,6 +102,7 @@ _SHORTCUT_HELP = """Shortcuts
   Ctrl+C         clear input; interrupt; press Ctrl+C twice to exit when idle
   Ctrl+D         press Ctrl+D twice to exit when idle (empty input)
   Ctrl+Q         exit
+  Shift+Tab      cycle execution mode: act → build → plan
   Ctrl+T         expand or collapse thinking
   Ctrl+O         expand or collapse tool details
   ! command      run a bash command
@@ -551,6 +552,17 @@ class _CadeTui:
         )
         bindings.add("escape", "enter", filter=steering)(self._steer_key)
         bindings.add("escape", "enter", filter=~steering)(self._insert_newline)
+        bindings.add(
+            "s-tab",
+            eager=True,
+            filter=Condition(
+                lambda: (
+                    not self._state.running
+                    and not self._committing
+                    and not self._has_pending_interaction()
+                )
+            ),
+        )(self._cycle_mode_key)
         bindings.add("c-j")(self._insert_newline)
         bindings.add(Keys.PageUp, eager=True)(self._page_up_key)
         bindings.add(Keys.PageDown, eager=True)(self._page_down_key)
@@ -576,6 +588,14 @@ class _CadeTui:
             ),
         )(self._escape_key)
         return bindings
+
+    def _cycle_mode_key(self, _event: object) -> None:
+        """空闲时循环切换模式并保留尚未提交的输入。"""
+        modes = ("act", "build", "plan")
+        selected = modes[(modes.index(self._repl_state.mode) + 1) % len(modes)]
+        command = f"/mode {selected}"
+        self._record_command(command)
+        self._run_command(command)
 
     def _submit_key(self, _event: object) -> None:
         buffer = self._input.buffer
@@ -685,7 +705,7 @@ class _CadeTui:
             }[self._repl_state.busy_mode]
             text = f"Enter {action} · Alt+Enter steer · Ctrl+J newline · Ctrl+C stop"
         else:
-            text = "Enter send · Ctrl+J newline · @ files · / commands · cade -c resume"
+            text = "Enter send · Shift+Tab mode · Ctrl+J newline · @ files · / commands · cade -c resume"
         return fit_text(text, self._output_width())
 
     def _input_hint_height(self) -> int:
@@ -970,6 +990,18 @@ class _CadeTui:
     def _show_native_command_choice(self, text: str) -> bool:
         """为需要选择的会话命令打开 TUI 原生菜单。"""
         command = text.split(maxsplit=1)[0]
+        if command == "/mode" and len(text.split()) == 1:
+            self._open_command_choices(
+                [
+                    (
+                        f"{mode} (current)" if mode == self._repl_state.mode else mode,
+                        mode,
+                    )
+                    for mode in ("act", "build", "plan")
+                ],
+                lambda selected: self._run_command(f"/mode {selected}"),
+            )
+            return True
         if command == "/model" and len(text.split()) == 1:
             self._open_model_selector()
             return True

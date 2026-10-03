@@ -11,6 +11,7 @@ import questionary
 
 from cade.agent.messages import AgentMessage
 from cade.agent.types import ToolSpec
+from cade.coding_agent.execution_modes import ExecutionMode
 from cade.harness.security import (
     FileGrantStore,
     InMemoryGrantStore,
@@ -359,32 +360,26 @@ def cmd_config(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
-def cmd_plan(cmd: str, ctx: CommandContext) -> bool:
-    """进入 Plan Mode（只读检查，禁止编辑和 shell）。"""
-    ctx.state.mode = "plan"
-    print(
-        "Plan Mode enabled. Read-only inspection tools are available; edits and shell are blocked."
-    )
+def cmd_mode(cmd: str, ctx: CommandContext) -> bool:
+    """列出执行模式或切换到指定模式。"""
     parts = cmd.split(maxsplit=1)
-    if len(parts) == 2 and parts[1].strip():
-        _queue_followup(ctx, parts[1].strip())
-    return False
-
-
-def cmd_build(cmd: str, ctx: CommandContext) -> bool:
-    """进入 Build Mode（自动执行工作区变更，保留显式规则和硬边界）。"""
-    ctx.state.mode = "build"
-    print(
-        "Build Mode enabled. Workspace mutations run automatically; boundary "
-        "actions use automatic approval review without pausing for user input."
-    )
-    return False
-
-
-def cmd_act(cmd: str, ctx: CommandContext) -> bool:
-    """进入 Act Mode，边界动作恢复人工审批。"""
-    ctx.state.mode = "act"
-    print("Act Mode enabled. Boundary actions require user approval.")
+    selected = parts[1].strip().lower() if len(parts) == 2 else None
+    if selected is None:
+        if not sys.stdin.isatty():
+            print(f"Current mode: {ctx.state.mode}. Available modes: act, build, plan.")
+            print("Usage: /mode <act|build|plan>")
+            return False
+        selected = safe_select(
+            "Select execution mode:",
+            choices=["act", "build", "plan"],
+            default=ctx.state.mode,
+        )
+    if selected is None:
+        return False
+    if selected not in {"act", "build", "plan"}:
+        print("Usage: /mode <act|build|plan>")
+        return False
+    ctx.state.mode = cast(ExecutionMode, selected)
     return False
 
 
@@ -1423,24 +1418,10 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         accepts_args=True,
         group=COMMAND_GROUP_INFO,
     ),
-    "/plan": CommandEntry(
-        handler=cmd_plan,
-        desc="Enter Plan Mode: read-only inspection tools, no edits or shell.",
-        args_desc="[prompt]",
-        accepts_args=True,
-        group=COMMAND_GROUP_MODE,
-    ),
-    "/build": CommandEntry(
-        handler=cmd_build,
-        desc=(
-            "Enter Build Mode: automatic execution with model-reviewed "
-            "boundary actions."
-        ),
-        group=COMMAND_GROUP_MODE,
-    ),
-    "/act": CommandEntry(
-        handler=cmd_act,
-        desc="Enter Act Mode with user approval for boundary actions.",
+    "/mode": CommandEntry(
+        handler=cmd_mode,
+        desc="Select execution mode (Shift+Tab to cycle).",
+        args_desc="[act|build|plan]",
         accepts_args=True,
         group=COMMAND_GROUP_MODE,
     ),
