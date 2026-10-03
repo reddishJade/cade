@@ -41,9 +41,9 @@ Use HUMAN.md for approval boundaries and review checkpoints.
 Cade is a Python 3.12+ coding-agent harness. All package code lives in
 `src/cade/`; the command-line entry point is `src/cade/main.py`. The layered
 design is `ai/` (provider adapters), `agent/` (loop and context), `harness/`
-(runtime, sessions, policy, MCP), `coding_agent/` (tools), and `cli/` (REPL and
-TUI). Tests reside in `src/cade/tests/`; documentation and examples are in
-`docs/` and `examples/`.
+(runtime, sessions, policy, MCP), `coding_agent/` (product assembly, tools,
+interaction services, TUI and exec modes), and `server/` (web host).
+Documentation and examples are in `docs/` and `examples/`.
 
 ## Coding Style & Naming
 
@@ -59,12 +59,13 @@ Simplified Chinese.
 Read the relevant reference when its condition applies, not the entire list:
 
 - Before implementing behavior changes or adding tests, use
-  [Testing Guidelines](docs/testing.md) for test design, artifacts, and commands.
-  Prioritize real E2E workflows, integration tests at data/API boundaries, and
-  golden regressions grounded in real examples. Commit reusable test code and
-  curated fixtures; keep execution artifacts out of Git.
-  Choose validation by scope and risk; documentation-only edits do not require
-  Python checks.
+  [Validation Guidelines](docs/testing.md) for validation selection and evidence.
+  Use real `cade exec` tasks as the primary runtime acceptance path; validate
+  TUI and web behavior through their actual hosts. For behavior-preserving
+  refactors, check callers, static analysis, imports and affected startup.
+  Adding test code requires a concrete coverage gap, a real scenario, independent
+  acceptance criteria and reproducible evidence as defined in that guide.
+  Documentation-only changes receive documentation and diff review.
 - For environment setup, repository skill changes, or preparing commits and PRs,
   read the matching section of [Development Guide](docs/development.md).
 - For architecture changes, consult [Architecture](docs/architecture.md).

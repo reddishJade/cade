@@ -12,7 +12,7 @@ uv pip install -e ".[dev]"
 ```
 
 Run the application with `uv run cade`. For validation commands and test design,
-see [Testing Guidelines](testing.md).
+see [Validation Guidelines](testing.md).
 
 ## Repository Skills
 
@@ -27,12 +27,13 @@ across models and remove stale or conflicting instructions.
 
 Use focused commits with imperative Conventional Commit-style subjects, such as
 `fix: refine tui input presentation` or `feat: add session export`. Stage only
-explicit paths (`git add src/cade/...`), never `git add .`. Commit reusable E2E
-test sources and small, sanitized golden fixtures. Review local test sources before staging.
+explicit paths (`git add src/cade/...`). Review reusable validation scenarios
+against the admission requirements in [Validation Guidelines](testing.md) before staging their sources,
+run instructions, and small sanitized fixtures.
 Keep execution traces, logs, screenshots, recordings, credentials, and disposable
 evaluation workspaces out of Git. Store run artifacts locally or in CI artifact
 storage with a retention period.
 
 In pull requests, describe the behavioral change, list validation commands,
-link relevant issues, and include terminal screenshots when a REPL or TUI
-change is visible.
+link relevant issues, and include terminal screenshots when a TUI change is
+visible.
