@@ -25,8 +25,6 @@ from .repl_rendering import (
 )
 from .repl_tools import (
     brief_input,
-    print_tool_call_rich,
-    print_tool_result_rich,
     summarize_intents,
     tool_call_text,
     tool_intent,
@@ -68,9 +66,6 @@ class ToolCallHandler:
         label = brief_input(event_data.name, event_data.input)
         intent = tool_intent(event_data.name, event_data.input)
         self.tool_call_labels[event_data.id] = label
-        if self.state.verbosity != "normal":
-            print_tool_call_rich(label, self.live_console)
-            return
         if self.tool_group is None:
             self.tool_group = {
                 "intents": [],
@@ -89,9 +84,6 @@ class ToolCallHandler:
 
     def record_tool_result(self, event_data: ToolResultBlock) -> None:
         self.clear_progress()
-        if self.state.verbosity != "normal":
-            print_tool_result_rich(event_data, self.state.verbosity, self.live_console)
-            return
         if self.tool_group is None:
             return
         if event_data.status == "ok":

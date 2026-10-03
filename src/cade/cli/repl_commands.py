@@ -383,43 +383,6 @@ def cmd_mode(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
-def cmd_verbose(cmd: str, ctx: CommandContext) -> bool:
-    """设置输出详细程度: normal, verbose, debug。"""
-    parts = cmd.split(maxsplit=1)
-    if len(parts) == 2:
-        val = parts[1].strip().lower()
-        if val in ("normal", "verbose", "debug"):
-            ctx.state.verbosity = val
-            print(f"Verbosity set to {val}.")
-        elif val == "on":
-            ctx.state.verbosity = "verbose"
-            print("Verbose mode on.")
-        elif val == "off":
-            ctx.state.verbosity = "normal"
-            print("Verbose mode off.")
-        else:
-            print(f"Unknown level: {val}. Use normal, verbose, debug, on, or off.")
-    else:
-        print(f"Current verbosity: {ctx.state.verbosity}")
-        print("Usage: /verbose normal|verbose|debug|on|off")
-    return False
-
-
-def cmd_debug(cmd: str, ctx: CommandContext) -> bool:
-    """切换 debug 模式（显示推理预览和展开工具结果）。"""
-    parts = cmd.split(maxsplit=1)
-    if len(parts) == 2 and parts[1] == "on":
-        ctx.state.verbosity = "debug"
-        print("Debug mode on: reasoning preview and expanded tool results shown.")
-    elif len(parts) == 2 and parts[1] == "off" or ctx.state.verbosity == "debug":
-        ctx.state.verbosity = "normal"
-        print("Debug mode off.")
-    else:
-        ctx.state.verbosity = "debug"
-        print("Debug mode on: reasoning preview and expanded tool results shown.")
-    return False
-
-
 def cmd_steer(cmd: str, ctx: CommandContext) -> bool:
     """向当前运行的 agent 注入实时指导，下次推理前生效。"""
     parts = cmd.split(maxsplit=1)
@@ -1422,20 +1385,6 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         handler=cmd_mode,
         desc="Select execution mode (Shift+Tab to cycle).",
         args_desc="[act|build|plan]",
-        accepts_args=True,
-        group=COMMAND_GROUP_MODE,
-    ),
-    "/verbose": CommandEntry(
-        handler=cmd_verbose,
-        desc="Set output verbosity level: normal, verbose, or debug.",
-        args_desc="normal|verbose|debug",
-        accepts_args=True,
-        group=COMMAND_GROUP_MODE,
-    ),
-    "/debug": CommandEntry(
-        handler=cmd_debug,
-        desc="Toggle debug mode (reasoning preview + expanded tool results).",
-        args_desc="on|off",
         accepts_args=True,
         group=COMMAND_GROUP_MODE,
     ),

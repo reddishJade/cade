@@ -17,8 +17,6 @@ Cade 提供了开箱即用的命令行工具 `cade`。本节汇总启动参数�
 | `-m, --mode <plan\|build\|act>` | string | 覆盖本次启动的默认执行模式（默认：`act`） |
 | `--model <name>` | string | 指定本次运行使用的大模型名称（如 `deepseek-flash` 或 `gpt-6-sol`） |
 | `--provider <name>` | string | 指定使用的 Provider 协议（如 `deepseek_chat`、`openai_responses`、`custom`） |
-| `--verbose` | flag | 开启详细输出，在终端打印底层工具完整入参和返回结果 |
-| `--debug` | flag | 输出底层网络传输与事件循环调试信息 |
 | `-v, --version` | flag | 打印当前安装的 Cade 版本号 |
 | `-h, --help` | flag | 打印命令行帮助信息 |
 
