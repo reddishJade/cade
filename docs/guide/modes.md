@@ -2,7 +2,7 @@
 
 Cade 设计了三种执行模式（Execution Modes），用来在**全自动开发的高效性**与**系统修改的安全性**之间取得平衡。
 
-你可以随时在终端通过对应的 Slash 指令切换当前工作模式。
+空闲时按 Shift+Tab，按 act → build → plan 循环切换；也可输入 `/mode` 打开模式列表。
 
 ---
 
@@ -20,10 +20,11 @@ Cade 设计了三种执行模式（Execution Modes），用来在**全自动开�
 
 ### 2.1 Plan 模式：只动口不动手
 
-输入 `/plan [你的问题]` 即可进入规划模式：
+输入 `/mode plan` 进入规划模式，再单独提交问题：
 
 ```text
-> /plan 分析当前数据库连接池在高并发下连接泄露的原因并给出修复步骤
+> /mode plan
+> 分析当前数据库连接池在高并发下连接泄露的原因并给出修复步骤
 ```
 
 - **安全边界**：Plan 保留 Bash 探索能力；确定只读命令直接运行，analyzer 确认的 mutation 由 mode policy 拒绝，无法静态确认副作用的命令交独立 Reviewer。
@@ -32,11 +33,10 @@ Cade 设计了三种执行模式（Execution Modes），用来在**全自动开�
 
 ### 2.2 Build 模式：全自动高效推进
 
-当你已有了明确的方案，或者不想每改一个文件都手动点击“确认”时，输入 `/build`：
+当你已有了明确的方案，或者不想每改一个文件都手动点击“确认”时，输入 `/mode build`：
 
 ```text
-> /build
-已切换到 Build 模式：项目写入操作自动放行，Shell 命令将进行自动语义审计。
+> /mode build
 ```
 
 - **自动文件修改**：修改、新建文件不再打扰用户，Agent 自行闭环完成。
@@ -56,8 +56,9 @@ Act 模式是 Cade 启动时的**默认模式**。
 在 REPL 中可以随时无缝切换：
 
 ```bash
-/plan [目标]    # 切换至 Plan 模式，可携带初始规划目标
-/build          # 切换至 Build 模式
-/act            # 切换回 Act 模式
+/mode           # 打开 act/build/plan 模式列表
+/mode plan      # 切换至 Plan 模式
+/mode build     # 切换至 Build 模式
+/mode act       # 切换回 Act 模式
 ```
 切换记录会持久化在当前会话状态中，即使退出重进也会恢复之前的模式设置。

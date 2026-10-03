@@ -44,7 +44,8 @@ cade cli
 ### 第一步：进入 Plan 模式进行架构调研与规划
 在 REPL 或 TUI 中输入：
 ```text
-/plan 分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案
+/mode plan
+分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案
 ```
 * **运行机制**：Agent 处于只读模式，通过 `read`、`bash + rg` 勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
 * **安全保证**：此阶段 Agent 无法修改任何业务代码，无法执行任意 Shell 命令。
@@ -52,7 +53,8 @@ cade cli
 ### 第二步：审查计划并一键切换到 Build 模式
 审阅生成的 Markdown 计划后，输入：
 ```text
-/build 按照 .cade/plans/rbac_design.md 中的方案实现代码并跑通测试
+/mode build
+按照 .cade/plans/rbac_design.md 中的方案实现代码并跑通测试
 ```
 * **运行机制**：Agent 自动切换为构建模式，依次使用 `edit` / `write` 应用修改，并通过 `bash` 运行单元测试。
 * **自动审查**：执行测试等低风险命令由独立的 Reviewer 模型自动审查放行；如果涉及跨工作区写入或敏感命令，则自动暂停向用户请求确认。

@@ -100,6 +100,13 @@ class ReplCompleter(Completer):
             )
 
     def complete(self, text_before_cursor: str) -> list[CompletionItem]:
+        if text_before_cursor.startswith("/mode "):
+            partial = text_before_cursor[len("/mode ") :]
+            return [
+                CompletionItem(mode, -len(partial), "execution mode")
+                for mode in ("act", "build", "plan")
+                if mode.startswith(partial)
+            ]
         if (
             text_before_cursor.startswith("/effort")
             and len(text_before_cursor) > len("/effort")

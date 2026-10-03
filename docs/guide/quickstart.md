@@ -46,7 +46,8 @@ cade
 如果你想先让 Cade 调研代码结构，输出方案而不随意改动代码：
 
 ```text
-> /plan 梳理当前项目的认证模块实现，指出存在的安全风险，并输出重构方案
+> /mode plan
+> 梳理当前项目的认证模块实现，指出存在的安全风险，并输出重构方案
 ```
 
 在此模式下，Cade 仅能使用只读工具（如 `read_file`、`grep_search`）探索代码，所有方案会规整地写入 `.cade/plans/` 目录中供你查阅。
@@ -56,7 +57,8 @@ cade
 当你确定了需求，想让 Cade 一口气完成编码、修改与测试验证时：
 
 ```text
-> /build 为 src/utils.py 中的 format_date 函数添加单元测试，并运行 pytest 确保通过
+> /mode build
+> 为 src/utils.py 中的 format_date 函数添加单元测试，并运行 pytest 确保通过
 ```
 
 在 `build` 模式下，Cade 会自动检索文件、调用 `edit_file` 精确修改，并通过内置的审查机制自动运行 `pytest` 校验效果，无需你反复手动敲回车批准。

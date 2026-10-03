@@ -20,7 +20,7 @@ CLI 层基于 `prompt-toolkit` 驱动，单向消费底层的 `AgentHarnessEvent
             ┌────────────────────┴────────────────────┐
             ▼                                         ▼
    Slash 命令分发器                           Turn 轮次调度器
-   (/plan, /fork, /undo...)                  (repl_turn_handler.py)
+   (/mode plan, /fork, /undo...)                  (repl_turn_handler.py)
             │                                         │
             │ 执行会话/配置分支                       │ 驱动底层应用
             ▼                                         ▼
@@ -40,7 +40,7 @@ CLI 层基于 `prompt-toolkit` 驱动，单向消费底层的 `AgentHarnessEvent
 ### 核心模块职责
 - **REPL 主循环 ([repl.py](repl.py))**：多轮对话生命周期控制、快捷键与终端事件驱动。
 - **Slash 命令体系 ([repl_commands.py](repl_commands.py))**：
-  - 模式控制：`/plan`、`/build`、`/act`。
+  - 模式控制：`/mode plan`、`/mode build`、`/mode act`。
   - 会话分支与历史：`/fork`、`/resume`、`/clear`、`/undo`、`/rewind`。
   - 运行时调整：`/model`、`/effort`、`/thinking`、`/config`、`/tool`。
 - **人机审批交互 ([repl_hitl.py](repl_hitl.py))**：在敏感工具调用或跨边界写操作时中断，弹出选择菜单（单次允许、拒绝、会话持久记忆）。

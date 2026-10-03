@@ -934,7 +934,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
         <div class="workflow-card reveal">
           <div class="workflow-icon">⚑</div>
           <h3><span class="lz">Plan 规划与 Build 实施</span><span class="le">Plan and build features</span></h3>
-          <p><span class="lz">在 /plan 模式下零副作用产出架构方案与文件清单；切换至 /build 模式由沙箱与审查器守卫全自动落地。</span><span class="le">Produce zero-side-effect plans in /plan mode, then switch to /build mode to implement features safely under sandbox gating.</span></p>
+          <p><span class="lz">在 /mode plan 模式下零副作用产出架构方案与文件清单；切换至 /mode build 模式由沙箱与审查器守卫全自动落地。</span><span class="le">Produce zero-side-effect plans in /mode plan mode, then switch to /mode build mode to implement features safely under sandbox gating.</span></p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⎇</div>
@@ -972,16 +972,16 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
       </header>
       <div class="cmd-grid reveal">
         <div class="cmd-cell">
-          <div class="cmd-name">/plan</div>
+          <div class="cmd-name">/mode plan</div>
           <div class="cmd-desc"><span class="lz">进入只读规划模式</span><span class="le">Enter read-only planning mode</span></div>
         </div>
         <div class="cmd-cell">
-          <div class="cmd-name">/build</div>
+          <div class="cmd-name">/mode build</div>
           <div class="cmd-desc"><span class="lz">进入允许写入的构建模式</span><span class="le">Enter write-enabled build mode</span></div>
         </div>
         <div class="cmd-cell">
-          <div class="cmd-name">/act</div>
-          <div class="cmd-desc"><span class="lz">plan + build 二合一</span><span class="le">Plan and build in one shot</span></div>
+          <div class="cmd-name">/mode act</div>
+          <div class="cmd-desc"><span class="lz">人工审批模式 (默认)</span><span class="le">User approval mode (default)</span></div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/undo</div>
@@ -1131,7 +1131,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   const TERM_CONFIG = {
     zh: {
       banner: "cade v0.2.0 · act 模式 · deepseek-flash",
-      prompt: "/act 给 main.py 增加 --version 选项",
+      prompt: "给 main.py 增加 --version 选项",
       thinking: "thinking  检查 main.py 的 argparse 命令行配置与版本常量...",
       thoughtDone: "thought for 1.8s",
       tools: [
@@ -1145,7 +1145,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
     },
     en: {
       banner: "cade v0.2.0 · act mode · deepseek-flash",
-      prompt: "/act add a --version flag to main.py",
+      prompt: "add a --version flag to main.py",
       thinking: "thinking  inspecting argparse CLI setup and version constant in main.py...",
       thoughtDone: "thought for 1.8s",
       tools: [
