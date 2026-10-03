@@ -2,8 +2,10 @@
 
 ## Quality Standards
 
-Prioritize the Cade workflows users actually run. The default suite retains only
-focused regressions that E2E tests cannot safely cover. Do not test internal
+Prioritize the Cade workflows users actually run. Use real E2E tests for complete
+workflows, integration tests for data/API boundaries, and golden tests grounded
+in real examples. The default suite includes deterministic integration and
+golden tests plus necessary focused regressions. Do not test internal
 object shapes, trivial calculations, or implementation details merely to
 increase assertion counts.
 
@@ -27,10 +29,15 @@ increase assertion counts.
 
 ### E2E
 
-Tests in `src/cade/tests/e2e/` use real `build_app()`, session storage, tools, and
-terminal boundaries. Deterministic protocol drivers are used only at the
-provider network boundary. Each test must save a JSON trace, reproduction
-commands, and key observations in `e2e-results/`.
+Tests in `src/cade/tests/e2e/` exercise complete user workflows through the real
+application, provider, session storage, tools, terminal, and relevant external
+services. Do not mock or replace dependencies along the tested execution path.
+Use dedicated test accounts and isolated workspaces when required. Drive the
+CLI or TUI through terminal automation; use Playwright for browser workflows.
+Tests using deterministic provider protocol drivers are integration tests,
+not full E2E tests. Document environment requirements and run instructions.
+Each E2E test must save a JSON trace, reproduction commands, and key observations
+in `e2e-results/`.
 
 ```sh
 uv run pytest src/cade/tests/e2e --override-ini 'addopts=' -m e2e -q --tb=short
@@ -43,9 +50,30 @@ and provider environments are not available on every development machine:
 uv run pytest src/cade/tests -q --tb=short
 ```
 
+### Integration Tests
+
+Exercise connected components at provider, MCP, tool, and session-storage
+boundaries. Cover affected request and response schemas, serialization,
+persistence and replay, streaming events, and error propagation. Use real
+adapters and components; deterministic protocol drivers may replace external
+services for repeatable checks. Handwritten doubles must not be the sole evidence
+of an external API contract: check real service examples and validate against the
+real service when that boundary changes.
+
+### Golden Tests
+
+Commit small, sanitized real examples of provider payloads, MCP responses,
+session events, or user-visible output with reviewed expected results. Include
+representative edge cases and record each fixture's source and protected behavior.
+Compare behavior against these expectations. Normalize only volatile fields,
+such as timestamps or generated IDs, without hiding meaningful schema or content
+changes. Review golden updates as behavior changes; do not regenerate expected
+results merely to make a failing test pass.
+
 ### Necessary Focused Tests
 
-Retain narrowly scoped tests only for these behaviors:
+In addition to integration and golden tests, retain focused regressions for
+behaviors E2E cannot safely or deterministically cover, including:
 
 - Hard denials by security policy, approval scope, and path boundary violations.
 - Session recovery after process crashes or torn writes.
@@ -64,11 +92,16 @@ Manually validate real providers, terminal UI, MCP servers, and platform-specifi
 shell behavior as needed. An HTTP 200 response, a mock loader, or another service
 instance cannot substitute for the execution path users actually run.
 
-Test sources in `src/cade/tests/e2e/` and files named `test_*_e2e.py` are local-only
-and excluded by `.gitignore`; do not stage or push them. Run them locally when
-the required terminal, sandbox, or provider environment is available. Verify
-manually when automation is impractical. Fresh clones do not contain these
-files. Origin CI runs only static checks, a CLI startup check, and packaging.
+Commit reusable test sources, run instructions, and curated golden fixtures.
+Keep generated traces, logs, screenshots, recordings, and bulk captures out of
+Git. Store them in ignored result directories or CI artifact storage with a
+retention period. Never commit credentials or unsanitized account data.
+
+Run E2E tests locally or in configured CI when the required terminal, sandbox,
+provider, and test accounts are available. Verify manually when automation is
+impractical and record reproduction steps and evidence. Origin CI currently runs
+only static checks, a CLI startup check, and packaging; a passing default suite
+or CI run does not establish full E2E coverage.
 
 Pytest discovers `test_*.py` under `src/cade/tests/`, with async tests handled
 automatically by `pytest-asyncio`. The `mcp_external` tests require network

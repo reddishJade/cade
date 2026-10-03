@@ -31,10 +31,6 @@ build/
 dist/
 *.spec
 
-# 本地 E2E 测试源码
-/src/cade/tests/test_*_e2e.py
-/src/cade/tests/e2e/
-
 # 测试、E2E 与评测运行产物
 .coverage
 .coverage.*

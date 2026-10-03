@@ -27,9 +27,11 @@ across models and remove stale or conflicting instructions.
 
 Use focused commits with imperative Conventional Commit-style subjects, such as
 `fix: refine tui input presentation` or `feat: add session export`. Stage only
-explicit paths (`git add src/cade/...`), never `git add .`. E2E sources under
-`src/cade/tests/e2e/` and files named `test_*_e2e.py` are local-only; do not stage
-or push them.
+explicit paths (`git add src/cade/...`), never `git add .`. Commit reusable E2E
+test sources and small, sanitized golden fixtures. Review local test sources before staging.
+Keep execution traces, logs, screenshots, recordings, credentials, and disposable
+evaluation workspaces out of Git. Store run artifacts locally or in CI artifact
+storage with a retention period.
 
 In pull requests, describe the behavioral change, list validation commands,
 link relevant issues, and include terminal screenshots when a REPL or TUI
