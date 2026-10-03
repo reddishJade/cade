@@ -594,7 +594,6 @@ class _CadeTui:
         modes = ("act", "build", "plan")
         selected = modes[(modes.index(self._repl_state.mode) + 1) % len(modes)]
         command = f"/mode {selected}"
-        self._record_command(command)
         self._run_command(command)
 
     def _submit_key(self, _event: object) -> None:
