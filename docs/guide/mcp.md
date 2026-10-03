@@ -47,7 +47,7 @@ Cade 原生支持开放行业标准 **MCP (Model Context Protocol)** 协议。�
 
 ## 3. 在终端中管理 MCP
 
-在 REPL 运行期间，你可以使用 `/mcp` 命令管理连接状态：
+在 TUI 运行期间，你可以使用 `/mcp` 命令管理连接状态：
 
 ```bash
 /mcp status       # 检查所有外部 MCP 服务的连通性、延迟与暴露的工具列表

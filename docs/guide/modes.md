@@ -53,7 +53,7 @@ Act 模式是 Cade 启动时的**默认模式**。
 
 ## 3. 模式切换操作
 
-在 REPL 中可以随时无缝切换：
+在 TUI 中可以随时无缝切换：
 
 ```bash
 /mode           # 打开 act/build/plan 模式列表

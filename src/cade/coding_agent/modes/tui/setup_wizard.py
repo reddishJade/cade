@@ -1,0 +1,364 @@
+"""首次启动配置向导。"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from cade.ai.models import get_codex_models
+from cade.ai.resolver import ModelResolver
+from cade.coding_agent.interaction.reasoning_effort import (
+    reasoning_effort_levels_for_transport,
+    supports_reasoning_effort,
+)
+
+from .ptk_patch import safe_select, safe_text
+
+JsonObject = dict[str, object]
+CONFIG_FILENAME = "cade.config.json"
+OPENAI_MODELS = [model.id for model in get_codex_models()]
+AUTH_METHOD_ACCOUNT = "Sign in with an account"
+AUTH_METHOD_API_KEY = "Sign in with an API key"
+# 兼容旧提示值，避免已有调用方升级后失效。
+_LEGACY_LOGIN_CHOICE_AUTH = "Sign in with ChatGPT (OAuth, recommended)"
+_LEGACY_LOGIN_CHOICE_API = "Configure an API key"
+LOGIN_CHOICE_AUTH = AUTH_METHOD_ACCOUNT
+LOGIN_CHOICE_API = AUTH_METHOD_API_KEY
+
+PROVIDER_PRESETS: dict[str, Any] = {
+    "openai": {
+        "label": "OpenAI",
+        "base_url": "",
+        "models": OPENAI_MODELS,
+        "default_model": ModelResolver.resolve_alias("codex"),
+        "env_key": "OPENAI_API_KEY",
+        "env_base_url": "OPENAI_BASE_URL",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "base_url": "https://api.deepseek.com",
+        "models": ["deepseek-flash", "deepseek-v4-pro"],
+        "default_model": "deepseek-flash",
+        "env_key": "DEEPSEEK_API_KEY",
+        "env_base_url": "DEEPSEEK_BASE_URL",
+    },
+    "mimo": {
+        "label": "Xiaomi MiMo",
+        "base_url": "https://api.xiaomimimo.com/v1",
+        "models": ["mimo-v2.5-pro", "mimo-v2.5"],
+        "default_model": "mimo-v2.5-pro",
+        "env_key": "MIMO_API_KEY",
+        "env_base_url": "MIMO_BASE_URL",
+    },
+    "chatglm": {
+        "label": "ChatGLM",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "models": ["glm-4.7", "glm-4-flash", "glm-5", "glm-5.1"],
+        "default_model": "glm-4.7",
+        "env_key": "CHATGLM_API_KEY",
+        "env_base_url": "CHATGLM_BASE_URL",
+    },
+    "custom": {
+        "label": "Custom",
+        "base_url": "",
+        "models": [],
+        "default_model": "",
+        "env_key": "OPENAI_API_KEY",
+        "env_base_url": "OPENAI_BASE_URL",
+    },
+}
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    result = dict(base)
+    for k, v in override.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def prompt_auth_method() -> str | None:
+    """询问认证方式，返回 account、api_key 或 None（用户取消）。"""
+    choice = safe_select(
+        "Select authentication method:",
+        choices=[AUTH_METHOD_ACCOUNT, AUTH_METHOD_API_KEY],
+    )
+    if choice is None:
+        return None
+    if choice in (AUTH_METHOD_ACCOUNT, _LEGACY_LOGIN_CHOICE_AUTH):
+        return "account"
+    if choice in (AUTH_METHOD_API_KEY, _LEGACY_LOGIN_CHOICE_API):
+        return "api_key"
+    return None
+
+
+def prompt_login_method() -> str | None:
+    """询问初始登录方式，返回 auth、api 或 None（用户取消）。"""
+    method = prompt_auth_method()
+    if method == "account":
+        return "auth"
+    if method == "api_key":
+        return "api"
+    return None
+
+
+def _resolve_transport(provider_key: str) -> str:
+    """映射 provider key 到 transport 名称。"""
+    transport_map = {
+        "openai": "openai_chat",
+        "deepseek": "deepseek_chat",
+        "mimo": "mimo_chat",
+        "chatglm": "chatglm_chat",
+        "custom": "openai_chat",
+    }
+    return transport_map.get(provider_key, "openai_chat")
+
+
+def _select_provider() -> tuple[str, Any] | None:
+    """交互式选择 LLM provider。返回 (key, preset) 或 None（取消）。"""
+    choices = {preset["label"]: key for key, preset in PROVIDER_PRESETS.items()}
+    provider_label = safe_select("Select provider:", choices=list(choices))
+    if provider_label is None:
+        return None
+    provider_key = choices[provider_label]
+    return provider_key, PROVIDER_PRESETS[provider_key]
+
+
+def _prompt_api_key(preset: dict[str, Any]) -> str | None:
+    """交互式输入 API key。返回 key 或 None（取消）。"""
+    env_key = preset["env_key"]
+    env_val = os.environ.get(env_key) or ""
+    api_key = safe_text("API Key:", default=env_val[:16] if env_val else "sk-")
+    if api_key is None:
+        return None
+    if not api_key:
+        api_key = env_val
+    return api_key
+
+
+def _prompt_base_url(preset: dict[str, Any]) -> str | None:
+    """交互式输入 Base URL。返回 URL 或 None（取消）。"""
+    default_base_url = preset["base_url"]
+    env_base_url = os.environ.get(preset["env_base_url"], "")
+    base_url = safe_text("Base URL:", default=env_base_url or default_base_url)
+    if base_url is None:
+        return None
+    if not base_url:
+        base_url = env_base_url or default_base_url
+    return base_url
+
+
+def _prompt_model(preset: dict[str, Any]) -> str | None:
+    """交互式选择模型。返回模型名或 None（取消）。"""
+    if not preset["models"]:
+        model = safe_text("Model name:")
+        if model is None:
+            return None
+        if not model:
+            return preset["default_model"]
+        return model
+
+    model_default = preset["default_model"]
+    model_choices = [*preset["models"], "Custom (enter name)"]
+    model = safe_select("Model:", choices=model_choices)
+    if model is None:
+        return None
+    if model == "Custom (enter name)":
+        model = safe_text("Model name:")
+        if model is None:
+            return None
+        if not model:
+            model = model_default
+    return model
+
+
+def _prompt_thinking_config(
+    transport: str,
+    model: str,
+) -> tuple[bool, str | None] | None:
+    """交互式配置 thinking 开关和 effort 级别。返回 (thinking, effort) 或 None（取消）。"""
+    thinking_choice = safe_select(
+        "Thinking:", choices=["enabled", "disabled"], default="enabled"
+    )
+    if thinking_choice is None:
+        return None
+    thinking = thinking_choice == "enabled"
+    reasoning_effort: str | None = None
+    if thinking and supports_reasoning_effort(transport):
+        effort = safe_select(
+            "Reasoning effort:",
+            choices=list(reasoning_effort_levels_for_transport(transport, model)),
+            default="high",
+        )
+        if effort is None:
+            return None
+        reasoning_effort = effort
+    return thinking, reasoning_effort
+
+
+def _build_config_data(
+    transport: str,
+    model: str,
+    base_url: str,
+    api_key: str,
+    thinking: bool,
+    reasoning_effort: str | None,
+) -> dict[str, Any]:
+    """构造配置字典。"""
+    config_data: dict[str, Any] = {
+        "provider": {
+            "model_profiles": {
+                "main": {
+                    "transport": transport,
+                    "chat_model": model,
+                    "base_url": base_url,
+                    "api_key": api_key,
+                    "thinking": thinking,
+                }
+            },
+        }
+    }
+    if reasoning_effort is not None:
+        config_data["provider"]["model_profiles"]["main"]["reasoning_effort"] = (
+            reasoning_effort
+        )
+    return config_data
+
+
+def _print_summary(
+    preset_label: str,
+    model: str,
+    base_url: str,
+    thinking: bool,
+    reasoning_effort: str | None,
+    api_key: str,
+) -> None:
+    """打印配置摘要。"""
+    print()
+    print("  Summary:")
+    print(f"    Provider  : {preset_label}")
+    print(f"    Model     : {model}")
+    if base_url:
+        print(f"    Base URL  : {base_url}")
+    print(f"    Thinking  : {'enabled' if thinking else 'disabled'}")
+    if reasoning_effort is not None:
+        print(f"    Effort    : {reasoning_effort}")
+    masked = f"{'*' * max(0, len(api_key) - 4)}{api_key[-4:] if api_key else '(empty)'}"
+    print(f"    API Key   : {masked}")
+    print()
+
+
+def _save_config(merged: dict[str, Any], config_path: Path) -> None:
+    """将合并后的配置写入文件。"""
+    config_path.write_text(
+        json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _load_existing_config(config_path: Path) -> dict[str, Any]:
+    """加载已有的配置文件，不存在或损坏时返回空字典。"""
+    if not config_path.exists():
+        return {}
+    try:
+        return json.loads(config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def run_setup_wizard(
+    project_root: Path, *, from_connect: bool = False
+) -> tuple[str, Path | None]:
+    """运行 provider 配置向导，返回状态和临时配置路径。"""
+    print()
+    print("=" * 60)
+    print("  Welcome to Cade - AI Coding Agent")
+    print("=" * 60)
+    print()
+    if from_connect:
+        print("Let's configure your API-key provider.")
+    else:
+        print("No API key configured. Let's set up your LLM provider.")
+    print()
+
+    provider_result = _select_provider()
+    if provider_result is None:
+        return ("cancelled", None)
+    provider_key, preset = provider_result
+
+    print()
+    print(f"  Provider: {preset['label']}")
+
+    api_key = _prompt_api_key(preset)
+    if api_key is None:
+        return ("cancelled", None)
+
+    base_url = _prompt_base_url(preset)
+    if base_url is None:
+        return ("cancelled", None)
+
+    model = _prompt_model(preset)
+    if model is None:
+        return ("cancelled", None)
+
+    transport = _resolve_transport(provider_key)
+
+    thinking_result = _prompt_thinking_config(transport, model)
+    if thinking_result is None:
+        return ("cancelled", None)
+    thinking, reasoning_effort = thinking_result
+
+    _print_summary(
+        preset["label"], model, base_url, thinking, reasoning_effort, api_key
+    )
+
+    save_choice = safe_select(
+        "Save this configuration?",
+        choices=[
+            "Global default (~/.cade/settings.json, recommended)",
+            f"Current project only ({CONFIG_FILENAME})",
+            "Don't save (temporary configuration)",
+        ],
+        default="Global default (~/.cade/settings.json, recommended)",
+    )
+    if save_choice is None:
+        return ("cancelled", None)
+
+    config_data = _build_config_data(
+        transport,
+        model,
+        base_url,
+        api_key,
+        thinking,
+        reasoning_effort,
+    )
+
+    if "Global default" in save_choice:
+        global_path = Path.home() / ".cade" / "settings.json"
+        global_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = _load_existing_config(global_path)
+        merged = deep_merge(existing, config_data)
+        _save_config(merged, global_path)
+        print(f"  Configuration saved globally to {global_path}")
+        print()
+        return ("saved", None)
+    elif "Current project" in save_choice:
+        config_path = project_root / CONFIG_FILENAME
+        existing = _load_existing_config(config_path)
+        merged = deep_merge(existing, config_data)
+        _save_config(merged, config_path)
+        print(f"  Configuration saved to {CONFIG_FILENAME}")
+        print()
+        return ("saved", None)
+    else:
+        fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="cade_config_")
+        os.close(fd)
+        _save_config(config_data, Path(tmp_path))
+        print("  Running with temporary configuration (not saved).")
+        print()
+        return ("no_save", Path(tmp_path))

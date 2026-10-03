@@ -43,7 +43,7 @@ Agent 层是 Cade 最内层的领域无关核心，专注于解决一个核心�
 ## 2. 架构不变量与设计禁忌
 
 - **单向无依赖法则**：
-  - `agent` 是纯算法与状态机，**严禁导入** `cade.harness`、`cade.coding_agent`、`cade.cli` 或 `cade.server` 的任何类型。
+  - `agent` 拥有算法与状态机，通过 `cade.ai` 的模型协议和本层的工具协议运行；Harness、编码产品和宿主向本层注入服务。
   - 所有工具与环境交互必须通过 [`AgentTool`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/types.py) 合约注入；所有模型交互必须通过标准异步迭代器注入。
 - **循环闭环稳定性**：
   - 循环逻辑（[`agent_loop.py`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/agent_loop.py)）一旦稳定，不应因业务层新增工具、切换模型厂商或修改权限策略而做出任何修改。

@@ -37,7 +37,7 @@ cade exec "运行 pytest 并修复所有失败的测试用例"
 
 ## 2. 终端交互快捷键与技巧
 
-在交互终端（REPL）中，Cade 提供了丰富的操作便利：
+在交互终端（TUI）中，Cade 提供了丰富的操作便利：
 
 ### 2.1 快捷键清单
 - **多行输入**：按 `Shift+Enter` 进行换行。如果你的终端未正确映射该快捷键，可使用 `Esc` 然后按 `Enter` 作为通用后备换行方案。
@@ -54,7 +54,7 @@ cade exec "运行 pytest 并修复所有失败的测试用例"
 1. **`@` 文件直接引用**：
    在提示词中输入 `@` 即可模糊补全并引用工作区中的文件：
    ```text
-   > 请参考 @src/cade/main.py 的入参处理，为 @src/cade/cli/commands.py 补充对应选项
+   > 请参考 @src/cade/main.py 的入参处理，为 @src/cade/coding_agent/interaction/commands.py 补充对应选项
    ```
    Cade 会在发送请求时自动把引用的文件内容作为背景上下文呈递给模型。
 

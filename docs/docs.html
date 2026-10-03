@@ -691,7 +691,7 @@
       <div class="sidebar-group">
         <div class="sidebar-title"><span class="lz">三端交互界面</span><span class="le">Workbenches</span></div>
         <a href="#tui" class="sidebar-link"><span class="lz">TUI 终端全屏工作台 (默认)</span><span class="le">TUI Workbench (Default)</span></a>
-        <a href="#cli" class="sidebar-link"><span class="lz">CLI 命令行与快捷键</span><span class="le">CLI & REPL</span></a>
+        <a href="#cli" class="sidebar-link"><span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span></a>
         <a href="#web" class="sidebar-link"><span class="lz">Web 浏览器工作台</span><span class="le">Web Workbench</span></a>
       </div>
     </aside>
@@ -898,8 +898,8 @@ EOF</code></pre>
 <span class="comment"># <span class="lz">启动默认 TUI 全屏沉浸工作台 (分屏视图、实时 Diff 审查)</span><span class="le">Default: Full-screen split-pane TUI workbench</span></span>
 cade
 
-<span class="comment"># <span class="lz">启动轻量命令行流式 REPL 模式</span><span class="le">Launch lightweight streaming CLI REPL</span></span>
-cade cli
+<span class="comment"># <span class="lz">启动终端工作台</span><span class="le">Launch the terminal workbench</span></span>
+cade tui
 
 <span class="comment"># <span class="lz">启动现代 Web 浏览器可视化工作台</span><span class="le">Launch visual browser workbench</span></span>
 cade web
@@ -965,7 +965,7 @@ cade -c</code></pre>
               <tr>
                 <td><code>surfaces/</code></td>
                 <td><span class="lz">交互投影层</span><span class="le">Interface Surfaces</span></td>
-                <td><span class="lz">TUI 全屏沉浸工作台、CLI 流式 REPL、Web 浏览器端可视化看板。共享事件流与消息协议，支持热切换。</span><span class="le">TUI split workbench, CLI streaming REPL, Web dashboard. Share event protocols with seamless hot switching.</span></td>
+                <td><span class="lz">TUI 终端工作台、exec 自动化入口与 Web 浏览器工作台。共用运行时与持久会话。</span><span class="le">Terminal workbench, exec automation, and Web browser workbench share a runtime and persistent sessions.</span></td>
               </tr>
               <tr>
                 <td><code>harness/</code></td>
@@ -2042,7 +2042,7 @@ cade --resume     <span class="comment"># <span class="lz">交互式选择历史
           </a>
           <a href="#cli" class="page-nav-btn next">
             <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">CLI 命令行与快捷键</span><span class="le">CLI & REPL</span> →</span>
+            <span class="page-nav-title"><span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span> →</span>
           </a>
         </div>
       </article>
@@ -2050,19 +2050,19 @@ cade --resume     <span class="comment"># <span class="lz">交互式选择历史
       <!-- ================= 19. CLI ================= -->
       <article id="cli" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">CLI 命令行与快捷键</span><span class="le">CLI & REPL</span></span>
+          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span></span>
         </div>
-        <h1><span class="lz">CLI 命令行 REPL 与极速交互流</span><span class="le">CLI Streaming REPL & Command-Line Guide</span></h1>
-        <p class="lead-text"><span class="lz">专为轻量终端、远程 SSH 会话与 Tmux 工作流设计的行流式交互端。极小资源占用，完整保留统一内核的无损与换窗特性。</span><span class="le">A lightweight streaming REPL designed for SSH sessions, tmux workflows, and terminal minimalists. Ultra-low overhead with full kernel fidelity.</span></p>
+        <h1><span class="lz">TUI 交互与 exec 自动化</span><span class="le">TUI & exec Guide</span></h1>
+        <p class="lead-text"><span class="lz">TUI 提供终端交互，exec 提供自动化协议。两者共用会话、权限与运行时事件。</span><span class="le">TUI provides terminal interaction; exec provides automation. Both share sessions, permissions, and runtime events.</span></p>
 
-        <h2><span class="lz">启动命令行 REPL</span><span class="le">Launching the CLI REPL</span></h2>
+        <h2><span class="lz">启动终端工作台</span><span class="le">Launching the terminal workbench</span></h2>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
             <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
           </div>
-          <pre><code>cade cli                  <span class="comment"># <span class="lz">进入标准命令行 REPL 循环</span><span class="le">Enter standard line-oriented REPL loop</span></span>
-cade cli --model deepseek <span class="comment"># <span class="lz">指定初始模型启动</span><span class="le">Specify initial model</span></span></code></pre>
+          <pre><code>cade tui                  <span class="comment"># <span class="lz">进入终端工作台</span><span class="le">Enter the terminal workbench</span></span>
+cade exec --model deepseek "检查当前项目" <span class="comment"># <span class="lz">指定初始模型启动</span><span class="le">Specify initial model</span></span></code></pre>
         </div>
 
         <h2><span class="lz">高效特殊指令语法</span><span class="le">Special Command Syntax & Shortcuts</span></h2>
@@ -2082,10 +2082,10 @@ cade cli --model deepseek <span class="comment"># <span class="lz">指定初始�
             <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
           </div>
           <pre><code><span class="comment"># <span class="lz">单次问答输出结果并退出</span><span class="le">Single query execution and exit</span></span>
-<span class="lz">cade -p "分析当前目录 pyproject.toml 中的所有依赖并输出一份 Markdown 报告"</span><span class="le">cade -p "Analyze dependencies in pyproject.toml and produce a markdown report"</span>
+<span class="lz">cade exec "分析当前目录 pyproject.toml 中的所有依赖并输出一份 Markdown 报告"</span><span class="le">cade exec "Analyze dependencies in pyproject.toml and produce a markdown report"</span>
 
 <span class="comment"># <span class="lz">通过管道输入 Diff 并进行代码审查</span><span class="le">Pipe git diff into Cade for automated code review</span></span>
-<span class="lz">git diff | cade -p "请审查上述 Git 改动中是否存在潜在的并发死锁风险"</span><span class="le">git diff | cade -p "Review the git diff for potential concurrency deadlock risks"</span></code></pre>
+<span class="lz">git diff | cade exec "请审查上述 Git 改动中是否存在潜在的并发死锁风险"</span><span class="le">git diff | cade exec "Review the git diff for potential concurrency deadlock risks"</span></code></pre>
         </div>
 
         <div class="page-nav">
@@ -2153,7 +2153,7 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
         <div class="page-nav">
           <a href="#cli" class="page-nav-btn">
             <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">CLI 命令行与快捷键</span><span class="le">CLI & REPL</span></span>
+            <span class="page-nav-title">← <span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span></span>
           </a>
           <a href="#overview" class="page-nav-btn next">
             <span class="page-nav-label"><span class="lz">回到首页</span><span class="le">Back to Top</span></span>

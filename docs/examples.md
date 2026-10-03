@@ -18,16 +18,16 @@ cade exec "检查项目中所有未被使用的 import 语句"
 
 ---
 
-## 2. 交互式全屏终端 (TUI) 与 REPL
+## 2. 交互式终端工作台 (TUI)
 
-Cade 默认启动类 VSCode 的全屏终端界面（TUI）：
+Cade 默认启动终端工作台（TUI）：
 
 ```bash
-# 启动 TUI 全屏交互
+# 启动 TUI 交互
 cade
 
-# 或启动标准 CLI / REPL 模式
-cade cli
+# 或显式启动 TUI
+cade tui
 ```
 
 在交互界面中，支持丰富的输入与控制能力：
@@ -42,7 +42,7 @@ cade cli
 对于中大型功能开发或复杂重构，推荐采用 **Plan 模式规划 → 人工确认 → Build 模式实现** 的两阶段工作流：
 
 ### 第一步：进入 Plan 模式进行架构调研与规划
-在 REPL 或 TUI 中输入：
+在 TUI 中输入：
 ```text
 /mode plan
 分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案

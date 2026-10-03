@@ -767,8 +767,8 @@
           <span class="le">An extensible<br><em>Python coding-agent</em> runtime harness</span>
         </h1>
         <p class="hero-lede reveal" style="transition-delay:.16s">
-          <span class="lz">围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文换窗、REPL/TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。</span>
-          <span class="le">A testable coding-agent runtime harness built around structured event streams, execution modes, path safety, tool approval, audited redaction, context rollover, REPL/TUI sessions, and a memory system.</span>
+          <span class="lz">围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文换窗、TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。</span>
+          <span class="le">A testable coding-agent runtime harness built around structured event streams, execution modes, path safety, tool approval, audited redaction, context rollover, TUI sessions, and a memory system.</span>
         </p>
         <div class="hero-actions reveal" style="transition-delay:.24s">
           <a class="btn btn-primary" href="#install"><span class="lz">快速开始</span><span class="le">Quick Start</span></a>
@@ -879,7 +879,7 @@
             <div class="step-num">3</div>
             <div>
               <h4><span class="lz">启动会话</span><span class="le">Launch a session</span></h4>
-              <p><span class="lz">默认进入 TUI；cli 进入 REPL；-p 直接提问。cade -c 继续最近任务；--resume 选择历史会话。</span><span class="le">Default launches TUI; cli enters REPL; -p asks a single question. cade -c continues the latest task; --resume picks a previous session.</span></p>
+              <p><span class="lz">默认进入 TUI；exec 执行自动化任务；web 打开浏览器工作台。cade -c 继续最近任务；--resume 选择历史会话。</span><span class="le">Default launches TUI; exec runs automation; web opens the browser workbench. cade -c continues the latest task; --resume picks a previous session.</span></p>
             </div>
           </div>
           <p class="sandbox-note reveal">
@@ -898,16 +898,16 @@
 cd /path/to/your/project
 
 cade                <span class="code-comment"><span class="lz"># 默认：启动 TUI 沉浸式工作台</span><span class="le"># Default: launch TUI workbench</span></span>
-cade cli            <span class="code-comment"><span class="lz"># 启动命令行 REPL 模式</span><span class="le"># Launch interactive CLI REPL</span></span>
+cade tui            <span class="code-comment"><span class="lz"># 启动终端工作台</span><span class="le"># Launch terminal workbench</span></span>
 cade web            <span class="code-comment"><span class="lz"># 启动现代 Web 浏览器工作台</span><span class="le"># Launch browser workbench (FastAPI + WebSockets)</span></span>
 cade -c             <span class="code-comment"><span class="lz"># 极速断点续接最近任务</span><span class="le"># Resume latest task</span></span></code></pre>
           </div>
           <div class="cli-chips">
             <span class="chip">cade (TUI)</span>
-            <span class="chip">cade cli</span>
+            <span class="chip">cade tui</span>
             <span class="chip">cade web</span>
             <span class="chip">cade -c</span>
-            <span class="chip">cade -p "..."</span>
+            <span class="chip">cade exec "..."</span>
             <span class="chip">cade config</span>
           </div>
         </div>
@@ -963,7 +963,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   <section id="commands" style="background:var(--paper-2)">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">04 — <span class="lz">REPL 命令</span><span class="le">REPL Commands</span></p>
+        <p class="sec-kicker">04 — <span class="lz">TUI 命令</span><span class="le">TUI Commands</span></p>
         <h2>
           <span class="lz">一个斜杠，<em>切换模式</em></span>
           <span class="le">One slash to <em>switch modes</em></span>
@@ -1026,7 +1026,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
           <div class="arch-name">surfaces/</div>
           <div class="arch-desc">
             <h4><span class="lz">三端交互投影层</span><span class="le">Multi-Interface Surfaces</span></h4>
-            <p><span class="lz">TUI 全屏沉浸分屏工作台（默认）、CLI 流式命令行 REPL、Web 浏览器可视化端，支持状态即时同步与热切换。</span><span class="le">Full-screen split TUI (default), CLI streaming REPL, and Web browser dashboard with synchronized event states.</span></p>
+            <p><span class="lz">TUI 终端工作台（默认）、exec 自动化入口与 Web 浏览器工作台，共用运行时与持久会话。</span><span class="le">Terminal workbench (default), exec automation, and Web browser workbench share a runtime and persistent sessions.</span></p>
           </div>
         </div>
         <div class="arch-row">

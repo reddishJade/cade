@@ -1,7 +1,7 @@
 # Cade 架构
 
 Cade 是本地运行的 Python coding-agent harness，负责模型请求组装、工具执行与权限、
-会话记录和运行生命周期。编码产品将这些能力装配为 `CadeApp`，REPL、TUI、
+会话记录和运行生命周期。编码产品将这些能力装配为 `CadeApp`，TUI、exec、
 浏览器工作台和 Python 调用通过应用入口提交任务、消费事件。
 
 本文说明当前实现的组件边界、运行过程、状态归属和扩展位置。安装与使用从
@@ -15,8 +15,30 @@ Cade 是本地运行的 Python coding-agent harness，负责模型请求组装�
 | Provider | [ai/](../src/cade/ai/) | 模型协议、流式事件、用量与厂商适配 |
 | Agent | [agent/](../src/cade/agent/) | 消息模型、请求组装、模型循环与工具调度 |
 | Harness | [harness/](../src/cade/harness/) | 会话、运行控制、权限、审计、MCP 与生命周期服务 |
-| Coding product | [coding_agent/](../src/cade/coding_agent/) | 编码工具、执行模式、上下文来源与产品装配 |
-| Host | [cli/](../src/cade/cli/)、[server/](../src/cade/server/) | 用户交互、事件展示与宿主操作 |
+| Coding product | [coding_agent/](../src/cade/coding_agent/) | 编码工具、产品装配、公共应用服务、运行模式与命令入口 |
+| Host | [coding_agent/modes/](../src/cade/coding_agent/modes/)、[server/](../src/cade/server/) | 用户交互、事件展示与宿主操作 |
+
+```text
+                       Cade runtime
+                            │
+             ┌──────────────┼──────────────┐
+             │              │              │
+            TUI            exec           web
+         human UI       automation     browser UI
+```
+
+`coding_agent/interaction/` 属于编码产品的公共应用服务，通过产品装配和运行时接口
+提供命令操作、补全候选、文件引用、技能调用、模型发现和统计快照。命令通过注入的输出与选择接口
+返回结果，认证与配置向导由宿主提供。依赖方向是运行模式与浏览器宿主 → 产品交互服务
+→ 产品装配与运行时；Provider、Agent、Harness 和编码产品分别拥有各自的实现与生命周期。
+会话存储、审批策略、运行控制和事件流归 Harness 管理。
+
+`coding_agent/modes/tui/` 是终端交互适配器，拥有 `prompt_toolkit`、Rich、终端布局、折叠状态、
+思考预览和配置向导。`coding_agent/modes/exec_mode.py` 直接消费运行时事件，提供自动化协议；
+`server/` 通过公共交互层和编码产品提供 HTTP、WebSocket 和浏览器表现。
+`coding_agent/cli/` 处理认证、配置和会话管理子命令；`main.py` 负责参数解析和模式选择。
+用户选择与配置向导通过终端适配器呈现。默认命令 `cade` 和显式 `cade tui` 启动
+同一个 TUI，单次任务与自动化使用 `cade exec`，浏览器工作台使用 `cade web`。
 
 Agent 通过 provider 协议请求模型，通过工具协议执行动作。Harness 将会话、门控和
 运行服务接入循环；编码产品选择工具与策略；宿主负责输入和呈现。文件工具依赖
@@ -37,7 +59,7 @@ hooks、grant store 和换窗服务由运行时持有。run 开始时原子捕�
 
 session 标识持久会话及其当前分支；run 标识一次占有该 session 的执行过程。
 单个运行时内，同一 session 同时只允许一个活动 run，排队输入保留在 inbox 中。
-用户轮次是一次任务输入及其响应过程，REPL/TUI 的文件快照按这一粒度记录。
+用户轮次是一次任务输入及其响应过程，TUI 的文件快照按这一粒度记录。
 
 step 是 Agent 循环的一次迭代，包含模型输出、可选的工具执行和继续判断。重试或
 输出续写可使一个 step 产生多次 provider 请求。Agent 内部的 `TurnStart` 和
@@ -127,7 +149,7 @@ NOTE 的完整程度影响跨窗口任务衔接。预算公式、裁剪顺序和
 | 活动 run、取消与连接 | run controller、provider、MCP 等运行服务 | 进程内执行资源，恢复时重新建立 |
 | NOTE.md | 工作区文件；NotesCollector 读取 | 当前任务进展、验证与交接；换窗记录可附带其快照 |
 | Memory | 工作区 `.cade/memory/` Markdown 文件 | 可核验的跨会话知识，按任务需要读取 |
-| 文件快照 | SnapshotStore；默认 `.cade/snapshots/` | REPL/TUI 用户轮次的文件变更与撤销依据 |
+| 文件快照 | SnapshotStore；默认 `.cade/snapshots/` | TUI 用户轮次的文件变更与撤销依据 |
 
 [`replay_session()`](../src/cade/harness/session/replay.py) 按当前分支重建消息、运行
 元数据、Goal 和上下文状态，inbox 重建待消费输入。恢复后的运行使用当前装配服务
@@ -190,7 +212,7 @@ permanent scope。执行完成后触发 post-tool hook，并关联权限、工�
 与 capability 隔离。结构化文件工具使用路径边界；其他平台的 Shell 使用本地
 进程实现。受信任 hooks 和 MCP server 在该 Shell sandbox 外运行，其进程权限
 由宿主环境控制。网络隔离范围对应 Agent Shell namespace，当前 bubblewrap
-配置未启用 syscall seccomp。
+syscall seccomp 当前处于关闭状态。
 
 ## 扩展能力与生命周期
 
@@ -215,7 +237,7 @@ Skills registry 发现技能并发布目录，`load_skill` 按需读取正文；
 
 工具通过 `ToolRenderIntent` 携带 terminal、diff、location 或 subagent 语义，
 intent 随类型化结果落盘，宿主从事件恢复相应呈现。工具实现负责执行和结果描述，
-CLI/TUI 负责布局、交互与显示。
+TUI 与浏览器适配器负责布局、交互与显示。
 
 ## 子代理
 
@@ -248,7 +270,7 @@ continuable 子会话提交后续任务。创建上下文来自自包含任务 p
 | 修改扩展发现与连接 | [mcp/](../src/cade/harness/mcp/)、[skills/](../src/cade/harness/skills/) | 工具快照、惰性连接、激活与关闭 |
 | 修改 hooks 与审计 | [observability/](../src/cade/harness/observability/) | 参数改写、关联标识与失败策略 |
 | 修改子代理 | [subagents.py](../src/cade/harness/agent_runtime/subagents.py) | descriptor、冷恢复、权限继承与关闭 |
-| 修改交互与展示 | [cli/](../src/cade/cli/)、[server/](../src/cade/server/) | 类型化事件与应用生命周期 |
+| 修改交互与展示 | [coding_agent/modes/](../src/cade/coding_agent/modes/)、[server/](../src/cade/server/) | 类型化事件与应用生命周期 |
 
 行为验证、测试范围与命令见 [测试指南](testing.md)，接口迁移与工程规则见
 [AGENTS.md](../AGENTS.md)，环境、提交和发布流程见 [开发指南](development.md)。

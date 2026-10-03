@@ -1,0 +1,42 @@
+# Cade 终端工作台
+
+基于 `prompt-toolkit` 的 inline transcript 工作台，使用 `full_screen=False`。界面围绕连续对话、任务进度和输入组织；选择器与审批表单嵌入当前布局。
+
+```text
+字标与版本 / 已发现资源 / 历史对话 / 流式输出
+补全菜单或交互选择器
+有背景、上下留白的输入框
+当前操作提示（运行、补全或审批时）
+项目与分支                         上下文与用量
+执行模式                          模型与 effort
+```
+
+## 文件分工
+
+| 文件 | 职责 |
+| --- | --- |
+| [app.py](app.py) | 生命周期、布局、按键、后台运行和恢复 |
+| [state.py](state.py) | 消息、流式状态、折叠和可见输出 |
+| [rendering.py](rendering.py) | Markdown 与消息格式化 |
+| [widgets.py](widgets.py) / [completion.py](completion.py) | 输入高亮与补全适配 |
+| [commands.py](commands.py) / [command_output.py](command_output.py) | 宿主专用命令与公共命令的终端输出 |
+| [settings.py](settings.py) / [config_registry.py](config_registry.py) / [setup_wizard.py](setup_wizard.py) | 模型、权限与配置交互 |
+| [approval.py](approval.py) / [sessions.py](sessions.py) | 审批预览与启动会话选择 |
+| [thinking.py](thinking.py) / [tool_summary.py](tool_summary.py) | 思考计时、终端预览与工具摘要 |
+| [chrome.py](chrome.py) | 欢迎信息、状态排版与配色 |
+
+## 交互约定
+
+- 空闲 Enter 提交；忙时 Enter 默认排队，Alt+Enter 纠偏，Ctrl+J 换行。
+- 欢迎区与短对话按实际内容占用高度；长对话使用受终端高度限制的滚动视口。资源来自实际工具、指令收集器与技能目录。短终端使用紧凑欢迎区。
+- 输入区使用三行起步的完整背景；空闲时显示两行状态，欢迎区提供按键说明。
+- 输入提示随运行、补全和审批状态变化；补全 Enter 只接受选项。
+- 忙时输入通过共享运行控制器写入 session inbox，在对应模型或任务边界消费。
+- 选择器、补全和状态栏共同参与高度计算；窄终端按显示宽度裁剪。
+- 思考和工具详情默认折叠，错误与权限提示保持可见。
+- 恢复加载共享 session 状态，并显示恢复提示；`cade -c` 无历史时可以直接开始。
+- 退出清理界面后显示字标、耗时、会话 ID 和恢复命令；保留非默认会话目录及显式配置路径。
+
+用户操作见 [快速开始](../../../../../docs/guide/quickstart.md)。
+
+公共应用操作在 [interaction/](../../interaction/README.md)，TUI 只负责终端输入与表现。
