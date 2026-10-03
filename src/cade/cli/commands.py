@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Protocol
 
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.harness.agent_runtime import BusyMessageMode
@@ -18,7 +18,6 @@ from cade.harness.snapshot import SnapshotStore
 from .app_contract import ReplApp
 from .markdown import MarkdownRenderer
 
-VerbosityLevel = Literal["normal", "verbose", "debug"]
 PromptText = str | list[tuple[str, str]] | Callable[[], list[tuple[str, str]]]
 
 
@@ -29,7 +28,6 @@ class PromptLike(Protocol):
 @dataclass
 class ReplState:
     mode: ExecutionMode = "act"
-    verbosity: VerbosityLevel = "normal"
     exit_pending: float = 0.0
     exit_pending_key: str = ""
     pending_partial: tuple[str, str] | None = None

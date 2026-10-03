@@ -3,31 +3,21 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from rich.console import Console
 from rich.text import Text
 
 from cade.agent.config import AgentContext, BeforeToolCallContext
 from cade.agent.messages import AssistantMessage
 from cade.agent.types import ToolCallContent, ToolInput, ToolSpec
 from cade.coding_agent.execution_modes import ExecutionModeState
-from cade.harness.agent_runtime.events import ToolResultBlock
 from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.harness.agent_runtime.tool_gate import ToolGate
 
 from .file_refs import FileReference
 from .repl_rendering import (
     CLI_COLOR_DIM,
-    CLI_COLOR_ERROR,
-    CLI_COLOR_INFO,
-    CLI_COLOR_SUCCESS,
     CLI_COLOR_TOOL,
-    CLI_COLOR_WARNING,
-    DEBUG_TOOL_RESULT_PREVIEW_LIMIT,
-    NORMAL_TOOL_RESULT_PREVIEW_LIMIT,
-    VERBOSE_TOOL_RESULT_PREVIEW_LIMIT,
 )
 from .shared.thinking import single_line_preview
-from .tool_rendering import render_intent_summary
 
 
 def _registry(app: object) -> tuple[ToolSpec, ...]:
@@ -329,39 +319,6 @@ def summarize_intents(intents: list[str]) -> str:
         return intents[0]
     first = intents[0]
     return single_line_preview(f"{first} and {len(intents) - 1} more")
-
-
-def print_tool_call_rich(label: str, console: Console) -> None:
-    console.print(Text(f"  • {label}", style=CLI_COLOR_TOOL))
-
-
-def print_tool_result_rich(
-    data: ToolResultBlock,
-    verbosity: str,
-    console: Console,
-) -> None:
-    if data.permission_notice:
-        console.print(Text(f"  ↳ {data.permission_notice}", style=CLI_COLOR_INFO))
-    if data.status == "ok" and verbosity == "normal":
-        return
-    border = {
-        "error": CLI_COLOR_ERROR,
-        "denied": CLI_COLOR_ERROR,
-        "approval_required": CLI_COLOR_WARNING,
-    }.get(data.status, CLI_COLOR_SUCCESS if data.status == "ok" else CLI_COLOR_INFO)
-    mark = {"error": "✘", "denied": "⊘", "approval_required": "?"}.get(
-        data.status, data.status
-    )
-    limit = {
-        "debug": DEBUG_TOOL_RESULT_PREVIEW_LIMIT,
-        "verbose": VERBOSE_TOOL_RESULT_PREVIEW_LIMIT,
-    }.get(verbosity, NORMAL_TOOL_RESULT_PREVIEW_LIMIT)
-    summary = (
-        render_intent_summary(data.render_intent, str(data.content))
-        if data.render_intent is not None
-        else single_line_preview(str(data.content), width=limit)
-    )
-    console.print(Text(f"  ← {mark} {summary}", style=border))
 
 
 def final_stop_reason(data: AgentHarnessResult) -> str | None:
