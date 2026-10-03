@@ -60,9 +60,9 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/model` | `/model [profile/model_name]` | 查看或快速切换当前活跃的大模型 |
-| `/effort` | `/effort [low\|medium\|high]` | 设置模型深度思考（Reasoning Effort）的努力程度 |
-| `/thinking` | `/thinking [on\|off]` | 开启或关闭思考链（Thinking Process）的展示 |
+| `/model` | `/model [profile/model_name]` | 查看或切换模型；交互式切换后选择 effort |
+| `/effort` | `/effort [level]` | 选择或设置当前模型支持的推理强度 |
+| `/thinking` | `/thinking [on\|off]` | 仅 Responses/Codex：开关推理摘要，不改变推理强度；推理强度使用 `/effort` |
 
 ---
 
