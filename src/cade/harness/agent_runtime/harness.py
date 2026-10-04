@@ -12,7 +12,11 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
+from uuid import uuid4
 
+from cade.agent.config import AfterToolCallContext, AgentContext, BeforeToolCallContext
+from cade.agent.messages import AssistantMessage
+from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, ToolInput
 from cade.ai.events import ToolCall
 from cade.ai.providers.base import ModelProvider
 
@@ -275,6 +279,75 @@ class AgentHarness:
     def tool_map(self) -> dict[str, ToolSpec]:
         """按名称返回当前工具映射。"""
         return {tool.name: tool for tool in self.registry}
+
+    @property
+    def enabled_tools(self) -> tuple[ToolSpec, ...]:
+        """返回当前模式允许展示和执行的工具。"""
+        return self._build_active_registry(self.registry)
+
+    def execute_tool(self, tool: ToolSpec, arguments: ToolInput) -> AgentToolResult:
+        """通过当前会话门控执行宿主显式提交的工具，并记录钩子和审计。"""
+        if self.active_run() is not None:
+            raise RuntimeError("finish the active run before executing a manual tool")
+        if tool.name not in {item.name for item in self.enabled_tools}:
+            return AgentToolResult(
+                content=[
+                    TextContent(text=f"Tool unavailable in current mode: {tool.name}")
+                ],
+                is_error=True,
+            )
+        tool_call = ToolCallContent(
+            id=f"manual-{uuid4().hex}", name=tool.name, arguments=arguments
+        )
+        assistant_message = AssistantMessage(content=[tool_call])
+        context = AgentContext(messages=deepcopy(self._history))
+        snapshot = self._gate.snapshot_for((tool,))
+        before = self._gate.build_before_tool_hook(snapshot)(
+            BeforeToolCallContext(
+                assistant_message=assistant_message,
+                tool_call=tool_call,
+                args=arguments,
+                context=context,
+            ),
+            None,
+        )
+        if before is not None and before.block:
+            return AgentToolResult(
+                content=[TextContent(text=before.reason or "Tool execution blocked")],
+                is_error=True,
+            )
+        if before is not None and before.args is not None:
+            arguments = before.args
+        try:
+            result = run_coro_sync(
+                self._gate.adapt_tools((tool,))[0].execute(
+                    tool_call.id, arguments, None
+                )
+            )
+        except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            result = AgentToolResult(
+                content=[TextContent(text=f"{type(exc).__name__}: {exc}")],
+                is_error=True,
+            )
+        after = self._gate.build_after_tool_hook(snapshot)(
+            AfterToolCallContext(
+                assistant_message=assistant_message,
+                tool_call=tool_call,
+                args=arguments,
+                result=result,
+                is_error=result.is_error,
+                context=context,
+            ),
+            None,
+        )
+        if after is not None:
+            if after.content is not None:
+                result.content = after.content
+            if after.details is not None:
+                result.details = after.details
+            if after.is_error is not None:
+                result.is_error = after.is_error
+        return result
 
     def replace_primary_provider(self, provider: ModelProvider) -> str:
         """原子发布使用新主 provider 的 composition generation。"""

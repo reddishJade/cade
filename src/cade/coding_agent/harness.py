@@ -146,6 +146,10 @@ class CodingAgentHarness(AgentHarness):
         """返回当前执行模式（新会话为配置的默认模式）。"""
         return self._mode.current_mode
 
+    def set_mode(self, mode: ExecutionMode) -> None:
+        """立即更新运行时工具可见性和权限模式。"""
+        self._mode.set_mode(mode)
+
     def available_skill_names(self) -> tuple[str, ...]:
         """返回当前运行时允许显式激活的技能名称。"""
         registry = self._coding_runtime.skill_registry

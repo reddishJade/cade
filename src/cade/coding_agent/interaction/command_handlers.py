@@ -255,6 +255,7 @@ def cmd_mode(cmd: str, ctx: CommandContext) -> bool:
         ctx.output.write("Usage: /mode <act|build|plan>")
         return False
     ctx.state.mode = cast(ExecutionMode, selected)
+    ctx.app.agent.set_mode(ctx.state.mode)
     return False
 
 
