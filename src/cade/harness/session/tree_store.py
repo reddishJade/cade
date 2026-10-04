@@ -384,24 +384,54 @@ class TreeSessionRepo:
 
     def rewind_turns(self, turns: int = 1) -> int:
         """回退指定轮次：将 head_id 往回移动。"""
+        if turns < 1:
+            raise ValueError("turns must be positive")
         with self._lock:
             branch = self.build_branch()
-            user_indices = [
-                i
-                for i, entry in enumerate(branch)
-                if _claimed_user_text(entry) is not None
-            ]
+            user_indices: list[int] = []
+            seen_runs: set[str] = set()
+            for index, entry in enumerate(branch):
+                if _claimed_user_text(entry) is None or not isinstance(
+                    entry.content, dict
+                ):
+                    continue
+                data = entry.content.get("data")
+                if not isinstance(data, dict) or not isinstance(
+                    data.get("run_id"), str
+                ):
+                    raise TypeError("claimed input requires a run ID")
+                run_id = str(data["run_id"])
+                if run_id not in seen_runs:
+                    seen_runs.add(run_id)
+                    user_indices.append(index)
             if not user_indices:
                 return 0
             target_idx = max(0, len(user_indices) - turns)
             target_entry = branch[user_indices[target_idx]]
-            self._move_head(target_entry.id)
+            if target_entry.parent_id is None:
+                raise ValueError("claimed input requires its insertion prefix")
+            self._move_head(target_entry.parent_id)
+            from .inbox import SessionInbox
+
+            SessionInbox(self).discard_all("removed by rewind")
             return len(user_indices) - target_idx
 
     def user_turn_count(self) -> int:
-        return sum(
-            1 for entry in self.read_entries() if _claimed_user_text(entry) is not None
-        )
+        """统计活动分支中已结束的用户任务轮次，实时指导归入所在任务。"""
+        count = 0
+        claimed = False
+        for entry in self.build_branch():
+            if _claimed_user_text(entry) is not None:
+                claimed = True
+            elif (
+                claimed
+                and entry.type == "event"
+                and isinstance(entry.content, dict)
+                and entry.content.get("type") == "final"
+            ):
+                count += 1
+                claimed = False
+        return count
 
     def list_sessions(self, limit: int = 10) -> list[Path]:
         return [item.path for item in self.list_infos(limit=limit)]

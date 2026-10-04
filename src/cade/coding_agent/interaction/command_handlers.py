@@ -117,10 +117,8 @@ def cmd_rewind(cmd: str, ctx: CommandContext) -> bool:
             ctx.store.user_turn_count(),
         )
     ctx.app.restore_session()
-    turn_label = "turn" if turns == 1 else "turns"
-    ctx.output.write(
-        f"Rewound {turns} user {turn_label} ({removed} transcript records removed)."
-    )
+    turn_label = "turn" if removed == 1 else "turns"
+    ctx.output.write(f"Rewound {removed} user {turn_label}.")
     return False
 
 
