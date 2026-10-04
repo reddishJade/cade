@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -108,6 +109,7 @@ class SnapshotService:
         check: bool = True,
         timeout: int = 30,
         input_text: str | None = None,
+        decode_errors: str = "strict",
     ) -> subprocess.CompletedProcess:
         cmd = [
             "git",
@@ -122,6 +124,7 @@ class SnapshotService:
             cwd=self._project_root,
             capture_output=True,
             text=True,
+            errors=decode_errors,
             timeout=timeout,
             check=check,
             input=input_text,
@@ -261,11 +264,22 @@ class SnapshotService:
         return path
 
     def has_conflict(self, post_tree: str, rel_path: str) -> bool:
+        self._validate_path(rel_path)
+        expected = self._git(["ls-tree", post_tree, "--", rel_path]).stdout.strip()
+        if not expected:
+            return os.path.lexists(self._project_root / rel_path)
         result = self._git(
             ["diff", "--exit-code", post_tree, "--", rel_path],
             check=False,
         )
         return result.returncode != 0
+
+    def file_content(self, snapshot_id: str, rel_path: str) -> str:
+        """取得权限审批使用的恢复内容，文件落盘由 Git 保留原始字节。"""
+        self._validate_path(rel_path)
+        return self._git(
+            ["show", f"{snapshot_id}:{rel_path}"], decode_errors="replace"
+        ).stdout
 
     def restore_file(self, snapshot_id: str, rel_path: str) -> None:
         self._validate_path(rel_path)

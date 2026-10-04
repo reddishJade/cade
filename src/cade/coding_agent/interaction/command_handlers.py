@@ -1,18 +1,14 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import cast
 
 from cade.agent.messages import AgentMessage
-from cade.agent.types import ToolSpec
+from cade.agent.types import TextContent, ToolInput
 from cade.coding_agent.execution_modes import ExecutionMode
-from cade.harness.security import (
-    PermissionApprovalCallback,
-    PermissionEngine,
-    PermissionEngineConfig,
-)
 from cade.harness.session.types import JsonValue, SessionEntry, SessionInfoView
 from cade.harness.snapshot import TurnSnapshotRecord
 
@@ -701,7 +697,7 @@ def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
         return False
 
     parts = cmd.split()
-    if len(parts) >= 2 and parts[1] == "--list":
+    if len(parts) == 2 and parts[1] == "--list":
         records = ctx.snapshot_store.list_records(ctx.store.session_id)
         if not records:
             ctx.output.write("No snapshot records found.")
@@ -716,7 +712,11 @@ def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
                 )
         return False
 
-    n = _parse_turn_count(cmd)
+    try:
+        n = _parse_turn_count(cmd)
+    except ValueError as exc:
+        ctx.output.write(str(exc))
+        return False
     records = ctx.snapshot_store.get_undoable_records(ctx.store.session_id, n)
     if not records:
         if ctx.snapshot_store.list_records(ctx.store.session_id):
@@ -725,14 +725,8 @@ def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
             ctx.output.write("Nothing to undo (no snapshot records).")
         return False
 
-    agent = getattr(ctx.app, "agent", None)
-    approval_callback = cast(
-        "PermissionApprovalCallback | None",
-        getattr(agent, "current_approval_callback", None) if agent else None,
-    )
-
     for record in reversed(records):
-        result = _revert_turn(ctx, approval_callback, record)
+        result = _revert_turn(ctx, record)
         _report_undo_result(ctx, record, result)
         if result.fatal_error:
             ctx.output.write("Fatal error during undo. Stack preserved.")
@@ -756,7 +750,6 @@ class _RevertResult:
 
 def _revert_turn(
     ctx: CommandContext,
-    approval_callback: PermissionApprovalCallback | None,
     record: TurnSnapshotRecord,
 ) -> _RevertResult:
     store = ctx.snapshot_store
@@ -767,95 +760,68 @@ def _revert_turn(
 
     for entry in record.changed_files:
         try:
-            # Layer 1: 路径安全校验
             svc._validate_path(entry.path)
-
-            # Layer 2: 确认路径在 changed_files 中
-            all_paths = {c.path for c in record.changed_files}
-            if entry.path not in all_paths:
-                result.skipped.append((entry.path, "path not in turn changed_files"))
+            # 部分撤销重试时，已恢复的文件也计入完成结果。
+            if not svc.has_conflict(record.pre_snapshot_id, entry.path):
+                result.restored.append(entry.path)
                 continue
-
-            # Layer 3: 冲突检测 — 当前文件必须与 post 快照一致
             if svc.has_conflict(record.post_snapshot_id, entry.path):
                 result.skipped.append((entry.path, "conflict: file changed after turn"))
                 continue
 
-            # Layer 4: 权限检查
-            if entry.kind == "created":
-                tool_name = "delete_file"
-                tool_input: dict[str, object] = {"path": entry.path}
-            elif entry.kind == "deleted":
-                result.skipped.append(
-                    (entry.path, "file was deleted during the turn — cannot restore")
-                )
-                continue
-            else:
-                tool_name = "write_file"
-                tool_input = {"path": entry.path}
-
-            tool_spec = next(
+            tool_name = "bash" if entry.kind == "created" else "write"
+            original = next(
                 (
-                    spec
-                    for spec in tuple(getattr(ctx.app, "registry", ()) or ())
-                    if spec.name == tool_name
+                    tool
+                    for tool in ctx.app.agent.enabled_tools
+                    if tool.name == tool_name
                 ),
                 None,
             )
-            if tool_spec is None:
-                tool_spec = ToolSpec(
-                    name=tool_name,
-                    description="Restore a workspace file from a snapshot.",
-                    input_hint='JSON: {"path": "relative/path"}',
-                    handler=lambda _input, _on_update=None: "",
-                    schema={
-                        "type": "object",
-                        "properties": {"path": {"type": "string"}},
-                        "required": ["path"],
-                        "additionalProperties": False,
-                    },
-                )
-
-            undo_agent = getattr(ctx.app, "agent", None)
-            engine = PermissionEngine(
-                PermissionEngineConfig(
-                    static_policy=ctx.static_policy,
-                    restricted_dirs=ctx.restricted_dirs,
-                    project_root=ctx.project_root,
-                    external_directories=getattr(undo_agent, "external_directories", ())
-                    if undo_agent is not None
-                    else (),
-                    sensitive_path_overrides=getattr(
-                        undo_agent, "sensitive_path_overrides", ()
-                    )
-                    if undo_agent is not None
-                    else (),
-                    session_grant_store=ctx.session_grant_store,
-                    permanent_grant_store=ctx.permanent_grant_store,
-                )
-            )
-            perm_result = engine.decide(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                tool_spec=tool_spec,
-                approval_callback=approval_callback,
-            )
-            if perm_result.blocked:
-                result.skipped.append(
-                    (entry.path, f"permission denied: {perm_result.reason}")
-                )
+            if original is None:
+                result.skipped.append((entry.path, f"tool unavailable: {tool_name}"))
                 continue
-
-            # Layer 5: 执行
             if entry.kind == "created":
-                abs_path = (ctx.project_root / entry.path).resolve()
-                if abs_path.exists():
-                    abs_path.unlink()
-                    result.restored.append(entry.path)
-                else:
-                    result.skipped.append((entry.path, "file already removed"))
+                arguments: ToolInput = {
+                    "command": f"rm -- {shlex.quote(str(ctx.project_root / entry.path))}"
+                }
             else:
-                svc.restore_file(record.pre_snapshot_id, entry.path)
+                arguments = {
+                    "path": entry.path,
+                    "content": svc.file_content(record.pre_snapshot_id, entry.path),
+                }
+
+            def restore(
+                tool_input: ToolInput,
+                _on_update: Callable[[str], None] | None,
+                *,
+                path: str = entry.path,
+                kind: str = entry.kind,
+                expected: ToolInput = arguments,
+            ) -> str:
+                if tool_input != expected:
+                    raise ValueError(
+                        "snapshot restoration requires its original arguments"
+                    )
+                if svc.has_conflict(record.post_snapshot_id, path):
+                    raise ValueError("conflict: file changed during approval")
+                if kind == "created":
+                    (ctx.project_root / path).unlink()
+                else:
+                    svc.restore_file(record.pre_snapshot_id, path)
+                return f"Restored: {path}"
+
+            execution = ctx.app.agent.execute_tool(
+                replace(original, handler=restore), arguments
+            )
+            if execution.is_error:
+                reason = " ".join(
+                    block.text
+                    for block in execution.content
+                    if isinstance(block, TextContent)
+                )
+                result.skipped.append((entry.path, reason))
+            else:
                 result.restored.append(entry.path)
 
         except (ValueError, OSError, subprocess.CalledProcessError) as e:
