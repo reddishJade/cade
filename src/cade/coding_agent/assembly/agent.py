@@ -42,6 +42,7 @@ from cade.harness.agent_runtime.context_window import (
 )
 from cade.harness.agent_runtime.prompting import build_runtime_context_provider
 from cade.harness.config import AgentConfig, CadeRuntimeConfig
+from cade.harness.memory.catalog import MemoryCatalogCollector
 from cade.harness.observability import (
     ExternalHookRunner,
     HookManager,
@@ -173,6 +174,9 @@ def build_agent(
         context_collectors.register_section(
             make_collector_section("skills", SkillIndexCollector(skill_registry))
         )
+    context_collectors.register_section(
+        make_collector_section("memory_catalog", MemoryCatalogCollector(project_root))
+    )
     context_collectors.register_section(
         make_state_section(
             "environment",
