@@ -92,13 +92,14 @@ def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
 def cmd_clone(cmd: str, ctx: CommandContext) -> bool:
     """完整复制当前会话到新文件。"""
     parent_session_id = ctx.store.session_id
-    ctx.store.fork_into()
-    fork_meta = ctx.store.current_metadata()
+    cloned = ctx.store.fork_into()
+    fork_meta = cloned.current_metadata()
     if ctx.snapshot_store is not None and fork_meta is not None:
         ctx.snapshot_store.fork_session(parent_session_id, fork_meta.id)
+    ctx.store.current_path = cloned.current_path
     ctx.app.restore_session()
     if fork_meta is not None:
-        ctx.output.write(f'Cloned: "{fork_meta.title}"')
+        ctx.output.write(f'Cloned: "{fork_meta.title}" ({fork_meta.id})')
     return False
 
 

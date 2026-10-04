@@ -2117,7 +2117,7 @@ def _question_choice_text(option: dict[str, object]) -> str:
 def _is_session_history_command(command: str) -> bool:
     """判断命令是否会切换或重写当前会话分支。"""
     name = command.split(maxsplit=1)[0]
-    return name in {"/resume", "/continue", "/sessions", "/tree", "/rewind"}
+    return name in {"/resume", "/continue", "/sessions", "/tree", "/rewind", "/clone"}
 
 
 def _init_snapshot_store(project_root: Path) -> object | None:
