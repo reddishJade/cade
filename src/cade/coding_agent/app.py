@@ -428,6 +428,7 @@ def build_app(
         auto_approval_callback=auto_approval_callback,
     )
 
+    infra.session_recorder.bind_agent(agent)
     return CadeApp(
         agent=agent,
         registry=registry_state,
