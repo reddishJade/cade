@@ -15,6 +15,10 @@ Memory 的收益取决于经验的复用次数、适用条件和核验成本。�
 重复踩到的实现约束，以及经验证有效且适用条件明确的处理办法。正文应说明症状、
 条件、原因、观察结果和核验入口，使后续任务能判断这条经验是否适用。
 
+保存接口不要求标题或字段。推荐以区分度高的 H1 开头，随后写一个简短普通段落，
+说明何时值得读取这条经验。该段落用于 Catalog 检索提示，后续正文保留条件、原因、
+有效措施和核验入口。
+
 任务状态、固定规则和可复用方法各有存储位置，模型根据内容用途选择载体：
 
 | 载体 | 保存内容 | 使用方式 |
@@ -37,7 +41,8 @@ flowchart TD
     Evidence["实际任务：错误、代码观察、修改与验证"] --> Draft["模型提炼经验并选择 History 来源"]
     Draft --> Save["save_memory：权限、来源与文件校验"]
     Save --> File["Markdown 正文与来源尾注"]
-    File --> Search["后续任务：明确目录搜索，再读取文件"]
+    File --> Catalog["每次请求：有界路径、H1 与开头提示"]
+    Catalog --> Search["后续任务：按相关条目读取，必要时搜索目录"]
     Search --> History["history：读取来源原文与相关上下文"]
     History --> Check["核对当前代码、配置、环境与验证结果"]
     Check --> Use["应用符合当前条件的结论"]
@@ -49,9 +54,9 @@ flowchart TD
 宿主负责权限、路径、引用解析和文件提交，`save_memory` 内部只执行这些确定性
 操作。模型推理发生在普通 Agent 循环中，保存后的工具结果按该循环的既有规则处理。
 
-普通启动、任务请求和会话恢复发布固定的能力指引与工具 schema。Memory 内容在
-显式搜索或读取时才进入工具结果，目录在首次保存时按需创建。`/memory` 显示目录
-位置，文件搜索沿用已有 Shell 和文件读取工具。
+普通启动发布固定的能力指引与工具 schema。任务请求和会话恢复通过动态 Catalog
+暴露检索元数据，正文在显式搜索或读取时才进入工具结果。目录在首次保存时按需
+创建。`/memory` 显示目录位置，文件搜索沿用已有 Shell 和文件读取工具。
 
 ## 文件与作用域
 
@@ -72,7 +77,7 @@ Memory 正文和来源的保存周期相互独立。默认会话日志位于 `.c
 
 ## 保存协议与文件更新
 
-[`save_memory`](../src/cade/harness/memory/tools.py) 由产品 registry 装配，调用参数
+[`save_memory`](../../src/cade/harness/memory/tools.py) 由产品 registry 装配，调用参数
 如下。
 
 | 参数 | 要求 | 含义 |
@@ -87,7 +92,7 @@ Memory 正文和来源的保存周期相互独立。默认会话日志位于 `.c
 ```json
 {
   "path": ".cade/memory/provider-timeout.md",
-  "markdown": "# Provider timeout\n\n记录实际症状、适用条件、原因或推断、处理结果，以及当前核验入口。",
+  "markdown": "# Provider timeout\n\n适用于同一配置下反复出现的 provider 超时。\n\n记录实际症状、适用条件、原因或推断、处理结果，以及当前核验入口。",
   "sources": [
     {"session_id": "20260930-100000", "entry_id": "abc123def456"}
   ]
@@ -130,8 +135,22 @@ Memory 正文和来源的保存周期相互独立。默认会话日志位于 `.c
 
 ## 按需检索、读取与核验
 
-模型需要历史经验时，通过 `bash` 对明确目录执行 `rg`，再用 `read` 读取匹配文件。
-检索 Memory 时指定目录，例如：
+每次 provider 请求经现有 Context section 自动显示一个最多 4 KiB 的 Catalog，
+只包含路径、首个 H1 和紧随的普通段落。正文和来源尾注按需读取；相关条目应在
+重复大量排查之前打开。没有 H1 的旧文件只显示路径。列表、代码、次级标题及
+来源标记会终止开头提示，不向下寻找根因或处理结果。
+
+直接子级 Markdown 按文件名排序，跳过隐藏文件、符号链接、非普通文件和不可解码的
+UTF-8 前缀。每个文件最多读取开头 8 KiB，标题最多 160 字符，提示最多 320 字符。
+目录缺失时不注入也不创建；超限提示未展示数量。外部编辑、删除和 `save_memory`
+保存会在下一请求更新 Catalog，恢复与换窗后也重新生成，无持久索引或文件缓存。
+Catalog 使用 `ContextBlockSource.MEMORY`、`USER_CONTEXT` 和 HIGH 优先级，复用
+现有预算、trace 和 fingerprint。条目是可能过期的历史数据，不是指令；标签转义
+不保证模型服从边界。SystemPromptBuilder 不包含动态 Memory，Catalog 位于历史
+消息之前，内容改变会使该位置之后的 provider cache 前缀失效。
+
+模型需要进一步检索历史经验时，通过 `bash` 对明确目录执行 `rg`，再用 `read`
+读取匹配文件，例如：
 
 ```bash
 rg "timeout" .cade/memory/
@@ -139,9 +158,9 @@ rg "timeout" .cade/memory/
 
 普通项目搜索保持其隐藏目录与 ignore 规则。读取内容作为普通 evidence 参与请求
 准入，可被预算策略裁剪或回收，原始工具结果继续保存在会话事实中；分页和恢复
-方式见 [上下文策略](context-policy.md)。
+方式见 [上下文策略](../context-policy.md)。
 
-[`history`](../src/cade/harness/session/history.py) 提供 `session_id + entry_id` 精确
+[`history`](../../src/cade/harness/session/history.py) 提供 `session_id + entry_id` 精确
 读取。显式指定会话可读取该会话中的原始条目，包括当前 head 之外的分支。
 `around` 沿锚点的祖先读取邻域，此时使用 `before`；当前分支的邻域查询另支持
 `after`。搜索范围为当前会话分支，跨会话证据通过已知来源 ID 定位。
@@ -170,6 +189,9 @@ rg "timeout" .cade/memory/
 
 ## 权限与工作区归属
 
+Catalog 与 NOTE/Skills 一样由宿主收集，工具权限不控制自动暴露的检索元数据；
+正文读取与保存继续遵守既有路径边界和权限。
+
 `save_memory` 声明文件写入动作，受当前模式、`security.permissions.edit` 和具体
 工具规则约束。主代理的内置 Build、Act 工具集合发布保存能力，Build 默认允许
 此类写入，Act 默认请求审批；Plan 可通过文件与 Shell 工具按需读取经验。结构化
@@ -191,14 +213,16 @@ History 的显式来源读取按配置的 Session 存储位置检查归属。解
 
 | 位置 | 职责 |
 |---|---|
-| [memory/tools.py](../src/cade/harness/memory/tools.py) | 保存 schema、路径、来源尾注、冲突与原子提交 |
-| [session/history.py](../src/cade/harness/session/history.py) | 精确来源、祖先邻域、分页与工作区归属 |
-| [session/artifacts.py](../src/cade/harness/session/artifacts.py) | 完整工具结果的外置存储与读取校验 |
-| [assembly/registry.py](../src/cade/coding_agent/assembly/registry.py) | History 与保存工具的产品装配 |
-| [permission_model/](../src/cade/harness/security/permission_model/) | 写入动作与受保护元数据的路径例外 |
-| [test_memory_history.py](../src/cade/tests/test_memory_history.py) | 来源、冲突、尾注、历史迁移与 artifact 的回归检查 |
+| [memory/tools.py](../../src/cade/harness/memory/tools.py) | 保存 schema、路径、来源尾注、冲突与原子提交 |
+| [memory/catalog.py](../../src/cade/harness/memory/catalog.py) | 有界动态 Catalog 收集 |
+| [session/history.py](../../src/cade/harness/session/history.py) | 精确来源、祖先邻域、分页与工作区归属 |
+| [session/artifacts.py](../../src/cade/harness/session/artifacts.py) | 完整工具结果的外置存储与读取校验 |
+| [assembly/registry.py](../../src/cade/coding_agent/assembly/registry.py) | History 与保存工具的产品装配 |
+| [permission_model/](../../src/cade/harness/security/permission_model/) | 写入动作与受保护元数据的路径例外 |
 
-现有回归用例覆盖文件保存、冲突拒绝、尾注替换、来源精确读取和工作区边界，
-执行环境与验证命令见 [测试指南](testing.md)。Memory 对任务表现的收益需要单独
-评估：保持模型、任务和 History 能力一致，比较重复问题、条件变化和无关任务的
-表现，并计入保存、检索、核验和未复用文件的成本。
+Catalog 的注入内容边界及真实请求中的发现、读取和更新通过运行验收检查，
+执行环境与验证命令见 [测试指南](../testing.md)。Memory 对任务表现的收益需要单独
+评估：保持模型、任务和 History 能力一致，另设 A 无 Memory、
+B 相关 Memory、C 无关 Memory，先记录是否读取、首次读取 step 和无关条目误读。
+协议驱动器的预设读取不计为模型 recall。只有 B 稳定读取后才评价任务成功率和收益，
+并计入保存、检索、核验和未复用文件的成本。
