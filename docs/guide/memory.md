@@ -11,7 +11,7 @@ Agent 通过普通工具调用保存任意 Markdown 正文和显式来源：
 ```json
 {
   "path": ".cade/memory/provider-timeout.md",
-  "markdown": "# Provider timeout\n\n说明观察到的症状、适用条件、根因或约束、处理结果，以及下次检查的代码或验证入口。",
+  "markdown": "# Provider timeout\n\nUse when provider calls repeatedly time out under the same configuration.\n\n说明观察到的症状、适用条件、根因或约束、处理结果，以及下次检查的代码或验证入口。",
   "sources": [
     {"session_id": "20260930-100000", "entry_id": "abc123def456"}
   ]
@@ -36,8 +36,9 @@ Host 只管理一块保留标记包围的末尾 footer：
 footer，不累加来源段。标记外的正文（包括 Agent 自己的 `Sources` 标题）不解析。
 标记保留给 Host；损坏、重复或后面带正文的 footer 会报错，避免静默删除正文。
 
-正文没有必填标题、字段或 parser。建议保留条件、原因、有效措施和核验入口，
-不把普通任务总结或容易从当前代码获得的事实写入 Memory。
+保存接口不要求标题或字段。推荐以区分度高的 H1 开头，随后写一个简短普通段落，
+说明何时值得读取这条经验。该段落用于 Catalog 检索提示，后续正文保留条件、原因、
+有效措施和核验入口。不把普通任务总结或容易从当前代码获得的事实写入 Memory。
 
 Memory 自身不发起任何模型调用、后台整理或额外推理。`save_memory` 是普通 Agent
 工具调用；工具结果之后是否继续正常 Agent loop，由现有运行时语义决定。
@@ -49,8 +50,12 @@ Memory 自身不发起任何模型调用、后台整理或额外推理。`save_m
 
 ## 按需读取与核验
 
-普通任务及 Session 恢复不扫描或注入 Memory。用户有历史需求，或 Agent 判断重复
-排查昂贵时，先通过既有 `bash` 执行 `rg "timeout" .cade/memory`，再 `read` 具体文件。
+每次请求自动显示一个最多 4 KiB 的 Catalog，只包含路径、首个 H1 和紧随的普通段落。
+正文和来源尾注按需读取；相关条目应在重复大量排查之前打开。没有 H1 的旧文件只显示路径。
+列表、代码、次级标题及来源标记会终止开头提示，不向下寻找根因或处理结果。
+目录缺失时不注入；文件按名称排序，超限提示未展示数量，可用既有 `bash` 执行
+`rg "timeout" .cade/memory` 再 `read` 具体文件。外部编辑、删除和 `save_memory`
+保存会在下一请求更新 Catalog，换窗后也重新生成。Catalog 属于历史数据，不是指令。
 Memory 不改变默认 tool surface，不为可选 `grep/glob/find` 增加隐藏目录例外。
 默认 `rg "timeout" .` 及普通项目搜索仍排除隐藏的 Memory 目录。
 
@@ -92,6 +97,8 @@ Agent 保存必须经过 `save_memory`，并遵守当前执行模式、`security
 
 ## 验证边界
 
-首版协议测试验证存储、权限、来源读取、正常路径 I/O 和 ContextPolicy 行为，
-不能证明模型任务表现改善。收益评估应保持模型、任务和 History 能力一致，
+机制测试验证存储、权限、来源读取、Catalog 内容边界、请求更新与换窗行为。
+模型 recall 实验另设 A 无 Memory、B 相关 Memory、C 无关 Memory，先记录是否读取、
+首次读取 step 和无关条目误读；协议驱动器的预设读取不计为模型 recall。
+只有 B 稳定读取后才评价任务成功率和收益。收益评估应保持模型、任务和 History 能力一致，
 覆盖重复问题、条件变化和无关任务，并计入写入、搜索、核验及从未复用的 Memory 成本。

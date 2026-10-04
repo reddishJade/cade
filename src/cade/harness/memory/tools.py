@@ -104,15 +104,18 @@ def build_save_memory_tool(
         },
         prompt_guidelines=(
             (
-                "Memory lives in .cade/memory/. Do not scan or read it by default. "
-                "For explicit history needs or expensive repeated investigation, use ordinary "
-                "bash with rg on that exact directory, then read files and dereference "
-                "history sources "
-                "as needed and check current code/configuration/tests before applying a conclusion."
+                "The Memory catalog lists historical project experience in .cade/memory/. "
+                "Do not read Memory files indiscriminately. When a catalog entry appears "
+                "relevant to the current task, read that file before repeating substantial "
+                "investigation. Use ordinary bash with rg on that exact directory when "
+                "needed, dereference history sources as needed, and verify against current "
+                "code/configuration/tests before applying a conclusion."
             ),
             (
                 "Save only costly, reusable, evidenced knowledge. Explain conditions, cause, "
-                "observed results and how to check applicability in Markdown. NOTE.md owns "
+                "observed results and how to check applicability in Markdown. Start with "
+                "a discriminative H1 and a concise opening paragraph describing when this "
+                "Memory is useful; this paragraph becomes its catalog retrieval hint. NOTE.md owns "
                 "task progress; Skills own methods; repository instructions own rules. "
                 "Supply source entry IDs explicitly; omitted session_id means the current session. "
                 "Git HEAD does not describe uncommitted code or prove applicability."
