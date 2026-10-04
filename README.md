@@ -36,6 +36,7 @@ cade
 | 任务进行时追加任务 | Enter 排队，当前任务完成后执行 |
 | 任务进行时纠偏 | Alt+Enter 把指导送入当前任务 |
 | 停止任务 | 输入为空时按 Ctrl+C；有内容时先清空输入 |
+| 浏览对话历史 | 滚轮或终端翻页快捷键（常见为 Shift+PageUp/PageDown） |
 | 展开思考 / 工具结果 | Ctrl+T / Ctrl+O |
 | 执行 Shell | `!git status`，仍经过权限审批 |
 

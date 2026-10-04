@@ -138,14 +138,6 @@ def line_style(line: str) -> str:
     return ""
 
 
-def visible_lines(lines: list[str], limit: int | None, scrollback: int) -> list[str]:
-    if limit is None or len(lines) <= limit:
-        return lines
-    end = max(limit, len(lines) - scrollback)
-    start = max(0, end - limit)
-    return lines[start:end]
-
-
 CITE_START = "\ue200"
 CITE_SEP = "\ue202"
 CITE_END = "\ue201"

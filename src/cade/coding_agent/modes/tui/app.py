@@ -23,12 +23,10 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import (
     AnyFormattedText,
     FormattedText,
-    StyleAndTextTuples,
 )
 from prompt_toolkit.formatted_text.utils import fragment_list_width
 from prompt_toolkit.input.base import Input
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import (
     ConditionalContainer,
     Dimension,
@@ -90,6 +88,7 @@ from .completion import CommandArgsSuggester, TuiCompleter
 from .config_registry import SettingSpec
 from .exit_keys import ExitKeyKind, exit_confirm_hint, exit_confirmed
 from .exit_summary import print_exit_summary
+from .inline_renderer import InlineRenderer
 from .sessions import (
     select_session_interactively,
 )
@@ -126,7 +125,7 @@ _SHORTCUT_HELP = """Shortcuts
   Alt+Enter      steer the current task while running
   Ctrl+J         insert a newline (Shift+Enter where supported)
   Esc Enter      newline when idle; steer while running
-  PageUp/Down    scroll history; End returns to the latest output"""
+  Mouse wheel    browse terminal history (Shift+PageUp/Down where supported)"""
 
 if TYPE_CHECKING:
     from prompt_toolkit.history import History
@@ -213,8 +212,6 @@ class _CadeTui:
         self._restore_startup_session(resume_latest, auto_continue, session_id)
         self._sync_mode_from_agent()
         self._workspace_branch = git_branch_name(project_root)
-        self._scrollback = 0
-        self._committing = False
         self._grant_store_manager: SessionGrantStoreManager | None = None
         try:
             from cade.harness.security.permission_model import (
@@ -421,7 +418,7 @@ class _CadeTui:
             key_bindings=self._bindings(),
             full_screen=False,
             erase_when_done=True,
-            # 保留终端原生的鼠标选择、复制和右键行为；历史使用键盘翻页。
+            # 终端拥有历史滚动、鼠标选择、复制和右键行为。
             mouse_support=False,
             enable_page_navigation_bindings=False,
             before_render=lambda _app: self._prepare_frame(),
@@ -429,6 +426,9 @@ class _CadeTui:
             input=input,
             output=output,
         )
+
+        self._inline_renderer = InlineRenderer(self._application.renderer)
+        self._application.renderer = self._inline_renderer
 
         # ── Wire agent hooks ──
         agent = getattr(self._agent_app, "agent", None)
@@ -576,19 +576,10 @@ class _CadeTui:
             "s-tab",
             eager=True,
             filter=Condition(
-                lambda: (
-                    not self._state.running
-                    and not self._committing
-                    and not self._has_pending_interaction()
-                )
+                lambda: not self._state.running and not self._has_pending_interaction()
             ),
         )(self._cycle_mode_key)
         bindings.add("c-j")(self._insert_newline)
-        bindings.add(Keys.PageUp, eager=True)(self._page_up_key)
-        bindings.add(Keys.PageDown, eager=True)(self._page_down_key)
-        bindings.add(Keys.End, eager=True)(self._end_key)
-        bindings.add(Keys.ScrollUp)(self._scroll_up_key)
-        bindings.add(Keys.ScrollDown)(self._scroll_down_key)
         bindings.add("?")(self._show_shortcuts_key)
         # 折叠快捷键必须是应用级绑定：焦点可能在授权列表等非输入控件。
         bindings.add("c-t", eager=True)(self._toggle_thinking_key)
@@ -642,8 +633,7 @@ class _CadeTui:
         self._exit_pending = 0.0
         self._exit_pending_key = ""
         self._input.text = ""
-        self._scrollback = 0
-        if self._state.running or self._committing:
+        if self._state.running:
             if self._state.running and _is_live_command(text):
                 self._record_command(text)
                 self._run_command(text, preserve_running=True)
@@ -672,7 +662,6 @@ class _CadeTui:
             self._refresh()
             return
         self._input.text = ""
-        self._scrollback = 0
         self._submit_busy_message(text, BusyMessageMode.STEER)
 
     def _submit_busy_message(
@@ -740,22 +729,6 @@ class _CadeTui:
         if buffer is not None:
             buffer.insert_text("\n")
 
-    def _page_up_key(self, _event: object) -> None:
-        self._scroll_by(10)
-
-    def _page_down_key(self, _event: object) -> None:
-        self._scroll_by(-10)
-
-    def _scroll_up_key(self, _event: object) -> None:
-        self._scroll_by(3)
-
-    def _scroll_down_key(self, _event: object) -> None:
-        self._scroll_by(-3)
-
-    def _end_key(self, _event: object) -> None:
-        self._scrollback = 0
-        self._refresh()
-
     def _show_shortcuts_key(self, event: object) -> None:
         if self._input.text:
             buffer = getattr(event, "current_buffer", None)
@@ -763,15 +736,14 @@ class _CadeTui:
                 buffer.insert_text("?")
             return
         self._state.log.append(_LogEntry("system", _SHORTCUT_HELP))
-        self._scrollback = 0
         self._refresh()
 
     def _toggle_thinking_key(self, _event: object) -> None:
-        self._update_preserving_viewport(self._state.toggle_thinking)
+        self._state.toggle_thinking()
         self._refresh()
 
     def _toggle_tools_key(self, _event: object) -> None:
-        self._update_preserving_viewport(self._state.toggle_tools)
+        self._state.toggle_tools()
         self._refresh()
 
     def _escape_key(self, _event: object) -> None:
@@ -814,7 +786,7 @@ class _CadeTui:
         self._exit_pending_key = ""
 
     def _on_input_layout_changed(self, _buffer: object) -> None:
-        """输入和异步补全改变占用高度后同步重算历史视口。"""
+        """输入和异步补全改变占用高度后重新分配可见区域。"""
         if hasattr(self, "_application"):
             self._refresh()
 
@@ -1398,7 +1370,6 @@ class _CadeTui:
         # 先恢复输入框焦点，再执行回调：链式打开的下一级菜单或文本表单
         # 会在回调内重新聚焦，不能被这里的默认焦点覆盖。
         self._application.layout.focus(self._input)
-        self._scrollback = 0
         request.on_select(selected)
         self._refresh()
 
@@ -1425,12 +1396,11 @@ class _CadeTui:
         self._submit_pending_input()
 
     def _clear_session(self) -> None:
-        """在 inline TUI 内创建空会话，不切换到终端清屏输出。"""
+        """创建空会话，由主屏幕渲染器重建欢迎文档。"""
         self._store.clear()
         self._agent_app.restore_session()
         self._state.restore_history([])
         self._state.log.append(_LogEntry("welcome", self._welcome_text()))
-        self._scrollback = 0
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
             agent.session_id = self._store.session_id
@@ -1471,7 +1441,6 @@ class _CadeTui:
     def _restore_session_history(self) -> None:
         """恢复会话命令完成后，以 TUI 形式重新渲染当前分支。"""
         self._state.restore_history(self._store.build_branch())
-        self._scrollback = 0
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
             agent.session_id = self._store.session_id
@@ -1646,7 +1615,6 @@ class _CadeTui:
         self._state.pending_question_choice = None
         request.event.set()
         self._application.layout.focus(self._input)
-        self._scrollback = 0
         self._refresh()
 
     def _approval_callback(self, approval: ApprovalRequest) -> HITLResult:
@@ -1777,8 +1745,7 @@ class _CadeTui:
         self._schedule_turn_commit()
 
     def _schedule_turn_commit(self) -> None:
-        """保留回合内容，允许完成后继续折叠和滚动查看。"""
-        self._committing = False
+        """刷新完成回合的完整文档，保留终端历史和折叠能力。"""
         self._refresh()
         self._submit_pending_input()
         self._refresh_workspace_branch()
@@ -1871,16 +1838,6 @@ class _CadeTui:
 
     # ── 刷新 ──
 
-    def _fragments(self) -> StyleAndTextTuples:
-        """只绘制实际内容，长对话使用受终端高度限制的滚动视口。"""
-        height = self._output_height()
-        width = self._output_width()
-        count = self._state.line_count(width)
-        fragments = self._state.fragments(height, self._scrollback, width)
-        if count >= height and fragments and fragments[-1] == ("", "\n"):
-            fragments.pop()
-        return fragments
-
     def _output_width(self) -> int:
         return max(1, self._application.output.get_size().columns)
 
@@ -1922,36 +1879,6 @@ class _CadeTui:
             visual_lines += max(1, quotient + bool(remainder))
         return min(5, visual_lines)
 
-    def _max_scrollback(self) -> int:
-        return max(
-            0, self._state.line_count(self._output_width()) - self._output_height()
-        )
-
-    def _scroll_by(self, amount: int) -> None:
-        self._scrollback = max(
-            0, min(self._max_scrollback(), self._scrollback + amount)
-        )
-        self._refresh()
-
-    def _update_preserving_viewport(self, update: Callable[[], None]) -> None:
-        """更新会改变行数的显示状态，并保持当前视口的顶部位置。"""
-        if self._scrollback == 0:
-            update()
-            return
-        top_line = max(
-            0,
-            self._state.line_count(self._output_width())
-            - self._output_height()
-            - self._scrollback,
-        )
-        update()
-        self._scrollback = max(
-            0,
-            self._state.line_count(self._output_width())
-            - self._output_height()
-            - top_line,
-        )
-
     def _start_working(self) -> None:
         """启动独立的工作状态动画，不把它当作 reasoning。"""
         self._state.start_working()
@@ -1986,15 +1913,17 @@ class _CadeTui:
         self._schedule_working_refresh()
 
     def _refresh(self) -> None:
-        self._prepare_frame()
         self._application.invalidate()
 
     def _prepare_frame(self) -> None:
-        """在绘制前按当前尺寸重算视口，缩放后仍跟随最新输出。"""
+        """在 UI 线程生成完整文档，屏幕之外的内容由渲染器写入历史。"""
         if self._state.log and self._state.log[0].role == "welcome":
             self._state.log[0].text = self._welcome_text()
-        self._scrollback = min(self._scrollback, self._max_scrollback())
-        self._output_control.text = self._fragments()
+        self._output_control.text = self._inline_renderer.prepare(
+            self._state.ansi_lines(self._output_width()), self._output_height()
+        )
+        if self._application.is_done:
+            self._inline_renderer.finish()
 
     def _refresh_streaming(self) -> None:
         """限制流式输出重绘频率，避免每个 delta 都触发完整布局。"""
@@ -2053,8 +1982,6 @@ class _CadeTui:
         mode = f"● {self._interaction_state.mode}"
         if self._state.working:
             mode = f"{working_status_text()}  {mode}"
-        elif self._scrollback:
-            mode += "  ↑ history · End latest"
         elif self._state.pending_hitl is not None:
             mode = "Awaiting approval"
         second = status_line(

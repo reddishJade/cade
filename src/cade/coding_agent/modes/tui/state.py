@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, cast
 
-from prompt_toolkit.formatted_text import AnyFormattedText, StyleAndTextTuples
+from prompt_toolkit.formatted_text import AnyFormattedText
 from prompt_toolkit.utils import get_cwidth
 
 from cade.agent.types import ToolInput, ToolRenderIntent, parse_tool_render_intent
@@ -20,7 +20,6 @@ from .chrome import compact_path, welcome_ansi_lines
 from .rendering import (
     markdown_ansi_lines,
     render_citations,
-    render_line_fragments,
     rendered_markdown_lines,
     wrap_ansi_lines,
 )
@@ -162,7 +161,7 @@ class _LogEntry:
 
 @dataclass(frozen=True)
 class _DisplayBlock:
-    """一个可独立缓存和裁剪的显示块。"""
+    """一个可独立缓存的显示块。"""
 
     lines: list[str]
     leading_blank: bool = False
@@ -170,13 +169,6 @@ class _DisplayBlock:
     @property
     def line_count(self) -> int:
         return len(self.lines) + int(self.leading_blank)
-
-    def line_at(self, index: int) -> str:
-        if self.leading_blank:
-            if index == 0:
-                return ""
-            index -= 1
-        return self.lines[index]
 
 
 @dataclass
@@ -337,45 +329,13 @@ class _TuiState:
     def render(self) -> str:
         return "\n".join(self.lines()).rstrip() + "\n"
 
-    # ── 片段生成 ──
-
-    def fragments(
-        self,
-        limit: int | None = None,
-        scrollback: int = 0,
-        width: int | None = None,
-    ) -> StyleAndTextTuples:
-        blocks = self._display_blocks(color=True, width=width)
-        total = sum(block.line_count for block in blocks)
-        if limit is None or total <= limit:
-            start = 0
-            end = total
-        else:
-            end = max(limit, total - scrollback)
-            start = max(0, end - limit)
-        result: StyleAndTextTuples = []
-        offset = 0
-        for block in blocks:
-            block_end = offset + block.line_count
-            if block_end > start and offset < end:
-                local_start = max(0, start - offset)
-                local_end = min(block.line_count, end - offset)
-                for index in range(local_start, local_end):
-                    line = block.line_at(index)
-                    result.extend(render_line_fragments(line))
-                    result.append(("", "\n"))
-            offset = block_end
-            if offset >= end:
-                break
-        return result
-
     def line_count(self, width: int | None = None) -> int:
         """返回当前显示行数，复用完成消息的单份 ANSI 缓存。"""
         return sum(
             block.line_count for block in self._display_blocks(color=True, width=width)
         )
 
-    # ── 文本渲染（纯文本：用于滚动高度计算） ──
+    # ── 纯文本渲染 ──
 
     def lines(self, width: int | None = None) -> list[str]:
         return self._flatten_blocks(self._display_blocks(color=False, width=width))
