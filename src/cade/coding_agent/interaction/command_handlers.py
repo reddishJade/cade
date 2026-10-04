@@ -108,8 +108,11 @@ def cmd_clone(cmd: str, ctx: CommandContext) -> bool:
 
 def cmd_rewind(cmd: str, ctx: CommandContext) -> bool:
     """回退最近的 N 轮用户交互。"""
-    parts = cmd.split()
-    turns = int(parts[1]) if len(parts) > 1 else 1
+    try:
+        turns = _parse_turn_count(cmd)
+    except ValueError as exc:
+        ctx.output.write(str(exc))
+        return False
     removed = ctx.store.rewind_turns(turns)
     if ctx.snapshot_store is not None:
         ctx.snapshot_store.rewind_to_turn_count(
@@ -675,15 +678,18 @@ def cmd_btw(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
-def _parse_undo_count(cmd: str) -> int:
+def _parse_turn_count(cmd: str) -> int:
+    """在执行回退操作前校验完整的正整数参数。"""
     parts = cmd.split()
-    if len(parts) <= 1:
+    usage = f"Usage: {parts[0]} [positive integer]"
+    if len(parts) == 1:
         return 1
-    try:
-        n = int(parts[1])
-        return max(n, 1)
-    except ValueError:
-        return 1
+    if len(parts) != 2 or not parts[1].isascii() or not parts[1].isdigit():
+        raise ValueError(usage)
+    count = int(parts[1])
+    if count < 1:
+        raise ValueError(usage)
+    return count
 
 
 def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
@@ -710,7 +716,7 @@ def cmd_undo(cmd: str, ctx: CommandContext) -> bool:
                 )
         return False
 
-    n = _parse_undo_count(cmd)
+    n = _parse_turn_count(cmd)
     records = ctx.snapshot_store.get_undoable_records(ctx.store.session_id, n)
     if not records:
         if ctx.snapshot_store.list_records(ctx.store.session_id):

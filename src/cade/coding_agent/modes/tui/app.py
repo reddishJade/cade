@@ -984,16 +984,21 @@ class _CadeTui:
             return should_exit, output.getvalue()
 
         async def run_inline() -> None:
-            should_exit, output = await asyncio.get_running_loop().run_in_executor(
-                None, invoke, True
-            )
-            if output.strip():
-                self._state.log.append(_LogEntry("system", output.rstrip()))
-            if preserve_running:
-                self._refresh()
-                self._submit_pending_input()
-            else:
-                self._finish_command(text, should_exit)
+            should_exit = False
+            try:
+                should_exit, output = await asyncio.get_running_loop().run_in_executor(
+                    None, invoke, True
+                )
+                if output.strip():
+                    self._state.log.append(_LogEntry("system", output.rstrip()))
+            except (OSError, RuntimeError, ValueError) as exc:
+                self._state.log.append(_LogEntry("error", f"[error] {exc}"))
+            finally:
+                if preserve_running:
+                    self._refresh()
+                    self._submit_pending_input()
+                else:
+                    self._finish_command(text, should_exit)
 
         if self._application.loop is None:
             asyncio.run(run_inline())
@@ -1025,7 +1030,7 @@ class _CadeTui:
         if command == "/model" and len(text.split()) == 1:
             self._open_model_selector()
             return True
-        if command == "/permissions":
+        if command == "/permissions" and len(text.split()) == 1:
             self._open_command_choices(
                 [
                     ("Show permission status", "/permissions list"),
