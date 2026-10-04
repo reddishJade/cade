@@ -122,6 +122,8 @@ class ModelControlApp(Protocol):
 
 
 class InteractionApp(ModelControlApp, ToolRegistryApp, Protocol):
+    def ask_side_question(self, question: str) -> Iterator[str]: ...
+
     @property
     def agent(self) -> InteractionAgent: ...
 

@@ -9,16 +9,13 @@ import asyncio
 import queue
 from collections.abc import AsyncIterator, Coroutine, Iterator, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from ...agent._codec import convert_to_llm
 from ...agent.messages import AgentMessage, ToolResultMessage
 from ...agent.types import ShellCallOutputContent, TextContent
 from .async_worker import IsolatedAsyncWorker
 from .cancellation import CancellationToken
-
-if TYPE_CHECKING:
-    from .events import AgentHarnessEvent
 
 T = TypeVar("T")
 
@@ -129,8 +126,8 @@ def run_coro_sync[T](coro: Coroutine[Any, Any, T]) -> T:
 
 
 @dataclass(frozen=True)
-class _StreamItem:
-    event: AgentHarnessEvent
+class _StreamItem[T]:
+    event: T
 
 
 @dataclass(frozen=True)
@@ -143,14 +140,14 @@ class _StreamDone:
     pass
 
 
-_StreamMessage = _StreamItem | _StreamError | _StreamDone
+type _StreamMessage[T] = _StreamItem[T] | _StreamError | _StreamDone
 
 
-def aiter_to_sync_iter(
-    async_iter: AsyncIterator[AgentHarnessEvent],
+def aiter_to_sync_iter[T](
+    async_iter: AsyncIterator[T],
     cancellation_token: CancellationToken,
-) -> Iterator[AgentHarnessEvent]:
-    items: queue.Queue[_StreamMessage] = queue.Queue()
+) -> Iterator[T]:
+    items: queue.Queue[_StreamMessage[T]] = queue.Queue()
     worker = IsolatedAsyncWorker(name="cade-sync-stream-worker")
 
     async def consume() -> None:

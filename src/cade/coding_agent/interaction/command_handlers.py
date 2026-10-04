@@ -675,26 +675,15 @@ def cmd_context(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_btw(cmd: str, ctx: CommandContext) -> bool:
-    """Ask a quick side question without interrupting the main conversation."""
+    """从当前上下文副本回答独立问题，主会话继续运行。"""
     parts = cmd.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
         ctx.output.write("Usage: /btw <question>")
         return False
-
-    question = parts[1].strip()
-
-    from cade.harness.agent_runtime.events import TextDeltaStructuredEvent
-
     ctx.output.write("[side question]")
-
-    for event in ctx.app.ask_stream(question, mode=ctx.state.mode):
-        if isinstance(event, TextDeltaStructuredEvent):
-            ctx.output.write(event.data, end="")
-
+    for text in ctx.app.ask_side_question(parts[1].strip()):
+        ctx.output.write(text, end="")
     ctx.output.write()
-
-    ctx.app.restore_session()
-
     return False
 
 

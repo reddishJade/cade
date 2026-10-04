@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
+from cade.ai.events import FinalMessage, TextDelta
 from cade.ai.providers.registry import ProviderSettings, build_provider_bundle
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.coding_agent.harness import CodingAgentHarness
@@ -263,6 +264,40 @@ class CadeApp:
         ):
             recorder.record_event(event)
             yield event
+
+    def ask_side_question(self, question: str) -> Iterator[str]:
+        """用独立 provider 回答旁支问题，主会话保留原运行状态。"""
+        from cade.harness.agent_runtime.agent_helpers import aiter_to_sync_iter
+        from cade.harness.agent_runtime.cancellation import CancellationToken
+
+        request = self.agent.prepare_read_only_request(question)
+        profiles = self._model_profiles or {}
+        provider = build_provider_bundle(
+            ProviderSettings(
+                env_files=self._env_files,
+                model_profiles={"main": profiles["main"]} if "main" in profiles else {},
+            )
+        ).llm
+
+        async def answer() -> AsyncIterator[str]:
+            streamed = False
+            async for event in provider.stream(
+                messages=list(request.wire_messages),
+                tools=[],
+                options=request.options,
+            ):
+                if isinstance(event, TextDelta):
+                    streamed = True
+                    yield event.chunk
+                elif isinstance(event, FinalMessage):
+                    if event.stop_reason == "error":
+                        raise RuntimeError(
+                            event.content or "Side question provider failed"
+                        )
+                    if not streamed and event.content:
+                        yield event.content
+
+        yield from aiter_to_sync_iter(answer(), CancellationToken())
 
     async def aask_stream(
         self,

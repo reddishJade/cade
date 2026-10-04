@@ -27,6 +27,7 @@ from ...agent.messages import (
     SystemMessage,
     UserMessage,
 )
+from ...agent.request import RequestAssembly
 from ...agent.results import AgentLoopResult
 from ...agent.types import ApprovalCallback, ToolSpec
 from ..observability import HookRecord, RuntimeCorrelation
@@ -40,6 +41,7 @@ from .composition import AgentComposition
 from .config import (
     AgentRuntimeConfig,
     build_loop_config,
+    resolve_context_policy,
 )
 from .events import (
     AgentHarnessEvent,
@@ -509,6 +511,30 @@ class AgentHarness:
 
     def history_messages(self) -> list[AgentMessage]:
         return list(self._history)
+
+    def prepare_read_only_request(self, question: str) -> RequestAssembly:
+        """从会话副本组装一次工具集为空的请求，供宿主独立查询。"""
+        composition = self.composition
+        manager = ContextManager(
+            history=deepcopy(self.history_messages()),
+            context_state=deepcopy(self._context_state),
+        )
+        manager.append([UserMessage(content=question)])
+        context = AgentContext(
+            messages=manager.history,
+            context_manager=manager,
+            request_prefix=[
+                *self._build_context_messages(question, composition),
+                SystemMessage(
+                    content="Answer this side question from the supplied context. Tools are unavailable."
+                ),
+            ],
+            project_root=self.project_root,
+            context_policy=resolve_context_policy(self.provider, composition.config),
+        )
+        return composition.request_assembler.assemble(
+            context, current_step=0, options=None
+        )
 
     def run(self, question: str) -> AgentHarnessResult:
         return run_coro_sync(self.arun(question))
