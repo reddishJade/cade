@@ -985,20 +985,24 @@ class _CadeTui:
 
         async def run_inline() -> None:
             should_exit = False
+            output = ""
+            error: str | None = None
             try:
                 should_exit, output = await asyncio.get_running_loop().run_in_executor(
                     None, invoke, True
                 )
-                if output.strip():
-                    self._state.log.append(_LogEntry("system", output.rstrip()))
             except (OSError, RuntimeError, ValueError) as exc:
-                self._state.log.append(_LogEntry("error", f"[error] {exc}"))
+                error = f"[error] {exc}"
             finally:
                 if preserve_running:
+                    if error is not None:
+                        self._state.log.append(_LogEntry("error", error))
+                    elif output.strip():
+                        self._state.log.append(_LogEntry("system", output.rstrip()))
                     self._refresh()
                     self._submit_pending_input()
                 else:
-                    self._finish_command(text, should_exit)
+                    self._finish_command(text, should_exit, output, error)
 
         if self._application.loop is None:
             asyncio.run(run_inline())
@@ -1408,11 +1412,18 @@ class _CadeTui:
         request.on_select(selected)
         self._refresh()
 
-    def _finish_command(self, text: str, should_exit: bool) -> None:
+    def _finish_command(
+        self, text: str, should_exit: bool, output: str = "", error: str | None = None
+    ) -> None:
         """同步命令执行后的 TUI 状态。"""
         self._state.mode = self._interaction_state.mode
-        if _is_session_history_command(text):
+        self._state.running = False
+        if error is None and _is_session_history_command(text):
             self._restore_session_history()
+        if error is not None:
+            self._state.log.append(_LogEntry("error", error))
+        elif output.strip():
+            self._state.log.append(_LogEntry("system", output.rstrip()))
         self._state.running = False
         self._refresh()
         if should_exit:
