@@ -1046,6 +1046,10 @@ class _CadeTui:
             return True
         if command == "/config":
             parts = text.split(maxsplit=2)
+            if len(parts) > 2:
+                self._state.log.append(_LogEntry("system", "Usage: /config [setting]"))
+                self._refresh()
+                return True
             query = parts[1].strip() if len(parts) > 1 else ""
             self._open_config_browser(query)
             return True

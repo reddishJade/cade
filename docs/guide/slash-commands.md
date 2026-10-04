@@ -9,7 +9,7 @@
 | 命令 | 完整语法 | 功能说明 | 典型场景 |
 | :--- | :--- | :--- | :--- |
 | `/new` | `/new` | 创建并切换到一个全新的会话 | 开启一段互不干扰的全新任务 |
-| `/continue` | `/continue` | 自动恢复最近一次退出的活跃会话 | 重新打开终端，继续未完成的工作 |
+| `/continue` | `/continue` | 恢复当前项目最近的有效会话 | 重新打开终端，继续未完成的工作 |
 | `/resume` | `/resume [session_id]` | 通过会话 ID 恢复指定历史会话 | 切换回昨天的某个特定任务 |
 | `/sessions` | `/sessions` | 列出当前项目下的所有历史会话 | 查看历史任务记录与最后更新时间 |
 | `/rename` | `/rename <新标题>` | 为当前会话设置自定义标题 | 方便在会话列表中辨识关键任务 |
@@ -32,7 +32,7 @@
 | 命令 | 完整语法 | 功能说明 | 典型场景 |
 | :--- | :--- | :--- | :--- |
 | `/undo` | `/undo [N]` | 按逆序恢复最近 N 个可撤销用户轮次的文件变更，逐文件报告结果 | Agent 改错了代码，一键秒级还原 |
-| `/rewind` | `/rewind [N]` | **对话回退**：将当前会话历史回退 N 轮对话 | 撤销近期的错误提示词或误判操作 |
+| `/rewind` | `/rewind [N]` | 移除最近 N 个用户任务的输入与执行结果，并裁剪快照索引 | 撤销近期的错误提示词或误判操作 |
 | `/revert` | `/revert [N]` | 与 `/undo` 相同，恢复最近 N 个可撤销轮次的文件 | 恢复文件到任务开始状态 |
 
 ---
@@ -49,9 +49,9 @@
 
 | 命令 | 完整语法 | 功能说明 | 典型场景 |
 | :--- | :--- | :--- | :--- |
-| `/context` | `/context` | 查看当前窗口的 Token 消耗、预算与换窗状态 | 了解距离 95% 上下文上限还有多少空间 |
+| `/context` | `/context` | 查看当前窗口的 Token 消耗、预算与换窗状态 | 核对当前模型的有效输入预算 |
 | `/rollover` | `/rollover [--force]` | 立即通过 `NOTE.md` 交接任务并主动开启干净窗口 | 对话过长时主动归纳并重置上下文 |
-| `/new-context` | `/new-context` | 手动开启一个全新的空白上下文窗口 | 快速清空多轮对话的上下文噪音 |
+| `/new-context` | `/new-context [--force]` | 执行与 `/rollover` 相同的 NOTE.md 交接和换窗 | 开启新的工作窗口 |
 | `/compact` | `/compact` | 强制进行窗口归约并保留最新工作回合 | 手动清理陈旧输出 |
 
 ---
@@ -60,9 +60,9 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/model` | `/model [profile/model_name]` | 查看或切换模型；交互式切换后选择 effort |
+| `/model` | `/model [provider/model_name]` | 打开模型列表或切换主模型；provider 前缀选择模型提供方 |
 | `/effort` | `/effort [level]` | 选择或设置当前模型支持的推理强度 |
-| `/thinking` | `/thinking [on\|off]` | 仅 Responses/Codex：开关推理摘要，不改变推理强度；推理强度使用 `/effort` |
+| `/thinking` | `/thinking [on\|off]` | Responses/Codex 的推理摘要开关；推理强度使用 `/effort` |
 
 ---
 
@@ -70,12 +70,12 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/auth` | `/auth [status\|list]` | 查看当前的 API 认证状态与凭据列表 |
+| `/auth` | `/auth [status\|list\|login\|connect\|logout]` | 查看账号状态，或执行对应认证操作 |
 | `/login` | `/login [provider]` | 发起特定 Provider 的凭据登录与验证 |
 | `/logout` | `/logout [provider]` | 清除指定 Provider 的本地已存凭据 |
-| `/config` | `/config [key [value]]` | 打开终端交互式配置浏览器，或直接查看/修改设置项 |
-| `/permissions` | `/permissions` | 查看当前工作区生效的文件与命令权限规则清单 |
-| `/hooks` | `/hooks` | 查看当前注册的生命周期钩子事件清单 |
+| `/config` | `/config [setting]` | 浏览受支持的设置，或打开对应设置的编辑表单；保存后在后续启动时生效 |
+| `/permissions` | `/permissions [list\|clear]` | 打开权限菜单，显示生效规则与 grant，或清除当前会话 grant |
+| `/hooks` | `/hooks` | 显示外部 hook 配置来源及最近执行状态 |
 
 ---
 
@@ -83,9 +83,9 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/tool` | `/tool [list\|info <name>]` | 列出当前所有可用工具及其只读/串行分类 |
-| `/skill` | `/skill [list\|load <name>]` | 查看当前项目或全局可用的技能包并手动加载 |
-| `/memory` | `/memory` | 显示 workspace 的 `.cade/memory/` 目录位置，不扫描文件 |
+| `/tool` | `/tool list` 或 `/tool NAME INPUT` | 列出当前模式的工具，或通过运行时权限门控执行工具；INPUT 接受 JSON 对象及单必填参数简写 |
+| `/skill` | `/skill NAME [prompt]` | 为当前会话激活技能，附加 prompt 作为后续用户任务 |
+| `/memory` | `/memory` | 显示 workspace 的 `.cade/memory/` 目录位置 |
 | `/mcp` | `/mcp [status\|reload]` | 检查外部 MCP 服务的连通状态或热重载连接 |
 
 ---
@@ -94,9 +94,21 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/steer` | `/steer` | 将繁忙输入模式切换为中途转向（默认：新输入会中途引导当前 Agent） |
-| `/queue` | `/queue` | 将繁忙输入模式切换为排队（新输入在当前任务完成后顺延执行） |
-| `/goal` | `/goal [目标描述]` | 设定明确的验证目标，开启长任务目标守卫循环 |
+| `/steer` | `/steer <message>` | 提交实时指导，运行中在下一推理边界消费，空闲时启动新任务 |
+| `/queue` | `/queue [steer\|followup\|interrupt\|message]` | 显示或设置繁忙输入策略，或提交后续任务；默认策略为 followup |
+| `/goal` | `/goal [目标描述\|pause\|resume\|clear]` | 显示或设置停止条件，设置后启动任务；支持暂停、恢复和清除，完成度由独立验收请求检查 |
 | `/btw` | `/btw <question>` | 使用当前上下文副本独立回答问题，工具集为空；主任务继续执行 |
-| `/clear` | `/clear` | 清理当前终端屏幕内容，保持视野清爽 |
+| `/clear` | `/clear` | 创建并切换新会话，行为与 `/new` 相同 |
 | `/help` | `/help` | 在终端打印命令帮助概览 |
+
+N 使用正整数，默认值为 1。`/undo --list` 显示快照记录；撤销按文件检查冲突和
+运行时权限，结果包含完成、跳过与失败项。文件撤销、历史回退、分支和换窗的
+完整语义见 [会话指南](sessions.md)。
+
+```text
+/fork 3                 # 保留第三条输入之前的历史，将第三条输入放回编辑框
+/tool read NOTE.md      # 单必填参数的简写
+/tool write {"path":"plan.txt","content":"draft"}
+/queue followup         # 设置繁忙输入策略
+/queue 检查刚完成的改动    # 排入新的用户任务
+```

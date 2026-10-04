@@ -953,7 +953,7 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     "/model": CommandEntry(
         handler=cmd_model,
         desc="Show current model info.",
-        args_desc="[profile/]name[:thinking] [--thinking <level>]",
+        args_desc="[provider/]name[:thinking] [--thinking <level>]",
         accepts_args=True,
         group=COMMAND_GROUP_MODEL,
     ),
@@ -1023,7 +1023,7 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     "/queue": CommandEntry(
         handler=cmd_queue,
         desc="Set the busy-message mode or enqueue a next-run message.",
-        args_desc="steer|followup|collect|interrupt|<message>",
+        args_desc="steer|followup|interrupt|<message>",
         accepts_args=True,
         group=COMMAND_GROUP_MODE,
     ),

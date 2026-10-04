@@ -67,6 +67,9 @@ def cmd_auth(cmd: str, ctx: CommandContext) -> bool:
         return cmd_login(" ".join(parts[1:]), ctx)
     if subcmd == "logout":
         return cmd_logout(" ".join(parts[1:]), ctx)
+    if subcmd not in {"status", "list"} or len(parts) > 2:
+        ctx.output.write("Usage: /auth [status|list|login|connect|logout]")
+        return False
     handle_status_command()
     return False
 
