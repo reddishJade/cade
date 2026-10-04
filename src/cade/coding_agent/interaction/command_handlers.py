@@ -54,39 +54,64 @@ def cmd_clear(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
-    """从某条 user 消息截断，新建会话。"""
+    """保留所选输入之前的历史，并把该输入交回宿主编辑。"""
     msgs = ctx.store.get_forkable_user_messages()
     if not msgs:
         ctx.output.write("No user messages to fork from.")
         return False
-
-    def _fork_title(e: SessionEntry) -> str:
-        if isinstance(e.content, dict):
-            data = e.content.get("data")
-            if isinstance(data, dict):
-                return str(data.get("display_text", ""))
-        return ""
-
-    choices = [
-        Choice(
-            title=" ".join(_fork_title(e).split())[:100],
-            value=e,
+    parts = cmd.split()
+    selected: SessionEntry | None = None
+    if len(parts) > 2:
+        ctx.output.write("Usage: /fork [positive input number|entry ID]")
+        return False
+    if len(parts) == 2:
+        target = parts[1]
+        selected = next((entry for entry in msgs if entry.id == target), None)
+        if selected is None:
+            if target.isascii() and target.isdigit():
+                number = int(target)
+                if number < 1 or number > len(msgs):
+                    ctx.output.write(f"Choose an input number from 1 to {len(msgs)}.")
+                    return False
+                selected = msgs[number - 1]
+            else:
+                ctx.output.write(
+                    f"User input entry not found on current branch: {target}"
+                )
+                return False
+    else:
+        selected = ctx.output.select(
+            "Select message to fork from:",
+            choices=[
+                Choice(
+                    f"{index}. {' '.join(fork_input_text(entry).split())[:100]}", entry
+                )
+                for index, entry in enumerate(msgs, 1)
+            ],
         )
-        for e in msgs
-    ]
-    selected = ctx.output.select("Select message to fork from:", choices=choices)
     if selected is None:
         return False
 
     parent_session_id = ctx.store.session_id
     forked = ctx.store.fork_from_entry(selected.id)
+    if ctx.snapshot_store is not None:
+        ctx.snapshot_store.fork_session(parent_session_id, forked.session_id)
+        ctx.snapshot_store.rewind_to_turn_count(
+            forked.session_id, forked.user_turn_count()
+        )
     ctx.store.current_path = forked.current_path
-    meta = ctx.store.current_metadata()
-    if ctx.snapshot_store is not None and meta is not None:
-        ctx.snapshot_store.fork_session(parent_session_id, meta.id)
     ctx.app.restore_session()
-    ctx.output.write(f'Forked at: "{meta.title if meta else selected.id[:8]}"')
+    ctx.state.draft_input = fork_input_text(selected)
+    meta = ctx.store.current_metadata()
+    ctx.output.write(f'Forked: "{meta.title if meta else ""}" ({ctx.store.session_id})')
     return False
+
+
+def fork_input_text(entry: SessionEntry) -> str:
+    """从已消费输入记录取得用户编辑文本。"""
+    from cade.harness.session.inbox import inbox_display_text
+
+    return inbox_display_text(entry.content) or ""
 
 
 def cmd_clone(cmd: str, ctx: CommandContext) -> bool:
@@ -903,7 +928,9 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/fork": CommandEntry(
         handler=cmd_fork,
-        desc="Fork from a user message into a new session.",
+        desc="Fork before a user input and return it for editing.",
+        accepts_args=True,
+        args_desc="[input number|entry ID]",
         group=COMMAND_GROUP_SESSION_BRANCH,
     ),
     "/clone": CommandEntry(

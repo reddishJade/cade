@@ -53,6 +53,7 @@ from cade.coding_agent.interaction.approval import (
 from cade.coding_agent.interaction.command_handlers import (
     COMMAND_NAMES,
     COMMAND_REGISTRY,
+    fork_input_text,
     handle_command,
 )
 from cade.coding_agent.interaction.commands import CommandContext, InteractionState
@@ -1048,7 +1049,7 @@ class _CadeTui:
             query = parts[1].strip() if len(parts) > 1 else ""
             self._open_config_browser(query)
             return True
-        if command == "/fork":
+        if command == "/fork" and len(text.split()) == 1:
             entries = self._store.get_forkable_user_messages()
             if not entries:
                 self._state.log.append(
@@ -1056,30 +1057,15 @@ class _CadeTui:
                 )
                 self._refresh()
                 return True
-
-            def fork(entry: object) -> None:
-                parent_session_id = self._store.session_id
-                entry_id = getattr(entry, "id", "")
-                try:
-                    forked = self._store.fork_from_entry(entry_id)
-                except ValueError as exc:
-                    self._state.log.append(_LogEntry("error", f"[error] {exc}"))
-                    return
-                self._store.current_path = forked.current_path
-                meta = self._store.current_metadata()
-                if self._snapshot_store is not None and meta is not None:
-                    cast(SnapshotStore, self._snapshot_store).fork_session(
-                        parent_session_id, meta.id
-                    )
-                self._agent_app.restore_session()
-                self._state.restore_history(self._store.build_branch())
-                self._sync_mode_from_agent()
-                self._state.log.append(
-                    _LogEntry("system", f'Forked at: "{meta.title if meta else ""}"')
-                )
-
             self._open_command_choices(
-                [(" ".join(str(e.content).split())[:100], e) for e in entries], fork
+                [
+                    (
+                        f"{index}. {' '.join(fork_input_text(entry).split())[:100]}",
+                        entry.id,
+                    )
+                    for index, entry in enumerate(entries, 1)
+                ],
+                lambda selected: self._run_command(f"/fork {selected}"),
             )
             return True
         if command in {"/sessions", "/resume"} and len(text.split()) == 1:
@@ -1424,6 +1410,10 @@ class _CadeTui:
             self._state.log.append(_LogEntry("error", error))
         elif output.strip():
             self._state.log.append(_LogEntry("system", output.rstrip()))
+        if self._interaction_state.draft_input is not None:
+            self._input.buffer.text = self._interaction_state.draft_input
+            self._input.buffer.cursor_position = len(self._input.buffer.text)
+            self._interaction_state.draft_input = None
         self._state.running = False
         self._refresh()
         if should_exit:
@@ -2128,7 +2118,15 @@ def _question_choice_text(option: dict[str, object]) -> str:
 def _is_session_history_command(command: str) -> bool:
     """判断命令是否会切换或重写当前会话分支。"""
     name = command.split(maxsplit=1)[0]
-    return name in {"/resume", "/continue", "/sessions", "/tree", "/rewind", "/clone"}
+    return name in {
+        "/resume",
+        "/continue",
+        "/sessions",
+        "/tree",
+        "/rewind",
+        "/clone",
+        "/fork",
+    }
 
 
 def _init_snapshot_store(project_root: Path) -> object | None:

@@ -581,7 +581,7 @@ class TreeSessionRepo:
     def fork_from_entry(
         self, entry_id: str, title: str = "", summary: str = ""
     ) -> TreeSessionRepo:
-        """从指定 entry 分叉：新建会话，只保留从该 entry 到 head 的路径。"""
+        """在指定用户输入之前分叉，保留该位置之前的完整历史前缀。"""
         with self._lock:
             branch = self.build_branch()
             start = next(
@@ -590,26 +590,17 @@ class TreeSessionRepo:
             )
             if start is None:
                 raise ValueError(f"entry {entry_id} not on current branch")
-            copied = branch[start:]
+            if _claimed_user_text(branch[start]) is None:
+                raise ValueError("fork requires a claimed user input")
+            copied = branch[:start]
+            from .surface import project_session_surface
+
+            project_session_surface(copied)
             parent = self.ensure_metadata()
             fork_path = self._new_path()
             with _open_private_text(fork_path, append=False) as f:
                 for index, entry in enumerate(copied):
                     content = deepcopy(entry.content)
-                    if (
-                        isinstance(content, dict)
-                        and content.get("type") == "context_window_reset"
-                    ):
-                        data = content.get("data")
-                        expected = [item.id for item in branch[: start + index]]
-                        if (
-                            not isinstance(data, dict)
-                            or data.get("source_entry_ids") != expected
-                        ):
-                            raise ValueError(
-                                "cannot fork an invalid context window source prefix"
-                            )
-                        data["source_entry_ids"] = [item.id for item in copied[:index]]
                     f.write(
                         _dump_tree_entry(
                             TreeEntryModel(
@@ -639,7 +630,7 @@ class TreeSessionRepo:
                 created_at=now,
                 updated_at=now,
                 parent_id=parent.id,
-                head_id=self._load_head_id(),
+                head_id=copied[-1].id if copied else None,
             )
             self._upsert_metadata(meta)
             fork = TreeSessionRepo.__new__(TreeSessionRepo)
@@ -649,6 +640,9 @@ class TreeSessionRepo:
             fork._lock = self._lock
             fork.current_path = fork_path
             fork.artifacts_dir = self.artifacts_dir
+            from .inbox import SessionInbox
+
+            SessionInbox(fork).discard_all("fork input returned to editor")
             return fork
 
     def get_tree(self) -> list[TreeNode]:

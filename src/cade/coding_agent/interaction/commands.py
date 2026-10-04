@@ -38,6 +38,7 @@ class CommandOutput(Protocol):
 class InteractionState:
     mode: ExecutionMode = "act"
     busy_mode: BusyMessageMode = BusyMessageMode.FOLLOW_UP
+    draft_input: str | None = None
 
 
 @dataclass
