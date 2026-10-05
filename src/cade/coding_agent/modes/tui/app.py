@@ -1182,7 +1182,12 @@ class _CadeTui:
             index = max(0, min(levels.index(effort) + step, len(levels) - 1))
             efforts[key] = levels[index]
             self._command_choices.values = [
-                (value, entry_title(value) if value is selection else label)
+                (
+                    value,
+                    entry_title(value)
+                    if isinstance(value, AvailableModelEntry) and value is selection
+                    else label,
+                )
                 for value, label in self._command_choices.values
             ]
 
