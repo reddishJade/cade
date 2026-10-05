@@ -222,6 +222,7 @@ def to_responses_tools(
                     "name": tool.name,
                     "description": tool.description,
                     "parameters": resolved,
+                    "strict": False,
                 }
             )
     return result
@@ -775,5 +776,5 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
             reasoning.setdefault("summary", "auto")
 
     def _strict_tools(self) -> bool:
-        """ChatGPT Codex 与 pi 一样省略 strict，允许现有联合工具 schema。"""
+        """Codex 显式关闭 strict，保留工具的可选参数与联合 schema。"""
         return False
