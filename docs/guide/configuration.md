@@ -44,6 +44,7 @@
 ## 运行与预算字段
 
 预算单位为 token。物理窗口来自模型元数据或
+`provider.options.context_window` 或角色的
 `provider.model_profiles.<name>.context_window`，输入预算在物理窗口中扣除输出预留
 与额外余量；换窗使用预测输入和新增输入预留。算法见 [上下文策略](../context-policy.md)。
 
@@ -80,23 +81,67 @@
 Linux sandbox、结构化文件工具和外部服务的执行边界见
 [架构说明](../architecture.md#模式权限与执行环境)。
 
-## Provider 与凭据
+## 默认模型、连接与凭据
 
-`provider.model_profiles` 包含 `main`、`subagent` 和 `fallback`。配置发现时，子模型
-与备用模型继承 main 中的字段，可用对象覆盖部分字段，或用模型名称字符串只覆盖
-`chat_model`。默认 main 使用 `openai_chat`、`deepseek-flash` 和
-`https://api.deepseek.com`；登录凭据与显式配置共同决定最终 profile。
+三类设置分别保存：
 
-配置发现阶段会检查已保存的 OpenAI 登录凭据。main 指向 Codex/OpenAI 账户调用
-且符合凭据优先条件时，登录凭据可覆盖 API 配置；显式第三方 transport、自定义
-非 OpenAI 地址或非 Codex 模型保留其 API 配置。判定实现为
-[`_auth_preferred_over_api()`](../../src/cade/harness/config.py)。
+| 内容 | 位置 | 职责 |
+|---|---|---|
+| 默认选择 | settings 的 `default_provider`、`default_model`、`default_reasoning_effort` | 决定新会话使用哪个 provider、模型和 effort |
+| 连接参数 | `provider.connections.<provider>` | 保存 transport、自定义端点和可选 `api_key_env`，切换默认模型不删除连接 |
+| 认证凭据 | `~/.cade/auth.json`，按 provider 保存 | API key 与 OAuth 可以同时存在，登录不修改默认模型 |
 
-API key 解析依次查找 profile 中的 `api_key`、`<PROFILE>_API_KEY`、transport 专用
-变量、`OPENAI_API_KEY` 和 `API_KEY`。专用变量包括 DeepSeek 的
-`DEEPSEEK_API_KEY`、MiMo 的 `MIMO_API_KEY`，以及 ChatGLM 的 `CHATGLM_API_KEY`、
-`ZHIPUAI_API_KEY`、`BIGMODEL_API_KEY`。同名变量优先使用当前进程环境，再依次查找
-包目录 `.env`、项目根 `.env`、项目 `cade/.env`；Python 调用可显式提供 `env_files`。
+例如，把下面字段写入 `~/.cade/settings.json`，其余字段保留：
+
+```json
+{
+  "default_provider": "openai-codex",
+  "default_model": "gpt-5.6-luna",
+  "default_reasoning_effort": "high"
+}
+```
+
+内置默认是 `openai-codex` / `gpt-5.6-luna` / `high`。内置 provider 包括
+`openai-codex`（ChatGPT 登录）、`openai`（OpenAI API）、`deepseek`、`chatglm`、
+`mimo` 和 `custom`。OpenAI API 和 Codex 账户使用独立的 provider 身份；登录其中
+一个不会改变另一个的调用方式。模型选择先于凭据解析；所选 provider 缺少凭据时
+明确报错，不因另一个账号存在而改模型。
+
+`cade login --method api_key` 保存所选 provider 的 API key；`cade login` 的账号
+登录保存 OAuth。两者不修改启动默认值。`cade setup` 会明确选择默认模型，并把凭据
+单独写到认证存储。`cade auth status` 显示认证类型和状态，不能证明服务余额充足。
+
+`provider.options` 保存共享请求选项：`context_window`、`thinking`、
+`clear_thinking`、`tool_stream`、`response_format`。辅助角色由
+`provider.model_profiles` 配置，支持 `subagent`、`fallback`、`reviewer`、`judge`、
+`refiner`；不写的角色继承主模型，角色对象中未提供的字段继承主模型选项。例如：
+
+```json
+{
+  "provider": {
+    "model_profiles": {
+      "subagent": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "medium"
+      }
+    }
+  }
+}
+```
+
+API 凭据先查所选 provider 在 auth 中保存的 API key，再查 provider 专用环境变量
+或 `.env`。变量包括 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`MIMO_API_KEY`、
+`CHATGLM_API_KEY`（也接受 `ZHIPUAI_API_KEY`、`BIGMODEL_API_KEY`）。自定义连接可
+指定 `api_key_env`；默认 custom 使用 `API_KEY`。不把 OpenAI key 借给 DeepSeek。
+同名变量先查进程环境，再查包目录 `.env`、项目根 `.env`、项目 `cade/.env`。
+认证不再在配置发现阶段注入；`settings.json` 不保存 `api_key`、OAuth token 或
+`account_id`。旧的 `provider.model_profiles.main` 与 profile 内的连接、凭据字段
+不再接受。
+
+`cade exec --model provider/model --reasoning-effort high` 临时覆盖默认选择，
+在装配前生效；未单独配置的辅助角色随主模型继承。`--transport` 可显式选择协议。
+`/model`、`/effort` 修改当前运行，保存启动默认值使用配置字段；会话切换不写全局配置。
 
 ## 查看与修改
 

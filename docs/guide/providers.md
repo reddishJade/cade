@@ -6,12 +6,13 @@ Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务
 
 ## 1. 支持的 Provider 与 Transport 协议
 
-在配置中，通过 `transport` 字段指定通信协议类型：
+在 `provider.connections.<provider>` 中，通过 `transport` 指定连接协议；
+默认模型通过独立的 `default_provider` 与 `default_model` 选择：
 
 | Transport 协议 | 对应适配类 | 适用平台与典型模型 |
 | :--- | :--- | :--- |
 | **`deepseek_chat`** | `DeepSeekProvider` | DeepSeek 官方 API（`deepseek-flash` 默认模型、`deepseek-v4-pro` 旗舰推理） |
-| **`openai_responses`**| `OpenAIResponsesProvider` | OpenAI 最新 Responses 协议（`gpt-6-astra`、`gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6` 系列） |
+| **`openai_responses`**| `OpenAIResponsesProvider` | OpenAI 最新 Responses 协议（`gpt-6-astra`、`gpt-5.6-luna`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6` 系列） |
 | **`openai_chat`** | `OpenAIChatProvider` | 标准 OpenAI 格式接口与兼容聚合服务 |
 | **`openai_codex`** | `OpenAICodexResponsesProvider` | ChatGPT / Codex 登录会话与模型通道 |
 | **`chatglm_chat`** | `ChatGLMProvider` | 智谱 AI（`glm-5.1`、`glm-5`、`glm-4.7-flash` 系列）官方 API |
@@ -20,77 +21,60 @@ Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务
 
 ---
 
-## 2. 典型配置示例 (`cade.config.json` 或 `~/.cade/settings.json`)
+## 2. 默认选择与连接
 
-### 示例 A：配置 DeepSeek（官方 API）
+账号和 API key 登录只保存凭据，默认选择独立写在 `settings.json` 或项目配置：
 
 ```json
 {
-  "provider": {
-    "model_profiles": {
-      "main": {
-        "transport": "deepseek_chat",
-        "chat_model": "deepseek-flash",
-        "base_url": "https://api.deepseek.com",
-        "api_key": "sk-your-deepseek-key",
-        "thinking": true,
-        "reasoning_effort": "high"
-      }
-    }
-  }
+  "default_provider": "openai-codex",
+  "default_model": "gpt-5.6-luna",
+  "default_reasoning_effort": "high"
 }
 ```
 
-### 示例 B：配置 OpenAI GPT-6.1 Sol
+DeepSeek 可设 `default_provider: "deepseek"`、`default_model: "deepseek-flash"`。
+两者的认证都可保留在 `~/.cade/auth.json`，切换默认值不删除任何 provider 凭据。
+内置连接不必写 transport 或 base_url；自定义连接独立定义。例如 Ollama：
 
 ```json
 {
+  "default_provider": "ollama",
+  "default_model": "qwen2.5-coder:32b",
+  "default_reasoning_effort": null,
   "provider": {
-    "model_profiles": {
-      "main": {
-        "transport": "openai_responses",
-        "chat_model": "gpt-6.1-sol",
-        "api_key": "sk-your-openai-key",
-        "thinking": true,
-        "reasoning_effort": "medium"
-      }
-    }
-  }
-}
-```
-
-### 示例 C：配置本地 Ollama 或 vLLM 私有模型
-
-无需公网网络，完全本地私密运行：
-
-```json
-{
-  "provider": {
-    "model_profiles": {
-      "main": {
+    "connections": {
+      "ollama": {
         "transport": "custom",
-        "chat_model": "qwen2.5-coder:32b",
         "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama",
-        "context_window": 32768
+        "api_key_env": "OLLAMA_API_KEY"
       }
+    },
+    "options": {"thinking": false}
+  }
+}
+```
+
+设置 `OLLAMA_API_KEY=ollama` 作为本地无认证服务的占位值。真实凭据不写入连接配置。
+
+## 3. 辅助模型角色
+
+主模型来自三个默认字段。`provider.model_profiles` 仅保存辅助角色的覆盖：
+
+```json
+{
+  "provider": {
+    "model_profiles": {
+      "subagent": {"provider": "openai-codex", "model": "gpt-6-luna", "reasoning_effort": "medium"},
+      "fallback": {"provider": "deepseek", "model": "deepseek-flash", "reasoning_effort": "high"}
     }
   }
 }
 ```
 
----
-
-## 3. 多 Profile 分工：主模型、子代理与容灾回退
-
-Cade 支持定义独立的模型 Profile，分担不同的工作负荷以优化成本与速度：
-
-1. **`main`（主模型）**：
-   负责与人类直接交互并驱动主事件循环，通常选用推理能力最强、支持思考链的模型（如 `deepseek-v4-pro` 或 `gpt-6-sol`）。
-2. **`subagent`（子代理模型）**：
-   负责执行拆分出去的孤立子任务（如单纯检索大目录、执行局部静态语法检查）。可配置速度极快的小模型（如 `deepseek-flash`、`gpt-6-luna` 或 `glm-4.7-flash`）。
-3. **`fallback`（容灾回退模型）**：
-   当主模型遭遇网络故障、服务商限流（Rate Limit）或 5xx 错误时，系统会自动切至回退模型重试，保障开发流程不中断。
+`subagent` 执行委派任务；`fallback` 用于主模型容灾；`reviewer`、`judge`、`refiner`
+按服务用途选择。省略角色或字段时继承主模型，显式指定其他 provider 时解析其独立凭据。
+配置备用 provider 不代表它有余额；验收应使用可用服务，并检查有效配置。
 
 ---
 

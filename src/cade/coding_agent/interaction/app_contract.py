@@ -114,8 +114,6 @@ class ModelControlApp(Protocol):
         profile: str = "main",
         transport: str | None = None,
         base_url: str | None = None,
-        api_key: str | None = None,
-        account_id: str | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
     ) -> str: ...

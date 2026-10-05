@@ -175,8 +175,62 @@ def prepare_exec_config(
         security_updates.update(approval_policy="on-request", approval_router="user")
     security = runtime_config.security.model_copy(update=security_updates)
 
+    model_updates: dict[str, object] = {}
+    if args.model is not None or args.transport is not None:
+        from cade.ai.resolver import (
+            PROVIDER_TRANSPORTS,
+            ModelResolver,
+            provider_for_transport,
+        )
+
+        connection = runtime_config.provider.connections.get(
+            runtime_config.default_provider
+        )
+        resolution = ModelResolver.resolve(
+            args.model or runtime_config.default_model,
+            provider=runtime_config.default_provider if args.model is None else None,
+            transport=args.transport,
+            fallback_transport=connection.transport
+            if connection
+            else PROVIDER_TRANSPORTS.get(runtime_config.default_provider),
+        )
+        selected = (
+            provider_for_transport(args.transport)
+            if args.transport and (not args.model or "/" not in args.model)
+            else resolution.provider
+        )
+        if (
+            args.model
+            and "/" not in args.model
+            and args.transport is None
+            and (
+                resolution.model == runtime_config.default_model
+                or ModelResolver.infer_provider(resolution.model) is None
+            )
+        ):
+            selected = runtime_config.default_provider
+        model_updates.update(default_provider=selected, default_model=resolution.model)
+        if args.transport:
+            from cade.harness.config import ProviderConnectionRuntimeConfig
+
+            connections = dict(runtime_config.provider.connections)
+            previous = connections.get(selected)
+            connections[selected] = ProviderConnectionRuntimeConfig.model_validate(
+                {
+                    "transport": args.transport,
+                    "base_url": previous.base_url if previous else "",
+                    "api_key_env": previous.api_key_env if previous else None,
+                }
+            )
+            model_updates["provider"] = runtime_config.provider.model_copy(
+                update={"connections": connections}
+            )
+    if args.reasoning_effort is not None:
+        model_updates["default_reasoning_effort"] = args.reasoning_effort
+
     return runtime_config.model_copy(
         update={
+            **model_updates,
             "agent": agent,
             "execution_modes": execution_modes,
             "security": security,
@@ -210,7 +264,6 @@ def run_exec(
             app = app_builder(args.project_root, config, sessions_dir)
             if app is None:
                 raise RuntimeError("application builder returned no application")
-            _configure_model(app, config, args)
             _validate_model_endpoint(app.get_model_info())
             _restore_exec_session(app, args)
             _install_exec_approval(app, config)
@@ -318,19 +371,6 @@ class _ExecApprovalHandler:
         if answer in {"y", "yes"} and "once" in request.allowed_scopes:
             return HITLResult("allow", "once")
         return HITLResult("deny", "once")
-
-
-def _configure_model(
-    app: Any, config: CadeRuntimeConfig, args: argparse.Namespace
-) -> None:
-    if not any((args.model, args.transport, args.reasoning_effort)):
-        return
-    main = config.provider.model_profiles["main"]
-    app.set_model(
-        model=args.model or main.chat_model,
-        transport=args.transport,
-        reasoning_effort=args.reasoning_effort,
-    )
 
 
 def _validate_model_endpoint(model_info: dict[str, str]) -> None:

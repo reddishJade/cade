@@ -116,7 +116,7 @@ def handle_status_command() -> int:
         print("You can use `cade login` to sign in.")
         return 0
 
-    print(f"Logged-in accounts (stored at {manager.storage_location}):")
+    print(f"Stored credentials (at {manager.storage_location}):")
     for acc in accounts:
         provider = str(acc.get("provider", ""))
         account_id = str(acc.get("account_id") or "default")
@@ -126,6 +126,6 @@ def handle_status_command() -> int:
         if expired and has_refresh:
             status_text = "expired (refresh available)"
         print(
-            f"  • Provider: {provider} | Account: {account_id} | Status: {status_text}"
+            f"  • Provider: {provider} | Type: {acc.get('type')} | Account: {account_id} | Status: {status_text}"
         )
     return 0

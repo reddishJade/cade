@@ -11,26 +11,44 @@
 
 ---
 
-## provider
+## 默认模型与 provider
 
-### model_profiles
-
-支持 `main`、`subagent`、`fallback`、`reviewer` 四个 profile。未配置的
-profile 由 `_resolve_model_profiles` 按 main 配置补齐：字符串视为 model 名称，
-字典与 main 配置合并。`reviewer` 仅供自动审批使用，不作为主 agent。
+默认选择独立于认证保存：
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `transport` | string | `"openai_chat"` | `openai_chat`、`deepseek_chat`、`mimo_chat`、`chatglm_chat` |
-| `chat_model` | string | `"deepseek-flash"` | 聊天模型名 |
-| `base_url` | string | `"https://api.deepseek.com"` | OpenAI-compatible API 地址 |
-| `api_key` | string | `""` | 显式 API key；留空按环境变量查找 |
-| `context_window` | int/null | `null` | 上下文窗口覆盖（token 数）。覆盖模型注册表默认值，影响自动换窗触发线、请求预算与 `/context` 显示。例如可将某个大窗口模型限制为 256K：`"context_window": 262144` |
-| `thinking` | bool | `true` | 传给支持 thinking 的 provider |
-| `reasoning_effort` | string/null | `"high"` | DeepSeek 等支持 effort 的 provider。值：`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max` |
+| `default_provider` | string | `openai-codex` | 新会话使用的 provider |
+| `default_model` | string | `gpt-5.6-luna` | 所选 provider 的模型 ID |
+| `default_reasoning_effort` | string/null | `high` | 模型支持的启动 effort |
+
+`~/.cade/auth.json` 按 provider 保存 API key 或 OAuth。两种认证可同时存在，
+`cade login` 只保存凭据，不改变默认模型。`cade setup` 和 `cade config` 明确设置
+默认选择。配置发现不读取 auth；应用装配先选择 provider，再读取它的凭据。
+
+### connections
+
+`provider.connections.<provider>` 保存 `transport`、可选 `base_url` 和
+`api_key_env`，不含 API key 或模型。内置 provider 无需配置连接；自定义 provider
+必须声明 transport。内置身份为 `openai-codex`、`openai`、`deepseek`、`chatglm`、
+`mimo`、`custom`，其中 `openai` 默认使用 Responses API。
+
+### options 与 model_profiles
+
+`provider.options` 保存共享请求选项：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `context_window` | int/null | `null` | 覆盖模型的窗口大小 |
+| `thinking` | bool | `true` | 请求 thinking |
 | `clear_thinking` | bool | `false` | ChatGLM 保留式思考 |
-| `tool_stream` | bool | `true` | ChatGLM 工具流式输出 |
-| `response_format` | object/null | `null` | 结构化输出，如 `{"type":"json_object"}` |
+| `tool_stream` | bool | `true` | 工具流式输出 |
+| `response_format` | object/null | `null` | 结构化响应格式 |
+
+`provider.model_profiles` 支持辅助角色 `subagent`、`fallback`、`reviewer`、`judge`、
+`refiner`。角色对象可覆盖 `provider`、`model`、`reasoning_effort` 和上述请求选项。
+未提供的字段继承主模型；不接受字符串角色配置或 `main` 角色。主模型使用默认字段。
+API key 先查所选 provider 的 auth，再查其专用环境变量或 `.env`；不会借用其他
+provider 的 key。完整示例见 [配置指南](docs/guide/configuration.md)。
 
 #### DeepSeek
 
@@ -55,38 +73,29 @@ profile 由 `_resolve_model_profiles` 按 main 配置补齐：字符串视为 mo
 
 ### 运行时模型切换
 
-REPL 中可通过 `/model` 命令动态切换模型而无需重启：
+`/model` 打开已认证模型选择器；直接指定 provider 可以区分 API 与账号调用：
 
-```
-/model                                    # 查看当前模型信息
-/model <provider>/<model>[:thinking_level]  # 切换模型
-/model <profile>/<model>[:thinking_level]   # 按 profile 切换
+```text
+/model openai-codex/gpt-5.6-luna:high
+/model deepseek/deepseek-flash:high
 ```
 
-| 部分 | 说明 |
-|---|---|
-| `provider` | transport 名：`openai_chat`、`deepseek_chat`、`mimo_chat`、`chatglm_chat`；省略时使用当前 profile |
-| `profile` | 配置中的 profile 名：`main`、`subagent`、`fallback` |
-| `model` | 模型 ID，如 `gpt-5.4-mini`、`deepseek-flash` |
-| `:thinking_level` | 可选后缀，覆盖 reasoning_effort。值：`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max` |
-
-示例：
-```
-/model openai_chat/gpt-5.4-mini:high
-/model subagent/deepseek-flash
-/model deepseek_chat/deepseek-v4-pro:max
-```
+`/effort high` 改当前主模型深度，`/model` 不保存启动默认值。新会话默认值通过
+`cade config` 或 settings 编辑。`cade exec --model provider/model` 在装配前临时
+覆盖默认选择，不改磁盘 settings，未显式配置的辅助角色随主模型继承。
 
 ### 交互式配置
 
 `/config`（REPL/TUI）与 `cade config`（CLI）打开同一个交互式设置浏览器，
-只收录适合运行时调整的行为开关：执行模式、审批策略、shell。其余字段
+收录默认 provider/model/effort、执行模式、审批策略和 shell。其余字段
 （agent 调参、request hygiene、路径、安全细则、hooks、prompt 等）直接编辑
-`cade.config.json`；provider profile 由 `cade login`/`cade connect` 的 API key
-流程或可重复运行的 `cade setup` 管理。
+`cade.config.json`；认证由 `cade login` 管理，连接与角色配置独立保留。
 
 ```
-> Default Mode           act
+> Default Provider       openai-codex
+  Default Model          gpt-5.6-luna
+  Default Reasoning Effort high
+  Default Mode           act
   Approval Policy        asks for review
   Non-Workspace Access   on
   Shell                  auto
@@ -356,7 +365,7 @@ Automatic approval review approved (risk: low, authorization: high):
 {
   "provider": {
     "model_profiles": {
-      "reviewer": "deepseek-flash"
+      "reviewer": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "high"}
     }
   },
   "security": {

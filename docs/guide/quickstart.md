@@ -6,7 +6,8 @@
 
 ## 1. 配置模型与 API Key
 
-Cade 默认优先使用兼容 OpenAI 格式的大语言模型服务（默认内置 profile 支持 DeepSeek 等）。
+Cade 默认使用 Codex 登录的 `gpt-5.6-luna`，reasoning effort 为 `high`。
+其他 provider 的 API key 可以同时保留；默认模型在 settings 中独立选择。
 
 最快捷的方式是通过环境变量设置你的 API Key：
 

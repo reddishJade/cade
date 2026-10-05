@@ -55,6 +55,12 @@ hooks、grant store 和换窗服务由运行时持有。run 开始时原子捕�
 有效 provider，后续 step 使用同一份配置快照；主备切换按该快照内的容灾策略执行。
 模型与静态权限策略替换要求 agent 空闲，并发布新的 generation。
 
+默认模型由 `default_provider`、`default_model`、`default_reasoning_effort` 选择。
+`provider.connections` 保存独立连接参数；`~/.cade/auth.json` 按 provider 保存
+API key 与 OAuth。配置发现只合并和校验配置，不读取认证、不根据登录状态改模型。
+编码产品的 `assembly/providers.py` 先展开模型角色，再解析所选 provider 的凭据，
+形成只用于运行时的 provider 配置。登录只写认证，setup 和配置编辑负责默认选择。
+
 ## 输入、运行与结束
 
 session 标识持久会话及其当前分支；run 标识一次占有该 session 的执行过程。

@@ -4,7 +4,7 @@ import json
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import (
     BaseModel,
@@ -19,9 +19,6 @@ from pydantic import (
 
 from .execution_env.sandbox import NetworkAccess, SandboxMode
 from .security.approval import ApprovalPolicy
-
-if TYPE_CHECKING:
-    from cade.ai.auth import AuthCredential
 
 DirAccess = Literal["read", "write", "read_write"]
 
@@ -77,34 +74,50 @@ class AgentConfig(BaseModel):
     watchdog_repeated_tool_limit: StrictInt = 3
 
 
-# 未显式配置 provider 时的内置默认聊天模型（DeepSeek Flash）。
-DEFAULT_CHAT_MODEL: Final[str] = "deepseek-flash"
+# 未显式配置模型时使用 Codex 账户的 GPT-5.6 Luna。
+DEFAULT_CHAT_MODEL: Final[str] = "gpt-5.6-luna"
 
 
-class ModelProfileRuntimeConfig(BaseModel):
+class ModelOptionsRuntimeConfig(BaseModel):
+    """与连接和认证无关的模型请求选项。"""
+
     model_config = ConfigDict(extra="forbid")
-    transport: ProviderTransport = "openai_chat"
-    chat_model: str = DEFAULT_CHAT_MODEL
-    base_url: str = "https://api.deepseek.com"
-    api_key: str = ""
     context_window: StrictInt | None = Field(default=None, gt=0)
     thinking: StrictBool = True
-    reasoning_effort: str | None = "high"
     clear_thinking: StrictBool = False
     tool_stream: StrictBool = True
     response_format: dict[str, Any] | None = None
-    account_id: str | None = None
+
+
+class ModelProfileRuntimeConfig(ModelOptionsRuntimeConfig):
+    """辅助模型角色的显式覆盖，未提供的字段继承主模型。"""
+
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+
+
+class ProviderConnectionRuntimeConfig(BaseModel):
+    """按 provider 保存的连接参数，不包含凭据和默认模型。"""
+
+    model_config = ConfigDict(extra="forbid")
+    transport: ProviderTransport
+    base_url: str = ""
+    api_key_env: str | None = None
 
 
 class ProviderRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model_profiles: dict[str, ModelProfileRuntimeConfig] = Field(
-        default_factory=lambda: {
-            PROFILE_MAIN: ModelProfileRuntimeConfig(),
-            PROFILE_SUBAGENT: ModelProfileRuntimeConfig(),
-            PROFILE_FALLBACK: ModelProfileRuntimeConfig(),
-        }
+    connections: dict[str, ProviderConnectionRuntimeConfig] = Field(
+        default_factory=dict
     )
+    options: ModelOptionsRuntimeConfig = Field(
+        default_factory=ModelOptionsRuntimeConfig
+    )
+    model_profiles: dict[
+        Literal["subagent", "fallback", "reviewer", "judge", "refiner"],
+        ModelProfileRuntimeConfig,
+    ] = Field(default_factory=dict)
 
 
 class SecurityExternalDirectory(BaseModel):
@@ -312,6 +325,9 @@ class HooksRuntimeConfig(BaseModel):
 
 class CadeRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    default_provider: str = "openai-codex"
+    default_model: str = DEFAULT_CHAT_MODEL
+    default_reasoning_effort: str | None = "high"
     provider: ProviderRuntimeConfig = Field(default_factory=ProviderRuntimeConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     tools: ToolsRuntimeConfig = Field(default_factory=ToolsRuntimeConfig)
@@ -379,14 +395,6 @@ def discover_runtime_config(
     env_raw, env_sources = _build_env_override_raw()
     merged = _deep_merge_raw(merged, env_raw)
 
-    merged_provider = merged.setdefault("provider", {})
-    if isinstance(merged_provider, dict):
-        merged_profiles = merged_provider.setdefault("model_profiles", {})
-        if isinstance(merged_profiles, dict):
-            merged_provider["model_profiles"] = _resolve_model_profiles(
-                merged_profiles, inject_credentials=True
-            )
-
     return _config_from_dict(
         merged,
         source_hint=lambda loc: _resolve_config_source_hint(
@@ -438,115 +446,6 @@ def _annotate_hook_sources(
     return result
 
 
-def _resolve_profiles_in_raw(
-    data: dict[str, Any], *, inject_credentials: bool = False
-) -> dict[str, Any]:
-    """在原始 dict 中展开 model_profiles 继承。"""
-    if not data:
-        return data
-    provider = data.get("provider")
-    if not isinstance(provider, dict):
-        return data
-    raw_profiles = provider.get("model_profiles")
-    if not isinstance(raw_profiles, dict):
-        return data
-    result = dict(data)
-    result["provider"] = dict(provider)
-    result["provider"]["model_profiles"] = _resolve_model_profiles(
-        raw_profiles, inject_credentials=inject_credentials
-    )
-    return result
-
-
-def _is_openai_endpoint(base_url: str) -> bool:
-    """判断 base_url 是否指向 OpenAI 官方端点。"""
-    return any(host in base_url for host in ("api.openai.com", "chatgpt.com"))
-
-
-def _auth_preferred_over_api(main_raw: dict[str, object]) -> bool:
-    """判断 OAuth 凭据是否优先于 API key（auth > api）。
-
-    显式配置为第三方 transport、自定义 base_url 或非 Codex 模型的 profile
-    视为用户主动选择的 API 配置，此时保留 API key。
-    """
-    transport = main_raw.get("transport")
-    if transport in ("chatglm_chat", "deepseek_chat", "mimo_chat", "custom"):
-        return False
-
-    base_url = main_raw.get("base_url")
-    if isinstance(base_url, str) and base_url and not _is_openai_endpoint(base_url):
-        return False
-
-    model = main_raw.get("chat_model")
-    if isinstance(model, str) and model.strip() and not _is_default_chat_model(model):
-        from cade.ai.resolver import ModelResolver
-
-        return ModelResolver.is_codex_supported(model)
-    return True
-
-
-def _is_default_chat_model(model: str) -> bool:
-    """判断模型名是否为内置默认（含已停用的旧 ID），即用户未显式选择模型。"""
-    from cade.ai.models import normalize_model_id
-
-    return normalize_model_id(model) == DEFAULT_CHAT_MODEL
-
-
-def _apply_oauth_credential(main_raw: dict[str, object], cred: AuthCredential) -> None:
-    """用 OAuth 凭据覆盖 main profile 的 API key 配置（auth > api）。"""
-    main_raw["api_key"] = cred.access
-    if cred.account_id:
-        main_raw["account_id"] = cred.account_id
-    if main_raw.get("transport") not in ("openai_responses", "openai_codex"):
-        main_raw["transport"] = "openai_codex"
-    main_raw["base_url"] = (
-        "https://chatgpt.com/backend-api"
-        if cred.account_id
-        else "https://api.openai.com/v1"
-    )
-    model = main_raw.get("chat_model")
-    if not isinstance(model, str) or not model.strip() or _is_default_chat_model(model):
-        from cade.ai.resolver import ModelResolver
-
-        main_raw["chat_model"] = ModelResolver.resolve_alias("codex")
-
-
-def _resolve_model_profiles(
-    raw_profiles: dict[str, object], *, inject_credentials: bool = False
-) -> dict[str, object]:
-    """在原始 dict 中展开 model_profiles 继承与凭据回退。"""
-    main_raw: dict[str, object] = {}
-    main_entry = raw_profiles.get(PROFILE_MAIN)
-    if isinstance(main_entry, dict):
-        main_raw = {str(k): v for k, v in main_entry.items()}
-    resolved: dict[str, object] = {PROFILE_MAIN: main_raw}
-    main_transport: ProviderTransport = "openai_chat"
-    main_transport_raw = main_raw.get("transport")
-    if isinstance(main_transport_raw, str):
-        main_transport = _load_provider_transport(main_transport_raw, main_transport)
-        main_raw["transport"] = main_transport
-
-    if inject_credentials:
-        from .auth.manager import AuthManager
-
-        cred = AuthManager().get_valid_credential("openai-codex")
-        if cred and cred.access and _auth_preferred_over_api(main_raw):
-            _apply_oauth_credential(main_raw, cred)
-
-    for name, raw in raw_profiles.items():
-        if name == PROFILE_MAIN:
-            continue
-        if isinstance(raw, str):
-            resolved[name] = {**main_raw, "chat_model": raw}
-        elif isinstance(raw, dict):
-            profile: dict[str, object] = dict(main_raw)
-            profile.update({str(k): v for k, v in raw.items()})
-            resolved[name] = profile
-    resolved.setdefault(PROFILE_SUBAGENT, resolved.get(PROFILE_MAIN, {}))
-    resolved.setdefault(PROFILE_FALLBACK, resolved.get(PROFILE_MAIN, {}))
-    return resolved
-
-
 def _deep_merge_raw(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """递归合并 override 到 base；仅在 override 中显式存在的键覆盖 base。
 
@@ -584,37 +483,8 @@ def _build_env_override_raw() -> tuple[
     return raw, sources
 
 
-def _load_provider_transport(
-    value: object, default: ProviderTransport
-) -> ProviderTransport:
-    if not isinstance(value, str):
-        return default
-    match value:
-        case "openai_chat":
-            return "openai_chat"
-        case "openai_responses":
-            return "openai_responses"
-        case "openai_codex":
-            return "openai_codex"
-        case "chatglm_chat":
-            return "chatglm_chat"
-        case "deepseek_chat":
-            return "deepseek_chat"
-        case "mimo_chat":
-            return "mimo_chat"
-        case "custom":
-            return "custom"
-        case _:
-            raise ValueError(
-                f"Unsupported provider transport: {value!r}. "
-                "Supported transports: openai_chat, openai_responses, "
-                "openai_codex, chatglm_chat, deepseek_chat, mimo_chat, custom"
-            )
-
-
 def load_runtime_config(path: Path | None) -> CadeRuntimeConfig:
     raw = _load_raw_config(path)
-    raw = _resolve_profiles_in_raw(raw, inject_credentials=True)
     if path is not None:
         raw = _annotate_hook_sources(raw, path)
     env_raw, env_sources = _build_env_override_raw()

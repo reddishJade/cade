@@ -3,7 +3,11 @@
 !/.agents/notes/
 !/.agents/notes/**
 /.antigravitycli/
-/.cade/
+/.cade/*
+!/.cade/skills/
+/.cade/skills/*
+!/.cade/skills/cade-e2e-test/
+!/.cade/skills/cade-e2e-test/**
 /.claude/
 /.codex/
 /.vscode/

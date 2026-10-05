@@ -310,7 +310,7 @@ def main() -> int:
 
         try:
             runtime_config = discover_runtime_config(project_root, args.config)
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 6
         return handle_session_command(args, runtime_config)
@@ -330,7 +330,7 @@ def main() -> int:
                     open_browser=args.open,
                 )
             return _run(args, runtime_config)
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 6 if args.command == "exec" else 1
 
@@ -338,11 +338,17 @@ def main() -> int:
 
     temp_config: Path | None = None
 
-    if not has_valid_config(project_root):
+    try:
+        configured = has_valid_config(project_root, args.config)
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not configured:
         if not sys.stdin.isatty():
             print(
                 "No credentials configured. Run 'cade login' to sign in with "
-                "ChatGPT, or set an API key (e.g. OPENAI_API_KEY, "
+                "ChatGPT and select openai-codex as default_provider, or set an API key (e.g. OPENAI_API_KEY, "
                 "DEEPSEEK_API_KEY) in .env or the environment.",
                 file=sys.stderr,
             )
@@ -371,6 +377,11 @@ def main() -> int:
                 return 0
             if login_status != 0:
                 return login_status
+            if not has_valid_config(project_root, args.config):
+                print(
+                    "Login saved. Select your default provider and model with cade config."
+                )
+                return 0
         else:
             try:
                 status, config_path = run_setup_wizard(project_root)
@@ -385,7 +396,7 @@ def main() -> int:
     try:
         runtime_config = discover_runtime_config(project_root, args.config)
         return _run(args, runtime_config)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     finally:

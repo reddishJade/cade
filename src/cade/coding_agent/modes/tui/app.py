@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 import sys
 import threading
@@ -1207,7 +1206,7 @@ class _CadeTui:
             try:
                 effort = efforts[(entry.model, entry.transport)]
                 new_model = set_model(
-                    model=entry.model,
+                    model=f"{entry.provider}/{entry.model}",
                     transport=entry.transport,
                     profile="main",
                     reasoning_effort=effort,
@@ -1251,15 +1250,10 @@ class _CadeTui:
                 open_selector()
                 return
             try:
-                from cade.harness.auth.manager import AuthManager
-
                 parsed = parse_model_mode(value.strip())
-                credential = AuthManager().get_valid_credential("openai-codex")
                 resolution = ModelResolver.resolve(
                     model_or_alias=parsed.model,
                     provider=parsed.provider,
-                    has_oauth=bool(credential and credential.access),
-                    has_api_key=bool(os.environ.get("OPENAI_API_KEY")),
                     fallback_transport=current_transport,
                 )
                 entry = next(

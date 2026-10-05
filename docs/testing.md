@@ -2,6 +2,9 @@
 
 ## Purpose and Primary Path
 
+Use the repository [cade-e2e-test skill](../.cade/skills/cade-e2e-test/SKILL.md)
+for the operational workflow and explicit provider configuration.
+
 Validate the Cade workflows users actually run. Real tasks executed through
 `cade exec` are the primary acceptance path for changes to the coding-agent
 runtime. Use the installed entry point, real provider adapter and service,
@@ -49,6 +52,12 @@ Before running, record:
 5. An independent method to check those results and distinguish environment
    failure from a product defect.
 
+Keep all test-managed workspaces, worktrees, sessions, temporary directories,
+caches, and evidence inside the current Cade workspace, under a unique
+`e2e-results/<run>/` directory where appropriate. Do not use `/tmp` or other
+locations outside the workspace; results must survive external temporary-file
+cleanup. Read existing account credentials through Cade without copying them.
+Resolve paths and symlinks before creating or cleaning test directories.
 Use isolated workspaces and dedicated accounts where appropriate. Keep sandbox
 and approval settings representative of the behavior under review. Derive task
 success from the resulting workspace, independently executed verification
@@ -130,13 +139,21 @@ For a runtime acceptance run, prepare an isolated workspace and a task-specific
 prompt, then use the public entry point:
 
 ```sh
-uv run cade exec --project-root /tmp/cade-validation-workspace \
+CADE_E2E_RUN="$PWD/e2e-results/unique-run"
+TMPDIR="$CADE_E2E_RUN/tmp" UV_CACHE_DIR="$PWD/.uv-cache" \
+uv run cade exec --project-root "$CADE_E2E_RUN/workspace" \
+  --config "$CADE_E2E_RUN/run.config.json" \
+  --sessions-dir "$CADE_E2E_RUN/sessions" \
   --approval auto-review --event-format jsonl \
-  --output-last-message /tmp/cade-validation-answer.md \
-  "<real task with acceptance criteria>" > /tmp/cade-validation-events.jsonl
+  --max-steps 20 --max-llm-calls 30 --timeout 5m \
+  --output-last-message "$CADE_E2E_RUN/answer.md" \
+  --prompt-file "$CADE_E2E_RUN/task.md" > "$CADE_E2E_RUN/events.jsonl"
 ```
 
-Select approval and sandbox settings for the scenario, and run the independent
+Prepare the run directory, its `tmp/` and workspace subdirectories, prompt,
+and explicit provider configuration before this command. Preserve existing
+global API settings; ordinary acceptance runs use the available Codex login as
+described in the skill. Select approval and sandbox settings for the scenario, and run the independent
 verification commands after Cade finishes. For behavior-preserving import
 changes, check affected imports and startup directly. For documentation-only
 changes, review the documentation and diff.

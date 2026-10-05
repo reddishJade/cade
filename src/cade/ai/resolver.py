@@ -13,18 +13,38 @@ from cade.ai.models import get_codex_models, normalize_model_id
 
 # 别名映射：不区分大小写，映射到规范 model ID
 MODEL_ALIASES: Final[dict[str, str]] = {
-    "codex": "gpt-6-sol",
-    "openai-codex": "gpt-6-sol",
+    "codex": "gpt-5.6-luna",
+    "openai-codex": "gpt-5.6-luna",
     "gpt-6": "gpt-6-sol",
     "gpt-5.6": "gpt-5.6-sol",
 }
 
 # Provider 别名映射
 PROVIDER_ALIASES: Final[dict[str, str]] = {
-    "codex": "openai",
-    "openai-codex": "openai",
+    "codex": "openai-codex",
+    "openai-codex": "openai-codex",
     "glm": "chatglm",
 }
+
+PROVIDER_TRANSPORTS: Final[dict[str, str]] = {
+    "openai": "openai_responses",
+    "openai-codex": "openai_codex",
+    "deepseek": "deepseek_chat",
+    "chatglm": "chatglm_chat",
+    "mimo": "mimo_chat",
+    "custom": "custom",
+}
+
+
+def provider_for_transport(transport: str) -> str:
+    """把传输协议映射到独立的认证提供方。"""
+    if transport == "openai_chat":
+        return "openai"
+    for provider, candidate in PROVIDER_TRANSPORTS.items():
+        if candidate == transport:
+            return provider
+    raise ValueError(f"Unknown transport: {transport}")
+
 
 # 默认 Base URL
 DEFAULT_BASE_URLS: Final[dict[str, str]] = {
@@ -122,34 +142,18 @@ class ModelResolver:
         model: str,
         provider: str | None = None,
         *,
-        has_oauth: bool = False,
-        has_api_key: bool = False,
         fallback_transport: str | None = None,
     ) -> str:
         """推断最合适的 transport。"""
-        resolved_model = cls.resolve_alias(model)
-        m_lower = model.strip().lower()
-        norm_provider = cls.normalize_provider(provider) or cls.infer_provider(
-            resolved_model
+        raw_model = model.strip().lower()
+        selected = cls.normalize_provider(provider) or (
+            "openai-codex"
+            if raw_model in ("codex", "openai-codex")
+            else cls.infer_provider(model)
         )
-
-        if norm_provider == "openai" or (provider in ("codex", "openai-codex")):
-            if (
-                m_lower in ("codex", "openai-codex")
-                or has_oauth
-                or (not has_api_key and cls.is_codex_supported(resolved_model))
-            ):
-                return "openai_codex"
-            return fallback_transport or "openai_chat"
-
-        if norm_provider == "deepseek":
-            return "deepseek_chat"
-        if norm_provider == "chatglm":
-            return "chatglm_chat"
-        if norm_provider == "mimo":
-            return "mimo_chat"
-
-        return fallback_transport or "openai_chat"
+        if selected in PROVIDER_TRANSPORTS:
+            return PROVIDER_TRANSPORTS[selected]
+        return fallback_transport or "openai_responses"
 
     @classmethod
     def resolve(
@@ -158,8 +162,6 @@ class ModelResolver:
         provider: str | None = None,
         transport: str | None = None,
         *,
-        has_oauth: bool = False,
-        has_api_key: bool = False,
         fallback_transport: str | None = None,
     ) -> ModelResolution:
         """一站式解析模型名称、Provider、Transport 和 Base URL。"""
@@ -171,6 +173,15 @@ class ModelResolver:
             raw_name = m_part.strip()
 
         resolved_model = cls.resolve_alias(raw_name)
+        if extracted_provider is None:
+            if (
+                raw_name.lower() in ("codex", "openai-codex")
+                or fallback_transport == "openai_codex"
+                and cls.infer_provider(resolved_model) == "openai"
+            ):
+                extracted_provider = "openai-codex"
+            elif cls.infer_provider(resolved_model) is None and fallback_transport:
+                extracted_provider = provider_for_transport(fallback_transport)
         norm_provider = (
             cls.normalize_provider(extracted_provider)
             or cls.infer_provider(resolved_model)
@@ -183,8 +194,6 @@ class ModelResolver:
             resolved_transport = cls.infer_transport(
                 model=resolved_model,
                 provider=norm_provider,
-                has_oauth=has_oauth,
-                has_api_key=has_api_key,
                 fallback_transport=fallback_transport,
             )
 

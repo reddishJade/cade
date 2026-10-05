@@ -46,6 +46,9 @@ PROVIDER_REGISTRY: dict[str, type] = {
 
 class ModelProfileProto(Protocol):
     @property
+    def provider(self) -> str: ...
+
+    @property
     def transport(self) -> str: ...
     @property
     def chat_model(self) -> str: ...
@@ -71,6 +74,7 @@ class ModelProfileProto(Protocol):
 
 @dataclass(frozen=True)
 class ModelProfileConfig:
+    provider: str = "openai"
     transport: str = "openai_chat"
     chat_model: str = ""
     base_url: str = ""
@@ -151,39 +155,26 @@ def _build_llm_profiles(
 
 
 _PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
-    "chatglm": ("CHATGLM_API_KEY", "ZHIPUAI_API_KEY", "BIGMODEL_API_KEY"),
     "chatglm_chat": ("CHATGLM_API_KEY", "ZHIPUAI_API_KEY", "BIGMODEL_API_KEY"),
     "deepseek_chat": ("DEEPSEEK_API_KEY",),
     "mimo_chat": ("MIMO_API_KEY",),
+    "openai_chat": ("OPENAI_API_KEY",),
+    "openai_responses": ("OPENAI_API_KEY",),
+    "custom": ("API_KEY",),
 }
 
 
-def _resolve_api_key(
-    configured: str,
-    profile_name: str,
-    env_files: tuple[Path, ...],
-    transport: str = "",
-) -> str:
-    """按回退优先级解析 API key。"""
-    if configured:
-        return configured
-
-    candidates = [
-        f"{profile_name.upper()}_API_KEY",
-        *_PROVIDER_ENV_VARS.get(transport, ()),
-        "OPENAI_API_KEY",
-        "API_KEY",
-    ]
-    for name in candidates:
-        value = get_config_value(name, env_files)
-        if value:
+def get_environment_api_key(
+    transport: str,
+    env_files: tuple[Path, ...] = (),
+    api_key_env: str | None = None,
+) -> str | None:
+    """只读取所选 provider 的环境凭据，不借用其他服务的 key。"""
+    names = (api_key_env,) if api_key_env else _PROVIDER_ENV_VARS.get(transport, ())
+    for name in names:
+        if value := get_config_value(name, env_files):
             return value
-
-    raise RuntimeError(
-        f"Missing API key for '{profile_name}'. "
-        f"Set via 'api_key' in profile config, or env var: "
-        f"{' / '.join(candidates)}."
-    )
+    return None
 
 
 def _build_llm_profile(
@@ -194,7 +185,9 @@ def _build_llm_profile(
 ) -> ModelProvider:
     """构造单个 provider 实例。"""
     transport = profile.transport
-    api_key = _resolve_api_key(profile.api_key, profile_name, env_files, transport)
+    api_key = profile.api_key or get_environment_api_key(transport, env_files)
+    if not api_key:
+        raise RuntimeError(f"Missing credentials for profile '{profile_name}'")
 
     provider_cls = PROVIDER_REGISTRY.get(transport)
     if provider_cls is None:

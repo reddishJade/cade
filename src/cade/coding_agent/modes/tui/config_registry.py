@@ -105,6 +105,25 @@ def _write_approval_choice(raw: dict[str, Any], value: Any) -> None:
 
 SETTING_SPECS: tuple[SettingSpec, ...] = (
     SettingSpec(
+        key="default_provider",
+        label="Default Provider",
+        kind=SettingKind.STR,
+        description="Provider for new sessions; credentials are stored separately.",
+    ),
+    SettingSpec(
+        key="default_model",
+        label="Default Model",
+        kind=SettingKind.STR,
+        description="Model ID for new sessions on the selected default provider.",
+    ),
+    SettingSpec(
+        key="default_reasoning_effort",
+        label="Default Reasoning Effort",
+        kind=SettingKind.STR,
+        nullable=True,
+        description="Startup reasoning effort supported by the selected model.",
+    ),
+    SettingSpec(
         key="execution_modes.default_mode",
         label="Default Mode",
         kind=SettingKind.ENUM,

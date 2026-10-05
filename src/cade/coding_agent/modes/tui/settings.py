@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Any, TypeGuard
@@ -614,17 +613,9 @@ def handle_model_command(command: str, app: object) -> None:
         print(str(exc))
         return
 
-    from cade.harness.auth.manager import AuthManager
-
-    codex_cred = AuthManager().get_valid_credential("openai-codex")
-    has_oauth = bool(codex_cred and codex_cred.access)
-    has_api_key = bool(os.environ.get("OPENAI_API_KEY"))
-
     resolution = ModelResolver.resolve(
         model_or_alias=parsed.model,
         provider=parsed.provider,
-        has_oauth=has_oauth,
-        has_api_key=has_api_key,
     )
     model_name = resolution.model
     transport: str | None = resolution.transport
@@ -684,7 +675,7 @@ def handle_model_command(command: str, app: object) -> None:
 
     try:
         new_model = app.set_model(
-            model=model_name,
+            model=f"{parsed.provider}/{model_name}" if parsed.provider else model_name,
             transport=transport,
             profile=profile,
             thinking=thinking,

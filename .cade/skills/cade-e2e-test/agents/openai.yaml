@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cade E2E 验收"
+  short_description: "Run real Cade E2E tests with workspace-local evidence"
+  default_prompt: "Use $cade-e2e-test to validate the Cade change through the real host, keeping all test workspaces and evidence inside the Cade workspace."

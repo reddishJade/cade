@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from cade.ai.models import get_codex_models, get_models
 from cade.ai.resolver import ModelResolver
@@ -34,8 +33,10 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
 
     注意：严格只返回已配置/已登录模型，未配置 API Key 或凭据的不予包含。
     """
-    from cade.ai.providers.registry import get_config_value
+    from cade.ai.providers.registry import get_environment_api_key
+    from cade.ai.resolver import PROVIDER_TRANSPORTS
     from cade.harness.auth.manager import AuthManager
+    from cade.harness.config import CadeRuntimeConfig
 
     entries: list[AvailableModelEntry] = []
     seen: set[tuple[str, str]] = set()
@@ -44,57 +45,38 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
         key = (model, transport)
         if key not in seen:
             seen.add(key)
-            entries.append(
-                AvailableModelEntry(
-                    model=model,
-                    transport=transport,
-                    provider=provider,
-                    source_label=label,
-                )
-            )
+            entries.append(AvailableModelEntry(model, transport, provider, label))
 
     env_files: tuple[Path, ...] = getattr(app, "_env_files", ())
-    model_profiles: dict[str, Any] | None = getattr(app, "_model_profiles", None)
-
-    # 1. 检查已认证的 OAuth 凭据 (如 openai-codex / ChatGPT OAuth)
-    codex_cred = AuthManager().get_valid_credential("openai-codex")
-    if codex_cred and codex_cred.access:
-        for m in get_codex_models():
-            add_entry(m.id, "openai_codex", "openai-codex", "[codex]")
-
-    # 2. 检查环境变量及 .env 中的各 Provider API Key
-    # DeepSeek
-    if get_config_value("DEEPSEEK_API_KEY", env_files):
-        for m in get_models("deepseek"):
-            add_entry(m.id, "deepseek_chat", "deepseek", "[deepseek]")
-
-    # OpenAI API Key
-    if get_config_value("OPENAI_API_KEY", env_files):
-        for m in get_models("openai"):
-            add_entry(m.id, "openai_chat", "openai", "[openai]")
-
-    # ChatGLM (智谱)
-    if any(
-        get_config_value(k, env_files)
-        for k in ("CHATGLM_API_KEY", "ZHIPUAI_API_KEY", "BIGMODEL_API_KEY")
-    ):
-        for m in get_models("chatglm"):
-            add_entry(m.id, "chatglm_chat", "chatglm", "[chatglm]")
-
-    # Xiaomi MiMo
-    if get_config_value("MIMO_API_KEY", env_files):
-        for m in get_models("mimo"):
-            add_entry(m.id, "mimo_chat", "mimo", "[mimo]")
-
-    # 3. 只补充 main profile 自身配置的凭据；其他 profile 不能切换主模型
-    if model_profiles:
-        pconfig = model_profiles.get("main")
-        t = getattr(pconfig, "transport", None)
-        m = getattr(pconfig, "chat_model", None)
-        k = getattr(pconfig, "api_key", None)
-        if m and t and (k or (m, t) in seen):
-            provider = t.removesuffix("_chat").removeprefix("openai_")
-            add_entry(m, t, provider, f"[{provider}]")
+    config: CadeRuntimeConfig = (
+        getattr(app, "_runtime_config", None) or CadeRuntimeConfig()
+    )
+    manager = AuthManager()
+    providers = dict(PROVIDER_TRANSPORTS)
+    providers.update(
+        {name: c.transport for name, c in config.provider.connections.items()}
+    )
+    for provider, transport in providers.items():
+        credential = manager.get_valid_credential(provider)
+        connection = config.provider.connections.get(provider)
+        if transport == "openai_codex":
+            available = (
+                credential is not None
+                and credential.type == "oauth"
+                and bool(credential.access)
+            )
+            models = get_codex_models()
+        else:
+            available = bool(
+                (credential and credential.type == "api_key" and credential.access)
+                or get_environment_api_key(
+                    transport, env_files, connection.api_key_env if connection else None
+                )
+            )
+            models = get_models(provider)
+        if available:
+            for model in models:
+                add_entry(model.id, transport, provider, f"[{provider}]")
 
     # 4. 当前运行中的主模型
     info = dict(getattr(app, "get_model_info", dict)())
@@ -114,7 +96,7 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
                 add_entry(
                     cur_model,
                     cur_transport,
-                    cur_transport.removesuffix("_chat"),
+                    info.get("provider", cur_transport.removesuffix("_chat")),
                     "[configured]",
                 )
 

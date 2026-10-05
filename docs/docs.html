@@ -864,24 +864,18 @@ uv run pytest src/cade/tests -q</code></pre>
             <span>Bash</span>
             <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
           </div>
-          <pre><code><span class="comment"># <span class="lz">方式 A：直接设置环境变量 (以默认的 DeepSeek 为例)</span><span class="le">Method A: Export environment variable (DeepSeek example)</span></span>
+          <pre><code><span class="comment"># <span class="lz">方式 A：API key（DeepSeek 示例，向导会设置默认模型）</span><span class="le">Method A: API key (select the default model in setup)</span></span>
 export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+cade setup
 
 <span class="comment"># <span class="lz">方式 B：创建全局配置文件 ~/.cade/settings.json</span><span class="le">Method B: Or write to global config ~/.cade/settings.json</span></span>
 mkdir -p ~/.cade
+cade login
 cat << 'EOF' > ~/.cade/settings.json
 {
-  "provider": {
-    "model_profiles": {
-      "main": {
-        "transport": "deepseek_chat",
-        "chat_model": "deepseek-flash",
-        "api_key": "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
-        "thinking": true,
-        "reasoning_effort": "high"
-      }
-    }
-  }
+  "default_provider": "openai-codex",
+  "default_model": "gpt-5.6-luna",
+  "default_reasoning_effort": "high"
 }
 EOF</code></pre>
         </div>
@@ -1568,7 +1562,7 @@ flowchart TD
           <li><span class="lz"><strong>工作区本地配置</strong>（<code>&lt;project_root&gt;/.cade/settings.json</code>）；</span><span class="le"><strong>Local Workspace Configuration</strong> (<code>&lt;project_root&gt;/.cade/settings.json</code>);</span></li>
           <li><span class="lz"><strong>项目工程配置</strong>（<code>&lt;project_root&gt;/cade.config.json</code>）；</span><span class="le"><strong>Project Configuration</strong> (<code>&lt;project_root&gt;/cade.config.json</code>);</span></li>
           <li><span class="lz"><strong>用户全局配置</strong>（<code>~/.cade/settings.json</code>）；</span><span class="le"><strong>Global User Configuration</strong> (<code>~/.cade/settings.json</code>);</span></li>
-          <li><span class="lz"><strong>Cade 内置默认值</strong>（默认模型：<code>deepseek-flash</code>，默认模式：<code>build</code>）。</span><span class="le"><strong>Built-in Framework Defaults</strong> (Default model: <code>deepseek-flash</code>, mode: <code>build</code>).</span></li>
+          <li><span class="lz"><strong>Cade 内置默认值</strong>（默认模型：<code>gpt-5.6-luna</code>，effort：<code>high</code>，默认模式：<code>act</code>）。</span><span class="le"><strong>Built-in Framework Defaults</strong> (Default model: <code>gpt-5.6-luna</code>, effort: <code>high</code>, mode: <code>act</code>).</span></li>
         </ol>
 
         <h2><span class="lz">完整 JSON 配置参数结构</span><span class="le">Complete JSON Configuration Reference</span></h2>
@@ -1578,25 +1572,13 @@ flowchart TD
             <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
           </div>
           <pre><code>{
+  "default_provider": "openai-codex",
+  "default_model": "gpt-5.6-luna",
+  "default_reasoning_effort": "high",
   "provider": {
     "model_profiles": {
-      "main": {
-        "transport": "deepseek_chat",
-        "chat_model": "deepseek-flash",
-        "base_url": "https://api.deepseek.com",
-        "api_key": "env:DEEPSEEK_API_KEY",
-        "thinking": true,
-        "reasoning_effort": "high"
-      },
-      "subagent": {
-        "transport": "deepseek_chat",
-        "chat_model": "deepseek-flash"
-      },
-      "fallback": {
-        "transport": "openai_responses",
-        "chat_model": "gpt-6-sol",
-        "api_key": "env:OPENAI_API_KEY"
-      }
+      "subagent": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "high"},
+      "fallback": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "high"}
     }
   },
   "agent": {

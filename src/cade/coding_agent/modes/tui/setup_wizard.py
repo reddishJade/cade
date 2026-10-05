@@ -14,6 +14,7 @@ from cade.coding_agent.interaction.reasoning_effort import (
     reasoning_effort_levels_for_transport,
     supports_reasoning_effort,
 )
+from cade.harness.auth.manager import AuthManager
 
 from .ptk_patch import safe_select, safe_text
 
@@ -22,9 +23,6 @@ CONFIG_FILENAME = "cade.config.json"
 OPENAI_MODELS = [model.id for model in get_codex_models()]
 AUTH_METHOD_ACCOUNT = "Sign in with an account"
 AUTH_METHOD_API_KEY = "Sign in with an API key"
-# 兼容旧提示值，避免已有调用方升级后失效。
-_LEGACY_LOGIN_CHOICE_AUTH = "Sign in with ChatGPT (OAuth, recommended)"
-_LEGACY_LOGIN_CHOICE_API = "Configure an API key"
 LOGIN_CHOICE_AUTH = AUTH_METHOD_ACCOUNT
 LOGIN_CHOICE_API = AUTH_METHOD_API_KEY
 
@@ -90,9 +88,9 @@ def prompt_auth_method() -> str | None:
     )
     if choice is None:
         return None
-    if choice in (AUTH_METHOD_ACCOUNT, _LEGACY_LOGIN_CHOICE_AUTH):
+    if choice in (AUTH_METHOD_ACCOUNT,):
         return "account"
-    if choice in (AUTH_METHOD_API_KEY, _LEGACY_LOGIN_CHOICE_API):
+    if choice in (AUTH_METHOD_API_KEY,):
         return "api_key"
     return None
 
@@ -110,11 +108,11 @@ def prompt_login_method() -> str | None:
 def _resolve_transport(provider_key: str) -> str:
     """映射 provider key 到 transport 名称。"""
     transport_map = {
-        "openai": "openai_chat",
+        "openai": "openai_responses",
         "deepseek": "deepseek_chat",
         "mimo": "mimo_chat",
         "chatglm": "chatglm_chat",
-        "custom": "openai_chat",
+        "custom": "custom",
     }
     return transport_map.get(provider_key, "openai_chat")
 
@@ -202,32 +200,23 @@ def _prompt_thinking_config(
 
 
 def _build_config_data(
+    provider: str,
     transport: str,
     model: str,
     base_url: str,
-    api_key: str,
     thinking: bool,
     reasoning_effort: str | None,
 ) -> dict[str, Any]:
-    """构造配置字典。"""
-    config_data: dict[str, Any] = {
+    """构造不含凭据的默认选择和连接配置。"""
+    return {
+        "default_provider": provider,
+        "default_model": model,
+        "default_reasoning_effort": reasoning_effort,
         "provider": {
-            "model_profiles": {
-                "main": {
-                    "transport": transport,
-                    "chat_model": model,
-                    "base_url": base_url,
-                    "api_key": api_key,
-                    "thinking": thinking,
-                }
-            },
-        }
+            "connections": {provider: {"transport": transport, "base_url": base_url}},
+            "options": {"thinking": thinking},
+        },
     }
-    if reasoning_effort is not None:
-        config_data["provider"]["model_profiles"]["main"]["reasoning_effort"] = (
-            reasoning_effort
-        )
-    return config_data
 
 
 def _print_summary(
@@ -302,6 +291,25 @@ def run_setup_wizard(
     if base_url is None:
         return ("cancelled", None)
 
+    if from_connect:
+        global_path = Path.home() / ".cade" / "settings.json"
+        config_data = {
+            "provider": {
+                "connections": {
+                    provider_key: {
+                        "transport": _resolve_transport(provider_key),
+                        "base_url": base_url,
+                    }
+                }
+            }
+        }
+        merged = deep_merge(_load_existing_config(global_path), config_data)
+        global_path.parent.mkdir(parents=True, exist_ok=True)
+        AuthManager().save_api_key(provider_key, api_key)
+        _save_config(merged, global_path)
+        print(f"Credentials saved for {provider_key}. Default model unchanged.")
+        return ("saved", None)
+
     model = _prompt_model(preset)
     if model is None:
         return ("cancelled", None)
@@ -322,7 +330,7 @@ def run_setup_wizard(
         choices=[
             "Global default (~/.cade/settings.json, recommended)",
             f"Current project only ({CONFIG_FILENAME})",
-            "Don't save (temporary configuration)",
+            "Use selection once (credentials remain in auth.json)",
         ],
         default="Global default (~/.cade/settings.json, recommended)",
     )
@@ -330,13 +338,15 @@ def run_setup_wizard(
         return ("cancelled", None)
 
     config_data = _build_config_data(
+        provider_key,
         transport,
         model,
         base_url,
-        api_key,
         thinking,
         reasoning_effort,
     )
+
+    AuthManager().save_api_key(provider_key, api_key)
 
     if "Global default" in save_choice:
         global_path = Path.home() / ".cade" / "settings.json"

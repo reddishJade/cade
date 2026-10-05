@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING, Any
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, TextDelta
-from cade.ai.providers.registry import ProviderSettings, build_provider_bundle
+from cade.ai.providers.registry import (
+    ModelProfileConfig,
+    ProviderSettings,
+    build_provider_bundle,
+)
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.harness.agent_runtime import (
@@ -31,6 +35,7 @@ from .assembly import (
     build_agent,
     build_shared_infra,
 )
+from .assembly.providers import resolve_model_profile, resolve_model_profiles
 from .working_note import render_working_note_restoration
 
 if TYPE_CHECKING:
@@ -51,6 +56,7 @@ class CadeApp:
     subagents: SubagentSessionManager | None = None
     session_recorder: SessionRecorder | None = None
     _model_profiles: dict[str, Any] | None = None
+    _runtime_config: CadeRuntimeConfig | None = None
     _env_files: tuple[Path, ...] = ()
     _closers: tuple[Callable[[], None], ...] = ()
     _closed: bool = False
@@ -62,98 +68,75 @@ class CadeApp:
         profile: str = "main",
         transport: str | None = None,
         base_url: str | None = None,
-        api_key: str | None = None,
-        account_id: str | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
     ) -> str:
-        import os
-
-        from cade.ai.providers import ProviderSettings, build_provider_bundle
-        from cade.ai.providers.registry import (
-            ModelProfileConfig,
-            ModelProfileProto,
-        )
-        from cade.harness.auth.manager import AuthManager
+        from cade.ai.providers.registry import ModelProfileConfig, ModelProfileProto
+        from cade.ai.resolver import ModelResolver, provider_for_transport
 
         if profile not in {"main", "subagent"}:
             raise ValueError("profile must be main or subagent")
-        if self._model_profiles is None:
-            self._model_profiles = {}
+        if self._model_profiles is None or self._runtime_config is None:
+            raise RuntimeError("model configuration is not available")
         sync_reviewer = profile == "main" and "reviewer" not in self._model_profiles
-        profile_config = self._model_profiles.get(profile) or ModelProfileConfig()
-
-        from cade.ai.models import get_model_reasoning_efforts
-        from cade.ai.resolver import ModelResolver
-
-        codex_cred = AuthManager().get_valid_credential("openai-codex")
-        has_oauth = bool(codex_cred and codex_cred.access)
-        has_api_key = bool(os.environ.get("OPENAI_API_KEY"))
-
+        current = self._model_profiles.get(profile) or ModelProfileConfig()
         resolution = ModelResolver.resolve(
             model_or_alias=model,
             transport=transport,
-            has_oauth=has_oauth,
-            has_api_key=has_api_key,
-            fallback_transport=profile_config.transport,
+            fallback_transport=current.transport,
         )
-        resolved_model = resolution.model
-        resolved_transport = resolution.transport
-        final_transport = resolved_transport or profile_config.transport
-        same_transport = final_transport == profile_config.transport
-        effective_reasoning_effort = (
-            reasoning_effort
-            if reasoning_effort is not None
-            else profile_config.reasoning_effort
+        selected = (
+            provider_for_transport(transport)
+            if transport and "/" not in model
+            else resolution.provider
         )
-        supported_efforts = get_model_reasoning_efforts(resolved_model)
         if (
-            effective_reasoning_effort
-            and supported_efforts
-            and effective_reasoning_effort not in supported_efforts
+            "/" not in model
+            and transport is None
+            and (
+                resolution.model == current.chat_model
+                or ModelResolver.infer_provider(resolution.model) is None
+            )
         ):
-            if reasoning_effort is not None:
-                allowed = "/".join(supported_efforts)
-                raise ValueError(
-                    f"{resolved_model} does not support reasoning effort "
-                    f"'{reasoning_effort}'. Use: {allowed}."
-                )
-            effective_reasoning_effort = None
+            selected = current.provider
+        config = self._runtime_config
+        if base_url is not None or transport is not None:
+            from cade.harness.config import ProviderConnectionRuntimeConfig
 
-        resolved_base_url = (
-            base_url
-            or (profile_config.base_url if same_transport else "")
-            or resolution.default_base_url
+            connection = config.provider.connections.get(selected)
+            connections = dict(config.provider.connections)
+            connections[selected] = ProviderConnectionRuntimeConfig.model_validate(
+                {
+                    "transport": resolution.transport,
+                    "base_url": base_url or (connection.base_url if connection else ""),
+                    "api_key_env": connection.api_key_env if connection else None,
+                }
+            )
+            config = config.model_copy(
+                update={
+                    "provider": config.provider.model_copy(
+                        update={"connections": connections}
+                    )
+                }
+            )
+        options = {
+            "context_window": current.context_window,
+            "thinking": thinking if thinking is not None else current.thinking,
+            "reasoning_effort": reasoning_effort
+            if reasoning_effort is not None
+            else current.reasoning_effort,
+            "clear_thinking": current.clear_thinking,
+            "tool_stream": current.tool_stream,
+            "response_format": current.response_format,
+        }
+        new_cfg = resolve_model_profile(
+            config, selected, resolution.model, options, self._env_files
         )
-        resolved_api_key = api_key or (profile_config.api_key if same_transport else "")
-        resolved_account_id = account_id or (
-            getattr(profile_config, "account_id", None) if same_transport else None
-        )
-
-        if final_transport == "openai_codex":
-            if codex_cred and codex_cred.access:
-                resolved_api_key = resolved_api_key or codex_cred.access
-                resolved_account_id = resolved_account_id or codex_cred.account_id
-                resolved_base_url = resolved_base_url or resolution.default_base_url
-            else:
-                raise ValueError(
-                    "No valid openai-codex credentials found; run /login to sign in to ChatGPT"
-                )
-
-        new_cfg: ModelProfileProto = ModelProfileConfig(
-            transport=final_transport,
-            chat_model=resolved_model,
-            base_url=resolved_base_url,
-            api_key=resolved_api_key,
-            account_id=resolved_account_id,
-            context_window=getattr(profile_config, "context_window", None),
-            thinking=thinking if thinking is not None else profile_config.thinking,
-            reasoning_effort=effective_reasoning_effort,
-            clear_thinking=profile_config.clear_thinking,
-            tool_stream=profile_config.tool_stream,
-            response_format=profile_config.response_format,
-        )
-        profiles: dict[str, ModelProfileProto] = {profile: new_cfg}
+        resolved_model = new_cfg.chat_model
+        profiles: dict[str, ModelProfileProto] = {
+            "main": self._model_profiles["main"],
+            profile: new_cfg,
+        }
         if sync_reviewer:
             profiles["reviewer"] = new_cfg
 
@@ -181,11 +164,26 @@ class CadeApp:
     def get_model_info(self) -> dict[str, str]:
         provider = self.agent.provider
         active = getattr(provider, "active_provider", provider)
+        active_profile = next(
+            (
+                config
+                for config in (self._model_profiles or {}).values()
+                if config.chat_model == active.model
+                and (
+                    config.transport == active.transport
+                    or config.transport == "custom"
+                    and active.transport == "openai_chat"
+                )
+                and config.base_url == active.base_url
+            ),
+            ModelProfileConfig(),
+        )
         info: dict[str, str] = {
             "model": active.model,
             "base_url": active.base_url,
             "transport": active.transport,
             "profile": "main",
+            "provider": active_profile.provider,
         }
         if active.thinking:
             info["thinking"] = "on"
@@ -398,10 +396,11 @@ def build_app(
         sessions_dir=sessions_dir,
     )
 
+    model_profiles = resolve_model_profiles(cfg.runtime_config, cfg.env_files)
     providers = build_provider_bundle(
         ProviderSettings(
             env_files=cfg.env_files,
-            model_profiles=cfg.runtime_config.provider.model_profiles,
+            model_profiles=model_profiles,
         )
     )
     external_hook_runner = (
@@ -473,6 +472,7 @@ def build_app(
         subagents=subagents,
         session_recorder=infra.session_recorder,
         _env_files=cfg.env_files,
-        _model_profiles=cfg.runtime_config.provider.model_profiles,
+        _model_profiles=model_profiles,
+        _runtime_config=cfg.runtime_config,
         _closers=closers,
     )

@@ -59,6 +59,12 @@ class AuthManager:
         self.store.save(credential)
         return credential
 
+    def save_api_key(self, provider: str, key: str) -> None:
+        """保存独立 provider 的 API key，不改变默认模型配置。"""
+        if not provider.strip() or not key.strip():
+            raise ValueError("provider and API key must not be empty")
+        self.store.save(AuthCredential(type="api_key", provider=provider, access=key))
+
     def logout(self, provider: str = "openai-codex") -> bool:
         """登出并清理 Provider 凭据。"""
         return self.store.delete(provider)
