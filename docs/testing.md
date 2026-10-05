@@ -120,11 +120,10 @@ Report exactly which behavior each check establishes and its remaining coverage.
 ## Commands and Current Repository State
 
 Current validation uses selected static checks, startup checks, and recorded
-workflow runs. The pytest configuration and CI test step reference the deleted
-`src/cade/tests/` directory; their execution currently requires restoring sources
-through the admission requirements above or updating those entries in a separate
-configuration change. Validate each command against available sources and report
-CI results according to the checks that actually executed.
+workflow runs. CI runs pytest when it finds a `test_*.py` file under
+`src/cade/tests/` and skips that step when the directory has no tests. Validate
+each command against available sources and report CI results according to the
+checks that actually executed.
 
 Static and startup checks:
 

@@ -35,6 +35,7 @@ jobs:
       - name: Pyright type check
         run: uv run --locked pyright src/
       - name: Regression tests
+        if: hashFiles('src/cade/tests/**/test_*.py') != ''
         run: uv run --locked pytest -q src/cade/tests
       - name: CLI startup check
         run: uv run --locked cade --help
