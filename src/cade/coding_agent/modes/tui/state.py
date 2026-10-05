@@ -554,7 +554,7 @@ class _TuiState:
             self._append_thinking_entry(
                 entry,
                 lines,
-                plain_text=plain_text,
+                md_fn,
                 color=color_thinking,
                 width=width,
             )
@@ -598,15 +598,18 @@ class _TuiState:
         else:
             self._append_thinking_line(lines, "Thinking", color, width)
         if not self.thinking_collapsed:
-            for tl in self.thinking.splitlines():
-                self._append_thinking_line(lines, f"  {tl.lstrip()}", color, width)
+            markdown_renderer = (
+                markdown_ansi_lines if color else rendered_markdown_lines
+            )
+            rendered_lines = markdown_renderer(render_citations(self.thinking), width)
+            lines.extend(f"  {line}" for line in rendered_lines)
         return lines
 
     def _append_thinking_entry(
         self,
         entry: _LogEntry,
         lines: list[str],
-        plain_text: bool,
+        md_fn: Callable[[str], list[str]],
         color: bool,
         width: int | None,
     ) -> None:
@@ -620,10 +623,8 @@ class _TuiState:
         else:
             self._append_thinking_line(lines, "Thinking", color, width)
         if not self.thinking_collapsed:
-            for tl in entry_lines:
-                self._append_thinking_line(
-                    lines, f"  {tl if plain_text else tl.lstrip()}", color, width
-                )
+            rendered_lines = md_fn(render_citations("\n".join(entry_lines)))
+            lines.extend(f"  {line}" for line in rendered_lines)
 
     @staticmethod
     def _append_thinking_line(
