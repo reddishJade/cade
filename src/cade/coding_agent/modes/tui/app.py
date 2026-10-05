@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import sys
 import threading
@@ -293,6 +294,8 @@ class _CadeTui:
         )
         command_bindings = cast(KeyBindings, self._command_choices.control.key_bindings)
         command_bindings.add("enter")(lambda _event: self._accept_command_choice())
+        command_bindings.add("left")(lambda _event: self._adjust_command_choice(-1))
+        command_bindings.add("right")(lambda _event: self._adjust_command_choice(1))
         # Esc 由菜单控件自身消费（eager 立即触发），返回上级或关闭。
         command_bindings.add("escape", eager=True)(
             lambda _event: self._cancel_key(None)
@@ -1096,7 +1099,12 @@ class _CadeTui:
 
     def _open_model_selector(self) -> None:
         """在主 TUI 内选择模型，避免嵌套终端事件循环。"""
+        from cade.ai.models import parse_model_mode
+        from cade.ai.resolver import ModelResolver
         from cade.coding_agent.interaction.models import is_current_model_entry
+        from cade.coding_agent.interaction.reasoning_effort import (
+            reasoning_effort_levels_for_transport,
+        )
 
         from .settings import (
             AvailableModelEntry,
@@ -1129,22 +1137,86 @@ class _CadeTui:
             self._refresh()
             return
 
-        def open_selector() -> None:
+        efforts: dict[tuple[str, str], str | None] = {}
+
+        def entry_title(entry: AvailableModelEntry) -> AnyFormattedText:
+            key = (entry.model, entry.transport)
+            levels = reasoning_effort_levels_for_transport(entry.transport, entry.model)
+            if key not in efforts:
+                current_effort = info.get("reasoning_effort")
+                efforts[key] = (
+                    current_effort
+                    if current_effort in levels
+                    else next(
+                        (level for level in ("medium", "high") if level in levels),
+                        levels[0] if levels else None,
+                    )
+                )
+            style = (
+                "class:model-current"
+                if is_current_model_entry(entry, current_model, current_transport)
+                else ""
+            )
+            fragments = [(style, _format_model_entry(entry) + "  ")]
+            effort = efforts[key]
+            if effort is not None:
+                index = levels.index(effort)
+                fragments.append(("class:status", "‹ " if index > 0 else "  "))
+                fragments.append(("class:status-accent bold", f" {effort} "))
+                fragments.append(
+                    ("class:status", " ›" if index < len(levels) - 1 else "  ")
+                )
+            else:
+                fragments.append(("class:status", "effort: n/a"))
+            return FormattedText(fragments)
+
+        def adjust(selection: object, step: int) -> None:
+            if not isinstance(selection, AvailableModelEntry):
+                return
+            key = (selection.model, selection.transport)
+            levels = reasoning_effort_levels_for_transport(
+                selection.transport, selection.model
+            )
+            effort = efforts[key]
+            if not levels or effort is None:
+                return
+            index = max(0, min(levels.index(effort) + step, len(levels) - 1))
+            efforts[key] = levels[index]
+            self._command_choices.values = [
+                (value, entry_title(value) if value is selection else label)
+                for value, label in self._command_choices.values
+            ]
+
+        def open_selector(initial: AvailableModelEntry | None = None) -> None:
             choices: list[tuple[AnyFormattedText, object]] = []
             for entry in available:
-                title = _format_model_entry(entry)
-                if is_current_model_entry(entry, current_model, current_transport):
-                    title = FormattedText([("class:model-current", title)])
-                choices.append((title, entry))
+                choices.append((entry_title(entry), entry))
             choices.append(("Enter a custom model name...", "__custom__"))
-            self._open_command_choices(choices, choose)
+            self._open_command_choices(choices, choose, on_adjust=adjust)
+            for index, entry in enumerate(available):
+                if entry is initial or (
+                    initial is None
+                    and is_current_model_entry(entry, current_model, current_transport)
+                ):
+                    self._command_choices._selected_index = index
+                    self._command_choices.current_value = entry
+                    break
+            self._refresh()
 
-        def switch(entry: AvailableModelEntry | None, model: str) -> None:
+        def switch(entry: AvailableModelEntry) -> None:
             try:
+                effort = efforts[(entry.model, entry.transport)]
                 new_model = set_model(
-                    model=model,
-                    transport=entry.transport if entry is not None else None,
+                    model=entry.model,
+                    transport=entry.transport,
                     profile="main",
+                    reasoning_effort=effort,
+                    thinking=(
+                        effort != "off"
+                        if effort is not None
+                        and entry.transport not in {"openai_responses", "openai_codex"}
+                        else None
+                    ),
                 )
                 raw_updated_info = get_model_info()
                 updated_info = (
@@ -1152,11 +1224,10 @@ class _CadeTui:
                     if isinstance(raw_updated_info, dict)
                     else {}
                 )
-                transport = str(
-                    updated_info.get("transport")
-                    or (entry.transport if entry is not None else "")
-                )
+                transport = str(updated_info.get("transport") or entry.transport)
                 suffix = f" (transport: {transport})" if transport else ""
+                if effort is not None:
+                    suffix += f" · effort: {effort}"
                 self._state.log.append(
                     _LogEntry(
                         "system",
@@ -1175,18 +1246,59 @@ class _CadeTui:
                     _LogEntry("error", f"Failed to switch model: {exc}")
                 )
 
+        def add_custom_model(value: str) -> None:
+            if not value.strip():
+                open_selector()
+                return
+            try:
+                from cade.harness.auth.manager import AuthManager
+
+                parsed = parse_model_mode(value.strip())
+                credential = AuthManager().get_valid_credential("openai-codex")
+                resolution = ModelResolver.resolve(
+                    model_or_alias=parsed.model,
+                    provider=parsed.provider,
+                    has_oauth=bool(credential and credential.access),
+                    has_api_key=bool(os.environ.get("OPENAI_API_KEY")),
+                    fallback_transport=current_transport,
+                )
+                entry = next(
+                    (
+                        item
+                        for item in available
+                        if (item.model, item.transport)
+                        == (resolution.model, resolution.transport)
+                    ),
+                    None,
+                )
+                if entry is None:
+                    entry = AvailableModelEntry(
+                        resolution.model,
+                        resolution.transport,
+                        resolution.provider,
+                        "[custom]",
+                    )
+                    available.append(entry)
+                levels = reasoning_effort_levels_for_transport(
+                    entry.transport, entry.model
+                )
+                if parsed.thinking_level in levels:
+                    efforts[(entry.model, entry.transport)] = parsed.thinking_level
+                open_selector(entry)
+            except ValueError as exc:
+                self._state.log.append(_LogEntry("error", str(exc)))
+                open_selector()
+
         def choose(selection: object) -> None:
             if selection == "__custom__":
                 self._open_command_text(
                     "Enter the model name (esc to return)",
-                    lambda value: (
-                        switch(None, value.strip()) if value.strip() else None
-                    ),
+                    add_custom_model,
                     on_cancel=open_selector,
                 )
                 return
             entry = cast("AvailableModelEntry", selection)
-            switch(entry, entry.model)
+            switch(entry)
 
         open_selector()
 
@@ -1195,6 +1307,8 @@ class _CadeTui:
         request = self._state.pending_command_choice
         if request is None:
             return ""
+        if request.on_adjust is not None:
+            return "\n  ↑/↓ model · ←/→ effort · enter apply · esc cancel"
         if request.describe is not None:
             description = request.describe(self._command_choices.current_value)
             if description:
@@ -1207,15 +1321,17 @@ class _CadeTui:
         on_select: Callable[[object], None],
         on_cancel: Callable[[], None] | None = None,
         describe: Callable[[object], str] | None = None,
+        on_adjust: Callable[[object, int], None] | None = None,
     ) -> None:
         """打开可复用的 TUI 命令选择菜单。
 
         on_cancel 提供时，esc 触发它而不是直接关闭（用于二级菜单返回上级）；
         describe 提供时，底部灰色说明跟随高亮项。
+        on_adjust 提供时，左右键调整当前项的附加选项。
         """
         stored_choices = list(choices)
         self._state.pending_command_choice = _CommandChoiceRequest(
-            stored_choices, on_select, on_cancel, describe
+            stored_choices, on_select, on_cancel, describe, on_adjust
         )
         self._command_choices.values = [
             (value, label) for label, value in stored_choices
@@ -1224,6 +1340,13 @@ class _CadeTui:
         self._command_choices.current_value = stored_choices[0][1]
         self._application.layout.focus(self._command_choices)
         self._refresh()
+
+    def _adjust_command_choice(self, step: int) -> None:
+        """左右键调整当前菜单项的附加选项。"""
+        request = self._state.pending_command_choice
+        if request is not None and request.on_adjust is not None:
+            request.on_adjust(self._command_choices.current_value, step)
+            self._refresh()
 
     def _open_command_text(
         self,

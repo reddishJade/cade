@@ -60,7 +60,7 @@
 
 | 命令 | 完整语法 | 功能说明 |
 | :--- | :--- | :--- |
-| `/model` | `/model [provider/model_name]` | 打开模型列表或切换主模型；provider 前缀选择模型提供方 |
+| `/model` | `/model [provider/model_name]` | 打开模型与 effort 选择器：上下选模型，左右选 effort，Enter 同时应用，Esc 取消；也可直接输入名称切换，provider 前缀选择模型提供方 |
 | `/effort` | `/effort [level]` | 选择或设置当前模型支持的推理强度 |
 | `/thinking` | `/thinking [on\|off]` | Responses/Codex 的推理摘要开关；推理强度使用 `/effort` |
 

@@ -66,6 +66,7 @@ class _CommandChoiceRequest:
     on_select: Callable[[object], None]
     on_cancel: Callable[[], None] | None = None
     describe: Callable[[object], str] | None = None
+    on_adjust: Callable[[object, int], None] | None = None
 
 
 @dataclass

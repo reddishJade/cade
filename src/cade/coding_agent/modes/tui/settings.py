@@ -5,8 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any, TypeGuard
 
-import questionary
-
 from cade.ai.models import parse_model_mode
 from cade.ai.resolver import ModelResolver
 from cade.coding_agent.assembly.security import permission_policy_from_security
@@ -592,93 +590,22 @@ def _format_model_entry(
     return f"{entry.model:20} {entry.source_label}"
 
 
-def _interactive_model_select(app: object) -> None:
-    if not _is_model_control_app(app):
-        print("Model switching is not supported in this app.")
-        return
-
-    available = get_available_model_entries(app)
-    if not available:
-        print(
-            "No available models with a signed-in account or configured API key were found."
-        )
-        print(
-            "Hint: run /login to sign in to ChatGPT, or configure an API key in the environment or .env file."
-        )
-        return
-
-    choices: list[questionary.Choice] = []
-    for entry in available:
-        title = _format_model_entry(entry)
-        choices.append(
-            questionary.Choice(
-                title=title,
-                value=(entry.model, entry.transport),
-            )
-        )
-
-    # 自定义输入
-    choices.append(
-        questionary.Choice(
-            title="Enter a custom model name...",
-            value=("__custom__", None),
-        )
-    )
-
-    selected = safe_select("Select the model to switch to:", choices=choices)
-
-    if not selected:
-        return
-
-    target_model, target_transport = selected
-    if target_model == "__custom__":
-        text = safe_text("Enter the model name:")
-        if not text or not text.strip():
-            return
-        target_model = text.strip()
-        target_transport = None
-
-    try:
-        new_model = app.set_model(
-            model=target_model,
-            transport=target_transport,
-            profile="main",
-        )
-        info = _model_info(app)
-        t_name = info.get("transport", target_transport or "")
-        t_info = f" (transport: {t_name})" if t_name else ""
-        print(f"✓ Successfully switched to model: {new_model}{t_info}")
-        handle_effort_command("/effort", app)
-    except (
-        AttributeError,
-        KeyError,
-        OSError,
-        RuntimeError,
-        TypeError,
-        ValueError,
-    ) as exc:
-        print(f"Failed to switch model: {exc}")
-
-
 def handle_model_command(command: str, app: object) -> None:
     parts = command.split(maxsplit=3)
     if len(parts) == 1:
-        if not sys.stdin.isatty():
-            info = _model_info(app)
-            if info:
-                print(f"  Model    : {info.get('model', 'unknown')}")
-                print(f"  Transport: {info.get('transport', 'unknown')}")
-                print(f"  Base URL : {info.get('base_url', '')}")
-            else:
-                print("Model info not available.")
-            available = get_available_model_entries(app)
-            if available:
-                print("\nAvailable models (authenticated/configured):")
-                for entry in available:
-                    print("  - " + _format_model_entry(entry))
-            print("\nUsage: /model <model_name>")
-            return
-        _interactive_model_select(app)
+        info = _model_info(app)
+        if info:
+            print(f"  Model    : {info.get('model', 'unknown')}")
+            print(f"  Transport: {info.get('transport', 'unknown')}")
+            print(f"  Base URL : {info.get('base_url', '')}")
+        else:
+            print("Model info not available.")
+        available = get_available_model_entries(app)
+        if available:
+            print("\nAvailable models (authenticated/configured):")
+            for entry in available:
+                print("  - " + _format_model_entry(entry))
+        print("\nUsage: /model <model_name>")
         return
 
     try:
@@ -767,8 +694,6 @@ def handle_model_command(command: str, app: object) -> None:
         t_name = info.get("transport", transport or "")
         t_info = f" (transport: {t_name})" if t_name else ""
         print(f"Switched to model: {new_model}{t_info}")
-        if sys.stdin.isatty() and parsed.thinking_level is None and len(parts) == 2:
-            handle_effort_command("/effort", app)
     except (
         AttributeError,
         KeyError,
