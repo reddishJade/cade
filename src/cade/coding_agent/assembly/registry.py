@@ -78,7 +78,6 @@ def _build_child_registry(
             "read",
             "write",
             "edit",
-            "patch",
             "glob",
             "find",
             "ls",

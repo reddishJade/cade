@@ -178,7 +178,7 @@ class SecurityRuntimeConfig(BaseModel):
     )
     tools: dict[str, Literal["allow", "ask", "deny"]] = Field(
         default_factory=dict,
-        description="Concrete tool names mapped to decisions, such as bash or patch.",
+        description="Concrete tool names mapped to decisions, such as bash or edit.",
     )
     global_default: str | None = None
     external_directories: tuple[SecurityExternalDirectory, ...] = ()

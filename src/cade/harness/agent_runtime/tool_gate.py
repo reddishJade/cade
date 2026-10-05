@@ -73,7 +73,6 @@ _TOOL_ACTION_PROFILES: dict[str, tuple[str, str]] = {
     "ls": ("read", "path"),
     "write": ("write", "path"),
     "edit": ("edit", "path"),
-    "patch": ("patch", "path"),
     "bash": ("shell", "none"),
     "load_skill": ("skill", "skill"),
     "webfetch": ("read", "none"),

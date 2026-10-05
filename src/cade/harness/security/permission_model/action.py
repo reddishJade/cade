@@ -19,7 +19,7 @@ class ActionExtractor:
         action_profile: tuple[str, str] | None = None,
         path_extractor: PathExtractor | None = None,
     ) -> Action:
-        action = self._extract_inner(tool_name, tool_input, path_extractor)
+        action = self._extract_inner(tool_name, tool_input)
         if action_profile is not None:
             capability_name, target_kind = action_profile
             targets = action.targets or self._profile_targets(
@@ -68,7 +68,6 @@ class ActionExtractor:
         self,
         tool_name: str,
         tool_input: Mapping[str, object],
-        path_extractor: PathExtractor | None,
     ) -> Action:
         if tool_name == "read":
             return self._path_action(tool_name, tool_input, "read", "read", "read")
@@ -78,8 +77,6 @@ class ActionExtractor:
             return self._path_action(tool_name, tool_input, "write", tool_name, "write")
         if tool_name == "edit":
             return self._path_action(tool_name, tool_input, "edit", "edit", "write")
-        if tool_name == "patch":
-            return self._apply_patch_action(tool_name, tool_input, path_extractor)
         if tool_name == "bash":
             return self._bash_action(tool_name, tool_input)
         if tool_name in ("grep", "glob", "find", "ls"):
@@ -139,24 +136,6 @@ class ActionExtractor:
             tool=tool_name,
             capability=capability,
             operation=operation,
-            targets=targets,
-            input=tool_input,
-        )
-
-    def _apply_patch_action(
-        self,
-        tool_name: str,
-        tool_input: Mapping[str, object],
-        path_extractor: PathExtractor | None,
-    ) -> Action:
-        targets = tuple(
-            Target(kind="path", value=_normalize_path_text(path), access="write")
-            for path in self._patch_paths(tool_input, path_extractor)
-        )
-        return Action(
-            tool=tool_name,
-            capability="patch",
-            operation="patch",
             targets=targets,
             input=tool_input,
         )
@@ -241,26 +220,6 @@ class ActionExtractor:
             )
             for path in path_arguments
         )
-
-    def _patch_paths(
-        self,
-        tool_input: Mapping[str, object],
-        path_extractor: PathExtractor | None,
-    ) -> tuple[str, ...]:
-        if path_extractor is not None:
-            extracted = path_extractor(tool_input)
-            if extracted:
-                return extracted
-
-        raw_path = tool_input.get("path")
-        if isinstance(raw_path, str) and raw_path.strip():
-            return (raw_path,)
-
-        raw_paths = tool_input.get("paths")
-        if isinstance(raw_paths, tuple | list):
-            return tuple(path for path in raw_paths if isinstance(path, str))
-
-        return ()
 
 
 def _normalize_path_text(raw_path: str) -> str:

@@ -25,7 +25,6 @@ from cade.coding_agent.execution_modes import (
 )
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.coding_agent.tools import ShellSpec
-from cade.coding_agent.tools.apply_patch import extract_patch_paths
 from cade.harness.agent_runtime import (
     AgentComposition,
     CancellationToken,
@@ -232,7 +231,6 @@ def build_agent(
         mode_fallbacks=DEFAULT_MODE_FALLBACKS,
         shell_unresolved_policies=DEFAULT_SHELL_UNRESOLVED_POLICIES,
         shell_mutation_policies=DEFAULT_SHELL_MUTATION_POLICIES,
-        tool_path_extractors={"patch": extract_patch_paths},
     )
     composition = AgentComposition.create(
         primary_provider=llm,

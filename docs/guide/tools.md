@@ -11,7 +11,6 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 | **`read`** | 只读并发池 | `path`, `offset`, `limit` | 读取指定文件内容，支持按行切片和大文件分页读取 |
 | **`edit`** | 串行写屏障 | `path`, `old_text`, `new_text`, `replace_all` | 基于精准定位与防脏写校验的代码块修改 |
 | **`write`** | 串行写屏障 | `path`, `content` | 创建全新文件或全量覆写指定文件内容 |
-| **`patch`** | 串行写屏障 | `patch_text` | 兼容标准 unified diff 补丁应用，适合跨多行修改 |
 | **`grep`** | 可选只读并发工具 | `pattern`, `path`, `glob`, `max_results`, `ignore_case`, `literal`, `context` | 优先通过系统 ripgrep 进行极速全文或正则搜索 |
 | **`glob`** | 可选只读并发工具 | `pattern`, `path`, `max_results` | 按 Glob 通配符（如 `src/**/*.py`）匹配文件路径 |
 | **`find`** | 可选只读并发工具 | `pattern`, `path`, `max_results` | 模糊查找包含特定文件名的项目文件 |
@@ -35,7 +34,7 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 - 这避免把“工具是否只读”的猜测散落到调度器里，调度语义由工具契约显式声明。
 
 ### 2.2 串行写屏障（Serial Write Barrier）
-未声明 parallel 的工具（包括 `edit`、`write`、`patch`、`bash`）保持 sequential：
+未声明 parallel 的工具（包括 `edit`、`write`、`bash`）保持 sequential：
 - 系统强制等待前面所有的只读并发任务收敛完成；
 - 多个写操作之间严格按顺序排队执行，绝不并行，彻底杜绝两个写操作并发修改同一份代码所造成的冲突与乱序。
 

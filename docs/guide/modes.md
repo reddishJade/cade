@@ -11,7 +11,7 @@ Cade 设计了三种执行模式（Execution Modes），用来在**全自动开�
 | 模式 | 核心定位 | 工具可见性 | 写入与执行权限 | 适用场景 |
 | :--- | :--- | :--- | :--- | :--- |
 | **`Plan`** | 调研与规划 | 代码探索核心为 `read + bash`，另有 Web、问答、历史/记忆能力 | 已确认只读 Shell 直接执行；已确认 mutation 拒绝；未知副作用交自动 Reviewer；结构化写入仅限计划文件 | 分析需求、排查 Bug 原因、制定重构设计方案 |
-| **`Build`** | 自动实施与验证 | 日常 coding surface：`read / write / edit / patch / bash` | 结构化项目写入与已确认只读 Shell 直接执行；未知/有副作用 Shell 交自动 Reviewer | 需求明确，让 Agent 自主实现、测试与验证 |
+| **`Build`** | 自动实施与验证 | 日常 coding surface：`read / write / edit / bash` | 结构化项目写入与已确认只读 Shell 直接执行；未知/有副作用 Shell 交自动 Reviewer | 需求明确，让 Agent 自主实现、测试与验证 |
 | **`Act`** (默认) | 人工把关副作用 | 与 Build 相同的日常 coding surface | 只读与已确认只读 Shell 直接执行；结构化写入和未知/有副作用 Shell 交用户审批 | 关键代码修改、希望人工确认副作用时 |
 
 ---
@@ -46,7 +46,7 @@ Cade 设计了三种执行模式（Execution Modes），用来在**全自动开�
 
 Act 模式是 Cade 启动时的**默认模式**。
 
-- **透明可控**：`read` 和可证明只读的 Bash 直接运行；`write/edit/patch` 以及未知或有副作用的 Bash 会进入用户审批。
+- **透明可控**：`read` 和可证明只读的 Bash 直接运行；`write/edit` 以及未知或有副作用的 Bash 会进入用户审批。
 - **确认选项**：你可以输入 `y` 确认执行、`n` 拒绝本次操作，或者直接输入意见让 Agent 调整思路后再试。
 
 ---

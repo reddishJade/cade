@@ -6,10 +6,10 @@
 
 ## 1. 工具矩阵与职责分类
 
-日常 model-facing coding surface 保持为五个 primitive：
+日常 model-facing coding surface 保持为四个 primitive：
 
 ```
-read / write / edit / patch / bash
+read / write / edit / bash
 ```
 
 `grep / glob / find / ls` 保留为可选结构化搜索实现，默认搜索通过 `bash`；
@@ -22,7 +22,6 @@ read / write / edit / patch / bash
   - `read_file.py`：安全读取文件内容，支持分片与行范围。
   - `write_file.py`：创建新文件或覆写已有文件。
   - `file_handlers.py`：实现 model-facing `edit`。强制校验 **SHA256 指纹**，若文件在读取后被外部修改则拒绝写入，彻底根除脏写冲突。
-  - `apply_patch.py`：高效解析并应用标准 Unified Diff 补丁。
   - `text_edit.py`：基于行范围和精确匹配的替换辅助引擎。
   - `file_image.py`：多模态图片文件支持与 Base64 提取。
 - **文件检索与代码搜索**：
@@ -51,5 +50,5 @@ read / write / edit / patch / bash
 - **Read-Before-Edit 铁律**：`edit` 工具必须校验文件的预读取 SHA256 指纹；模型未曾读取过的文件严禁直接发起局部编辑。
 - **并发与副作用分区**：
   - 只读工具（`read` 及可选 `grep/glob/find/ls`）声明并发安全，由调度器并行触发。
-  - 具有文件写（`write`、`edit`、`patch`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
+  - 具有文件写（`write`、`edit`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
 - **统一异常契约**：工具发生 IO 错误、找不到路径或语法错误时，必须返回清晰的文本错误说明，严禁直接抛出未捕获的 Python 异常导致循环终结。

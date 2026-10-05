@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from cade.agent.types import ToolSpec
 from cade.coding_agent.tools import (
-    build_apply_patch_tool,
     build_bash_tool,
     build_glob_tools,
     build_grep_tool,
@@ -50,12 +49,6 @@ def build_project_scoped_registry(
         project_root,
         context_state=contextual_state,
         cancel_event=cancel_event,
-    )
-    registry += (
-        build_apply_patch_tool(
-            project_root,
-            context_state=contextual_state,
-        ),
     )
     registry += build_glob_tools(project_root, cancel_event=cancel_event)
     registry += (build_grep_tool(project_root, cancel_event=cancel_event),)

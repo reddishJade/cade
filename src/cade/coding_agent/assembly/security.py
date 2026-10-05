@@ -43,7 +43,7 @@ _PERMISSION_TOOLS: dict[str, tuple[str, ...]] = {
         "find",
         "ls",
     ),
-    "edit": ("write", "edit", "patch", "save_memory"),
+    "edit": ("write", "edit", "save_memory"),
     "shell": ("bash",),
     "web": ("websearch", "webfetch"),
     "subagent": ("delegate",),
