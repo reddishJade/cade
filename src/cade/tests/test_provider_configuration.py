@@ -259,7 +259,7 @@ def test_custom_provider_does_not_borrow_openai_key(
         resolve_model_profiles(config, ())
     except RuntimeError:
         return
-    assert False, "acme accepted an API key belonging to openai"
+    raise AssertionError("acme accepted an API key belonging to openai")
 
 
 @pytest.mark.xfail(
