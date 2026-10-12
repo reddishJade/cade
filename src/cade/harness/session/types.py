@@ -23,20 +23,6 @@ class SessionEntry:
 
 
 @dataclass(frozen=True)
-class SessionInfo:
-    """会话元数据快照。"""
-
-    id: str
-    title: str
-    summary: str
-    project_path: str
-    created_at: str
-    updated_at: str
-    parent_id: str | None = None
-    entry_count: int = 0
-
-
-@dataclass(frozen=True)
 class SessionInfoView:
     """带有文件路径的会话元数据，用于 UI 展示。"""
 

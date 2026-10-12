@@ -12,7 +12,7 @@ from cade.agent.types import ToolInput, ToolSpec
 
 from .artifacts import resolve_history_event_content
 from .schema import SESSION_EVENT_SCHEMA_VERSION
-from .tree_store import build_session_branch, read_session_entries
+from .store import build_session_branch, read_session_entries
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 

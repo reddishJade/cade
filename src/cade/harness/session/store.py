@@ -222,8 +222,8 @@ def _read_log_tail(path: Path) -> tuple[TreeEntryModel | None, int]:
         return None, valid_end
 
 
-class TreeSessionRepo:
-    """树结构会话存储。"""
+class SessionStore:
+    """管理会话事件树、日志分支和展示索引。"""
 
     def __init__(
         self,
@@ -293,7 +293,7 @@ class TreeSessionRepo:
             meta = self._metadata_for_path(self.current_path)
             return build_session_branch(entries, meta.head_id if meta else None)
 
-    def fork_into(self, title: str = "", summary: str = "") -> TreeSessionRepo:
+    def fork_into(self, title: str = "", summary: str = "") -> SessionStore:
         """从当前 head 分叉，创建新会话（新文件，拷贝 entry）。"""
         with self._lock:
             parent = self.ensure_metadata()
@@ -317,7 +317,7 @@ class TreeSessionRepo:
                 head_id=self._load_head_id(),
             )
             self._upsert_metadata(meta)
-            fork = TreeSessionRepo.__new__(TreeSessionRepo)
+            fork = SessionStore.__new__(SessionStore)
             fork.sessions_dir = self.sessions_dir
             fork.project_root = self.project_root
             fork.index_path = self.index_path
@@ -326,7 +326,7 @@ class TreeSessionRepo:
             fork.artifacts_dir = self.artifacts_dir
             return fork
 
-    def spawn_child(self, title: str, summary: str = "") -> TreeSessionRepo:
+    def spawn_child(self, title: str, summary: str = "") -> SessionStore:
         """创建空的直接子会话，并在索引中持久化 lineage。"""
         parent = self.ensure_metadata()
         with self._lock:
@@ -345,7 +345,7 @@ class TreeSessionRepo:
                 parent_id=parent.id,
             )
             self._upsert_metadata(metadata)
-        child = TreeSessionRepo.__new__(TreeSessionRepo)
+        child = SessionStore.__new__(SessionStore)
         child.sessions_dir = self.sessions_dir
         child.project_root = self.project_root
         child.index_path = self.index_path
@@ -539,7 +539,7 @@ class TreeSessionRepo:
 
     def fork_from_entry(
         self, entry_id: str, title: str = "", summary: str = ""
-    ) -> TreeSessionRepo:
+    ) -> SessionStore:
         """在指定用户输入之前分叉，保留该位置之前的完整历史前缀。"""
         with self._lock:
             branch = self.build_branch()
@@ -592,7 +592,7 @@ class TreeSessionRepo:
                 head_id=copied[-1].id if copied else None,
             )
             self._upsert_metadata(meta)
-            fork = TreeSessionRepo.__new__(TreeSessionRepo)
+            fork = SessionStore.__new__(SessionStore)
             fork.sessions_dir = self.sessions_dir
             fork.project_root = self.project_root
             fork.index_path = self.index_path

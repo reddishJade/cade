@@ -6,8 +6,8 @@ from .history import (
     build_history_tools,
 )
 from .inbox import InboxLane, SessionInbox
+from .store import SessionStore
 from .surface import SessionSurface, project_session_surface
-from .tree_store import TreeSessionRepo as SessionStore
 from .types import JsonValue, SessionEntry, SessionInfoView, TreeNode
 
 __all__ = [

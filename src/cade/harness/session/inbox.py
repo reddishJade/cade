@@ -13,8 +13,8 @@ from uuid import uuid4
 from cade.agent.messages import AgentMessage
 
 from .schema import SESSION_EVENT_SCHEMA_VERSION
+from .store import SessionStore
 from .surface import decode_surface_messages, encode_surface_messages
-from .tree_store import TreeSessionRepo
 from .types import JsonValue
 
 
@@ -43,7 +43,7 @@ class InboxItem:
 class SessionInbox:
     """把 pending input 与其生命周期保存在 session branch。"""
 
-    def __init__(self, store: TreeSessionRepo) -> None:
+    def __init__(self, store: SessionStore) -> None:
         self._store = store
         self._lock = Lock()
         self._items: deque[InboxItem] = deque()

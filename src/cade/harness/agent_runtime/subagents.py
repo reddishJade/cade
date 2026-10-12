@@ -14,6 +14,7 @@ from cade.agent.results import TerminationReason
 from cade.agent.types import ToolSpec
 from cade.ai.providers.base import ModelProvider
 from cade.harness.observability import SignalHookManager
+from cade.harness.session import SessionStore
 from cade.harness.session.inbox import SessionInbox
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.subagent_runs import (
@@ -24,7 +25,6 @@ from cade.harness.session.subagent_runs import (
     SubagentRunStatus,
 )
 from cade.harness.session.surface import project_session_surface
-from cade.harness.session.tree_store import TreeSessionRepo
 
 from .cancellation import CancellationToken
 from .composition import AgentComposition
@@ -84,7 +84,7 @@ class SubagentSessionManager:
         coding_tools: tuple[ToolSpec, ...],
         research_tools: tuple[ToolSpec, ...],
         system_prompts: Mapping[str, str],
-        parent_store: TreeSessionRepo,
+        parent_store: SessionStore,
     ) -> None:
         self._provider = provider
         self._coding_tools = coding_tools
@@ -232,7 +232,7 @@ class SubagentSessionManager:
         for info in self._parent_store.list_infos(limit=None):
             if info.parent_id != parent_id:
                 continue
-            descriptor = _read_descriptor(self._repo_at(info.path))
+            descriptor = _read_descriptor(self._store_at(info.path))
             if descriptor is not None:
                 descriptors.append(descriptor)
         return tuple(descriptors)
@@ -251,7 +251,7 @@ class SubagentSessionManager:
         info = self._parent_store.find_by_id(child_session_id)
         if info is None or info.parent_id != parent_session_id:
             raise PermissionError("child does not belong to the current session")
-        child_store = self._repo_at(info.path)
+        child_store = self._store_at(info.path)
         descriptor = _read_descriptor(child_store)
         if descriptor is None or descriptor.mode != "continuable":
             raise ValueError("child session is not continuable")
@@ -272,7 +272,7 @@ class SubagentSessionManager:
 
     def _materialize(
         self,
-        child_store: TreeSessionRepo,
+        child_store: SessionStore,
         *,
         parent_session_id: str,
         description: str,
@@ -559,15 +559,15 @@ class SubagentSessionManager:
                 raise RuntimeError("subagent manager is closed")
 
     def _current_parent_recorder(self) -> SessionRecorder:
-        return SessionRecorder(self._repo_at(self._parent_store.current_path))
+        return SessionRecorder(self._store_at(self._parent_store.current_path))
 
-    def _repo_at(self, path: Path) -> TreeSessionRepo:
-        repo = TreeSessionRepo(
+    def _store_at(self, path: Path) -> SessionStore:
+        store = SessionStore(
             self._parent_store.sessions_dir,
             project_root=self._parent_store.project_root,
         )
-        repo.resume(path)
-        return repo
+        store.resume(path)
+        return store
 
 
 def _run_event(
@@ -596,7 +596,7 @@ def _run_event(
     )
 
 
-def _read_descriptor(store: TreeSessionRepo) -> SubagentDescriptor | None:
+def _read_descriptor(store: SessionStore) -> SubagentDescriptor | None:
     for entry in store.build_branch():
         if entry.type != "event" or not isinstance(entry.content, dict):
             continue

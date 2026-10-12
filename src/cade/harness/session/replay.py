@@ -7,8 +7,8 @@ from typing import Protocol
 
 from cade.agent.messages import AgentMessage
 
+from .store import SessionStore
 from .surface import project_session_surface
-from .tree_store import TreeSessionRepo
 from .types import SessionEntry
 
 
@@ -34,7 +34,7 @@ class ReplayAgent(Protocol):
 
 def replay_session(
     agent: ReplayAgent,
-    store: TreeSessionRepo,
+    store: SessionStore,
     restoration_context_renderer: Callable[[object], str | None] | None = None,
 ) -> None:
     """把当前 session branch 的事实投影回 agent 内存。"""

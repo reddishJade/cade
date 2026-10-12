@@ -18,7 +18,7 @@ from cade.agent.context import (
 )
 from cade.agent.messages import ToolResultMessage
 from cade.agent.types import TerminalRenderIntent, TextContent
-from cade.harness.session.tree_store import TreeSessionRepo
+from cade.harness.session import SessionStore
 
 
 def workspace_fingerprint(project_root: Path) -> str | None:
@@ -72,7 +72,7 @@ def workspace_fingerprint(project_root: Path) -> str | None:
 class ValidationCollector:
     """用少量原始验证事实覆盖过时笔记，来源始终是当前日志分支。"""
 
-    def __init__(self, project_root: Path, store: TreeSessionRepo) -> None:
+    def __init__(self, project_root: Path, store: SessionStore) -> None:
         self._root = project_root.resolve()
         self._store = store
 

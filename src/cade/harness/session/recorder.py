@@ -15,13 +15,13 @@ from cade.harness.agent_runtime.events import (
 
 from .artifacts import offload_large_tool_result
 from .event_codec import SESSION_EVENT_SCHEMA_VERSION, encode_session_event
+from .store import SessionStore
 from .subagent_runs import (
     SubagentActivationEvent,
     SubagentDescriptor,
     SubagentRunEvent,
 )
 from .surface import encode_surface_messages
-from .tree_store import TreeSessionRepo
 from .types import JsonValue
 
 _DURABLE_EVENT_TYPES = frozenset(
@@ -80,7 +80,7 @@ class SessionRecorder:
 
     def __init__(
         self,
-        store: TreeSessionRepo,
+        store: SessionStore,
         context_window_state_provider: Callable[[], Mapping[str, object] | None]
         | None = None,
     ) -> None:

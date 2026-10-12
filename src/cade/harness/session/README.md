@@ -14,7 +14,7 @@
                                │ (原子追加写)
                                ▼
         ┌─────────────────────────────────────────────┐
-        │      TreeSessionRepo (SessionStore)         │
+        │               SessionStore                  │
         │                                             │
         │    Node 0 (Root)                            │
         │       │                                     │
@@ -30,8 +30,8 @@
 ```
 
 ### 核心能力与组件
-- **不可变事实账本 ([recorder.py](recorder.py) / [tree_store.py](tree_store.py))**：
-  - `TreeSessionRepo`：会话树存储仓库，保存在本地 `.cade/sessions/` 目录；
+- **不可变事实账本 ([recorder.py](recorder.py) / [store.py](store.py))**：
+  - `SessionStore`：统一管理会话事件树、日志分支和展示索引，默认保存在本地 `.cade/sessions/` 目录；
   - 每一个交互步骤作为不可变节点（`TreeNode`）持久化，天然支持基于任意历史节点的会话分叉（Fork）。
 - **无损事件重放 ([replay.py](replay.py))**：从磁盘文件中按顺序流式重播事件，精确重构消息序列与工具调用历史。
 - **无损历史工具 ([history.py](history.py))**：
