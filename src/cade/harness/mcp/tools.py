@@ -106,12 +106,11 @@ class McpServerStatus:
 
 
 class McpRuntimeRegistry:
-    """协调 MCP 动态工具快照、订阅者和持久客户端生命周期。"""
+    """管理 MCP 发现缓存、状态和持久客户端生命周期。"""
 
     def __init__(self) -> None:
         """初始化空的运行时注册状态。"""
         self._lock = threading.Lock()
-        self._callbacks: list[Callable[[tuple[ToolSpec, ...]], None]] = []
         self._client_refs: dict[str, _mcp_mod.LazyClientRef] = {}
         self._reload_callback: Callable[[], tuple[ToolSpec, ...]] | None = None
         self._workspace_roots: tuple[Path, ...] = ()
@@ -136,21 +135,6 @@ class McpRuntimeRegistry:
             )
             self._cancel_event = cancel_event
 
-    def subscribe(
-        self,
-        callback: Callable[[tuple[ToolSpec, ...]], None],
-    ) -> None:
-        """注册工具快照更新回调。"""
-        with self._lock:
-            self._callbacks.append(callback)
-
-    def publish(self, tools: tuple[ToolSpec, ...]) -> None:
-        """向所有订阅者发布完整 MCP 工具快照。"""
-        with self._lock:
-            callbacks = tuple(self._callbacks)
-        for callback in callbacks:
-            callback(tools)
-
     def set_reload_callback(
         self,
         callback: Callable[[], tuple[ToolSpec, ...]],
@@ -160,14 +144,12 @@ class McpRuntimeRegistry:
             self._reload_callback = callback
 
     def reload(self) -> tuple[ToolSpec, ...]:
-        """重新读取 MCP 配置并发布新的工具快照。"""
+        """重新读取 MCP 配置并返回新的工具快照。"""
         with self._lock:
             callback = self._reload_callback
         if callback is None:
             return ()
-        tools = callback()
-        self.publish(tools)
-        return tools
+        return callback()
 
     def update_runtime_snapshot(
         self,
@@ -281,7 +263,6 @@ class McpRuntimeRegistry:
         with self._lock:
             refs = tuple(self._client_refs.values())
             self._client_refs.clear()
-            self._callbacks.clear()
         for ref in refs:
             ref.stop()
 
@@ -880,8 +861,6 @@ def _load_mcp_tools_snapshot(
         all_tools_by_server=collected.all_tools_by_server,
         cache_metadata_by_server=collected.cache_metadata_by_server,
         runtime_registry=runtime_registry,
-        bootstrap_tools=bootstrap_tools,
-        search_tools=search_tools,
         server_errors=server_errors,
     )
 
@@ -1024,8 +1003,6 @@ def _build_mcp_refresh_fn(
     all_tools_by_server: dict[str, list[dict[str, Any]]],
     cache_metadata_by_server: dict[str, dict[str, Any]],
     runtime_registry: McpRuntimeRegistry,
-    bootstrap_tools: tuple[ToolSpec, ...],
-    search_tools: tuple[ToolSpec, ...],
     server_errors: dict[str, str],
 ) -> Callable[[str, _mcp_mod.McpClient], None]:
     """构建 MCP server 工具刷新回调。"""
@@ -1034,50 +1011,32 @@ def _build_mcp_refresh_fn(
     def _refresh(
         server_name: str,
         client: _mcp_mod.McpClient,
-        *,
-        _validated=validated_servers,
-        _mcp_servers=mcp_servers,
-        _deferred=deferred_servers,
-        _cache_path=cache_path,
-        _all_tools=all_tools_by_server,
-        _cache_meta=cache_metadata_by_server,
-        _registry=runtime_registry,
-        _bootstrap=bootstrap_tools,
-        _search=search_tools,
-        _errors=server_errors,
     ) -> None:
-        validated = _validated[server_name]
+        validated = validated_servers[server_name]
         tools_list = client.list_tools(timeout=validated.timeout)
         cache_metadata = _cache_metadata(client)
-        config_hash = compute_config_hash(_mcp_servers[server_name])
+        config_hash = compute_config_hash(mcp_servers[server_name])
         with refresh_lock:
-            current_cache = _load_cache(_cache_path)
+            current_cache = _load_cache(cache_path)
             current_cache.setdefault("servers", {})[server_name] = {
                 "config_hash": config_hash,
                 "tools": tools_list,
                 **cache_metadata,
             }
-            _save_cache(_cache_path, current_cache)
-            _all_tools[server_name] = tools_list
-            _cache_meta[server_name] = cache_metadata
-            refreshed = _build_runtime_mcp_tools(
-                all_tools_by_server=_all_tools,
-                validated_servers=_validated,
-                raw_servers=_mcp_servers,
-                deferred_servers=_deferred,
-                cache_path=_cache_path,
-                runtime_registry=_registry,
-                refresh_server_tools=_refresh,
+            _save_cache(cache_path, current_cache)
+            all_tools_by_server[server_name] = tools_list
+            cache_metadata_by_server[server_name] = cache_metadata
+            _warn_unknown_overrides(server_name, mcp_servers[server_name], tools_list)
+            runtime_registry.update_runtime_snapshot(
+                raw_servers=mcp_servers,
+                validated_servers=validated_servers,
+                deferred_servers=deferred_servers,
+                tool_counts={
+                    name: len(tools) for name, tools in all_tools_by_server.items()
+                },
+                cache_metadata=cache_metadata_by_server,
+                server_errors=server_errors,
             )
-            _registry.update_runtime_snapshot(
-                raw_servers=_mcp_servers,
-                validated_servers=_validated,
-                deferred_servers=_deferred,
-                tool_counts={name: len(tools) for name, tools in _all_tools.items()},
-                cache_metadata=_cache_meta,
-                server_errors=_errors,
-            )
-        _registry.publish(_bootstrap + refreshed + _search)
 
     return _refresh
 

@@ -233,8 +233,8 @@ transport runtime 处理网络瞬时错误与限流重试，Agent 循环处理 s
 后续重试按循环状态处理；主备包装器仅在当前流尚未输出时直接重发到备用 provider。
 
 MCP registry 管理工具发现、schema 缓存、惰性连接、状态和关闭，工具转换为
-`ToolSpec` 后接入产品注册表与统一 gate。registry 可发布新发现快照，运行能力
-由产品装配发布；单次 run 使用其捕获的工具 schema。MCP server 提供的工具与
+`ToolSpec` 后接入产品注册表与统一 gate。`tools/list_changed` 更新发现缓存和状态诊断；
+产品装配读取工具 schema，单次 run 使用捕获的 schema。MCP server 提供的工具与
 资源来自外部进程，允许调用的范围由 gate 判定，进程隔离需在宿主侧配置。
 
 Skills registry 发现技能并发布目录，`load_skill` 按需读取正文；会话消息保留已加载
