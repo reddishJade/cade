@@ -244,7 +244,7 @@ def _prepare_unreadable_file_placeholder(
     descriptor, raw_path = tempfile.mkstemp(prefix="cade-sandbox-empty-")
     path = Path(raw_path)
     try:
-        os.fchmod(descriptor, 0o600)
+        os.chmod(descriptor, 0o600)
         metadata = os.fstat(descriptor)
         return _UnreadableFilePlaceholder(
             path=path,
