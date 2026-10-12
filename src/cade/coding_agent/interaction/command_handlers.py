@@ -930,8 +930,8 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/context-window": CommandEntry(
         handler=cmd_context_window,
-        desc="Show or cap the context window for this session.",
-        args_desc="[200k|1m|<tokens>|default]",
+        desc="Cap the context window, e.g. 200k or 200000; default resets.",
+        args_desc="<size|default>",
         accepts_args=True,
         group=COMMAND_GROUP_MODEL,
     ),

@@ -17,13 +17,6 @@ MAX_FILE_COMPLETIONS = 100
 MAX_NAME_COMPLETIONS = 25
 FILE_INDEX_TTL_SECONDS = 0.25
 BLOCKED_PARTS = {".git", ".venv", "__pycache__"}
-_CONTEXT_WINDOW_CHOICES = (
-    ("default", "model's own window"),
-    ("128k", "128,000 tokens"),
-    ("200k", "200,000 tokens"),
-    ("400k", "400,000 tokens"),
-    ("1m", "1,000,000 tokens"),
-)
 
 
 @dataclass(frozen=True)
@@ -77,13 +70,6 @@ class CompletionEngine:
                 CompletionItem(mode, -len(partial), "execution mode")
                 for mode in ("act", "build", "plan")
                 if mode.startswith(partial)
-            ]
-        if text_before_cursor.startswith("/context-window "):
-            partial = text_before_cursor[len("/context-window ") :]
-            return [
-                CompletionItem(size, -len(partial), meta)
-                for size, meta in _CONTEXT_WINDOW_CHOICES
-                if size.startswith(partial.lower())
             ]
         if (
             text_before_cursor.startswith("/effort")
