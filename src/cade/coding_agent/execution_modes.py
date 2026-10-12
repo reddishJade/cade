@@ -7,7 +7,7 @@ Build/Act 默认使用最小 coding surface；权限层决定 shell 与写入是
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
 from cade.agent.types import ToolSpec
 from cade.ai.events import ToolCall
@@ -20,11 +20,19 @@ ExecutionMode = Literal["plan", "build", "act"]
 # 结构化搜索保持可选；默认编码工具通过 bash 组合 rg/find/ls。
 _STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
 
-
-class ExecutionPolicy(Protocol):
-    def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]: ...
-
-    def check_call(self, call: ToolCall) -> PermissionDecision: ...
+_PLAN_TOOLS = frozenset(
+    {
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "webfetch",
+        "websearch",
+        "question",
+        "history",
+        "rollover",
+    }
+)
 
 
 class ExecutionModeState:
@@ -72,71 +80,16 @@ class ExecutionModeState:
         return True
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
-        return policy_for_mode(self._current_mode).check_call(call)
+        # 实际动作裁决由 gate 的 ruleset、路径边界与 shell analyzer 执行。
+        return "allow"
 
     def filter_tools(self, registry: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
         """根据当前模式过滤工具集。"""
-        return registry_for_mode(registry, self._current_mode)
-
-
-class PlanPolicy:
-    """plan: 只读分析，可维护 .cade/plans/*.md 计划文件。"""
-
-    _PLAN_TOOLS = frozenset(
-        {
-            "read",
-            "bash",
-            "webfetch",
-            "websearch",
-            "question",
-            "history",
-            "rollover",
-        }
-    )
-
-    def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
+        if self._current_mode == "plan":
+            return tuple(tool for tool in registry if tool.name in _PLAN_TOOLS)
         return tuple(
-            tool
-            for tool in tools
-            if tool.name in self._PLAN_TOOLS or tool.name in {"write", "edit"}
+            tool for tool in registry if tool.name not in _STRUCTURED_SEARCH_TOOLS
         )
-
-    def check_call(self, call: ToolCall) -> PermissionDecision:
-        # plan 模式的实际写入边界由 RuleMatcher + fallback=deny 执行。
-        return "allow"
-
-
-class BuildPolicy:
-    """build: 最小 coding surface；确定只读 shell 直行，其余副作用进入自动审批。"""
-
-    def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tuple(
-            tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS
-        )
-
-    def check_call(self, call: ToolCall) -> PermissionDecision:
-        # check_call 返回 allow，实际决策由 RuleMatcher 完成
-        return "allow"
-
-
-class ActPolicy:
-    """act: 最小 coding surface；写入和未解析/有副作用 shell 进入用户审批。"""
-
-    def filter_tools(self, tools: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
-        return tuple(
-            tool for tool in tools if tool.name not in _STRUCTURED_SEARCH_TOOLS
-        )
-
-    def check_call(self, call: ToolCall) -> PermissionDecision:
-        # check_call 返回 allow，实际决策由 RuleMatcher 完成
-        return "allow"
-
-
-_POLICIES: dict[ExecutionMode, ExecutionPolicy] = {
-    "plan": PlanPolicy(),
-    "build": BuildPolicy(),
-    "act": ActPolicy(),
-}
 
 
 def parse_execution_mode(value: object) -> ExecutionMode | None:
@@ -151,17 +104,6 @@ def parse_execution_mode(value: object) -> ExecutionMode | None:
             return "act"
         case _:
             return None
-
-
-def policy_for_mode(mode: ExecutionMode) -> ExecutionPolicy:
-    return _POLICIES[mode]
-
-
-def registry_for_mode(
-    registry: tuple[ToolSpec, ...],
-    mode: ExecutionMode,
-) -> tuple[ToolSpec, ...]:
-    return policy_for_mode(mode).filter_tools(registry)
 
 
 def mode_notice(mode: str) -> str:
