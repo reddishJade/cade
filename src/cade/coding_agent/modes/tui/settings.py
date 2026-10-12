@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TypeGuard
 
 from cade.ai.models import parse_model_mode
 from cade.ai.resolver import ModelResolver
 from cade.coding_agent.interaction.app_contract import ModelControlApp
+from cade.coding_agent.interaction.context_stats import compute_context_summary
 from cade.coding_agent.interaction.models import (
     AvailableModelEntry,
     get_available_model_entries,
@@ -12,6 +14,11 @@ from cade.coding_agent.interaction.models import (
 from cade.coding_agent.interaction.reasoning_effort import (
     reasoning_effort_levels_for_transport,
 )
+from cade.coding_agent.interaction.token_count import (
+    format_token_count,
+    parse_token_count,
+)
+from cade.harness.agent_runtime.config import resolve_context_policy
 from cade.harness.security import (
     FileGrantStore,
     InMemoryGrantStore,
@@ -277,6 +284,7 @@ def handle_model_command(command: str, app: object) -> None:
             return
 
     try:
+        cap = _context_window_cap(_model_info(app))
         new_model = app.set_model(
             model=f"{parsed.provider}/{model_name}" if parsed.provider else model_name,
             transport=transport,
@@ -288,6 +296,12 @@ def handle_model_command(command: str, app: object) -> None:
         t_name = info.get("transport", transport or "")
         t_info = f" (transport: {t_name})" if t_name else ""
         print(f"Switched to model: {new_model}{t_info}")
+        limit = int(info.get("model_context_window") or 0)
+        if cap and limit and cap > limit and _context_window_cap(info) is None:
+            print(
+                f"Context window cap {format_token_count(cap)} exceeds this "
+                f"model's {format_token_count(limit)}; using the model default."
+            )
     except (
         AttributeError,
         KeyError,
@@ -352,6 +366,87 @@ def handle_effort_command(command: str, app: object) -> None:
         ValueError,
     ) as exc:
         print(f"Failed to set reasoning effort: {exc}")
+
+
+_CONTEXT_WINDOW_USAGE = (
+    "Usage: /context-window <size|default>\n"
+    "  size     token count: 200k, 200000, 1m, 1.5m (k=1,000, m=1,000,000)\n"
+    "  default  use the model's own window\n"
+    "Applies to this session only, from the next turn. Larger than the model "
+    "supports is rejected. Use /config to save a default for new sessions."
+)
+
+
+def _context_window_cap(info: dict[str, str]) -> int | None:
+    """返回显式设置的窗口上限；窗口等于模型默认值时视为未设置。"""
+    window = info.get("context_window")
+    if not window or window == info.get("model_context_window"):
+        return None
+    return int(window)
+
+
+def _rollover_notice(app: object, project_root: Path) -> str | None:
+    """已用上下文达到新窗口的换窗阈值时，说明下一回合会自动换窗。"""
+    agent = getattr(app, "agent", None)
+    if agent is None:
+        return None
+    provider = agent.provider
+    active = getattr(provider, "active_provider", provider)
+    policy = resolve_context_policy(active, agent.composition.config)
+    used = compute_context_summary(agent, project_root).total
+    if not policy.automatic_rollover or used < policy.rotation_threshold:
+        return None
+    return (
+        f"Current context (~{format_token_count(used)}) is above this window's "
+        f"rollover threshold ({format_token_count(policy.rotation_threshold)}); "
+        "the next turn will roll over into a fresh window with a NOTE.md handoff."
+    )
+
+
+def handle_context_window_command(
+    command: str, app: object, project_root: Path
+) -> None:
+    """显示或设置当前会话的上下文窗口；只影响当前运行，不写配置文件。"""
+    parts = command.split(maxsplit=1)
+    info = _model_info(app)
+    if len(parts) == 1:
+        current = info.get("context_window")
+        limit = info.get("model_context_window")
+        print(
+            "  Context window: "
+            + (format_token_count(int(current)) if current else "unknown")
+        )
+        if limit:
+            print(f"  Model limit   : {format_token_count(int(limit))}")
+        print(_CONTEXT_WINDOW_USAGE)
+        return
+
+    text = parts[1].strip().lower()
+    try:
+        window = 0 if text == "default" else parse_token_count(text)
+    except ValueError as exc:
+        print(f"{exc}\n{_CONTEXT_WINDOW_USAGE}")
+        return
+    if not _is_model_control_app(app):
+        print("Model switching is not supported in this app.")
+        return
+    try:
+        app.set_model(model=info["model"], context_window=window)
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        print(f"Failed to set context window: {exc}")
+        return
+    label = format_token_count(window) if window else "model default"
+    print(f"Context window set to: {label}")
+    notice = _rollover_notice(app, project_root)
+    if notice:
+        print(notice)
 
 
 def handle_thinking_command(command: str, app: object) -> None:

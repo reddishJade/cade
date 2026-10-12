@@ -844,6 +844,10 @@ def cmd_effort(cmd: str, ctx: CommandContext) -> bool:
     return ctx.host_command(cmd, ctx)
 
 
+def cmd_context_window(cmd: str, ctx: CommandContext) -> bool:
+    return ctx.host_command(cmd, ctx)
+
+
 def cmd_thinking(cmd: str, ctx: CommandContext) -> bool:
     return ctx.host_command(cmd, ctx)
 
@@ -921,6 +925,13 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
         handler=cmd_effort,
         desc="Select or set reasoning effort.",
         args_desc="[off|none|minimal|low|medium|high|xhigh|max]",
+        accepts_args=True,
+        group=COMMAND_GROUP_MODEL,
+    ),
+    "/context-window": CommandEntry(
+        handler=cmd_context_window,
+        desc="Show or cap the context window for this session.",
+        args_desc="[200k|1m|<tokens>|default]",
         accepts_args=True,
         group=COMMAND_GROUP_MODEL,
     ),

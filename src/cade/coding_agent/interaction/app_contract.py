@@ -116,6 +116,7 @@ class ModelControlApp(Protocol):
         base_url: str | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
+        context_window: int | None = None,
     ) -> str: ...
 
 

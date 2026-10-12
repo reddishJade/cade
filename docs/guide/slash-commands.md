@@ -62,6 +62,7 @@
 | :--- | :--- | :--- |
 | `/model` | `/model [provider/model_name]` | 打开模型与 effort 选择器：上下选模型，左右选 effort，Enter 同时应用，Esc 取消；也可直接输入名称切换，provider 前缀选择模型提供方 |
 | `/effort` | `/effort [level]` | 选择或设置当前模型支持的推理强度 |
+| `/context-window` | `/context-window [size\|default]` | 显示或限制当前会话的上下文窗口，如 `200k`、`1m`；`default` 恢复模型默认窗口。接受 `200k`、`200000`、`1.5m`（k=1,000，m=1,000,000）。不能超过模型支持的窗口，不写配置文件，下一回合生效；已用上下文超过新窗口的换窗阈值时，下一回合自动换窗 |
 | `/thinking` | `/thinking [on\|off]` | Responses/Codex 的推理摘要开关；推理强度使用 `/effort` |
 
 ---

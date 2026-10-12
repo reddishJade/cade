@@ -141,7 +141,10 @@ API 凭据先查所选 provider 在 auth 中保存的 API key，再查 provider 
 
 `cade exec --model provider/model --reasoning-effort high` 临时覆盖默认选择，
 在装配前生效；未单独配置的辅助角色随主模型继承。`--transport` 可显式选择协议。
-`/model`、`/effort` 修改当前运行，保存启动默认值使用配置字段；会话切换不写全局配置。
+`/model`、`/effort`、`/context-window` 修改当前运行，保存启动默认值使用配置字段；
+会话切换不写全局配置。`provider.options.context_window` 可把大窗口模型限制在更小的
+窗口（如 `/config` 中的 Context Window 设为 `200k`）；切换模型时，沿用的上限超过新
+模型的窗口会被丢弃。
 
 ## 查看与修改
 

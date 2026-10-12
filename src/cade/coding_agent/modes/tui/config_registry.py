@@ -19,6 +19,10 @@ from typing import Any
 import questionary
 from pydantic import ValidationError
 
+from cade.coding_agent.interaction.token_count import (
+    format_token_count,
+    parse_token_count,
+)
 from cade.harness.config import CadeRuntimeConfig, load_runtime_config
 
 from .ptk_patch import safe_select, safe_text
@@ -53,6 +57,7 @@ class SettingSpec:
     formatter: Callable[[Any], str] | None = None
     choice_descriptions: dict[str, str] = dataclasses_field(default_factory=dict)
     writer: Callable[[dict[str, Any], Any], None] | None = None
+    parser: Callable[[str], Any] | None = None
 
     def read(self, config: CadeRuntimeConfig) -> Any:
         """从生效配置中读取当前值；INFO/复合行必须提供自定义 getter。"""
@@ -122,6 +127,21 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         kind=SettingKind.STR,
         nullable=True,
         description="Startup reasoning effort supported by the selected model.",
+    ),
+    SettingSpec(
+        key="provider.options.context_window",
+        label="Context Window",
+        kind=SettingKind.INT,
+        nullable=True,
+        description=(
+            "Context window cap for new sessions, e.g. 200k or 1m; 'none' uses "
+            "the model's own window. Use /context-window to change the "
+            "running session."
+        ),
+        formatter=lambda value: (
+            "(model default)" if value is None else format_token_count(value)
+        ),
+        parser=parse_token_count,
     ),
     SettingSpec(
         key="execution_modes.default_mode",
@@ -291,6 +311,8 @@ def parse_setting(spec: SettingSpec, text: str) -> Any:
             expected = "/".join(spec.choices)
             raise ValueError(f"Expected {expected}, got: {text!r}")
         return None if lowered == spec.none_choice else lowered
+    if spec.parser is not None:
+        return spec.parser(stripped)
     if spec.kind is SettingKind.INT:
         return int(stripped)
     if spec.kind is SettingKind.FLOAT:

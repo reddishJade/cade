@@ -7,6 +7,7 @@ from ...cli.auth_cmd import (
     handle_status_command,
 )
 from .settings import (
+    handle_context_window_command,
     handle_effort_command,
     handle_model_command,
     handle_permissions,
@@ -51,6 +52,12 @@ def cmd_effort(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
+def cmd_context_window(cmd: str, ctx: CommandContext) -> bool:
+    """显示或设置当前会话的上下文窗口大小。"""
+    handle_context_window_command(cmd, ctx.app, ctx.project_root)
+    return False
+
+
 def cmd_thinking(cmd: str, ctx: CommandContext) -> bool:
     """显示或切换推理摘要及协议对应的思考开关。"""
     handle_thinking_command(cmd, ctx.app)
@@ -75,6 +82,7 @@ HOST_COMMANDS = {
     "/auth": cmd_auth,
     "/model": cmd_model,
     "/effort": cmd_effort,
+    "/context-window": cmd_context_window,
     "/thinking": cmd_thinking,
     "/permissions": cmd_permissions,
 }

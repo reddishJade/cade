@@ -6,13 +6,14 @@ CadeApp 数据类和 build_app 编排函数。装配逻辑委托给 assembly 子
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, TextDelta
+from cade.ai.models import get_model_context_window
 from cade.ai.providers.registry import (
     ModelProfileConfig,
     ProviderSettings,
@@ -43,6 +44,25 @@ if TYPE_CHECKING:
     from cade.harness.mcp import McpRuntimeRegistry
 
 
+def _bound_context_window(
+    profile: ModelProfileConfig, requested: int | None
+) -> ModelProfileConfig:
+    """窗口覆盖值不能超过模型已知的真实窗口。
+
+    显式请求超限时报错；切换模型时沿用的旧覆盖值超限则丢弃，回到模型默认窗口。
+    """
+    window = profile.context_window
+    limit = get_model_context_window(profile.chat_model, transport=profile.transport)
+    if window is None or limit is None or window <= limit:
+        return profile
+    if requested:
+        raise ValueError(
+            f"context window {window} exceeds the {limit} supported by "
+            f"{profile.chat_model}"
+        )
+    return replace(profile, context_window=None)
+
+
 @dataclass
 class CadeApp:
     """Cade 应用句柄。"""
@@ -70,7 +90,9 @@ class CadeApp:
         base_url: str | None = None,
         thinking: bool | None = None,
         reasoning_effort: str | None = None,
+        context_window: int | None = None,
     ) -> str:
+        """切换主/子 agent 模型；`context_window` 为 0 时恢复模型默认窗口。"""
         from cade.ai.providers.registry import ModelProfileConfig, ModelProfileProto
         from cade.ai.resolver import ModelResolver, provider_for_transport
 
@@ -120,7 +142,11 @@ class CadeApp:
                 }
             )
         options = {
-            "context_window": current.context_window,
+            "context_window": (
+                current.context_window
+                if context_window is None
+                else context_window or None
+            ),
             "thinking": thinking if thinking is not None else current.thinking,
             "reasoning_effort": reasoning_effort
             if reasoning_effort is not None
@@ -132,6 +158,7 @@ class CadeApp:
         new_cfg = resolve_model_profile(
             config, selected, resolution.model, options, self._env_files
         )
+        new_cfg = _bound_context_window(new_cfg, context_window)
         resolved_model = new_cfg.chat_model
         profiles: dict[str, ModelProfileProto] = {
             "main": self._model_profiles["main"],
@@ -191,6 +218,14 @@ class CadeApp:
             info["thinking"] = "off"
         if active.reasoning_effort is not None:
             info["reasoning_effort"] = active.reasoning_effort
+        model_window = get_model_context_window(
+            active.model, transport=active.transport
+        )
+        window = active.context_window or model_window
+        if window:
+            info["context_window"] = str(window)
+        if model_window:
+            info["model_context_window"] = str(model_window)
         return info
 
     def instruction_paths(self) -> tuple[Path, ...]:
