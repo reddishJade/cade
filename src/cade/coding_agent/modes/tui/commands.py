@@ -6,20 +6,12 @@ from ...cli.auth_cmd import (
     handle_logout_command,
     handle_status_command,
 )
-from .config_registry import (
-    edit_setting_interactive,
-    find_setting,
-    load_effective_config,
-    matching_settings,
-    run_config_browser,
-)
 from .settings import (
     handle_effort_command,
     handle_model_command,
     handle_permissions,
     handle_thinking_command,
 )
-from .setup_wizard import CONFIG_FILENAME
 
 
 def cmd_logout(cmd: str, ctx: CommandContext) -> bool:
@@ -65,31 +57,6 @@ def cmd_thinking(cmd: str, ctx: CommandContext) -> bool:
     return False
 
 
-def cmd_config(cmd: str, ctx: CommandContext) -> bool:
-    """打开交互式配置浏览器，浏览并修改 cade.config.json。"""
-    config_path = ctx.project_root / CONFIG_FILENAME
-    parts = cmd.split(maxsplit=1)
-    query = parts[1].strip() if len(parts) > 1 else ""
-
-    if not query:
-        run_config_browser(config_path)
-        return False
-
-    spec = find_setting(query)
-    if spec is None:
-        matches = matching_settings(query)
-        if matches:
-            print(f"'{query}' is ambiguous. Did you mean:")
-            for match in matches:
-                print(f"  {match.label} ({match.key})")
-        else:
-            print(f"No setting matches '{query}'. Use '/config' to browse all.")
-        return False
-
-    edit_setting_interactive(config_path, spec, load_effective_config(config_path))
-    return False
-
-
 def cmd_permissions(cmd: str, ctx: CommandContext) -> bool:
     """列出或清除权限规则。"""
     handle_permissions(
@@ -98,9 +65,7 @@ def cmd_permissions(cmd: str, ctx: CommandContext) -> bool:
         ctx.permanent_grant_store,
         static_policy=ctx.static_policy,
         restricted_dirs=ctx.restricted_dirs,
-        project_root=ctx.project_root,
         app=ctx.app,
-        store=ctx.store,
     )
     return False
 
@@ -111,13 +76,12 @@ HOST_COMMANDS = {
     "/model": cmd_model,
     "/effort": cmd_effort,
     "/thinking": cmd_thinking,
-    "/config": cmd_config,
     "/permissions": cmd_permissions,
 }
 
 
 def run_host_command(command: str, ctx: CommandContext) -> bool:
-    """执行宿主命令；需要界面交互的命令（如 /login）由 TUI 在分发前处理。"""
+    """执行宿主命令；需要界面交互的命令（/login、/config 等）由 TUI 在分发前处理。"""
     handler = HOST_COMMANDS.get(command.split(maxsplit=1)[0])
     if handler is None:
         ctx.output.write(f"Command is handled by the TUI: {command}")

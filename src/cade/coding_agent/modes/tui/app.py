@@ -1012,6 +1012,8 @@ class _CadeTui:
         if login is not None:
             self._login_flow.start(login)
             return True
+        if command == "/effort" and len(text.split()) == 1:
+            return self._open_effort_selector()
         if command == "/mode" and len(text.split()) == 1:
             self._open_command_choices(
                 [
@@ -1320,6 +1322,33 @@ class _CadeTui:
             switch(entry)
 
         open_selector()
+
+    def _open_effort_selector(self) -> bool:
+        """当前模型支持 effort 时打开选择菜单；不支持时交给命令输出说明。"""
+        from cade.coding_agent.interaction.reasoning_effort import (
+            reasoning_effort_levels_for_transport,
+        )
+
+        get_model_info = getattr(self._agent_app, "get_model_info", None)
+        raw_info = get_model_info() if callable(get_model_info) else None
+        info = cast("dict[str, str]", raw_info) if isinstance(raw_info, dict) else {}
+        levels = reasoning_effort_levels_for_transport(
+            str(info.get("transport", "")), str(info.get("model", ""))
+        )
+        if not levels:
+            return False
+        current = info.get("reasoning_effort")
+        self._open_command_choices(
+            [
+                (f"{level} (current)" if level == current else level, level)
+                for level in levels
+            ],
+            lambda selected: self._run_command(f"/effort {selected}"),
+        )
+        if current in levels:
+            self._command_choices._selected_index = levels.index(current)
+            self._command_choices.current_value = current
+        return True
 
     def _post_log(self, kind: str, text: str) -> None:
         """从任意线程追加一条界面消息。"""

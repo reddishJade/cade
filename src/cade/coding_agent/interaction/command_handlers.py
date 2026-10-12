@@ -21,7 +21,6 @@ from .commands import (
     COMMAND_GROUP_SESSION_BRANCH,
     COMMAND_GROUP_SESSION_LIFECYCLE,
     COMMAND_GROUP_SESSION_ROLLBACK,
-    Choice,
     CommandContext,
     CommandEntry,
     command_names,
@@ -54,43 +53,36 @@ def cmd_clear(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_fork(cmd: str, ctx: CommandContext) -> bool:
-    """保留所选输入之前的历史，并把该输入交回宿主编辑。"""
+    """保留所选输入之前的历史，并把该输入交回宿主编辑。
+
+    不带参数时列出可选输入；交互选择由宿主界面提供。
+    """
     msgs = ctx.store.get_forkable_user_messages()
     if not msgs:
         ctx.output.write("No user messages to fork from.")
         return False
     parts = cmd.split()
-    selected: SessionEntry | None = None
-    if len(parts) > 2:
-        ctx.output.write("Usage: /fork [positive input number|entry ID]")
+    if len(parts) != 2:
+        for index, entry in enumerate(msgs, 1):
+            ctx.output.write(
+                f"{index}. {' '.join(fork_input_text(entry).split())[:100]}"
+            )
+        ctx.output.write("Usage: /fork <input number|entry ID>")
         return False
-    if len(parts) == 2:
-        target = parts[1]
-        selected = next((entry for entry in msgs if entry.id == target), None)
-        if selected is None:
-            if target.isascii() and target.isdigit():
-                number = int(target)
-                if number < 1 or number > len(msgs):
-                    ctx.output.write(f"Choose an input number from 1 to {len(msgs)}.")
-                    return False
-                selected = msgs[number - 1]
-            else:
-                ctx.output.write(
-                    f"User input entry not found on current branch: {target}"
-                )
-                return False
-    else:
-        selected = ctx.output.select(
-            "Select message to fork from:",
-            choices=[
-                Choice(
-                    f"{index}. {' '.join(fork_input_text(entry).split())[:100]}", entry
-                )
-                for index, entry in enumerate(msgs, 1)
-            ],
-        )
+    target = parts[1]
+    selected: SessionEntry | None = next(
+        (entry for entry in msgs if entry.id == target), None
+    )
     if selected is None:
-        return False
+        if target.isascii() and target.isdigit():
+            number = int(target)
+            if number < 1 or number > len(msgs):
+                ctx.output.write(f"Choose an input number from 1 to {len(msgs)}.")
+                return False
+            selected = msgs[number - 1]
+        else:
+            ctx.output.write(f"User input entry not found on current branch: {target}")
+            return False
 
     parent_session_id = ctx.store.session_id
     forked = ctx.store.fork_from_entry(selected.id)
@@ -164,38 +156,21 @@ def cmd_resume(cmd: str, ctx: CommandContext) -> bool:
         _print_resumed_session(current_view(ctx.store), ctx)
         ctx.app.restore_session()
         return False
-    selected = _select_session(ctx, ctx.store.list_infos())
-    if selected is not None:
-        ctx.store.resume(selected.id)
-        _print_resumed_session(selected, ctx)
-    ctx.app.restore_session()
+    _list_sessions(ctx, ctx.store.list_infos())
     return False
 
 
 def cmd_tree(cmd: str, ctx: CommandContext) -> bool:
-    """显示会话分支树，选中的 entry 设为当前位置。"""
+    """显示会话分支树；跳转由宿主界面的选择菜单提供。"""
     nodes = ctx.store.get_tree()
     if not nodes:
         ctx.output.write("No session tree available (no metadata).")
         return False
-
-    choices = [
-        Choice(
-            title=f"{'  ' * n.depth}{'└─ ' if n.depth > 0 else ''}{n.title}{' ← current' if n.is_current else ''}",
-            value=n,
+    for n in nodes:
+        ctx.output.write(
+            f"{'  ' * n.depth}{'└─ ' if n.depth > 0 else ''}{n.title}"
+            f"{' ← current' if n.is_current else ''}"
         )
-        for n in nodes
-    ]
-    selected = ctx.output.select("Jump to entry:", choices=choices)
-    if selected is None:
-        return False
-
-    if not ctx.store.jump_to_entry(selected.id):
-        ctx.output.write("Failed to set entry.")
-        return False
-
-    ctx.app.restore_session()
-    ctx.output.write(f"Moved to: {selected.title}")
     return False
 
 
@@ -215,29 +190,18 @@ def cmd_continue(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_sessions(cmd: str, ctx: CommandContext) -> bool:
-    """交互式选择并恢复历史会话。"""
-    sessions = ctx.store.list_infos()
-    if not sessions:
-        ctx.output.write("No conversations found.")
-        return False
-
-    selected = _select_session(ctx, sessions)
-    if selected is None:
-        return False
-
-    ctx.store.resume(selected.id)
-    ctx.app.restore_session()
-    _print_resumed_session(selected, ctx)
+    """列出历史会话；选择恢复由宿主界面的菜单提供。"""
+    _list_sessions(ctx, ctx.store.list_infos())
     return False
 
 
-def _select_session(
-    ctx: CommandContext, sessions: list[SessionInfoView]
-) -> SessionInfoView | None:
-    return ctx.output.select(
-        "Select session to resume:",
-        [Choice(f"{item.title} - {item.summary}", item) for item in sessions],
-    )
+def _list_sessions(ctx: CommandContext, sessions: list[SessionInfoView]) -> None:
+    if not sessions:
+        ctx.output.write("No conversations found.")
+        return
+    for item in sessions:
+        ctx.output.write(f"{item.id}  {item.title} - {item.summary}")
+    ctx.output.write("Usage: /resume <session ID|last>")
 
 
 def _print_resumed_session(view: SessionInfoView, ctx: CommandContext) -> None:
@@ -267,12 +231,8 @@ def cmd_mode(cmd: str, ctx: CommandContext) -> bool:
     parts = cmd.split(maxsplit=1)
     selected = parts[1].strip().lower() if len(parts) == 2 else None
     if selected is None:
-        selected = ctx.output.select(
-            "Select execution mode:",
-            choices=[Choice(mode, mode) for mode in ("act", "build", "plan")],
-            default=ctx.state.mode,
-        )
-    if selected is None:
+        ctx.output.write(f"Mode: {ctx.state.mode}")
+        ctx.output.write("Usage: /mode <act|build|plan>")
         return False
     if selected not in {"act", "build", "plan"}:
         ctx.output.write("Usage: /mode <act|build|plan>")

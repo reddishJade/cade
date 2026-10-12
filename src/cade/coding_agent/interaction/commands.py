@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -18,20 +18,12 @@ from cade.harness.snapshot import SnapshotStore
 from .app_contract import InteractionApp
 
 
-@dataclass(frozen=True)
-class Choice[T]:
-    title: str
-    value: T
-
-
 class CommandOutput(Protocol):
+    """命令的文本输出。命令不向用户发起交互；选择与输入由宿主界面在分发前完成。"""
+
     def write(self, text: str = "", *, end: str = "\n") -> None: ...
 
     def render(self, text: str) -> None: ...
-
-    def select[T](
-        self, title: str, choices: Sequence[Choice[T]], default: T | None = None
-    ) -> T | None: ...
 
 
 @dataclass

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-from typing import Any, TypeGuard
+from typing import TypeGuard
 
 from cade.ai.models import parse_model_mode
 from cade.ai.resolver import ModelResolver
-from cade.coding_agent.assembly.security import permission_policy_from_security
 from cade.coding_agent.interaction.app_contract import ModelControlApp
 from cade.coding_agent.interaction.models import (
     AvailableModelEntry,
@@ -15,24 +12,15 @@ from cade.coding_agent.interaction.models import (
 from cade.coding_agent.interaction.reasoning_effort import (
     reasoning_effort_levels_for_transport,
 )
-from cade.harness.config import SecurityRuntimeConfig
 from cade.harness.security import (
     FileGrantStore,
     InMemoryGrantStore,
-    PermissionDecision,
     PermissionPolicy,
 )
-
-from .ptk_patch import safe_select, safe_text
-from .setup_wizard import CONFIG_FILENAME, _load_existing_config, _save_config
 
 
 def _is_model_control_app(app: object) -> TypeGuard[ModelControlApp]:
     return hasattr(app, "get_model_info") and hasattr(app, "set_model")
-
-
-def _is_permission_decision(value: object) -> TypeGuard[PermissionDecision]:
-    return value in {"allow", "deny", "ask"}
 
 
 def _model_info(app: object) -> dict[str, str]:
@@ -46,25 +34,15 @@ def _approval_info(app: object | None) -> tuple[str, str]:
     return policy, reviewer
 
 
-PERMISSION_TABS = (
-    "Recently denied",
-    "Allow",
-    "Review",
-    "Deny",
-    "Workspace",
-)
-
-
 def handle_permissions(
     command: str,
     session_grant_store: InMemoryGrantStore | None,
     permanent_grant_store: FileGrantStore | None,
     static_policy: PermissionPolicy | None = None,
     restricted_dirs: tuple[str, ...] = (),
-    project_root: Path | None = None,
     app: object | None = None,
-    store: object | None = None,
 ) -> None:
+    """列出或清除权限规则与授权；不带参数时等同 list。"""
     parts = command.split(maxsplit=2)
     sub = parts[1] if len(parts) >= 2 else ""
     if sub == "clear" and session_grant_store is not None:
@@ -73,17 +51,6 @@ def handle_permissions(
         return
     if sub and sub != "list":
         print("Usage: /permissions [list|clear]")
-        return
-    if sub != "list" and project_root is not None and sys.stdin.isatty():
-        manage_permissions(
-            project_root,
-            session_grant_store,
-            permanent_grant_store,
-            static_policy,
-            restricted_dirs,
-            app=app,
-            store=store,
-        )
         return
     list_permissions(
         session_grant_store,
@@ -200,370 +167,6 @@ def list_permissions(
 
     lines.append("Use `/permissions clear` to remove session grants.")
     print("\n".join(lines))
-
-
-def manage_permissions(
-    project_root: Path,
-    session_grant_store: InMemoryGrantStore | None,
-    permanent_grant_store: FileGrantStore | None,
-    static_policy: PermissionPolicy | None = None,
-    restricted_dirs: tuple[str, ...] = (),
-    *,
-    app: object | None = None,
-    store: object | None = None,
-) -> None:
-    """交互式管理权限规则。"""
-    config_path = project_root / CONFIG_FILENAME
-    config = _load_existing_config(config_path)
-    print_permission_overview(
-        config,
-        session_grant_store,
-        permanent_grant_store,
-        store,
-        approval_info=_approval_info(app),
-    )
-
-    while True:
-        tab = safe_select(
-            "Permissions:",
-            choices=[*PERMISSION_TABS, "Done"],
-        )
-        if tab in (None, "Done"):
-            return
-        if tab == "Recently denied":
-            _render_recently_denied_tab(store)
-            _pause_permission_tab()
-            continue
-        if tab == "Workspace":
-            if _handle_workspace_tab(
-                config, config_path, project_root, restricted_dirs
-            ):
-                print(
-                    f"Saved to {config_path.name}. Restart Cade to reload workspace roots."
-                )
-            continue
-        decision = "ask" if tab == "Review" else str(tab).lower()
-        changed = _handle_rule_tab(config, config_path, decision)
-        if changed:
-            _apply_runtime_permission_policy(app, config)
-            print(
-                f"Saved to {config_path.name}. The current runtime policy was refreshed when possible."
-            )
-
-
-def print_permission_overview(
-    config: dict[str, Any],
-    session_grant_store: InMemoryGrantStore | None,
-    permanent_grant_store: FileGrantStore | None,
-    store: object | None,
-    *,
-    approval_info: tuple[str, str] = ("on-request", "user"),
-) -> None:
-    """打印类似权限面板的简短概览。"""
-    rules = _security_rules(config)
-    counts = {
-        decision: sum(1 for rule in rules if rule.get("decision") == decision)
-        for decision in ("allow", "ask", "deny")
-    }
-    recent_denied = _recently_denied(store)
-    session_count = len(session_grant_store.records()) if session_grant_store else 0
-    permanent_count = (
-        len(permanent_grant_store.records()) if permanent_grant_store else 0
-    )
-    print("Permissions")
-    print(
-        "  "
-        f"Recently denied {len(recent_denied)}   "
-        f"Allow {counts['allow']}   "
-        f"Review {counts['ask']}   "
-        f"Deny {counts['deny']}   "
-        "Workspace"
-    )
-    print()
-    approval_policy, approvals_reviewer = approval_info
-    print(f"  Approval: {approval_policy} via {approvals_reviewer}.")
-    print("  Cade will not ask before using tools matched by Allow rules.")
-    print(f"  Saved grants: session {session_count}, persistent {permanent_count}.")
-    print()
-
-
-def _permission_header(active_tab: str) -> str:
-    labels = [f"[{tab}]" if tab == active_tab else tab for tab in PERMISSION_TABS]
-    return "Permissions  " + "   ".join(labels)
-
-
-def _render_recently_denied_tab(store: object | None) -> None:
-    print(_permission_header("Recently denied"))
-    print()
-    denied = _recently_denied(store)
-    if not denied:
-        print("   No recent denials. Policy and reviewer denials will appear here.")
-        print()
-        return
-    for index, item in enumerate(denied, start=1):
-        print(f"   {index}. {item}")
-    print()
-
-
-def _handle_rule_tab(
-    config: dict[str, Any],
-    config_path: Path,
-    decision: str,
-) -> bool:
-    rules = [
-        rule for rule in _security_rules(config) if rule.get("decision") == decision
-    ]
-    _render_rule_tab(decision, rules)
-    choices = ["Add a new rule…", "Back"]
-    action = safe_select(
-        "Select action:",
-        choices=choices,
-        default="Add a new rule…",
-    )
-    if action != "Add a new rule…":
-        return False
-    return add_permission_rule_interactive(
-        config,
-        config_path,
-        default_decision=decision,
-    )
-
-
-def _render_rule_tab(decision: str, rules: list[dict[str, Any]]) -> None:
-    active = "Review" if decision == "ask" else decision.capitalize()
-    print(_permission_header(active))
-    print()
-    guidance = {
-        "allow": "   Cade runs allowed tools without approval review.",
-        "ask": "   Cade sends these tools to the active mode reviewer.",
-        "deny": "   Cade will always reject requests to use denied tools.",
-    }[decision]
-    print(guidance)
-    print("     1. Add a new rule…")
-    for index, rule in enumerate(rules, start=2):
-        print(f"     {index}. {format_permission_rule(rule)}")
-    print()
-
-
-def _handle_workspace_tab(
-    config: dict[str, Any],
-    config_path: Path,
-    project_root: Path,
-    restricted_dirs: tuple[str, ...],
-) -> bool:
-    del config_path
-    _render_workspace_tab(config, project_root, restricted_dirs)
-    safe_select(
-        "Select action:",
-        choices=["Back"],
-        default="Back",
-    )
-    return False
-
-
-def _render_workspace_tab(
-    config: dict[str, Any],
-    project_root: Path,
-    restricted_dirs: tuple[str, ...],
-) -> None:
-    print(_permission_header("Workspace"))
-    print()
-    print("   Structured file tools stay inside the project.")
-    security = config.get("security", {})
-    sandbox = security.get("sandbox", {}) if isinstance(security, dict) else {}
-    mode = sandbox.get("mode", "workspace-write")
-    network = sandbox.get("network_access", "deny")
-    if sys.platform == "linux":
-        print(f"   Shell sandbox: {mode}; network: {network}.")
-    else:
-        print("   Shell OS sandbox is currently available on Linux only.")
-    print()
-    print(f"     -  {project_root} (Original working directory)")
-    for directory in restricted_dirs:
-        print(f"     -  {directory} (restricted)")
-    print()
-
-
-def _pause_permission_tab() -> None:
-    safe_select(
-        "Select action:",
-        choices=["Back"],
-        default="Back",
-    )
-
-
-def add_permission_rule_interactive(
-    config: dict[str, Any],
-    config_path: Path,
-    *,
-    default_decision: str = "ask",
-) -> bool:
-    decision = safe_select(
-        "Rule decision:",
-        choices=["allow", "ask", "deny"],
-        default=default_decision,
-    )
-    if decision is None:
-        return False
-
-    rule = _prompt_custom_rule(str(decision))
-    if rule is None:
-        return False
-
-    security = config.setdefault("security", {})
-    tools = dict(security.get("tools", {}))
-    tools[str(rule["tool"])] = decision
-    security["tools"] = tools
-    _save_config(config, config_path)
-    print(f"Added {format_permission_rule(rule)}")
-    return True
-
-
-def _prompt_custom_rule(decision: str) -> dict[str, Any] | None:
-    tool = safe_text("Tool name or pattern:", default="bash")
-    if tool is None or not tool.strip():
-        return None
-    rule: dict[str, Any] = {"tool": tool.strip(), "decision": decision}
-    target_type = safe_select(
-        "Target type:",
-        choices=["none", "command", "path", "mcp", "subagent", "skill"],
-        default="none",
-    )
-    if target_type is None:
-        return None
-    if target_type != "none":
-        rule["target_type"] = target_type
-        target = safe_text("Target pattern (optional):")
-        if target is None:
-            return None
-        if target.strip():
-            rule["target"] = target.strip()
-    input_kind = safe_select(
-        "Input match:",
-        choices=["none", "prefix", "contains", "regex"],
-        default="none",
-    )
-    if input_kind is None:
-        return None
-    if input_kind != "none":
-        value = safe_text(f"Input {input_kind}:")
-        if value is None or not value.strip():
-            return None
-        rule[f"input_{input_kind}"] = value.strip()
-    return rule
-
-
-def _apply_runtime_permission_policy(
-    app: object | None, config: dict[str, Any]
-) -> None:
-    if app is None:
-        return
-    agent = getattr(app, "agent", None)
-    if agent is None:
-        return
-    policy = _policy_from_config(config)
-    replace_policy = getattr(agent, "replace_permission_policy", None)
-    if callable(replace_policy):
-        replace_policy(policy)
-
-
-def _policy_from_config(config: dict[str, Any]) -> PermissionPolicy | None:
-    security = config.get("security", {})
-    if not isinstance(security, dict):
-        return None
-    try:
-        runtime_security = SecurityRuntimeConfig.model_validate(security)
-    except ValueError:
-        return None
-    return permission_policy_from_security(runtime_security)
-
-
-def _security_rules(config: dict[str, Any]) -> list[dict[str, Any]]:
-    security = config.get("security", {})
-    if not isinstance(security, dict):
-        return []
-    result: list[dict[str, Any]] = []
-    permissions = security.get("permissions", {})
-    if isinstance(permissions, dict):
-        result.extend(
-            {
-                "permission": name,
-                "decision": decision,
-            }
-            for name, decision in permissions.items()
-            if isinstance(name, str) and _is_permission_decision(decision)
-        )
-    tools = security.get("tools", {})
-    if isinstance(tools, dict):
-        result.extend(
-            {
-                "tool": name,
-                "decision": decision,
-            }
-            for name, decision in tools.items()
-            if isinstance(name, str) and _is_permission_decision(decision)
-        )
-    return result
-
-
-def _recently_denied(store: object | None) -> list[str]:
-    if store is None:
-        return []
-    load_records = getattr(store, "load_records", None)
-    if not callable(load_records):
-        return []
-    try:
-        records = load_records()
-    except (OSError, ValueError, TypeError):
-        return []
-    if not isinstance(records, list | tuple):
-        return []
-    denied: list[str] = []
-    for record in reversed(records):
-        content = getattr(record, "content", None)
-        if not isinstance(content, dict):
-            continue
-        data = content.get("data")
-        if not isinstance(data, dict):
-            continue
-        status = data.get("status")
-        if status not in {"denied", "approval_required"}:
-            continue
-        text = str(data.get("content") or data.get("tool_use_id") or status)
-        denied.append(text)
-        if len(denied) >= 10:
-            break
-    return list(reversed(denied))
-
-
-def format_permission_rule(rule: dict[str, Any]) -> str:
-    decision = str(rule.get("decision", "ask"))
-    if rule.get("permission"):
-        label = f"permission:{rule['permission']}"
-    else:
-        label = _tool_label(rule)
-    parts = [f"{label}: {decision}"]
-    target_type = rule.get("target_type")
-    target = rule.get("target")
-    if target_type:
-        parts.append(f"target_type={target_type}")
-    if target:
-        parts.append(f"target={target}")
-    return " ".join(parts)
-
-
-def _tool_label(rule: dict[str, Any]) -> str:
-    tool = str(rule.get("tool", "*"))
-    prefix = rule.get("input_prefix")
-    contains = rule.get("input_contains")
-    regex = rule.get("input_regex")
-    if tool == "bash" and isinstance(prefix, str) and prefix:
-        return f"Bash({prefix}*)"
-    if tool == "bash" and isinstance(contains, str) and contains:
-        return f"Bash(*{contains}*)"
-    if tool == "bash" and isinstance(regex, str) and regex:
-        return f"Bash(/{regex}/)"
-    return tool
 
 
 def _format_grant(record: object) -> str:
@@ -702,16 +305,6 @@ def handle_effort_command(command: str, app: object) -> None:
     transport = info.get("transport", "") if info else ""
     model = info.get("model", "") if info else ""
     supported_levels = reasoning_effort_levels_for_transport(transport, model)
-    if len(parts) == 1 and sys.stdin.isatty() and supported_levels:
-        current = info.get("reasoning_effort")
-        selected = safe_select(
-            "Select reasoning effort:",
-            choices=list(supported_levels),
-            default=current if current in supported_levels else None,
-        )
-        if selected is None:
-            return
-        parts.append(selected)
     if len(parts) == 1:
         current = info.get("reasoning_effort", "not set") if info else "unknown"
         print(f"  Reasoning effort: {current}")

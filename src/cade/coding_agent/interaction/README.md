@@ -18,6 +18,6 @@
 `ai/` 拥有模型适配，`agent/` 拥有模型循环，`harness/` 拥有运行控制、会话和事件流，
 `coding_agent/` 拥有编码产品装配。server 通过本层与编码产品调用这些能力。
 
-命令输出与选择通过 `CommandOutput` 注入；认证、配置和其他宿主操作通过
+命令输出通过 `CommandOutput` 注入，命令本身不发起交互，选择与输入由宿主界面在分发前完成；认证、配置和其他宿主操作通过
 `CommandContext.host_command` 注入。`coding_agent/modes/tui/` 拥有 Rich、prompt-toolkit、
 questionary、终端输出、终端尺寸计算，以及样式、预览、计时、折叠和输入控件。
