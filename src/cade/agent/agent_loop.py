@@ -81,7 +81,6 @@ async def run_agent_loop(
         request_prefix=list(context.request_prefix),
         messages=list(context.messages) + list(prompts),
         tools=list(context.tools) if context.tools else [],
-        context_state=context.context_state,
         context_manager=context.context_manager,
         state=dict(context.state),
         project_root=context.project_root,
@@ -93,10 +92,9 @@ async def run_agent_loop(
         ),
         context_policy=config.context_policy or context.context_policy,
     )
-    if current_context.context_manager is not None:
-        current_context.context_manager.token_usage.context_budget = (
-            current_context.request_token_budget
-        )
+    current_context.context_manager.token_usage.context_budget = (
+        current_context.request_token_budget
+    )
     emit(AgentStartEvent())
     emit(TurnStartEvent())
     for prompt in prompts:
@@ -112,8 +110,7 @@ async def run_agent_loop(
         finish_steering=finish_steering,
         reopen_steering=reopen_steering,
     )
-    if current_context.context_manager is not None:
-        current_context.context_manager.replace_history(result.surface)
+    current_context.context_manager.replace_history(result.surface)
     return result
 
 
@@ -167,10 +164,7 @@ async def _run_loop(
             state.first_turn = False
 
         # ── 上下文窗口切换检查 ──
-        if (
-            current_context.context_manager is not None
-            and state.active_provider is not None
-        ):
+        if state.active_provider is not None:
             current_context.context_manager.bind_provider(state.active_provider)
         if (
             current_context.context_policy is not None
@@ -548,13 +542,9 @@ def _rotate_context(
         raise RuntimeError("context rollover is not configured")
     before = len(context.messages)
     next_window = config.rollover_context(context.messages)
-    if context.context_manager is not None:
-        context.messages = context.context_manager.complete_rollover(
-            next_window, reason=reason, before_messages=before
-        )
-    else:
-        context.messages = next_window
-        context.context_state.reset()
+    context.messages = context.context_manager.complete_rollover(
+        next_window, reason=reason, before_messages=before
+    )
     _refresh_request_prefix(context, config)
     _reset_provider_conversation_state(provider)
     metrics.context_window_resets += 1

@@ -147,15 +147,10 @@ class DefaultRequestAssembler:
         admission_budget = (
             policy.admission_target if policy and token_budget > 0 else token_budget
         )
-        if context.context_manager is not None:
-            context.messages[:] = context.context_manager.normalize_messages(
-                context.messages
-            )
-        context_state = (
-            context.context_manager.context_state
-            if context.context_manager is not None
-            else context.context_state
+        context.messages[:] = context.context_manager.normalize_messages(
+            context.messages
         )
+        context_state = context.context_manager.context_state
         context_state.sync_request_prefix(context.request_prefix)
         legacy_blocks, world_blocks = self._collect(
             context,
@@ -196,8 +191,6 @@ class DefaultRequestAssembler:
         def calibrate_tokens(messages: list[AgentMessage], tokens: int) -> int:
             nonlocal local_tokens, estimate_source
             local_tokens = tokens
-            if context.context_manager is None:
-                return tokens
             predicted, anchored = context.context_manager.estimate_request_tokens(
                 self.converter(messages),
                 tool_definitions,
@@ -419,18 +412,10 @@ class DefaultRequestAssembler:
         if callable(collect_sections):
             collected = collect_sections(
                 collection_input,
-                (
-                    context.context_manager.context_state.world_state
-                    if context.context_manager is not None
-                    else context.context_state.world_state
-                ),
+                context.context_manager.context_state.world_state,
             )
             if isinstance(collected, list):
-                context_state = (
-                    context.context_manager.context_state
-                    if context.context_manager is not None
-                    else context.context_state
-                )
+                context_state = context.context_manager.context_state
                 world_blocks = context_state.world_state.current_blocks()
         return legacy_blocks, world_blocks
 
@@ -491,7 +476,7 @@ def _context_snapshot(
     durable_tokens = _estimate_messages_tokens(durable)
     working_tokens = _estimate_messages_tokens(working)
     evidence_tokens = _estimate_messages_tokens(evidence)
-    window = context.context_manager.context_window if context.context_manager else None
+    window = context.context_manager.context_window
     return ContextSnapshot(
         physical_window=policy.physical_window if policy else None,
         effective_input_budget=token_budget,
@@ -515,7 +500,7 @@ def _context_snapshot(
         if token_budget > 0
         else 0,
         current_window_id=context_window_id(context.messages) or None,
-        last_rotation_reason=window.last_reason if window else None,
+        last_rotation_reason=window.last_reason,
         rotation_blocked_reason=blocked_reason,
     )
 

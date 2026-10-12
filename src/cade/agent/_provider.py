@@ -72,19 +72,16 @@ async def call_provider(
     """调用 provider；若流式生成期间被打断则返回 None。"""
     if config.max_llm_calls is not None and metrics.llm_calls >= config.max_llm_calls:
         raise LlmCallLimitReached
-    if context.context_manager is not None:
-        context.context_manager.bind_provider(provider)
+    context.context_manager.bind_provider(provider)
     if assembly is None:
         assembly = config.request_assembler.assemble(
             context,
             current_step=current_step,
             options=config.options,
         )
-    if context.context_manager is not None:
-        context.context_manager.context_snapshot = assembly.context_snapshot
+    context.context_manager.context_snapshot = assembly.context_snapshot
     assembly.require_sendable()
-    if context.context_manager is not None:
-        context.context_manager.record_request(assembly)
+    context.context_manager.record_request(assembly)
     if config.before_provider_request:
         config.before_provider_request(assembly)
 
@@ -103,10 +100,9 @@ async def call_provider(
     if events is None:
         return None
     response = _provider_events_to_response(events, metrics, lambda _event: None)
-    if context.context_manager is not None:
-        context.context_manager.record_provider_usage(
-            response.message.usage, request_succeeded=response.stop_reason != "error"
-        )
+    context.context_manager.record_provider_usage(
+        response.message.usage, request_succeeded=response.stop_reason != "error"
+    )
     return response
 
 

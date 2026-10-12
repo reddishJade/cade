@@ -22,7 +22,6 @@ from cade.agent.types import (
 from cade.ai.providers.base import StreamProvider
 from cade.ai.types import StreamOptions, ThinkingLevel
 
-from .context import ContextState
 from .context_manager import ContextManager
 from .context_policy import ContextPolicy
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage
@@ -50,10 +49,9 @@ class AgentContext(BaseModel):
     request_prefix: list[AgentMessage] = Field(default_factory=list)
     messages: list[AgentMessage] = Field(default_factory=list)
     tools: list[Annotated[AgentTool, SkipValidation]] = Field(default_factory=list)
-    context_state: Annotated[ContextState, SkipValidation] = Field(
-        default_factory=ContextState
+    context_manager: Annotated[ContextManager, SkipValidation] = Field(
+        default_factory=ContextManager
     )
-    context_manager: Annotated[ContextManager | None, SkipValidation] = None
     state: dict[str, object] = Field(default_factory=dict)
     project_root: Path | None = None
     cwd: Path | None = None

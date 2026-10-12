@@ -160,7 +160,6 @@ class AgentHarness:
         self.audit_logger = gate_runtime.audit_logger
         self._context_manager = ContextManager()
         self._history = self._context_manager.history
-        self._context_state = self._context_manager.context_state
         self._resumed_notice: str | None = None
         self._run_controller = SessionRunController(runtime.session_inbox)
 
@@ -521,7 +520,7 @@ class AgentHarness:
         composition = self.composition
         manager = ContextManager(
             history=deepcopy(self.history_messages()),
-            context_state=deepcopy(self._context_state),
+            context_state=deepcopy(self._context_manager.context_state),
         )
         manager.append([UserMessage(content=question)])
         context = AgentContext(
@@ -608,7 +607,6 @@ class AgentHarness:
         context_messages = self._build_context_messages(question, composition)
         context_snapshot_state = self._build_context_snapshot_state(active_registry)
         self._resumed_notice = None
-        history_messages = self.history_messages()
         turn_agent = Agent(self._gate.adapt_tools(active_registry))
 
         def inject_runtime(message: AgentMessage) -> None:
@@ -661,7 +659,6 @@ class AgentHarness:
                 turn_messages,
                 loop_config,
                 signal=self.cancellation_token,
-                history=history_messages,
                 request_prefix=context_messages,
                 context_manager=self._context_manager,
                 state=context_snapshot_state,
