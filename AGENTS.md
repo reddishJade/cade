@@ -1,72 +1,54 @@
-# Repository Guidelines
+# 仓库准则
 
-## Engineering Principles
+## 工程原则
 
-- For new designs, study how established products solve the relevant problem
-  and adopt proven patterns that fit the requirements.
-- Choose the simplest implementation that fully meets the current requirements.
-  Avoid speculative abstractions, configuration, and indirection.
-- Build in working, end-to-end increments, starting with the smallest complete
-  version. Keep each increment usable and suitable for long-term extension;
-  avoid temporary workarounds intended to be replaced. Do not remove existing
-  working functionality to make way for an unfinished complex design.
-- Keep components modular, with clear responsibilities and boundaries. Place
-  behavior in the layer that owns it and separate I/O, computation, and
-  presentation.
-- Use existing project dependencies first. Check their documentation and types
-  before concluding that a capability is missing. Prefer established,
-  well-maintained libraries when they reduce overall complexity or improve
-  reliability; add a dependency or reimplement common functionality only with
-  a clear reason.
-- Do not preserve backward compatibility. Remove obsolete paths and update
-  affected callers, tests, and documentation instead of adding compatibility
-  layers, fallbacks, or migrations.
+- 新设计先研究成熟产品如何解决相关问题，采用适合需求的经过验证的模式。研究投入与范围相匹配：新增子系统或技术选型需要调研，修改单个函数的内部实现不需要。
+- 取舍顺序：先完整满足当前需求，其次避免日后必须拆除的结构，最后才是扩展性。扩展性来自清晰的模块边界。
+- 以可工作的端到端增量构建，从最小的完整版本开始，每个增量保持可用。现有可工作的功能保留到有完整替代为止。生产代码以长期可维护的形态编写。
+- 用探索性原型验证假设。原型保持隔离（独立目录或分支），结论以文字记录。采用原型前重新评估代码质量，复用其中符合生产标准的部分。
+- 组件保持模块化，职责清晰。行为放在拥有它的层，I/O、计算和展示分离。依赖只指向更低的层（见"项目结构与架构"）。
+- 优先使用现有项目依赖，断定某项能力缺失之前先查其文档和类型。成熟且维护良好的库能降低整体复杂度或提高可靠性时采用；只有在有明确理由时才添加依赖或重新实现常见功能。
+- 允许破坏性变更。在同一次变更中删除过时路径，并更新调用方、测试和文档。
 
-## Task Scope & Completion
+## 任务范围与完成
 
-Follow [HUMAN.md](HUMAN.md) for communication, decision checkpoints, and handoffs
-with the maintainer.
+- 阅读与变更相关的代码和文档，依赖或不确定性需要时扩大上下文。例行编辑直接进行。
+- 任务完成于：变更已实施且请求的行为已验证，或识别出具体阻碍。验证与变更相匹配。已验证的行为、假设和未执行的检查分开报告。无法运行验证时，说明原因，并给出维护者可以运行的最小命令。
+- 每个任务围绕一个主题，所有改动服务于该主题。范围外的发现在最终报告中单独成段列出（位置、现象、影响），由维护者决定。
+- 遇到权限、环境或外部依赖方面的阻碍时，记录证据后停止重试。其他失败在还有可检验的新假设且成本合理时继续。进展指更接近目标行为（更多测试通过、失败范围缩小），或排除了一个有证据的假设。没有这样的方向时停下，报告阻碍、已排除的假设，以及需要维护者提供的内容。
+- 文档按层级放置：根 README 承载项目定位、安装运行步骤和顶层能力概览，仅在顶层能力变化时修改；模块细节写在 docstring 和注释里；模块级文档在要求时编写。变更使现有文档失真时，修正对应的句子。
 
-Read code and documentation relevant to the change; expand context when a
-dependency or uncertainty warrants it. Routine edits do not require a full
-repository review or external design research.
+## 与维护者协作
 
-For implementation tasks, implement the change, validate it, and fix failures
-caused by it until the requested behavior is verified or a concrete blocker is
-identified. Report unrelated failures without expanding scope.
-Use HUMAN.md for approval boundaries and review checkpoints.
+在每个任务开始时阅读 [HUMAN.md](HUMAN.md)，其中定义了如何汇报结果、发进度更新、做决策、暂停和交接。HUMAN.md 不可用时，适用这条核心规则：长任务中在对话里发简短更新（每条 1 到 2 句话，写明自上一条更新以来的一个具体结果和下一步动作），至少约每 8 次工具调用一条。
 
-## Project Structure & Architecture
+## 项目结构与架构
 
-Cade is a Python 3.12+ coding-agent harness. All package code lives in
-`src/cade/`; the command-line entry point is `src/cade/main.py`. The layered
-design is `ai/` (provider adapters), `agent/` (loop and context), `harness/`
-(runtime, sessions, policy, MCP), `coding_agent/` (product assembly, tools,
-interaction services, TUI and exec modes), and `server/` (web host).
-Documentation and examples are in `docs/` and `examples/`.
+Cade 是一个 Python 3.12+ 的 coding-agent harness。所有包代码位于 `src/cade/`，命令行入口为 `src/cade/main.py`。分层设计自上而下为：`server/`（web 宿主）、`coding_agent/`（产品装配、工具、交互服务、TUI 和 exec 模式）、`harness/`（运行时、会话、策略、MCP）、`agent/`（循环与上下文）、`ai/`（provider 适配器）。每一层只从其下的层导入。文档和示例位于 `docs/` 和 `examples/`。
 
-## Coding Style & Naming
+## 命令
 
-Use complete type annotations and standard four-space Python indentation.
-Ruff enforces formatting with an 88-character line length; do not add `# noqa`
-or blanket exception handlers. Prefer small, single-purpose functions.
-Use `snake_case` for modules, functions, and variables; `PascalCase` for classes;
-and `test_<feature>.py` for test modules. Write comments and docstrings in
-Simplified Chinese.
+在仓库根目录执行；先按[开发指南](docs/development.md#environment-setup)安装开发依赖。
 
-## Task-Specific References
+代码变更后运行 Lint、格式检查和类型检查。变更涉及 import 或入口时，追加受影响入口的启动检查。`src/cade/tests/` 中存在 `test_*.py` 时，运行回归测试。行为变更执行运行验收。仅修改文档时，检查内容、链接、命令和差异。
 
-Read the relevant reference when its condition applies, not the entire list:
+- Lint：`uv run --locked ruff check src/`
+- 格式化：`uv run --locked ruff format src/`
+- 格式检查：`uv run --locked ruff format --check src/`
+- 类型检查：`uv run --locked pyright src/`
+- 回归测试：`uv run --locked pytest -q src/cade/tests`
+- 启动检查：`uv run --locked cade --help`
+- 运行验收：`uv run --locked cade exec "<任务>"`
 
-- Before implementing behavior changes or adding tests, use
-  [Validation Guidelines](docs/testing.md) for validation selection and evidence.
-  Use real `cade exec` tasks as the primary runtime acceptance path; validate
-  TUI and web behavior through their actual hosts. For behavior-preserving
-  refactors, check callers, static analysis, imports and affected startup.
-  Adding test code requires a concrete coverage gap, a real scenario, independent
-  acceptance criteria and reproducible evidence as defined in that guide.
-  Documentation-only changes receive documentation and diff review.
-- For environment setup, repository skill changes, or preparing commits and PRs,
-  read the matching section of [Development Guide](docs/development.md).
-- For architecture changes, consult [Architecture](docs/architecture.md).
-- For code reviews, use [Review Standards](docs/review-standards.md).
+## 代码风格与命名
+
+使用完整的类型注解和标准的四空格 Python 缩进。Ruff 强制格式化，行宽 88 字符；Ruff 的问题在代码中解决，异常捕获使用具体的异常类型。优先使用小型、单一用途的函数。模块、函数和变量使用 `snake_case`，类使用 `PascalCase`，测试模块使用 `test_<feature>.py`。注释和 docstring 使用简体中文。
+
+## 特定任务参考
+
+只阅读条件与当前任务匹配的参考文档：
+
+- 实施行为变更或新增测试之前，阅读[验证准则](docs/testing.md)，按其中的要求选择验证方式、准备运行环境和判断测试覆盖缺口。
+- 环境搭建、仓库 skill 变更，或准备提交和 PR 时，阅读[开发指南](docs/development.md)中对应的章节。
+- 架构变更时，阅读[架构](docs/architecture.md)。
+- 代码审查时，阅读[审查标准](docs/review-standards.md)。
