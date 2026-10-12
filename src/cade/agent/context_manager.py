@@ -1,6 +1,6 @@
 """会话级上下文管理器。
 
-把历史、world state、预算、压缩生命周期和 provider 统计放在同一个可追踪对象中。
+把历史、预算、换窗生命周期和 provider 统计放在同一个可追踪对象中。
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 
 from ._context_window import estimate_message_tokens, estimate_wire_message_tokens
 from ._tool_pairing import repair_tool_pairing
-from .context import ContextState
 from .context_policy import ContextSnapshot
 from .messages import AgentMessage
 
@@ -75,7 +74,6 @@ class ContextManager:
     """会话上下文的唯一可变状态边界。"""
 
     history: list[AgentMessage] = field(default_factory=list)
-    context_state: ContextState = field(default_factory=ContextState)
     history_version: int = 0
     token_usage: ContextTokenUsage = field(default_factory=ContextTokenUsage)
     context_window: ContextWindowState = field(default_factory=ContextWindowState)
@@ -202,7 +200,6 @@ class ContextManager:
         """提交新活动窗口并重置窗口级动态状态。"""
         before = len(self.history) if before_messages is None else before_messages
         replacement = self.replace_history(messages)
-        self.context_state.reset()
         self.context_snapshot = None
         self.invalidate_token_anchor()
         self.context_window.context_window_id += 1
@@ -215,7 +212,6 @@ class ContextManager:
     def clear(self) -> None:
         self.history.clear()
         self.context_snapshot = None
-        self.context_state.reset()
         self.history_version += 1
         self.token_usage = ContextTokenUsage()
         self.context_window = ContextWindowState(

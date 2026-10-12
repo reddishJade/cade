@@ -26,6 +26,7 @@ from cade.agent import (
     ContextPolicy,
     ContextPriority,
     DefaultRequestAssembler,
+    FrozenContextCollectorRegistry,
     TerminationReason,
     make_collector_section,
     make_state_section,
@@ -52,6 +53,11 @@ class SelectedContext:
 
     def collect(self, input: object) -> list[ContextBlock]:
         return self.blocks
+
+    def freeze(self) -> FrozenContextCollectorRegistry:
+        registry = ContextCollectorRegistry()
+        registry.register_section(make_collector_section("selected", self))
+        return registry.freeze()
 
 
 class UncalledProvider:
@@ -132,7 +138,7 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
         request_token_budget=2048,
     )
     assembly = DefaultRequestAssembler(
-        context_collectors=SelectedContext(blocks)
+        context_collectors=SelectedContext(blocks).freeze()
     ).assemble(context, current_step=1, options=None)
     assembly.require_sendable()
     assert assembly.estimated_tokens <= assembly.token_budget
@@ -152,7 +158,9 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
 
 def test_safe_budget_is_not_next_turn_soft_target() -> None:
     blocks = selected_blocks()
-    assembler = DefaultRequestAssembler(context_collectors=SelectedContext(blocks))
+    assembler = DefaultRequestAssembler(
+        context_collectors=SelectedContext(blocks).freeze()
+    )
     context = AgentContext(messages=[UserMessage(content="Task")])
     baseline = assembler.assemble(context, current_step=1, options=None)
     context.context_policy = policy(baseline.estimated_tokens, next_input=100)
@@ -174,7 +182,9 @@ def test_unassemblable_context_terminates_without_provider_call(
         messages.extend(tool_group("durable", "Required state " * 4000, durable=True))
     else:
         blocks[0].content = "Required selected context " * 4000
-    assembler = DefaultRequestAssembler(context_collectors=SelectedContext(blocks))
+    assembler = DefaultRequestAssembler(
+        context_collectors=SelectedContext(blocks).freeze()
+    )
     context = AgentContext(messages=messages, context_policy=policy())
     projection = assembler.assemble(context, current_step=1, options=None)
     assert projection.assembly_error is not None
@@ -217,7 +227,9 @@ def test_section_failure_does_not_send_partial_context() -> None:
             ),
             AgentLoopConfig(
                 provider=UncalledProvider(),
-                request_assembler=DefaultRequestAssembler(context_collectors=registry),
+                request_assembler=DefaultRequestAssembler(
+                    context_collectors=registry.freeze()
+                ),
                 rollover_context=ContextWindowRollover().rollover_messages,
             ),
             lambda event: None,
@@ -252,7 +264,7 @@ def test_rollover_refreshes_catalog_and_preserves_latest_durable_state() -> None
         context_manager=manager,
         context_policy=policy(4096),
     )
-    assembler = DefaultRequestAssembler(context_collectors=registry)
+    assembler = DefaultRequestAssembler(context_collectors=registry.freeze())
     first = assembler.assemble(context, current_step=1, options=None)
     assert "Before rollover" in str(first.wire_messages)
     rolled = ContextWindowRollover().rollover_messages(

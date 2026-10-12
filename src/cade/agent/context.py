@@ -15,7 +15,6 @@ from cade.agent._context_window import estimate_tokens, estimate_wire_message_to
 from cade.agent.messages import (
     AgentMessage,
     SystemMessage,
-    ToolResultMessage,
     UserMessage,
 )
 from cade.agent.types import AgentTool, materialize_json_mapping
@@ -125,70 +124,6 @@ class ContextSection:
     render_full: Callable[[object], list[ContextBlock]]
 
 
-@dataclass
-class WorldState:
-    """维护当前 section 投影与变化基线，不把过期状态叠加到模型请求。"""
-
-    _current_blocks: dict[str, list[ContextBlock]] = field(default_factory=dict)
-
-    def current_blocks(self) -> list[ContextBlock]:
-        """返回全部有效状态，而非仅返回本轮发生变化的状态。"""
-        return [block for blocks in self._current_blocks.values() for block in blocks]
-
-    def render(
-        self,
-        sections: tuple[ContextSection, ...],
-        input: ContextCollectionInput,
-    ) -> list[ContextBlock]:
-        active_ids = {section.section_id for section in sections}
-        for section_id in set(self._current_blocks) - active_ids:
-            del self._current_blocks[section_id]
-        for section in sections:
-            try:
-                current = section.snapshot(input)
-                self._current_blocks[section.section_id] = section.render_full(current)
-            except (LookupError, OSError, RuntimeError, TypeError, ValueError):
-                self._current_blocks.pop(section.section_id, None)
-                raise ContextAssemblyError(
-                    f"Cannot render context section: {section.section_id}"
-                ) from None
-        return self.current_blocks()
-
-    def reset(self) -> None:
-        """清除 section baseline，使下一次请求重新注入完整状态。"""
-        self._current_blocks.clear()
-
-
-@dataclass
-class ContextState:
-    """一次会话共享的 world state 与已确认上下文消息。"""
-
-    world_state: WorldState = field(default_factory=WorldState)
-    persistent_messages: list[AgentMessage] = field(default_factory=list)
-    _prefix_fingerprint: tuple[str, ...] | None = None
-
-    def sync_request_prefix(self, messages: list[AgentMessage]) -> None:
-        current = tuple(_message_fingerprint(message) for message in messages)
-        if current != self._prefix_fingerprint:
-            self.persistent_messages[:] = messages
-        self._prefix_fingerprint = current
-
-    def reset(self) -> None:
-        """清除压缩后需要重新建立的动态上下文投影。"""
-        self.world_state.reset()
-        self.persistent_messages.clear()
-        self._prefix_fingerprint = None
-
-
-def _message_fingerprint(message: AgentMessage) -> str:
-    return json.dumps(
-        message.model_dump(mode="json"),
-        ensure_ascii=False,
-        sort_keys=True,
-        default=str,
-    )
-
-
 # ── 收集器协议 ──
 
 
@@ -200,88 +135,40 @@ class ContextCollector(Protocol):
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]: ...
 
 
-class ContextCollectorSource(Protocol):
-    def collect(self, input: ContextCollectionInput) -> list[ContextBlock]: ...
-
-
 # ── 收集器注册表 ──
 
 
 class ContextCollectorRegistry:
     def __init__(self) -> None:
-        self._collectors: list[ContextCollector] = []
         self._sections: list[ContextSection] = []
 
-    def register(self, collector: ContextCollector) -> None:
-        self._collectors.append(collector)
-
     def register_section(self, section: ContextSection) -> None:
-        """注册会话级动态 section。"""
+        """注册每次请求重新收集的动态 section。"""
         self._sections.append(section)
 
-    def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        all_blocks: list[ContextBlock] = []
-        for collector in self._collectors:
-            try:
-                blocks = collector.collect(input)
-                all_blocks.extend(blocks)
-            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
-                raise ContextAssemblyError(
-                    f"Cannot collect context: {type(collector).__name__}"
-                ) from exc
-        return all_blocks
-
-    def collect_sections(
-        self,
-        input: ContextCollectionInput,
-        world_state: WorldState,
-    ) -> list[ContextBlock]:
-        return world_state.render(tuple(self._sections), input)
-
-    def __len__(self) -> int:
-        return len(self._collectors)
-
-    def __bool__(self) -> bool:
-        return bool(self._collectors or self._sections)
-
     def freeze(self) -> FrozenContextCollectorRegistry:
-        """发布不可再注册 collector 的组合快照。"""
-        return FrozenContextCollectorRegistry(
-            tuple(self._collectors),
-            tuple(self._sections),
-        )
+        """发布不可再注册 section 的组合快照。"""
+        return FrozenContextCollectorRegistry(tuple(self._sections))
 
 
 @dataclass(frozen=True)
 class FrozenContextCollectorRegistry:
-    """请求组装使用的不可变 collector generation。"""
+    """请求组装使用的不可变 section 集合。"""
 
-    collectors: tuple[ContextCollector, ...] = ()
     sections: tuple[ContextSection, ...] = ()
 
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        all_blocks: list[ContextBlock] = []
-        for collector in self.collectors:
+        """直接收集本次完整快照，不保留上次请求的投影。"""
+        current_blocks: dict[str, list[ContextBlock]] = {}
+        for section in self.sections:
             try:
-                all_blocks.extend(collector.collect(input))
-            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                current = section.snapshot(input)
+                current_blocks[section.section_id] = section.render_full(current)
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError):
                 raise ContextAssemblyError(
-                    f"Cannot collect context: {type(collector).__name__}"
-                ) from exc
-        return all_blocks
-
-    def collect_sections(
-        self,
-        input: ContextCollectionInput,
-        world_state: WorldState,
-    ) -> list[ContextBlock]:
-        return world_state.render(self.sections, input)
-
-    def __len__(self) -> int:
-        return len(self.collectors)
-
-    def __bool__(self) -> bool:
-        return bool(self.collectors or self.sections)
+                    f"Cannot render context section: {section.section_id}"
+                ) from None
+        return [block for blocks in current_blocks.values() for block in blocks]
 
 
 def make_collector_section(
@@ -751,75 +638,6 @@ def _prepare_manifest(
         text.encode("utf-8"), max_bytes, source
     )
     return prepared
-
-
-# ── 内置收集器：最近验证/测试失败 ──
-
-
-RECENT_VALIDATION_MAX_BYTES: int = 4 * 1024
-_RECENT_VALIDATION_TRUNCATED_MARKER = (
-    "<validation-truncated>Failure excerpt truncated. "
-    "Use the original command to see full output."
-    "</validation-truncated>"
-)
-
-_VALIDATION_TOOL_NAMES: frozenset[str] = frozenset({"bash", "shell"})
-
-
-def _extract_tool_result_text(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            text = getattr(item, "text", None) or getattr(item, "content", None)
-            if isinstance(text, str):
-                parts.append(text)
-        return "\n".join(parts)
-    return str(content)
-
-
-class RecentValidationCollector:
-    def __init__(
-        self,
-        max_bytes: int = RECENT_VALIDATION_MAX_BYTES,
-    ) -> None:
-        self._max_bytes = max_bytes
-
-    def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        for msg in reversed(input.messages):
-            if not isinstance(msg, ToolResultMessage):
-                continue
-            if not msg.is_error:
-                continue
-            if msg.tool_name not in _VALIDATION_TOOL_NAMES:
-                continue
-            return [self._build_block(msg)]
-        return []
-
-    def _build_block(self, msg: ToolResultMessage) -> ContextBlock:
-        command = msg.tool_name
-        raw = _extract_tool_result_text(msg.content)
-        excerpt = _apply_size_budget(
-            raw,
-            self._max_bytes,
-            _RECENT_VALIDATION_TRUNCATED_MARKER,
-        )
-        if not excerpt:
-            excerpt = "(error output empty)"
-        body = f"Command: {command}\n{excerpt}"
-        return ContextBlock(
-            source=ContextBlockSource.RECENT_VALIDATION,
-            target=ContextBlockTarget.USER_CONTEXT,
-            priority=ContextPriority.CONTEXT,
-            content=body,
-            provenance=f"{command}:{msg.tool_call_id}",
-            truncated=_utf8_size(raw) > self._max_bytes,
-            truncation_reason=(
-                "byte_budget" if _utf8_size(raw) > self._max_bytes else None
-            ),
-            scope="runtime",
-        )
 
 
 # ── 内置收集器：笔记 ──

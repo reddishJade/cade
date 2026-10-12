@@ -1,14 +1,14 @@
 """System prompt 构建器：agent 身份、工具纪律与环境快照。
 
-本模块是 prompt 构建的两个系统之一（另一个见 agent/context_collector.py）。
+本模块构建运行时前缀；动态 section 由 agent/context.py 收集。
 职责边界：
 - 稳定区：agent 身份、工具纪律、工具列表、搜索策略（注册表不变时缓存）
 - 动态区：环境信息（OS、Python、CWD）、CWD 目录快照（CWD 不变时缓存）
 - 易变区：contextual retrieval 状态、session 通知（每轮重建）
 
-不属于本模块（由 context_collector 管理）：
+不属于本模块（由动态 section 收集器管理）：
 - 项目指令 → InstructionCollector
-- 验证失败 → RecentValidationCollector
+- 验证事实 → coding_agent.validation.ValidationCollector
 - 笔记文件 → NotesCollector
 - 技能摘要 → SkillIndexCollector
 """

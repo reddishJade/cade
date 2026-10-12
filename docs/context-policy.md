@@ -10,7 +10,7 @@
 
 session 追加事件与外置 artifact 保存会话事实，`DefaultRequestAssembler` 为每次
 模型请求生成临时投影。`ContextBlock` 表示收集方已决定提供给模型的完整上下文。
-`ContextState` 保存当前请求前缀，`WorldState` 保存各 section 的最新完整快照。
+请求直接使用当前前缀，并重新收集各 section 的完整快照。
 规则、NOTE、验证事实和运行状态更新后替换旧投影，删除的状态退出下一次请求。
 每次请求的 trace 记录全部选定上下文块及收集方的截断诊断。
 `ContextPriority` 仅控制稳定排序：INSTRUCTION 在前，CONTEXT 随后；同档保留

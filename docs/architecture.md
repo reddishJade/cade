@@ -128,7 +128,7 @@ surface、context collectors 的动态块、工具 schema 和 options 组装为
 来源、注入目标、排序优先级与审计信息，更新后替换旧投影。collector/section
 负责选定上下文，assembler 完整注入选定块，并回收历史与工具证据来满足预算。
 
-`ContextManager` 统一持有会话历史、请求前缀、动态状态、用量锚点和窗口统计；
+`ContextManager` 统一持有会话历史、用量锚点和窗口统计；
 独立 Agent 调用也使用这一入口。`ContextPolicy` 从模型物理窗口扣除输出预留与额外余量，为输入、工具证据和新增
 消息分配预算。预测以成功请求的 provider 输入用量为锚点，结合本地差额估算；
 锚点失效时使用本地估算。provider 返回实际用量，请求投影负责准入与提前换窗。

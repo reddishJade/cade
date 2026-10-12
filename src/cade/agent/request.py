@@ -22,8 +22,8 @@ from .context import (
     ContextBlockSource,
     ContextBlockTarget,
     ContextCollectionInput,
-    ContextCollectorSource,
     DefaultContextAssembler,
+    FrozenContextCollectorRegistry,
     _block_to_text,
     _estimate_base_tokens,
     _estimate_messages_tokens,
@@ -116,7 +116,7 @@ class DefaultRequestAssembler:
     """按固定阶段收集、注入、裁剪并编码模型输入。"""
 
     converter: MessageConverter = convert_to_llm
-    context_collectors: ContextCollectorSource | None = None
+    context_collectors: FrozenContextCollectorRegistry | None = None
     context_assembler: ContextAssembler = field(default_factory=DefaultContextAssembler)
     preserve_tool_result: Callable[[ToolResultMessage], bool] | None = None
 
@@ -150,14 +150,12 @@ class DefaultRequestAssembler:
         context.messages[:] = context.context_manager.normalize_messages(
             context.messages
         )
-        context_state = context.context_manager.context_state
-        context_state.sync_request_prefix(context.request_prefix)
-        legacy_blocks, world_blocks = self._collect(
+        context_blocks = self._collect(
             context,
             list(context.messages),
         )
         base_messages = [
-            *context_state.persistent_messages,
+            *context.request_prefix,
             *context.messages,
         ]
         obsolete_ids = superseded_state_ids(base_messages)
@@ -196,7 +194,7 @@ class DefaultRequestAssembler:
                 tool_definitions,
                 options,
                 tokens,
-                prefix_length=len(context_state.persistent_messages),
+                prefix_length=len(context.request_prefix),
                 source_messages=source_digests,
             )
             estimate_source = "provider_anchor" if anchored else "local"
@@ -206,7 +204,7 @@ class DefaultRequestAssembler:
             system_prompt=context.system_prompt,
             messages=request_messages,
             tools=list(context.tools),
-            context_blocks=[*world_blocks, *legacy_blocks],
+            context_blocks=context_blocks,
             token_budget=admission_budget,
             calibrate_tokens=calibrate_tokens,
         )
@@ -258,7 +256,7 @@ class DefaultRequestAssembler:
                 deficit = result.total_tokens - admission_budget
                 if deficit <= 0:
                     break
-                prefix_length = len(context_state.persistent_messages)
+                prefix_length = len(context.request_prefix)
                 history, omitted = policy.project_history(
                     assembly_input.messages[prefix_length:], protected_ids, deficit
                 )
@@ -322,7 +320,7 @@ class DefaultRequestAssembler:
             )
         )
         mandatory_messages = [
-            *context_state.persistent_messages,
+            *context.request_prefix,
             *mandatory_history(context.messages, protected_ids),
             *[
                 SystemMessage(content=b.content)
@@ -395,9 +393,9 @@ class DefaultRequestAssembler:
         self,
         context: AgentContext,
         messages: list[AgentMessage],
-    ) -> tuple[list[ContextBlock], list[ContextBlock]]:
+    ) -> list[ContextBlock]:
         if self.context_collectors is None:
-            return [], []
+            return []
         collection_input = ContextCollectionInput(
             system_prompt=context.system_prompt,
             messages=messages,
@@ -406,18 +404,7 @@ class DefaultRequestAssembler:
             cwd=context.cwd,
             state=dict(context.state),
         )
-        legacy_blocks = self.context_collectors.collect(collection_input)
-        collect_sections = getattr(self.context_collectors, "collect_sections", None)
-        world_blocks: list[ContextBlock] = []
-        if callable(collect_sections):
-            collected = collect_sections(
-                collection_input,
-                context.context_manager.context_state.world_state,
-            )
-            if isinstance(collected, list):
-                context_state = context.context_manager.context_state
-                world_blocks = context_state.world_state.current_blocks()
-        return legacy_blocks, world_blocks
+        return self.context_collectors.collect(collection_input)
 
 
 def _context_snapshot(

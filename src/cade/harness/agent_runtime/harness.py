@@ -200,7 +200,7 @@ class AgentHarness:
         self,
         active_registry: tuple[ToolSpec, ...],
     ) -> dict[str, object]:
-        """构建供 world state 使用的环境、工具、权限和模式快照。"""
+        """构建供动态 section 使用的环境、工具、权限和模式快照。"""
         permission_policy = self.permission_policy
         policy_payload = (
             {
@@ -491,7 +491,6 @@ class AgentHarness:
 
     def load_history(self, messages: list[AgentMessage]) -> None:
         self._context_manager.replace_history(deepcopy(messages))
-        self._context_manager.context_state.reset()
         self._context_manager.invalidate_token_anchor()
         self._context_manager.context_snapshot = None
         self._post_load_history(messages)
@@ -507,7 +506,6 @@ class AgentHarness:
 
     def load_run_state(self, run_state: RunState) -> None:
         self._context_manager.replace_history(messages_from_run_state(run_state))
-        self._context_manager.context_state.reset()
         self._context_manager.invalidate_token_anchor()
         self._context_manager.context_snapshot = None
         self._reset_provider_conversation_state()
@@ -520,7 +518,6 @@ class AgentHarness:
         composition = self.composition
         manager = ContextManager(
             history=deepcopy(self.history_messages()),
-            context_state=deepcopy(self._context_manager.context_state),
         )
         manager.append([UserMessage(content=question)])
         context = AgentContext(
