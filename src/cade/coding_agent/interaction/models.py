@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cade.ai.models import get_codex_models, get_models
 from cade.ai.resolver import ModelResolver
 
 from .reasoning_effort import reasoning_effort_levels_for_transport
+
+if TYPE_CHECKING:
+    from cade.harness.auth.manager import AuthManager
+    from cade.harness.config import CadeRuntimeConfig
 
 
 @dataclass
@@ -28,13 +33,62 @@ def is_current_model_entry(
     )
 
 
+def _provider_transports(config: CadeRuntimeConfig) -> dict[str, str]:
+    """内置 provider 与配置中自定义连接的 transport 映射。"""
+    from cade.ai.resolver import PROVIDER_TRANSPORTS
+
+    providers = dict(PROVIDER_TRANSPORTS)
+    providers.update(
+        {name: c.transport for name, c in config.provider.connections.items()}
+    )
+    return providers
+
+
+def is_provider_configured(
+    provider: str,
+    transport: str,
+    config: CadeRuntimeConfig,
+    env_files: tuple[Path, ...],
+    manager: AuthManager,
+) -> bool:
+    """provider 是否具备可用凭据：Codex 需要 ChatGPT OAuth，其余需要 API Key。"""
+    from cade.ai.providers.registry import get_environment_api_key
+
+    credential = manager.get_valid_credential(provider)
+    if transport == "openai_codex":
+        return (
+            credential is not None
+            and credential.type == "oauth"
+            and bool(credential.access)
+        )
+    connection = config.provider.connections.get(provider)
+    return bool(
+        (credential and credential.type == "api_key" and credential.access)
+        or get_environment_api_key(
+            transport, env_files, connection.api_key_env if connection else None
+        )
+    )
+
+
+def configured_provider_names(
+    config: CadeRuntimeConfig, env_files: tuple[Path, ...]
+) -> tuple[str, ...]:
+    """返回已配置凭据的 provider 名称，按内置与自定义连接的顺序排列。"""
+    from cade.harness.auth.manager import AuthManager
+
+    manager = AuthManager()
+    return tuple(
+        provider
+        for provider, transport in _provider_transports(config).items()
+        if is_provider_configured(provider, transport, config, env_files, manager)
+    )
+
+
 def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
     """返回当前环境中所有具备已认证凭据或有效 API Key 的可用模型。
 
     注意：严格只返回已配置/已登录模型，未配置 API Key 或凭据的不予包含。
     """
-    from cade.ai.providers.registry import get_environment_api_key
-    from cade.ai.resolver import PROVIDER_TRANSPORTS
     from cade.harness.auth.manager import AuthManager
     from cade.harness.config import CadeRuntimeConfig
 
@@ -52,31 +106,14 @@ def get_available_model_entries(app: object) -> list[AvailableModelEntry]:
         getattr(app, "_runtime_config", None) or CadeRuntimeConfig()
     )
     manager = AuthManager()
-    providers = dict(PROVIDER_TRANSPORTS)
-    providers.update(
-        {name: c.transport for name, c in config.provider.connections.items()}
-    )
-    for provider, transport in providers.items():
-        credential = manager.get_valid_credential(provider)
-        connection = config.provider.connections.get(provider)
-        if transport == "openai_codex":
-            available = (
-                credential is not None
-                and credential.type == "oauth"
-                and bool(credential.access)
-            )
-            models = get_codex_models()
-        else:
-            available = bool(
-                (credential and credential.type == "api_key" and credential.access)
-                or get_environment_api_key(
-                    transport, env_files, connection.api_key_env if connection else None
-                )
-            )
-            models = get_models(provider)
-        if available:
-            for model in models:
-                add_entry(model.id, transport, provider, f"[{provider}]")
+    for provider, transport in _provider_transports(config).items():
+        if not is_provider_configured(provider, transport, config, env_files, manager):
+            continue
+        models = (
+            get_codex_models() if transport == "openai_codex" else get_models(provider)
+        )
+        for model in models:
+            add_entry(model.id, transport, provider, f"[{provider}]")
 
     # 4. 当前运行中的主模型
     info = dict(getattr(app, "get_model_info", dict)())

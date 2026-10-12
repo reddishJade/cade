@@ -19,6 +19,13 @@ from typing import Any
 import questionary
 from pydantic import ValidationError
 
+from cade.ai.models import get_codex_models, get_models
+from cade.ai.resolver import PROVIDER_TRANSPORTS, ModelResolver
+from cade.coding_agent.assembly.config import default_env_files
+from cade.coding_agent.interaction.models import configured_provider_names
+from cade.coding_agent.interaction.reasoning_effort import (
+    reasoning_effort_levels_for_transport,
+)
 from cade.coding_agent.interaction.token_count import (
     format_token_count,
     parse_token_count,
@@ -27,6 +34,8 @@ from cade.harness.config import CadeRuntimeConfig, load_runtime_config
 
 from .ptk_patch import safe_select, safe_text
 from .setup_wizard import _load_existing_config, _save_config
+
+ChoicesSource = Callable[[CadeRuntimeConfig, tuple[Path, ...]], tuple[str, ...]]
 
 
 class SettingKind(StrEnum):
@@ -58,6 +67,19 @@ class SettingSpec:
     choice_descriptions: dict[str, str] = dataclasses_field(default_factory=dict)
     writer: Callable[[dict[str, Any], Any], None] | None = None
     parser: Callable[[str], Any] | None = None
+    # 动态选项来源：依据当前配置与 .env 位置计算可选值（如已配置的 provider）
+    choices_source: ChoicesSource | None = None
+    # 动态清单不含当前值时，是否把当前值补进菜单并标记 (current)
+    pin_current: bool = True
+    # 菜单末尾是否提供"其他"入口，允许输入清单之外的值
+    allows_custom: bool = False
+
+    @property
+    def is_menu(self) -> bool:
+        """是否以选择菜单编辑：布尔、枚举或声明了动态选项。"""
+        return self.kind in (SettingKind.BOOL, SettingKind.ENUM) or (
+            self.choices_source is not None
+        )
 
     def read(self, config: CadeRuntimeConfig) -> Any:
         """从生效配置中读取当前值；INFO/复合行必须提供自定义 getter。"""
@@ -108,18 +130,82 @@ def _write_approval_choice(raw: dict[str, Any], value: Any) -> None:
         security["approval_router"] = "user"
 
 
+def _transport_for_provider(config: CadeRuntimeConfig, provider: str) -> str:
+    """返回 provider 对应的 transport；自定义连接优先于内置映射。"""
+    connection = config.provider.connections.get(provider)
+    if connection is not None:
+        return connection.transport
+    return PROVIDER_TRANSPORTS.get(provider, "")
+
+
+def _default_provider_name(config: CadeRuntimeConfig) -> str:
+    return ModelResolver.normalize_provider(config.default_provider) or ""
+
+
+def _provider_choices(
+    config: CadeRuntimeConfig, env_files: tuple[Path, ...]
+) -> tuple[str, ...]:
+    """仅列出已配置凭据（登录或 API Key）的 provider。"""
+    return configured_provider_names(config, env_files)
+
+
+def _model_choices(
+    config: CadeRuntimeConfig, _env_files: tuple[Path, ...]
+) -> tuple[str, ...]:
+    """默认 provider 下已注册的模型 ID；ChatGPT 登录只允许 Codex 清单。"""
+    provider = _default_provider_name(config)
+    if _transport_for_provider(config, provider) == "openai_codex":
+        models = get_codex_models()
+    else:
+        models = get_models(provider)
+    return tuple(model.id for model in models)
+
+
+def _effort_choices(
+    config: CadeRuntimeConfig, _env_files: tuple[Path, ...]
+) -> tuple[str, ...]:
+    """默认 provider 与默认模型支持的 reasoning effort 档位。"""
+    transport = _transport_for_provider(config, _default_provider_name(config))
+    return reasoning_effort_levels_for_transport(transport, config.default_model)
+
+
+def _follow_default_provider(raw: dict[str, Any], value: Any) -> None:
+    """切换默认 provider 时，把不再适用的模型和推理档位一并修正。
+
+    模型不在新 provider 清单里时改为清单首项；推理档位不被新模型支持时清除。
+    raw 无法通过校验时只写入 provider，由调用方的校验给出错误。
+    """
+    raw["default_provider"] = value
+    try:
+        config = CadeRuntimeConfig.model_validate(raw)
+    except ValidationError:
+        return
+    models = _model_choices(config, ())
+    if models and config.default_model not in models:
+        raw["default_model"] = models[0]
+        config = CadeRuntimeConfig.model_validate(raw)
+    effort = config.default_reasoning_effort
+    if effort is not None and effort not in _effort_choices(config, ()):
+        raw["default_reasoning_effort"] = None
+
+
 SETTING_SPECS: tuple[SettingSpec, ...] = (
     SettingSpec(
         key="default_provider",
         label="Default Provider",
         kind=SettingKind.STR,
         description="Provider for new sessions; credentials are stored separately.",
+        choices_source=_provider_choices,
+        pin_current=False,
+        writer=_follow_default_provider,
     ),
     SettingSpec(
         key="default_model",
         label="Default Model",
         kind=SettingKind.STR,
         description="Model ID for new sessions on the selected default provider.",
+        choices_source=_model_choices,
+        allows_custom=True,
     ),
     SettingSpec(
         key="default_reasoning_effort",
@@ -127,6 +213,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         kind=SettingKind.STR,
         nullable=True,
         description="Startup reasoning effort supported by the selected model.",
+        choices_source=_effort_choices,
     ),
     SettingSpec(
         key="provider.options.context_window",
@@ -162,6 +249,88 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
             ),
             "plan": "Read-only research mode; nothing is written to disk.",
         },
+    ),
+    SettingSpec(
+        key="provider.options.thinking",
+        label="Thinking",
+        kind=SettingKind.BOOL,
+        description="Whether model requests in new sessions enable thinking.",
+    ),
+    SettingSpec(
+        key="provider.options.tool_stream",
+        label="Tool Streaming",
+        kind=SettingKind.BOOL,
+        description=(
+            "Stream tool-call arguments as they are generated, where the provider "
+            "supports it."
+        ),
+    ),
+    SettingSpec(
+        key="provider.options.clear_thinking",
+        label="Clear Thinking",
+        kind=SettingKind.BOOL,
+        description="Clear earlier thinking from requests, where the provider supports it.",
+    ),
+    SettingSpec(
+        key="agent.automatic_rollover",
+        label="Automatic Rollover",
+        kind=SettingKind.BOOL,
+        description=(
+            "Roll over into a fresh context window with a NOTE.md handoff when the "
+            "context reaches the threshold."
+        ),
+    ),
+    SettingSpec(
+        key="agent.max_steps",
+        label="Max Steps",
+        kind=SettingKind.INT,
+        nullable=True,
+        description="Agent steps allowed per turn; 'none' removes the limit.",
+    ),
+    SettingSpec(
+        key="agent.max_llm_calls",
+        label="Max LLM Calls",
+        kind=SettingKind.INT,
+        nullable=True,
+        description="Model requests allowed per turn; 'none' removes the limit.",
+    ),
+    SettingSpec(
+        key="agent.tool_workers",
+        label="Tool Workers",
+        kind=SettingKind.INT,
+        description="Maximum tool calls run in parallel within one step.",
+    ),
+    SettingSpec(
+        key="agent.tool_timeout_seconds",
+        label="Tool Timeout (s)",
+        kind=SettingKind.FLOAT,
+        description="Seconds a single tool call may run before it times out.",
+    ),
+    SettingSpec(
+        key="agent.watchdog_repeated_tool_limit",
+        label="Repeated Tool Limit",
+        kind=SettingKind.INT,
+        description=(
+            "Identical tool calls in a row before the agent is stopped; 0 disables "
+            "the check."
+        ),
+    ),
+    SettingSpec(
+        key="security.auto_review_timeout_seconds",
+        label="Auto Review Timeout (s)",
+        kind=SettingKind.FLOAT,
+        description=(
+            "Seconds the reviewer model may take on one boundary action; "
+            "must be at most 300."
+        ),
+    ),
+    SettingSpec(
+        key="skills.trust_project_skills",
+        label="Trust Project Skills",
+        kind=SettingKind.BOOL,
+        description=(
+            "Load skills from the project's .cade/skills and .agents/skills folders."
+        ),
     ),
     SettingSpec(
         key="security.approval_policy",
@@ -407,20 +576,113 @@ def _row_title(spec: SettingSpec, config: CadeRuntimeConfig) -> str:
     return f"{spec.label:<28}{format_setting(spec, config)}"
 
 
-def _select_option(spec: SettingSpec, current_display: str) -> str | None:
-    """枚举/布尔项的选择菜单；返回去掉标记的原始文本。"""
+CUSTOM_TITLE = "other…"
+
+
+@dataclass(frozen=True)
+class MenuItem:
+    """选择菜单的一行。custom 行不带值，选中后改用文本输入。"""
+
+    title: str
+    value: Any = None
+    description: str = ""
+    custom: bool = False
+
+
+def setting_choices(
+    spec: SettingSpec, config: CadeRuntimeConfig, env_files: tuple[Path, ...]
+) -> tuple[str, ...]:
+    """枚举类设置的可选值；动态清单不含当前值时按 pin_current 决定是否补入。"""
+    options = (
+        spec.choices_source(config, env_files)
+        if spec.choices_source is not None
+        else spec.choices
+    )
+    current = spec.read(config)
+    if (
+        spec.pin_current
+        and isinstance(current, str)
+        and current
+        and current not in options
+    ):
+        return (current, *options)
+    return tuple(options)
+
+
+def setting_menu(
+    spec: SettingSpec, config: CadeRuntimeConfig, env_files: tuple[Path, ...]
+) -> list[MenuItem]:
+    """为菜单类设置生成选项行；当前值标记为 (current)，可清除项为 (unset)。
+
+    没有任何可选值时返回空列表，由调用方提示用户先完成凭据配置。
+    """
+    current = spec.read(config)
+
+    def titled(token: str, is_current: bool) -> str:
+        return f"{token} (current)" if is_current else token
+
+    items: list[MenuItem] = []
     if spec.kind is SettingKind.BOOL:
-        tokens = ("on", "off")
+        for value, token in ((True, "on"), (False, "off")):
+            items.append(
+                MenuItem(
+                    title=titled(token, current == value),
+                    value=value,
+                    description=spec.describe_choice(token),
+                )
+            )
     else:
-        tokens = tuple(spec.choices)
-    titles = [
-        f"{token} (current)" if token == current_display.lower() else token
-        for token in tokens
-    ]
-    picked = safe_select(f"{spec.label}:", choices=titles)
-    if picked is None:
+        for token in setting_choices(spec, config, env_files):
+            items.append(
+                MenuItem(
+                    title=titled(token, current == token),
+                    value=token,
+                    description=spec.describe_choice(token),
+                )
+            )
+    if not items and not spec.allows_custom:
+        return []
+    if spec.nullable:
+        items.append(
+            MenuItem(
+                title=titled("(unset)", current is None),
+                value=None,
+                description="Clear the saved value; the built-in default applies.",
+            )
+        )
+    if spec.allows_custom:
+        items.append(
+            MenuItem(
+                title=CUSTOM_TITLE,
+                description="Type a value that is not listed.",
+                custom=True,
+            )
+        )
+    return items
+
+
+def _ask_text(spec: SettingSpec, config_path: Path) -> tuple[bool, str] | None:
+    """文本输入一个设置值；取消或留空返回 None。"""
+    hint = "Type value, enter to save, esc to cancel"
+    if spec.nullable:
+        hint += "; 'none' clears"
+    text = safe_text(f"{spec.label} — {hint}:", default="")
+    if text is None or not text.strip():
         return None
-    return picked.removesuffix(" (current)")
+    return save_setting_text(config_path, spec, text)
+
+
+def _choose_menu_item(
+    spec: SettingSpec, config: CadeRuntimeConfig, env_files: tuple[Path, ...]
+) -> MenuItem | None:
+    """弹出选择菜单；取消返回 None。无可选项时打印提示并返回 None。"""
+    items = setting_menu(spec, config, env_files)
+    if not items:
+        print(f"  No options available for {spec.label}; set up credentials first.")
+        return None
+    choices = [questionary.Choice(title=item.title, value=item) for item in items]
+    picked = safe_select(f"{spec.label}:", choices=choices)
+    return picked if isinstance(picked, MenuItem) else None
 
 
 def edit_setting_interactive(
@@ -440,22 +702,20 @@ def edit_setting_interactive(
     if spec.description:
         print(f"  {spec.description}")
 
-    if spec.kind in (SettingKind.BOOL, SettingKind.ENUM):
-        text = _select_option(spec, current)
+    if not spec.is_menu:
+        result = _ask_text(spec, config_path)
     else:
-        hint = "Type value, enter to save, esc to cancel"
-        if spec.nullable:
-            hint += "; 'none' clears"
-        text = safe_text(
-            f"{spec.label} — {hint}:",
-            default="",
-        )
-        if text is not None and not text.strip():
+        item = _choose_menu_item(spec, config, default_env_files(config_path.parent))
+        if item is None:
             return
+        if item.custom:
+            result = _ask_text(spec, config_path)
+        else:
+            result = commit_setting_value(config_path, spec, item.value)
 
-    if text is None:
+    if result is None:
         return
-    saved, message = save_setting_text(config_path, spec, text)
+    saved, message = result
     prefix = "  " if saved else "  ! "
     print(f"{prefix}{message}")
 
@@ -480,6 +740,7 @@ def run_config_browser(config_path: Path) -> None:
 
 __all__ = [
     "SETTING_SPECS",
+    "MenuItem",
     "SettingKind",
     "SettingSpec",
     "apply_setting",
@@ -492,5 +753,7 @@ __all__ = [
     "parse_setting",
     "run_config_browser",
     "save_setting_text",
+    "setting_choices",
     "setting_detail",
+    "setting_menu",
 ]

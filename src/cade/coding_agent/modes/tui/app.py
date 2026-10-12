@@ -1499,13 +1499,18 @@ class _CadeTui:
         self._open_command_choices(choices, choose, describe=describe)
 
     def _edit_config_setting(self, config_path: Path, spec: SettingSpec) -> None:
-        """编辑单个设置项：枚举走选择菜单，标量走文本输入。"""
+        """编辑单个设置项：菜单类走选择菜单，其余走文本输入。"""
+        from cade.coding_agent.assembly.config import default_env_files
+
         from .config_registry import (
+            MenuItem,
             SettingKind,
+            commit_setting_value,
             format_setting,
             load_effective_config,
             save_setting_text,
             setting_detail,
+            setting_menu,
         )
 
         config = load_effective_config(config_path)
@@ -1529,40 +1534,47 @@ class _CadeTui:
             reopen()
             return
 
-        if spec.kind in (SettingKind.BOOL, SettingKind.ENUM):
-            tokens = ("on", "off") if spec.kind is SettingKind.BOOL else spec.choices
-            titles = [
-                token + " (current)" if token == current.lower() else token
-                for token in tokens
-            ]
+        def ask_text() -> None:
+            hint = "Type value, enter to save, esc to cancel"
+            if spec.nullable:
+                hint += "; 'none' clears"
 
-            def pick(token: object) -> None:
-                text = str(token).removesuffix(" (current)")
-                ok, message = save_setting_text(config_path, spec, text)
+            def submit(value: str) -> None:
+                ok, message = save_setting_text(config_path, spec, value)
                 report_and_reopen(ok, message)
 
-            def describe_token(token: object) -> str:
-                text = str(token).removesuffix(" (current)")
-                return spec.describe_choice(text)
-
-            self._open_command_choices(
-                [(title, title) for title in titles],
-                pick,
-                on_cancel=reopen,
-                describe=describe_token,
+            self._open_command_text(
+                f"{spec.key} = {current} — {hint}", submit, on_cancel=reopen
             )
+
+        if not spec.is_menu:
+            ask_text()
             return
 
-        hint = "Type value, enter to save, esc to cancel"
-        if spec.nullable:
-            hint += "; 'none' clears"
-
-        def submit(value: str) -> None:
-            ok, message = save_setting_text(config_path, spec, value)
+        def pick(selection: object) -> None:
+            item = cast("MenuItem", selection)
+            if item.custom:
+                ask_text()
+                return
+            ok, message = commit_setting_value(config_path, spec, item.value)
             report_and_reopen(ok, message)
 
-        self._open_command_text(
-            f"{spec.key} = {current} — {hint}", submit, on_cancel=reopen
+        items = setting_menu(spec, config, default_env_files(config_path.parent))
+        if not items:
+            self._state.log.append(
+                _LogEntry(
+                    "error",
+                    f"No options available for {spec.label}; set up credentials first.",
+                )
+            )
+            reopen()
+            return
+
+        self._open_command_choices(
+            [(item.title, item) for item in items],
+            pick,
+            on_cancel=reopen,
+            describe=lambda item: cast("MenuItem", item).description,
         )
 
     def _accept_command_choice(self) -> None:

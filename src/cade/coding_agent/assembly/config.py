@@ -13,6 +13,16 @@ from cade.harness.config import (
 )
 
 
+def default_env_files(project_root: Path) -> tuple[Path, ...]:
+    """默认的 .env 查找位置：包目录、项目根目录与 cade/ 子目录。"""
+    _pkg_root = Path(__file__).resolve().parent.parent.parent
+    return (
+        _pkg_root / ".env",
+        project_root / ".env",
+        project_root / "cade" / ".env",
+    )
+
+
 @dataclass(frozen=True)
 class ResolvedConfig:
     runtime_config: CadeRuntimeConfig
@@ -38,12 +48,7 @@ def resolve_config(
     audit_path = audit_path or resolve_config_path(
         project_root, runtime_config.observability.audit_path
     )
-    _pkg_root = Path(__file__).resolve().parent.parent.parent
-    env_files = env_files or (
-        _pkg_root / ".env",
-        project_root / ".env",
-        project_root / "cade" / ".env",
-    )
+    env_files = env_files or default_env_files(project_root)
     return ResolvedConfig(
         runtime_config=runtime_config,
         agent_config=agent_config,
