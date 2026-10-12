@@ -50,6 +50,8 @@ Cade 原生支持开放行业标准 **MCP (Model Context Protocol)** 协议。�
 在 TUI 运行期间，你可以使用 `/mcp` 命令管理连接状态：
 
 ```bash
-/mcp status       # 检查所有外部 MCP 服务的连通性、延迟与暴露的工具列表
-/mcp reload       # 修改配置后热重载所有 MCP 客户端，无需重启终端
+/mcp status       # 显示当前应用的 MCP 连接状态、工具数和协议身份
 ```
+
+修改 `.cade/mcp_config.json` 后重新启动 Cade。可以使用 `cade --continue tui`
+恢复最近会话；工具配置在新应用启动时生效。

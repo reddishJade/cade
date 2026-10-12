@@ -111,7 +111,6 @@ class McpRuntimeRegistry:
         """初始化空的运行时注册状态。"""
         self._lock = threading.Lock()
         self._client_refs: dict[str, _mcp_mod.LazyClientRef] = {}
-        self._reload_callback: Callable[[], tuple[ToolSpec, ...]] | None = None
         self._workspace_roots: tuple[Path, ...] = ()
         self._cancel_event: threading.Event | None = None
         self._raw_servers: dict[str, dict[str, Any]] = {}
@@ -132,22 +131,6 @@ class McpRuntimeRegistry:
                 path.resolve() for path in workspace_roots if path.exists()
             )
             self._cancel_event = cancel_event
-
-    def set_reload_callback(
-        self,
-        callback: Callable[[], tuple[ToolSpec, ...]],
-    ) -> None:
-        """注册手动 reload 入口。"""
-        with self._lock:
-            self._reload_callback = callback
-
-    def reload(self) -> tuple[ToolSpec, ...]:
-        """重新读取 MCP 配置并返回新的工具快照。"""
-        with self._lock:
-            callback = self._reload_callback
-        if callback is None:
-            return ()
-        return callback()
 
     def update_runtime_snapshot(
         self,
@@ -239,13 +222,6 @@ class McpRuntimeRegistry:
         """登记需要随应用关闭的延迟客户端。"""
         with self._lock:
             self._client_refs[server_name] = ref
-
-    def drop_client_ref(self, server_name: str) -> None:
-        """关闭并移除被删除或替换的 server client。"""
-        with self._lock:
-            ref = self._client_refs.pop(server_name, None)
-        if ref is not None:
-            ref.stop()
 
     def close(self) -> None:
         """关闭所有已启动的 MCP 持久客户端。"""
@@ -538,37 +514,6 @@ def _detect_collisions(
     return disabled
 
 
-def _prune_removed_or_replaced_servers(
-    project_root: Path,
-    runtime_registry: McpRuntimeRegistry,
-    raw_servers: dict[str, dict[str, Any]],
-) -> None:
-    """关闭被删除或配置已变化的 server，并清理失效缓存。"""
-    previous = runtime_registry._raw_servers
-    removed_or_changed = {
-        server_name
-        for server_name, old_raw in previous.items()
-        if server_name not in raw_servers
-        or compute_config_hash(old_raw) != compute_config_hash(raw_servers[server_name])
-    }
-    if not removed_or_changed:
-        return
-    for server_name in removed_or_changed:
-        runtime_registry.drop_client_ref(server_name)
-    cache_path = _cache_path(project_root)
-    cache_data = _load_cache(cache_path)
-    servers = cache_data.get("servers")
-    if not isinstance(servers, dict):
-        return
-    changed = False
-    for server_name in removed_or_changed:
-        if server_name in servers:
-            servers.pop(server_name, None)
-            changed = True
-    if changed:
-        _save_cache(cache_path, cache_data)
-
-
 # ── 主入口 ──
 
 
@@ -576,19 +521,8 @@ def build_mcp_tools(
     project_root: Path,
     runtime_registry: McpRuntimeRegistry | None = None,
 ) -> tuple[ToolSpec, ...]:
-    """根据配置文件加载和构建所有 MCP 工具。"""
+    """在应用启动时发现并构建固定的 MCP 工具快照。"""
     runtime_registry = runtime_registry or McpRuntimeRegistry()
-    runtime_registry.set_reload_callback(
-        lambda: _load_mcp_tools_snapshot(project_root, runtime_registry)
-    )
-    return _load_mcp_tools_snapshot(project_root, runtime_registry)
-
-
-def _load_mcp_tools_snapshot(
-    project_root: Path,
-    runtime_registry: McpRuntimeRegistry,
-) -> tuple[ToolSpec, ...]:
-    """读取当前配置并构建完整 MCP 工具快照。"""
     config = _read_mcp_config(project_root)
     if config is None:
         runtime_registry.update_runtime_snapshot(
@@ -612,7 +546,6 @@ def _load_mcp_tools_snapshot(
 
     mcp_servers = config.servers
     validated_servers, server_errors = _validate_mcp_servers(mcp_servers)
-    _prune_removed_or_replaced_servers(project_root, runtime_registry, mcp_servers)
 
     cache_path = _cache_path(project_root)
     cache_data = _load_cache(cache_path)
@@ -809,23 +742,21 @@ def _build_runtime_mcp_tools(
             raw_servers[server_name],
             tools_list,
         )
-        lazy_ref = runtime_registry._client_refs.get(server_name)
-        if lazy_ref is None:
 
-            def on_tools_changed(
-                client: _mcp_mod.McpClient,
-                current_server: str = server_name,
-            ) -> None:
-                """将客户端通知转交给对应服务器的注册表刷新。"""
-                refresh_server_tools(current_server, client)
+        def on_tools_changed(
+            client: _mcp_mod.McpClient,
+            current_server: str = server_name,
+        ) -> None:
+            """刷新缓存和诊断，供后续应用启动发现工具。"""
+            refresh_server_tools(current_server, client)
 
-            lazy_ref = _mcp_mod.LazyClientRef(
-                server_name,
-                raw_servers[server_name],
-                tools_changed_callback=on_tools_changed,
-                workspace_roots=runtime_registry.workspace_roots,
-            )
-            runtime_registry.track_client_ref(server_name, lazy_ref)
+        lazy_ref = _mcp_mod.LazyClientRef(
+            server_name,
+            raw_servers[server_name],
+            tools_changed_callback=on_tools_changed,
+            workspace_roots=runtime_registry.workspace_roots,
+        )
+        runtime_registry.track_client_ref(server_name, lazy_ref)
 
         server_slug = _sanitize(server_name)
         for tool in tools_list:

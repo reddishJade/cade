@@ -437,7 +437,8 @@ Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
 `ls`、`grep`、`websearch`、`webfetch`、`question`、`bash`。运行时按功能
 追加 `delegate`、`save_memory`、`history`、`rollover`；发现 skill 时注册
 `load_skill`；MCP 在启动时通过发现或有效缓存注册具有完整 schema 的
-`mcp__{server}__{tool}` 工具，实际调用时才建立持久连接。Build/Act 默认不向模型暴露
+`mcp__{server}__{tool}` 工具，实际调用时才建立持久连接；修改 MCP 配置后重新启动
+应用。Build/Act 默认不向模型暴露
 `grep/glob/find/ls`，日常代码搜索交给 `bash` 组合 `rg/fd/git` 等原生命令。
 `websearch` 通过 Exa / Parallel MCP provider 搜索网络，默认 Exa；支持 `query`、
 `numResults`、`type`（`auto`/`fast`/`deep`）、`livecrawl`（`fallback`/`preferred`）

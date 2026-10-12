@@ -495,19 +495,11 @@ def cmd_hooks(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_mcp(cmd: str, ctx: CommandContext) -> bool:
-    """显示 MCP 状态或手动重载配置。"""
+    """显示当前应用的 MCP 状态。"""
     parts = cmd.split(maxsplit=1)
     action = parts[1].strip() if len(parts) == 2 else "status"
-    if action == "reload":
-        reload_mcp = getattr(ctx.app, "reload_mcp", None)
-        if reload_mcp is None:
-            ctx.output.write("MCP runtime is not available.")
-            return False
-        names = reload_mcp()
-        ctx.output.write(f"Reloaded MCP config. Registered {len(names)} MCP tools.")
-        return False
     if action != "status":
-        ctx.output.write("Usage: /mcp status|reload")
+        ctx.output.write("Usage: /mcp [status]")
         return False
     mcp_status = getattr(ctx.app, "mcp_status", None)
     if mcp_status is None:
@@ -1033,8 +1025,8 @@ COMMAND_REGISTRY: dict[str, CommandEntry] = {
     ),
     "/mcp": CommandEntry(
         handler=cmd_mcp,
-        desc="Show MCP server status or reload .cade/mcp_config.json.",
-        args_desc="status|reload",
+        desc="Show MCP server status.",
+        args_desc="status",
         accepts_args=True,
         group=COMMAND_GROUP_INFO,
     ),

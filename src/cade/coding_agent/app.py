@@ -365,12 +365,6 @@ class CadeApp:
             return ()
         return tuple(status.__dict__ for status in self.mcp_runtime.status_snapshot())
 
-    def reload_mcp(self) -> tuple[str, ...]:
-        """重新读取 MCP 配置并返回当前工具名快照。"""
-        if self.mcp_runtime is None:
-            return ()
-        return tuple(tool.name for tool in self.mcp_runtime.reload())
-
     def close(self) -> None:
         if self._closed:
             return

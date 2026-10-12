@@ -235,7 +235,7 @@ transport runtime 处理网络瞬时错误与限流重试，Agent 循环处理 s
 MCP registry 在启动时发现工具或读取来源有效的 schema 缓存，工具转换为
 `ToolSpec` 后接入产品注册表与统一 gate，持久连接在首次调用时建立。
 `tools/list_changed` 更新发现缓存和状态诊断；
-产品装配读取工具 schema，单次 run 使用捕获的 schema。MCP server 提供的工具与
+当前应用保留启动时的工具快照；修改 MCP 配置后重新启动应用。MCP server 提供的工具与
 资源来自外部进程，允许调用的范围由 gate 判定，进程隔离需在宿主侧配置。
 
 Skills registry 发现技能并发布目录，`load_skill` 按需读取正文；会话消息保留已加载
