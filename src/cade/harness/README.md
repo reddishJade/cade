@@ -28,14 +28,14 @@ Harness 层连接了底层的 `agent` 循环与上层的具体领域产品，提
 ### 核心子包分工
 | 子目录 | 核心职责 |
 |---|---|
-| **[agent_runtime/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/agent_runtime/README.md)** | `AgentHarness` 基类、工具门控拦截（ToolGate）、上下文换窗与并发运行控制器 |
-| **[security/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/README.md)** | 统一权限引擎（PermissionEngine）、Shell 语法语义分析、HITL 与独立模型自动审批 |
-| **[session/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/README.md)** | 追加写事件流持久化账本（SessionStore）、多分支会话分叉树与无损历史检索 |
-| **[execution_env/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/README.md)** | 文件系统抽象与基于 Bubblewrap 的 Linux 命名空间隔离命令沙箱 |
-| **[observability/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/observability/README.md)** | JSONL 结构化审计日志、敏感数据自动脱敏、链路追踪与内部/外部生命周期 Hooks |
-| **[mcp/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/mcp/README.md)** | 基于 Stdio 的 Model Context Protocol 协议集成与动态工具注册 |
-| **[memory/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/memory/README.md)** | workspace Markdown 保存及显式 History 来源校验 |
-| **[skills/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/README.md)** | 技能自动发现、`SKILL.md` 解析与两阶段轻量注入/按需激活机制 |
+| **[agent_runtime/](agent_runtime/README.md)** | `AgentHarness` 基类、工具门控拦截（ToolGate）、上下文换窗与并发运行控制器 |
+| **[security/](security/README.md)** | 统一权限引擎（PermissionEngine）、Shell 语法语义分析、HITL 与独立模型自动审批 |
+| **[session/](session/README.md)** | 追加写事件流持久化账本（SessionStore）、多分支会话分叉树与无损历史检索 |
+| **[execution_env/](execution_env/README.md)** | 文件系统抽象与基于 Bubblewrap 的 Linux 命名空间隔离命令沙箱 |
+| **[observability/](observability/README.md)** | JSONL 结构化审计日志、敏感数据自动脱敏、链路追踪与内部/外部生命周期 Hooks |
+| **[mcp/](mcp/README.md)** | 基于 Stdio 的 Model Context Protocol 协议集成与动态工具注册 |
+| **[memory/](memory/README.md)** | workspace Markdown 保存及显式 History 来源校验 |
+| **[skills/](skills/README.md)** | 技能自动发现、`SKILL.md` 解析与两阶段轻量注入/按需激活机制 |
 | **`auth/`** | 宿主凭据文件存储及登录/登出编排；Provider OAuth 与刷新规则由 `cade.ai.auth` 提供 |
 
 ---

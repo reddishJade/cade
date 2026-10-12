@@ -23,7 +23,7 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
 ```
 
 ### 核心类型与组件
-- **Provider 基类 ([base.py](file:///C:/Users/dwei/workspace/cade/src/cade/ai/providers/base.py))**：定义模型交互协议与接口规范。
+- **Provider 基类 ([base.py](base.py))**：定义模型交互协议与接口规范。
 - **厂商适配器**：
   - `openai.py`：标准 OpenAI Chat Completions 接口适配器。
   - `deepseek.py`：DeepSeek 专用适配器，专门处理 `reasoning_content` 推理流字段及温度/参数限制。
@@ -34,7 +34,7 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
   - `_codec.py`：请求/响应报文与工具调用（ToolCall）双向编解码。
   - `_stream.py`：底层 SSE 字符块缓冲、行切分与 JSON 流解析。
   - `_runtime.py`：HTTP 客户端底层会话与连接池管理。
-- **注册与工厂 ([registry.py](file:///C:/Users/dwei/workspace/cade/src/cade/ai/providers/registry.py))**：
+- **注册与工厂 ([registry.py](registry.py))**：
   - `PROVIDER_REGISTRY`：厂商名称到 Provider 构造器的映射表。
   - `build_provider_bundle`：依据配置一键装配包含主模型与辅助模型的 `ProviderBundle`。
 

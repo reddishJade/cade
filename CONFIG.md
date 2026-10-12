@@ -383,8 +383,8 @@ shell 可直接执行；未解析或可能产生副作用的命令仍由当前 m
 ### external_directories 示例
 
 ```json
-{"path": "/home/user/reference", "access": "read"}
-{"path": "/shared/templates", "access": "read_write"}
+{"path": "../reference", "access": "read"}
+{"path": "../shared/templates", "access": "read_write"}
 ```
 
 - `access=read`：仅允许读取操作
@@ -451,7 +451,7 @@ Memory 位于当前 workspace 的 `.cade/memory/`，每条是可编辑 Markdown 
 `expected_content`；Host 校验引用存在并替换末尾来源 footer，不解析正文或验证结论。
 `history` 的 `read/around` 可按 `session_id + entry_id` 精确读取同 workspace 原始
 历史，不切换 Session/head，也不依赖导航 cache。显式 Session 的 `around` 只接受
-`before`。完整参数见 [Memory](docs/memory.md)。
+`before`。完整参数见 [Memory](docs/guide/memory.md)。
 默认 `.cade/sessions/` 以当前物理位置确定归属，workspace 移动/改名后不要求修改
 旧 `project_path`；自定义或共享目录才校验日志内持久化的 workspace 绑定。
 MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺少这些

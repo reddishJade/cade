@@ -28,16 +28,16 @@
 ```
 
 ### 核心模块职责
-- **实体定义 ([types.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permission_model/types.py))**：定义 `Action`、`Target`、`Rule`、`Constraint` 与 `Verdict` 核心领域枚举与数据类。
-- **意图抽取 ([action.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permission_model/action.py))**：从工具入参中提取资源指纹（`TargetFingerprint`）并计算审批候选对象（`compute_approval_candidate`）。
-- **策略求值器 ([evaluators.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permission_model/evaluators.py))**：
+- **实体定义 ([types.py](types.py))**：定义 `Action`、`Target`、`Rule`、`Constraint` 与 `Verdict` 核心领域枚举与数据类。
+- **意图抽取 ([action.py](action.py))**：从工具入参中提取资源指纹（`TargetFingerprint`）并计算审批候选对象（`compute_approval_candidate`）。
+- **策略求值器 ([evaluators.py](evaluators.py))**：
   - `StaticPolicyEvaluator`：评估只读/内置工具的基本权限；
   - `PathBoundaryPolicyEvaluator`：判定目标路径是否超出工作区法定边界；
   - `ShellAnalysisPolicyEvaluator`：结合 Shell 语法树分析结果进行风险判定。
-- **授权凭证存储 ([stores.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permission_model/stores.py))**：
+- **授权凭证存储 ([stores.py](stores.py))**：
   - `InMemoryGrantStore`：针对单次运行或非持久授权的内存管理；
   - `FileGrantStore`：将用户持久化允许（Always）的授权规则落盘保存。
-- **决策解析器 ([resolver.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permission_model/resolver.py))**：`PermissionResolver` 调度流水线并汇总裁决结果。
+- **决策解析器 ([resolver.py](resolver.py))**：`PermissionResolver` 调度流水线并汇总裁决结果。
 
 ---
 

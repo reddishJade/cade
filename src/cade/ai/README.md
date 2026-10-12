@@ -33,15 +33,15 @@ AI 层是 Agent 与各大模型厂商之间的**协议翻译与流归一化层**
 ```
 
 ### 核心类型契约
-- **统一流事件 ([events.py](file:///C:/Users/dwei/workspace/cade/src/cade/ai/events.py))**：
+- **统一流事件 ([events.py](events.py))**：
   - `ReasoningDelta`：提取模型的内部思考/推理文本增量。
   - `TextDelta`：模型生成的最终回答文本增量。
   - `ToolCallEvent`：结构化的工具调用请求（含工具名与参数 JSON）。
   - `FinalMessage`：流终止标志，附带终止原因（`end_turn`、`tool_use`、`max_tokens` 等）。
   - `ProviderFailure`：网络故障或 HTTP 错误的结构化异常。
-- **标准化配置 ([types.py](file:///C:/Users/dwei/workspace/cade/src/cade/ai/types.py))**：
+- **标准化配置 ([types.py](types.py))**：
   - `ProviderConfig`：标准化的 Provider 构造参数（`api_key`、`model`、`base_url`、`thinking`、`reasoning_effort` 等）。
-- **模型解析与缓存 ([models.py](file:///C:/Users/dwei/workspace/cade/src/cade/ai/models.py) / [cache.py](file:///C:/Users/dwei/workspace/cade/src/cade/ai/cache.py))**：
+- **模型解析与缓存 ([models.py](models.py) / [cache.py](cache.py))**：
   - 模型别名映射、上下文窗口规格解析与 Prompt Cache 状态追踪。
 
 ---
@@ -88,5 +88,5 @@ async for event in bundle.llm.stream(messages, tools=tools):
 
 ## 4. 子模块分工
 
-- **[providers/](file:///C:/Users/dwei/workspace/cade/src/cade/ai/providers/README.md)**：各大厂商的具体协议适配实现（OpenAI、DeepSeek、ChatGLM、MiMo 等），基于公共基类与编解码器封装。
+- **[providers/](providers/README.md)**：各大厂商的具体协议适配实现（OpenAI、DeepSeek、ChatGLM、MiMo 等），基于公共基类与编解码器封装。
 - **`auth/`**：Provider 认证契约、OAuth/Token 刷新实现与请求前凭据解析。具体凭据持久化由上层宿主通过 `CredentialStore` 实现，AI 层不感知 `auth.json` 路径或 CLI 交互。

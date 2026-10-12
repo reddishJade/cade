@@ -23,12 +23,12 @@
 ```
 
 ### 核心模块与文件
-- **审计日志与安全脱敏 ([audit.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/observability/audit.py))**：
+- **审计日志与安全脱敏 ([audit.py](audit.py))**：
   - `JsonlAuditLogger`：以原子追加方式将结构化事件记录到本地 JSONL 审计文件。
   - `redact_text`：在文本进入日志或外部系统前，自动扫描并遮蔽敏感凭据（如 `sk-...`、Authorization Header、私钥等）。
-- **全链路追踪上下文 ([correlation.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/observability/correlation.py))**：维护跨会话、跨轮次、跨子代理调用的关联上下文（`RuntimeCorrelation`、`EventCorrelation`）。
-- **进程内生命周期 Hooks ([hooks.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/observability/hooks.py))**：提供 `HookManager`，挂载 `BeforeAgentStart`、`BeforeProviderRequest`、`PreToolEvent`、`PostToolEvent` 等生命周期回调。
-- **进程外命令钩子 ([external_hooks.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/observability/external_hooks.py))**：驱动外部 Shell 命令（如提交前执行 `git status` 检查或外部审查通知），并收集执行诊断信息。
+- **全链路追踪上下文 ([correlation.py](correlation.py))**：维护跨会话、跨轮次、跨子代理调用的关联上下文（`RuntimeCorrelation`、`EventCorrelation`）。
+- **进程内生命周期 Hooks ([hooks.py](hooks.py))**：提供 `HookManager`，挂载 `BeforeAgentStart`、`BeforeProviderRequest`、`PreToolEvent`、`PostToolEvent` 等生命周期回调。
+- **进程外命令钩子 ([external_hooks.py](external_hooks.py))**：驱动外部 Shell 命令（如提交前执行 `git status` 检查或外部审查通知），并收集执行诊断信息。
 
 ---
 

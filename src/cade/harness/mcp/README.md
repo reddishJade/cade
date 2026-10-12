@@ -29,11 +29,11 @@
 ```
 
 ### 核心文件与职责
-- **客户端与生命周期 ([client.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/mcp/client.py))**：`McpClient` 与 `LazyClientRef`。管理子进程 stdio 管道、JSON-RPC 会话初始化、断线重连与优雅销毁。
-- **工具注册与元数据 ([tools.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/mcp/tools.py))**：
+- **客户端与生命周期 ([client.py](client.py))**：`McpClient` 与 `LazyClientRef`。管理子进程 stdio 管道、JSON-RPC 会话初始化、断线重连与优雅销毁。
+- **工具注册与元数据 ([tools.py](tools.py))**：
   - `McpRuntimeRegistry`：管理所有配置的 MCP Server 状态（CONNECTED, ERROR, DISABLED）。
   - `build_mcp_tools`：拉取 Server 的工具定义（Tool Schema）并转化为 Cade 的 `ToolSpec`。
-- **结果归一化 ([results.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/mcp/results.py))**：解析 MCP 协议中的文本块、内嵌资源（EmbeddedResource）与图像数据，转为 Cade 统一的工具返回格式。
+- **结果归一化 ([results.py](results.py))**：解析 MCP 协议中的文本块、内嵌资源（EmbeddedResource）与图像数据，转为 Cade 统一的工具返回格式。
 
 ---
 

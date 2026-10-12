@@ -30,19 +30,19 @@
 ```
 
 ### 核心能力与组件
-- **不可变事实账本 ([recorder.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/recorder.py) / [tree_store.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/tree_store.py))**：
+- **不可变事实账本 ([recorder.py](recorder.py) / [tree_store.py](tree_store.py))**：
   - `TreeSessionRepo`：会话树存储仓库，保存在本地 `.cade/sessions/` 目录；
   - 每一个交互步骤作为不可变节点（`TreeNode`）持久化，天然支持基于任意历史节点的会话分叉（Fork）。
-- **无损事件重放 ([replay.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/replay.py))**：从磁盘文件中按顺序流式重播事件，精确重构消息序列与工具调用历史。
-- **无损历史工具 ([history.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/history.py))**：
+- **无损事件重放 ([replay.py](replay.py))**：从磁盘文件中按顺序流式重播事件，精确重构消息序列与工具调用历史。
+- **无损历史工具 ([history.py](history.py))**：
   - 导出 `history` 工具供 Agent 自行调用：
     - `list_windows`：列出所有换窗重置点；
     - `search`：关键词定位过往对话片段；
     - `read`：按 `entry_id` 分页读取完整记录，可显式指定 `session_id` 跨 Session 定位；
     - `around`：查看当前 branch 的前后邻域；显式 Session 仅支持沿锚点祖先的 `before`，拒绝 `after`。
   - 精确读取不依赖 `session_index.json` 导航 cache。默认目录以当前物理位置为归属边界，忽略旧 `project_path`，支持 workspace 移动/改名；共享/自定义目录才校验 JSONL 首条记录随事实提交的 `project_path`。指向外部的目录链接也按外部存储验证。
-- **输入排队管道 ([inbox.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/inbox.py))**：`SessionInbox` 处理执行期间进入的并发消息（Busy message queue）。
-- **视图投影 ([surface.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/session/surface.py))**：将复杂的树形结构投影为终端/Web 易于呈现的线性折叠状态。
+- **输入排队管道 ([inbox.py](inbox.py))**：`SessionInbox` 处理执行期间进入的并发消息（Busy message queue）。
+- **视图投影 ([surface.py](surface.py))**：将复杂的树形结构投影为终端/Web 易于呈现的线性折叠状态。
 
 ---
 

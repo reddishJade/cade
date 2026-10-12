@@ -6,7 +6,7 @@
 
 ## 1. 核心定义与版本
 
-- **核心身份规范 ([identity.py](file:///C:/Users/dwei/workspace/cade/src/cade/coding_agent/prompting/identity.py))**：
+- **核心身份规范 ([identity.py](identity.py))**：
   - `CORE_IDENTITY`：声明 Agent 是专注于软件开发的代码工程师，明确遵循：
     - **Read-before-edit**：编辑前必须先读取目标代码并校验 SHA256 指纹。
     - **最小局部修改**：优先使用精确定位替换，严禁非必要的大段重写。
