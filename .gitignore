@@ -36,6 +36,7 @@ dist/
 *.spec
 
 # 测试、E2E 与评测运行产物
+/data-gym-cache/
 .coverage
 .coverage.*
 coverage.xml
