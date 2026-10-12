@@ -198,9 +198,7 @@ class SecurityRuntimeConfig(BaseModel):
     sensitive_path_overrides: tuple[SecuritySensitivePathOverride, ...] = ()
 
 
-_INSTRUCTION_PRIORITIES: frozenset[str] = frozenset(
-    {"critical", "high", "medium", "low"}
-)
+_INSTRUCTION_PRIORITIES: frozenset[str] = frozenset({"instruction", "context"})
 
 
 class FileInstructionSource(BaseModel):
@@ -229,7 +227,7 @@ class FileInstructionSource(BaseModel):
     def _validate_priority(cls, v: str | None) -> str | None:
         if v is not None and v.lower() not in _INSTRUCTION_PRIORITIES:
             raise ValueError(
-                f"invalid priority '{v}'. Must be one of: critical, high, medium, low"
+                f"invalid priority '{v}'. Must be one of: instruction, context"
             )
         return v
 
@@ -245,7 +243,7 @@ class InlineInstructionSource(BaseModel):
     def _validate_priority(cls, v: str | None) -> str | None:
         if v is not None and v.lower() not in _INSTRUCTION_PRIORITIES:
             raise ValueError(
-                f"invalid priority '{v}'. Must be one of: critical, high, medium, low"
+                f"invalid priority '{v}'. Must be one of: instruction, context"
             )
         return v
 

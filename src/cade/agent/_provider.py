@@ -81,6 +81,9 @@ async def call_provider(
             options=config.options,
         )
     if context.context_manager is not None:
+        context.context_manager.context_snapshot = assembly.context_snapshot
+    assembly.require_sendable()
+    if context.context_manager is not None:
         context.context_manager.record_request(assembly)
     if config.before_provider_request:
         config.before_provider_request(assembly)

@@ -64,6 +64,10 @@
 | `agent.tool_timeout_seconds` | `120.0` | 单个工具执行超时秒数 |
 | `agent.watchdog_repeated_tool_limit` | `3` | 连续相同工具调用签名达到该次数后终止 |
 
+`prompt.instructions[].priority` 仅决定注入排序，可选 `instruction`（默认）和
+`context`，不影响是否纳入请求。旧值 `critical`、`high`、`medium`、`low` 不再接受；
+普通指令改用 `instruction`，需要排在事实上下文中的内容使用 `context`。
+
 ## 权限与执行环境字段
 
 | 字段 | 默认值 | 可选值或用途 |

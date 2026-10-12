@@ -98,7 +98,7 @@ class SkillIndexCollector:
             ContextBlock(
                 source=ContextBlockSource.SKILL,
                 target=ContextBlockTarget.USER_CONTEXT,
-                priority=ContextPriority.MEDIUM,
+                priority=ContextPriority.CONTEXT,
                 content=body,
                 provenance="skill registry",
                 truncated=any(

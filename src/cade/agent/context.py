@@ -50,24 +50,10 @@ class ContextBlockTarget(StrEnum):
 
 
 class ContextPriority(IntEnum):
-    CRITICAL = 0
-    HIGH = 10
-    MEDIUM = 20
-    LOW = 30
-    BACKGROUND = 40
+    """仅决定稳定排序：指令先于事实上下文，不决定是否纳入请求。"""
 
-
-# ── 过期策略 ──
-
-
-@dataclass
-class ContextExpiry:
-    max_turns: int = 0
-    max_steps: int = 0
-
-    @property
-    def never(self) -> bool:
-        return self.max_turns <= 0 and self.max_steps <= 0
+    INSTRUCTION = 0
+    CONTEXT = 10
 
 
 # ── 上下文块 ──
@@ -75,15 +61,12 @@ class ContextExpiry:
 
 @dataclass
 class ContextBlock:
+    """收集方已选定的上下文；组装时完整纳入，不参与预算淘汰。"""
+
     source: ContextBlockSource
     priority: ContextPriority
     content: str
     target: ContextBlockTarget = ContextBlockTarget.USER_CONTEXT
-    token_count: int | None = None
-    expiry: ContextExpiry | None = None
-    created_turn: int = 0
-    created_step: int = 0
-    metadata: dict[str, object] = field(default_factory=dict)
     block_id: str = ""
     provenance: str = ""
     truncated: bool = False
@@ -91,8 +74,6 @@ class ContextBlock:
     scope: Literal["user", "project", "runtime"] = "project"
 
     def get_token_count(self) -> int:
-        if self.token_count is not None:
-            return self.token_count
         return estimate_tokens(self.content)
 
 
@@ -104,8 +85,6 @@ class ContextCollectionInput:
     system_prompt: str = ""
     messages: list[AgentMessage] = field(default_factory=list)
     tools: list[AgentTool] = field(default_factory=list)
-    current_turn: int = 0
-    current_step: int = 0
     project_root: Path | None = None
     cwd: Path | None = None
     state: dict[str, object] = field(default_factory=dict)
@@ -120,10 +99,7 @@ class ContextAssemblyInput:
     messages: list[AgentMessage] = field(default_factory=list)
     tools: list[AgentTool] = field(default_factory=list)
     context_blocks: list[ContextBlock] = field(default_factory=list)
-    current_turn: int = 0
-    current_step: int = 0
     token_budget: int = 0
-    state: dict[str, object] = field(default_factory=dict)
     calibrate_tokens: Callable[[list[AgentMessage], int], int] | None = None
 
 
@@ -131,7 +107,6 @@ class ContextAssemblyInput:
 class ContextAssemblyResult:
     messages: list[AgentMessage] = field(default_factory=list)
     blocks_used: list[ContextBlock] = field(default_factory=list)
-    blocks_dropped: list[ContextBlock] = field(default_factory=list)
     total_tokens: int = 0
     token_budget: int = 0
     budget_remaining: int = 0
@@ -173,10 +148,10 @@ class WorldState:
                 current = section.snapshot(input)
                 self._current_blocks[section.section_id] = section.render_full(current)
             except (LookupError, OSError, RuntimeError, TypeError, ValueError):
-                logger.exception(
-                    "ContextSection %s raised; skipping", section.section_id
-                )
                 self._current_blocks.pop(section.section_id, None)
+                raise ContextAssemblyError(
+                    f"Cannot render context section: {section.section_id}"
+                ) from None
         return self.current_blocks()
 
     def reset(self) -> None:
@@ -217,6 +192,10 @@ def _message_fingerprint(message: AgentMessage) -> str:
 # ── 收集器协议 ──
 
 
+class ContextAssemblyError(RuntimeError):
+    """上下文无法完整收集或无法安全发送。"""
+
+
 class ContextCollector(Protocol):
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]: ...
 
@@ -246,11 +225,10 @@ class ContextCollectorRegistry:
             try:
                 blocks = collector.collect(input)
                 all_blocks.extend(blocks)
-            except Exception:
-                logger.exception(
-                    "ContextCollector %s raised; skipping",
-                    type(collector).__name__,
-                )
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                raise ContextAssemblyError(
+                    f"Cannot collect context: {type(collector).__name__}"
+                ) from exc
         return all_blocks
 
     def collect_sections(
@@ -286,11 +264,10 @@ class FrozenContextCollectorRegistry:
         for collector in self.collectors:
             try:
                 all_blocks.extend(collector.collect(input))
-            except Exception:
-                logger.exception(
-                    "ContextCollector %s raised; skipping",
-                    type(collector).__name__,
-                )
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                raise ContextAssemblyError(
+                    f"Cannot collect context: {type(collector).__name__}"
+                ) from exc
         return all_blocks
 
     def collect_sections(
@@ -327,7 +304,7 @@ def make_state_section(
     state_key: str,
     source: ContextBlockSource,
     *,
-    priority: ContextPriority = ContextPriority.HIGH,
+    priority: ContextPriority = ContextPriority.CONTEXT,
 ) -> ContextSection:
     """把 ContextCollectionInput.state 中的运行时快照包装为 section。"""
 
@@ -343,9 +320,13 @@ def make_state_section(
 
 
 def _snapshot_blocks(value: object) -> list[ContextBlock]:
-    if not isinstance(value, tuple | list):
-        return []
-    return [block for block in value if isinstance(block, ContextBlock)]
+    if not isinstance(value, tuple | list) or not all(
+        isinstance(block, ContextBlock) for block in value
+    ):
+        raise TypeError(
+            "Context section snapshot must contain only ContextBlock values"
+        )
+    return list(value)
 
 
 def _state_block(
@@ -376,36 +357,6 @@ class ContextAssembler(Protocol):
     def assemble(self, input: ContextAssemblyInput) -> ContextAssemblyResult: ...
 
 
-# ── 预算裁剪 ──
-
-
-def trim_to_budget(
-    blocks: list[ContextBlock],
-    budget: int,
-    base_tokens: int,
-) -> tuple[list[ContextBlock], list[ContextBlock]]:
-    # Python 的 sorted 是稳定排序；只按优先级排序可以保留 collector 的原始顺序。
-    sorted_blocks = sorted(blocks, key=lambda b: b.priority)
-
-    if budget <= 0:
-        return sorted_blocks, []
-
-    used: list[ContextBlock] = []
-    dropped: list[ContextBlock] = []
-    remaining = budget - base_tokens
-
-    for block in sorted_blocks:
-        tokens = block.get_token_count()
-        # 核心规则与持久状态不能为了旧工具输出而被静默丢弃。
-        if block.priority <= ContextPriority.HIGH or tokens <= remaining:
-            used.append(block)
-            remaining -= tokens
-        else:
-            dropped.append(block)
-
-    return used, dropped
-
-
 # ── 默认组装器 ──
 
 
@@ -424,18 +375,8 @@ class DefaultContextAssembler:
                 base_tokens=base_tokens,
             )
 
-        valid_blocks: list[ContextBlock] = []
-        dropped: list[ContextBlock] = []
-        for block in input.context_blocks:
-            if _is_expired(block, input.current_turn, input.current_step):
-                dropped.append(block)
-            else:
-                valid_blocks.append(block)
-
-        used_blocks: list[ContextBlock]
-        budget_dropped: list[ContextBlock]
-        used_blocks, budget_dropped = trim_to_budget(valid_blocks, budget, base_tokens)
-        dropped.extend(budget_dropped)
+        # 这里只生成完整投影；请求边界回收历史后检查安全预算。
+        used_blocks = sorted(input.context_blocks, key=lambda block: block.priority)
 
         if used_blocks:
             system_blocks = [
@@ -471,7 +412,6 @@ class DefaultContextAssembler:
         return ContextAssemblyResult(
             messages=messages,
             blocks_used=used_blocks,
-            blocks_dropped=dropped,
             total_tokens=final_total,
             token_budget=budget,
             budget_remaining=max(0, budget - final_total) if budget > 0 else 0,
@@ -482,27 +422,8 @@ class DefaultContextAssembler:
 # ── 共享辅助函数 ──
 
 
-def _is_expired(block: ContextBlock, turn: int, step: int) -> bool:
-    if block.expiry is None:
-        return False
-    if block.expiry.never:
-        return False
-    if (
-        block.expiry.max_turns > 0
-        and turn - block.created_turn >= block.expiry.max_turns
-    ):
-        return True
-    return bool(
-        block.expiry.max_steps > 0
-        and step - block.created_step >= block.expiry.max_steps
-    )
-
-
 def _block_to_text(block: ContextBlock) -> str:
     source_tag = f"[{block.source.value}]"
-    if block.metadata:
-        meta_str = " ".join(f"{k}={v}" for k, v in block.metadata.items())
-        return f"{source_tag} ({meta_str})\n{block.content}"
     return f"{source_tag}\n{block.content}"
 
 
@@ -581,10 +502,8 @@ def _utf8_prefix(text: str, max_bytes: int) -> str:
 # ── 内置收集器：指令 ──
 
 _INSTRUCTION_PRIORITY_MAP: dict[str, ContextPriority] = {
-    "critical": ContextPriority.CRITICAL,
-    "high": ContextPriority.HIGH,
-    "medium": ContextPriority.MEDIUM,
-    "low": ContextPriority.LOW,
+    "instruction": ContextPriority.INSTRUCTION,
+    "context": ContextPriority.CONTEXT,
 }
 
 
@@ -593,7 +512,7 @@ class InstructionSource:
     type: Literal["file", "inline"]
     path: str | None = None
     content: str | None = None
-    priority: ContextPriority = ContextPriority.CRITICAL
+    priority: ContextPriority = ContextPriority.INSTRUCTION
     scope: Literal["user", "project"] = "user"
 
 
@@ -616,7 +535,7 @@ class InstructionCollector:
         ] = {}
         for entry in sources:
             typ = entry["type"]
-            priority_str = entry.get("priority", "critical")
+            priority_str = entry.get("priority", "instruction")
             priority = _INSTRUCTION_PRIORITY_MAP[priority_str.lower()]
             scope = entry.get("scope", "user")
             if scope not in {"user", "project"}:
@@ -682,7 +601,7 @@ class InstructionCollector:
                 continue
             source_blocks, consumed_bytes = self._collect_file(
                 agents_path,
-                ContextPriority.CRITICAL,
+                ContextPriority.INSTRUCTION,
                 remaining_bytes,
                 "project",
             )
@@ -892,7 +811,7 @@ class RecentValidationCollector:
         return ContextBlock(
             source=ContextBlockSource.RECENT_VALIDATION,
             target=ContextBlockTarget.USER_CONTEXT,
-            priority=ContextPriority.HIGH,
+            priority=ContextPriority.CONTEXT,
             content=body,
             provenance=f"{command}:{msg.tool_call_id}",
             truncated=_utf8_size(raw) > self._max_bytes,
@@ -945,7 +864,7 @@ class NotesCollector:
             ContextBlock(
                 source=ContextBlockSource.NOTES,
                 target=ContextBlockTarget.USER_CONTEXT,
-                priority=ContextPriority.HIGH,
+                priority=ContextPriority.CONTEXT,
                 content=body,
                 provenance=str(note_path),
                 truncated=_NOTES_TRUNCATED_MARKER in body,

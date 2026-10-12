@@ -493,6 +493,8 @@ class AgentHarness:
     def load_history(self, messages: list[AgentMessage]) -> None:
         self._context_manager.replace_history(deepcopy(messages))
         self._context_manager.context_state.reset()
+        self._context_manager.invalidate_token_anchor()
+        self._context_manager.context_snapshot = None
         self._post_load_history(messages)
         if not messages:
             self._gate.clear_session_grants()
@@ -507,6 +509,8 @@ class AgentHarness:
     def load_run_state(self, run_state: RunState) -> None:
         self._context_manager.replace_history(messages_from_run_state(run_state))
         self._context_manager.context_state.reset()
+        self._context_manager.invalidate_token_anchor()
+        self._context_manager.context_snapshot = None
         self._reset_provider_conversation_state()
 
     def history_messages(self) -> list[AgentMessage]:

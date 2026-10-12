@@ -99,6 +99,8 @@ def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
             answer = answer + " " + result.watchdog_reason
         else:
             answer = result.watchdog_reason
+    elif result.termination_reason is TerminationReason.CONTEXT_ERROR:
+        answer = result.error_detail or "Cannot assemble context"
     elif (
         result.termination_reason
         in {

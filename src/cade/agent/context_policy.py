@@ -275,6 +275,60 @@ class ContextPolicy:
                 projected.append(message)
         return projected, tuple(omitted)
 
+    def project_history(
+        self,
+        messages: list[AgentMessage],
+        protected_ids: frozenset[str],
+        reclaim_tokens: int,
+    ) -> tuple[list[AgentMessage], tuple[str, ...]]:
+        """回收已结束的用户轮次和旧索引，不拆散工具组或当前工作集。"""
+        latest_user = latest_task_message(messages)
+        if latest_user is None or reclaim_tokens <= 0:
+            return messages, ()
+        boundary = next(i for i, m in enumerate(messages) if m is latest_user)
+        retained = {
+            id(m)
+            for m in [
+                *mandatory_history(messages, protected_ids),
+                *latest_working_group(messages),
+            ]
+        }
+        reference = SystemMessage(
+            content=(
+                "<context-history-reference>Older conversation messages were released "
+                "from this request. Exact messages remain in history; use history "
+                "search/read/around for missing details.</context-history-reference>"
+            )
+        )
+        reference_cost = estimate_message_tokens([reference])
+        removed: set[int] = set()
+        reclaimed = 0
+        for index, message in enumerate(messages):
+            if reclaimed >= reclaim_tokens + reference_cost:
+                break
+            if id(message) in retained:
+                continue
+            # 工具组由 project_working_set 整组回收；此处仅移除非工具消息。
+            if isinstance(message, ToolResultMessage):
+                continue
+            if isinstance(message, AssistantMessage) and any(
+                isinstance(block, ToolCallContent) for block in message.content
+            ):
+                continue
+            if isinstance(message, SystemMessage):
+                eligible = message.content.startswith("<context-history-reference>")
+            else:
+                eligible = index < boundary
+            if not eligible:
+                continue
+            removed.add(index)
+            reclaimed += estimate_message_tokens([message])
+        if not removed or reclaimed <= reference_cost:
+            return messages, ()
+        projected = [m for i, m in enumerate(messages) if i not in removed]
+        projected.insert(min(removed), reference)
+        return projected, ("completed_history",)
+
     def project_evidence(
         self,
         messages: list[AgentMessage],
@@ -469,9 +523,16 @@ def mandatory_history(
     if latest_user is not None:
         retained.add(id(latest_user))
     for m in messages:
-        if not isinstance(m, SystemMessage):
-            break
-        retained.add(id(m))
+        if (
+            isinstance(m, UserMessage)
+            and isinstance(m.content, str)
+            and "<skill-activation-state>" in m.content
+        ):
+            retained.add(id(m))
+        if isinstance(m, SystemMessage) and not m.content.startswith(
+            "<context-history-reference>"
+        ):
+            retained.add(id(m))
     return [m for m in messages if id(m) in retained]
 
 
