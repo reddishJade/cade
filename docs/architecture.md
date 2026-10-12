@@ -232,8 +232,9 @@ transport runtime 处理网络瞬时错误与限流重试，Agent 循环处理 s
 输出续写和上下文超限恢复，harness 管理主备切换。已输出事件的失败流结束后，
 后续重试按循环状态处理；主备包装器仅在当前流尚未输出时直接重发到备用 provider。
 
-MCP registry 管理工具发现、schema 缓存、惰性连接、状态和关闭，工具转换为
-`ToolSpec` 后接入产品注册表与统一 gate。`tools/list_changed` 更新发现缓存和状态诊断；
+MCP registry 在启动时发现工具或读取来源有效的 schema 缓存，工具转换为
+`ToolSpec` 后接入产品注册表与统一 gate，持久连接在首次调用时建立。
+`tools/list_changed` 更新发现缓存和状态诊断；
 产品装配读取工具 schema，单次 run 使用捕获的 schema。MCP server 提供的工具与
 资源来自外部进程，允许调用的范围由 gate 判定，进程隔离需在宿主侧配置。
 

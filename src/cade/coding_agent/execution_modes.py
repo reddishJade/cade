@@ -213,7 +213,6 @@ def build_default_mode_rulesets(
         Rule(action="delegate", effect="allow"),
         Rule(action="history", effect="allow"),
         Rule(action="rollover", effect="allow"),
-        Rule(action="mcp_tool_search", effect="allow"),
     )
     write_rules = (
         Rule(action="write", effect="allow"),

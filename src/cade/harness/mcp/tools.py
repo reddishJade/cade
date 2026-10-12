@@ -98,7 +98,6 @@ class McpServerStatus:
     server_name: str
     state: str
     enabled: bool
-    deferred: bool
     tool_count: int
     protocol_version: str | None = None
     server_info: dict[str, Any] | None = None
@@ -117,7 +116,6 @@ class McpRuntimeRegistry:
         self._cancel_event: threading.Event | None = None
         self._raw_servers: dict[str, dict[str, Any]] = {}
         self._validated_servers: dict[str, McpServerConfig] = {}
-        self._deferred_servers: set[str] = set()
         self._tool_counts: dict[str, int] = {}
         self._cache_metadata: dict[str, dict[str, Any]] = {}
         self._server_errors: dict[str, str] = {}
@@ -156,7 +154,6 @@ class McpRuntimeRegistry:
         *,
         raw_servers: dict[str, dict[str, Any]],
         validated_servers: dict[str, McpServerConfig],
-        deferred_servers: set[str],
         tool_counts: dict[str, int],
         cache_metadata: dict[str, dict[str, Any]],
         server_errors: dict[str, str],
@@ -165,7 +162,6 @@ class McpRuntimeRegistry:
         with self._lock:
             self._raw_servers = dict(raw_servers)
             self._validated_servers = dict(validated_servers)
-            self._deferred_servers = set(deferred_servers)
             self._tool_counts = dict(tool_counts)
             self._cache_metadata = dict(cache_metadata)
             self._server_errors = dict(server_errors)
@@ -175,7 +171,6 @@ class McpRuntimeRegistry:
         with self._lock:
             raw_servers = dict(self._raw_servers)
             validated_servers = dict(self._validated_servers)
-            deferred_servers = set(self._deferred_servers)
             tool_counts = dict(self._tool_counts)
             cache_metadata = dict(self._cache_metadata)
             server_errors = dict(self._server_errors)
@@ -206,11 +201,6 @@ class McpRuntimeRegistry:
                     state = "failed"
                     if ref is not None and ref.last_error:
                         last_error = ref.last_error
-                elif (
-                    server_name in deferred_servers
-                    and tool_counts.get(server_name, 0) == 0
-                ):
-                    state = "deferred"
             if validated is None:
                 state = "failed"
             statuses.append(
@@ -218,7 +208,6 @@ class McpRuntimeRegistry:
                     server_name=server_name,
                     state=state,
                     enabled=enabled,
-                    deferred=server_name in deferred_servers,
                     tool_count=tool_counts.get(server_name, 0),
                     protocol_version=protocol_version,
                     server_info=server_info,
@@ -451,176 +440,6 @@ def _validated_cached_tools(
     return tools if isinstance(tools, list) else None
 
 
-# ── 引导工具 ──
-
-
-def build_fetch_tools_tool(
-    project_root: Path,
-    server_name: str,
-    validated: McpServerConfig,
-) -> ToolSpec:
-    """创建用于冷启动延迟加载服务器并拉取工具列表的引导工具。"""
-
-    def handler(
-        _args: ToolInput, _on_update: Callable[[str], None] | None = None
-    ) -> str:
-        config_hash = compute_config_hash(
-            {
-                "command": validated.command[0],
-                "args": list(validated.args),
-                "env": validated.env,
-                "timeout": validated.timeout,
-            }
-        )
-        client: _mcp_mod.McpClient | None = None
-        try:
-            command = [validated.command[0]] + list(validated.args)
-            client = _mcp_mod.McpClient(
-                command, validated.env, timeout=validated.timeout
-            )
-            client.start()
-            tools_list = client.list_tools()
-            cache_metadata = _cache_metadata(client)
-
-            cache_path = _cache_path(project_root)
-            cache_data = _load_cache(cache_path)
-            cache_data.setdefault("servers", {})[server_name] = {
-                "config_hash": config_hash,
-                "tools": tools_list,
-                **cache_metadata,
-            }
-            _save_cache(cache_path, cache_data)
-            return (
-                f"Successfully fetched {len(tools_list)} tools from server "
-                f"'{server_name}' and populated the cache. Please use "
-                f"mcp_tool_search to retrieve their schemas now!"
-            )
-        except (
-            LookupError,
-            OSError,
-            RuntimeError,
-            TimeoutError,
-            TypeError,
-            ValueError,
-        ) as e:
-            redacted = str(e)
-            return f"Error fetching tools from server '{server_name}': {redacted}"
-        finally:
-            if client is not None:
-                client.stop()
-
-    slug = _sanitize(server_name)
-    return ToolSpec(
-        name=f"mcp__{slug}__fetch_tools",
-        description=(
-            f"Bootstrap and fetch tool list for deferred server "
-            f"'{server_name}' to populate the cache."
-        ),
-        input_hint="{}",
-        handler=handler,
-        schema={
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
-    )
-
-
-def _format_tool_match(server_slug: str, tool: dict[str, Any]) -> str:
-    name = tool["name"]
-    desc = tool.get("description", "")
-    schema = tool.get("inputSchema", {})
-    required = schema.get("required", [])
-    props = schema.get("properties", {})
-    param_lines = [
-        f"    - **{p_name}** ({p_info.get('type', 'any')}): "
-        f"{p_info.get('description', '')}"
-        f"{' (required)' if p_name in required else ''}"
-        for p_name, p_info in props.items()
-    ]
-    params_str = (
-        "\n".join(param_lines) if param_lines else "    - No parameters required."
-    )
-    return (
-        f"- **Tool Name**: `mcp__{server_slug}__{_sanitize(name)}`\n"
-        f"  **Description**: {desc}\n"
-        f"  **Schema / Parameters**:\n{params_str}"
-    )
-
-
-def build_mcp_tool_search(
-    project_root: Path,
-    deferred_servers: set[str],
-    slug_map: dict[str, str],
-) -> ToolSpec:
-    """创建用于搜索和获取延迟加载工具完整参数 Schema 的工具。"""
-
-    def handler(
-        args: ToolInput, _on_update: Callable[[str], None] | None = None
-    ) -> str:
-        query = str(args.get("query", "")).strip().lower()
-        if not query:
-            return "Please provide a query to search."
-
-        cache_data = _load_cache(_cache_path(project_root))
-        results = []
-
-        for server_name in deferred_servers:
-            server_slug = slug_map.get(server_name, _sanitize(server_name))
-            server_entry = cache_data.get("servers", {}).get(server_name, {})
-            tools = server_entry.get("tools", [])
-            if not tools:
-                results.append(
-                    f"### Server '{server_name}'\n"
-                    f"Schema not yet loaded. Please invoke the fetch_tools tool "
-                    f"(e.g. `mcp__{server_slug}__fetch_tools`) "
-                    f"to trigger schema fetch."
-                )
-                continue
-
-            matched = [
-                t
-                for t in tools
-                if query in t.get("name", "").lower()
-                or query in t.get("description", "").lower()
-                or query == "all"
-            ]
-            if matched:
-                results.append(f"### Server '{server_name}' matched tools:")
-                for tool in matched:
-                    results.append(_format_tool_match(server_slug, tool))
-
-        return (
-            "\n\n".join(results)
-            if results
-            else f"No tools found matching query: {query}"
-        )
-
-    return ToolSpec(
-        name="mcp_tool_search",
-        description=(
-            "Search and retrieve full schema, descriptions, and parameters "
-            "for deferred MCP tools."
-        ),
-        input_hint='{"query": "keyword_or_all"}',
-        handler=handler,
-        schema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": (
-                        "Keyword to search within tool names or descriptions, "
-                        "or 'all' to list all tools."
-                    ),
-                }
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-    )
-
-
 # ── 工具执行包装 ──
 
 
@@ -631,9 +450,6 @@ def _redact_and_truncate(text: str, max_len: int = 200) -> str:
 def _make_handler(
     ref: _mcp_mod.LazyClientRef,
     original_tool_name: str,
-    deferred: bool,
-    server_name: str,
-    cache_path: Path,
     output_schema: object,
     runtime_registry: McpRuntimeRegistry,
 ) -> Any:
@@ -641,36 +457,6 @@ def _make_handler(
         args: ToolInput,
         on_update: Callable[[str], None] | None = None,
     ) -> str:
-        if deferred:
-            try:
-                cache_data = json.loads(cache_path.read_text(encoding="utf-8"))
-                tool_entry = next(
-                    (
-                        cached_tool
-                        for cached_tool in cache_data.get("servers", {})
-                        .get(server_name, {})
-                        .get("tools", [])
-                        if cached_tool["name"] == original_tool_name
-                    ),
-                    None,
-                )
-                if tool_entry:
-                    real_schema = tool_entry.get("inputSchema", {})
-                    missing = [
-                        field_name
-                        for field_name in real_schema.get("required", [])
-                        if field_name not in args
-                    ]
-                    if missing:
-                        raise ValueError(
-                            "Missing required parameters for deferred "
-                            f"tool {original_tool_name}: "
-                            f"{', '.join(missing)}"
-                        )
-            except Exception as validation_error:
-                if isinstance(validation_error, ValueError):
-                    raise
-
         client_instance = ref.get_or_create()
         progress_updates: list[dict[str, object]] = []
 
@@ -808,7 +594,6 @@ def _load_mcp_tools_snapshot(
         runtime_registry.update_runtime_snapshot(
             raw_servers={},
             validated_servers={},
-            deferred_servers=set(),
             tool_counts={},
             cache_metadata={},
             server_errors={},
@@ -819,7 +604,6 @@ def _load_mcp_tools_snapshot(
         runtime_registry.update_runtime_snapshot(
             raw_servers={},
             validated_servers={},
-            deferred_servers=set(),
             tool_counts={},
             cache_metadata={},
             server_errors={"<config>": _redact_and_truncate(config.error)},
@@ -833,7 +617,6 @@ def _load_mcp_tools_snapshot(
     cache_path = _cache_path(project_root)
     cache_data = _load_cache(cache_path)
     collected = _collect_mcp_tools(
-        project_root,
         mcp_servers,
         validated_servers,
         server_errors,
@@ -842,21 +625,9 @@ def _load_mcp_tools_snapshot(
         runtime_registry,
     )
 
-    bootstrap_tools = tuple(collected.tools_to_register)
-    search_tools = (
-        (
-            build_mcp_tool_search(
-                project_root, collected.deferred_servers, collected.slug_map
-            ),
-        )
-        if collected.deferred_servers
-        else ()
-    )
-
     refresh = _build_mcp_refresh_fn(
         validated_servers=validated_servers,
         mcp_servers=mcp_servers,
-        deferred_servers=collected.deferred_servers,
         cache_path=cache_path,
         all_tools_by_server=collected.all_tools_by_server,
         cache_metadata_by_server=collected.cache_metadata_by_server,
@@ -868,22 +639,19 @@ def _load_mcp_tools_snapshot(
         all_tools_by_server=collected.all_tools_by_server,
         validated_servers=validated_servers,
         raw_servers=mcp_servers,
-        deferred_servers=collected.deferred_servers,
-        cache_path=cache_path,
         runtime_registry=runtime_registry,
         refresh_server_tools=refresh,
     )
     runtime_registry.update_runtime_snapshot(
         raw_servers=mcp_servers,
         validated_servers=validated_servers,
-        deferred_servers=collected.deferred_servers,
         tool_counts={
             name: len(tools) for name, tools in collected.all_tools_by_server.items()
         },
         cache_metadata=collected.cache_metadata_by_server,
         server_errors=server_errors,
     )
-    return bootstrap_tools + registered_tools + search_tools
+    return registered_tools
 
 
 @dataclass(frozen=True)
@@ -939,15 +707,11 @@ def _validate_mcp_servers(
 class _McpToolsCollection:
     """_collect_mcp_tools 的返回值。"""
 
-    tools_to_register: list[ToolSpec] = field(default_factory=list)
-    deferred_servers: set[str] = field(default_factory=set)
-    slug_map: dict[str, str] = field(default_factory=dict)
     all_tools_by_server: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     cache_metadata_by_server: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def _collect_mcp_tools(
-    project_root: Path,
     mcp_servers: dict[str, dict[str, Any]],
     validated_servers: dict[str, McpServerConfig],
     server_errors: dict[str, str],
@@ -956,28 +720,18 @@ def _collect_mcp_tools(
     runtime_registry: McpRuntimeRegistry,
 ) -> _McpToolsCollection:
     """遍历所有已验证的 MCP server，收集工具列表。"""
-    tools_to_register: list[ToolSpec] = []
-    deferred_servers: set[str] = set()
-    slug_map: dict[str, str] = {}
     all_tools_by_server: dict[str, list[dict[str, Any]]] = {}
     cache_metadata_by_server: dict[str, dict[str, Any]] = {}
 
     for server_name, validated in validated_servers.items():
-        is_deferred = bool(mcp_servers.get(server_name, {}).get("defer_loading", False))
-        if is_deferred:
-            deferred_servers.add(server_name)
-            slug_map[server_name] = _sanitize(server_name)
         if not validated.enabled:
             continue
         tools_list = _tools_for_server(
-            project_root,
             cache_path,
             cache_data,
             server_name,
             mcp_servers[server_name],
             validated,
-            is_deferred,
-            tools_to_register,
             runtime_registry.workspace_roots,
             cache_metadata_by_server,
             server_errors,
@@ -986,9 +740,6 @@ def _collect_mcp_tools(
             all_tools_by_server[server_name] = tools_list
 
     return _McpToolsCollection(
-        tools_to_register=tools_to_register,
-        deferred_servers=deferred_servers,
-        slug_map=slug_map,
         all_tools_by_server=all_tools_by_server,
         cache_metadata_by_server=cache_metadata_by_server,
     )
@@ -998,7 +749,6 @@ def _build_mcp_refresh_fn(
     *,
     validated_servers: dict[str, McpServerConfig],
     mcp_servers: dict[str, dict[str, Any]],
-    deferred_servers: set[str],
     cache_path: Path,
     all_tools_by_server: dict[str, list[dict[str, Any]]],
     cache_metadata_by_server: dict[str, dict[str, Any]],
@@ -1030,7 +780,6 @@ def _build_mcp_refresh_fn(
             runtime_registry.update_runtime_snapshot(
                 raw_servers=mcp_servers,
                 validated_servers=validated_servers,
-                deferred_servers=deferred_servers,
                 tool_counts={
                     name: len(tools) for name, tools in all_tools_by_server.items()
                 },
@@ -1046,8 +795,6 @@ def _build_runtime_mcp_tools(
     all_tools_by_server: dict[str, list[dict[str, Any]]],
     validated_servers: dict[str, McpServerConfig],
     raw_servers: dict[str, dict[str, Any]],
-    deferred_servers: set[str],
-    cache_path: Path,
     runtime_registry: McpRuntimeRegistry,
     refresh_server_tools: Callable[[str, _mcp_mod.McpClient], None],
 ) -> tuple[ToolSpec, ...]:
@@ -1102,8 +849,6 @@ def _build_runtime_mcp_tools(
                     validated,
                     tool,
                     lazy_ref,
-                    is_deferred=(server_name in deferred_servers),
-                    cache_path=cache_path,
                     metadata=metadata,
                     tool_override=tool_override,
                     runtime_registry=runtime_registry,
@@ -1114,14 +859,11 @@ def _build_runtime_mcp_tools(
 
 
 def _tools_for_server(
-    project_root: Path,
     cache_path: Path,
     cache_data: dict[str, Any],
     server_name: str,
     raw_config: dict[str, Any],
     validated: McpServerConfig,
-    is_deferred: bool,
-    tools_to_register: list[ToolSpec],
     workspace_roots: tuple[Path, ...],
     cache_metadata_by_server: dict[str, dict[str, Any]],
     server_errors: dict[str, str],
@@ -1135,12 +877,6 @@ def _tools_for_server(
             "server_info": cached_entry.get("server_info"),
         }
         return cached_tools
-
-    if is_deferred:
-        tools_to_register.append(
-            build_fetch_tools_tool(project_root, server_name, validated)
-        )
-        return []
 
     return _query_server_tools(
         cache_path,
@@ -1214,22 +950,18 @@ def _build_registered_mcp_tool(
     validated: McpServerConfig,
     tool: dict[str, Any],
     lazy_ref: _mcp_mod.LazyClientRef,
-    is_deferred: bool,
-    cache_path: Path,
     metadata: McpToolMetadata,
     tool_override: McpToolOverride,
     runtime_registry: McpRuntimeRegistry,
 ) -> ToolSpec:
-    tool_schema, tool_description = _mcp_tool_schema_and_description(
-        validated.name, tool, is_deferred
+    desc = tool.get("description", "")
+    tool_description = (
+        f"{desc} [mcp: {validated.name}]" if desc else f"[mcp: {validated.name}]"
     )
     description = tool_override.description or tool_description
     mcp_handler = _make_handler(
         lazy_ref,
         tool["name"],
-        is_deferred,
-        validated.name,
-        cache_path,
         tool.get("outputSchema"),
         runtime_registry,
     )
@@ -1238,32 +970,7 @@ def _build_registered_mcp_tool(
         description=description,
         input_hint=_mcp_tool_input_hint(tool.get("inputSchema", {})),
         handler=mcp_handler,
-        schema=tool_schema,
-    )
-
-
-def _mcp_tool_schema_and_description(
-    server_name: str,
-    tool: dict[str, Any],
-    is_deferred: bool,
-) -> tuple[dict[str, Any], str]:
-    desc = tool.get("description", "")
-    if is_deferred:
-        return (
-            {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": True,
-            },
-            (
-                f"[Deferred] {desc} Parameters unknown until searched. "
-                f"Call mcp_tool_search first to retrieve the required "
-                f"schema before invoking this tool. [mcp: {server_name}]"
-            ),
-        )
-    return (
-        tool.get("inputSchema", {}),
-        f"{desc} [mcp: {server_name}]" if desc else f"[mcp: {server_name}]",
+        schema=tool.get("inputSchema", {}),
     )
 
 

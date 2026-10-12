@@ -530,7 +530,7 @@ def cmd_mcp(cmd: str, ctx: CommandContext) -> bool:
         error_text = f" error={error}" if error else ""
         ctx.output.write(
             f"{status['server_name']}: state={status['state']} "
-            f"tools={status['tool_count']} deferred={status['deferred']}"
+            f"tools={status['tool_count']}"
             f"{protocol_text}{identity_text}{error_text}"
         )
     return False
