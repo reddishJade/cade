@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 import threading
 from collections.abc import Callable
@@ -26,26 +25,12 @@ from .truncate import DEFAULT_MAX_BYTES, truncate_tail
 logger = logging.getLogger("cade.coding_agent.tools.bash")
 
 
-SpawnHook = Callable[[str, Path], tuple[str, Path]]
-"""修改 command 和 cwd 的钩子。输入 (command, cwd)，返回 (command, cwd)。"""
-
-SpawnEnvHook = Callable[[str, Path, dict[str, str]], dict[str, str]]
-"""修改环境变量的钩子。输入 (command, cwd, env)，返回 env。"""
-
-
 @dataclass(frozen=True)
 class BashRequest:
     command: str
     timeout: int  # 毫秒
     workdir: str | None = None
     purpose: Literal["validation"] | None = None
-
-
-@dataclass(frozen=True)
-class BashExecutionPlan:
-    command: str
-    cwd: Path
-    timeout: int  # 毫秒
 
 
 # 最大 timeout_ms 值（300 秒）
@@ -57,9 +42,6 @@ def build_bash_tool(
     cancel_event: threading.Event | None = None,
     shell_spec: ShellSpec | None = None,
     shell: Shell | None = None,
-    command_prefix: str | None = None,
-    spawn_hook: SpawnHook | None = None,
-    env_hook: SpawnEnvHook | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> ToolSpec:
     root = project_root.resolve()
@@ -69,29 +51,18 @@ def build_bash_tool(
 
     def bash(data: ToolInput, _on_update: Callable[[str], None] | None = None) -> str:
         request = _parse_bash_request(data)
-        plan = _build_bash_execution_plan(
-            request,
-            root,
-            command_prefix=command_prefix,
-            spawn_hook=spawn_hook,
-        )
-        # 计算最终环境变量
-        cmd_env: dict[str, str] | None = None
-        if env_hook:
-            cmd_env = env_hook(plan.command, plan.cwd, dict(**os.environ))
-
+        cwd = _resolve_workdir(root, request.workdir)
         before = (
             workspace_fingerprint(root) if request.purpose == "validation" else None
         )
         result = shell.run(
-            build_shell_argv(spec, plan.command),
-            cwd=plan.cwd,
-            timeout=plan.timeout,
+            build_shell_argv(spec, request.command),
+            cwd=cwd,
+            timeout=request.timeout,
             cancel_event=cancel_event,
-            env=cmd_env,
             on_progress=on_progress,
         )
-        output = _render_bash_output(result, plan.timeout)
+        output = _render_bash_output(result, request.timeout)
         return ToolOutput(
             output,
             metadata={
@@ -112,8 +83,8 @@ def build_bash_tool(
             },
             is_error=result.returncode != 0 or result.timed_out or result.cancelled,
             render_intent=TerminalRenderIntent(
-                command=plan.command,
-                cwd=plan.cwd.as_posix(),
+                command=request.command,
+                cwd=cwd.as_posix(),
             ),
         )
 
@@ -319,25 +290,6 @@ def _parse_timeout(data: ToolInput) -> int:
     if value > _MAX_TIMEOUT_MS:
         raise ValueError(f"timeout_ms must be <= {_MAX_TIMEOUT_MS}")
     return value
-
-
-# ── 执行计划 ──
-
-
-def _build_bash_execution_plan(
-    request: BashRequest,
-    root: Path,
-    *,
-    command_prefix: str | None,
-    spawn_hook: SpawnHook | None,
-) -> BashExecutionPlan:
-    command = request.command
-    if command_prefix:
-        command = f"{command_prefix}\n{command}"
-    cwd = _resolve_workdir(root, request.workdir)
-    if spawn_hook:
-        command, cwd = spawn_hook(command, cwd)
-    return BashExecutionPlan(command=command, cwd=cwd, timeout=request.timeout)
 
 
 def _resolve_workdir(root: Path, workdir: str | None) -> Path:
