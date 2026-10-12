@@ -6,7 +6,6 @@ import threading
 from pathlib import Path
 
 from cade.agent.types import ToolSpec
-from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_handlers import read_file_content
@@ -34,7 +33,6 @@ READ_FILE_SCHEMA = {
 
 def build_read_file_tool(
     project_root: Path,
-    context_state: ContextualRetrievalState | None = None,
     operations: FileSystem | None = None,
     cancel_event: threading.Event | None = None,
 ) -> ToolSpec:
@@ -44,7 +42,7 @@ def build_read_file_tool(
     def handler(data, _on_update=None):
         if cancel_event is not None and cancel_event.is_set():
             raise ValueError("Tool cancelled")
-        return read_file_content(root, ops, context_state, data)
+        return read_file_content(root, ops, data)
 
     return ToolSpec(
         name="read",

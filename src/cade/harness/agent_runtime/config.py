@@ -71,7 +71,7 @@ def _convert_to_llm_with_citations(
 
 
 ContextRollover = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
-RuntimeContextProvider = Callable[[str], list[str]]
+RuntimeContextProvider = Callable[[], list[str]]
 
 
 @dataclass(frozen=True)
@@ -128,7 +128,6 @@ class AgentRuntimeConfig:
 
 
 def build_turn_context_messages(
-    question: str,
     composition: AgentComposition,
     resumed_notice: str | None,
     mode_notice: str | None = None,
@@ -136,7 +135,7 @@ def build_turn_context_messages(
     typed: list[AgentMessage] = []
     parts: list[str] = []
     if composition.runtime_context_provider is not None:
-        parts = list(composition.runtime_context_provider(question))
+        parts = list(composition.runtime_context_provider())
     if resumed_notice is not None:
         parts.append(f"<session-notices>\n{resumed_notice}\n</session-notices>")
     if mode_notice:

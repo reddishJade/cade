@@ -32,20 +32,9 @@ class ReplayAgent(Protocol):
     def set_resumed_notice(self, notice: str) -> None: ...
 
 
-class ContextualReplayState(Protocol):
-    """回放时恢复文件和工具上下文所需的状态接口。"""
-
-    def record_file(self, path: str) -> None: ...
-
-    def record_tool_result(self, tool: str, content: str) -> None: ...
-
-    def clear(self) -> None: ...
-
-
 def replay_session(
     agent: ReplayAgent,
     store: TreeSessionRepo,
-    contextual_state: ContextualReplayState | None = None,
     restoration_context_renderer: Callable[[object], str | None] | None = None,
 ) -> None:
     """把当前 session branch 的事实投影回 agent 内存。"""
@@ -60,9 +49,6 @@ def replay_session(
     goal_state = latest_goal_state(records)
     if goal_state is not None:
         agent.restore_goal_state(goal_state)
-    if contextual_state is not None:
-        contextual_state.clear()
-        restore_contextual_state(contextual_state, records)
     restoration_notice = None
     if restoration_context_renderer is not None:
         restoration_notice = restoration_context_renderer(
@@ -132,23 +118,6 @@ def latest_restoration_context(records: list[SessionEntry]) -> object | None:
     return None
 
 
-def restore_contextual_state(
-    contextual_state: ContextualReplayState,
-    records: list[SessionEntry],
-) -> None:
-    """从 transcript 恢复上下文检索状态。"""
-    for record in records:
-        if record.type != "event" or not isinstance(record.content, dict):
-            continue
-        event_type = str(record.content.get("type", ""))
-        event_data = record.content.get("data")
-        if event_type == "file_references" and isinstance(event_data, list):
-            for ref in event_data:
-                path = ref.get("path", "") if isinstance(ref, dict) else ""
-                if isinstance(path, str) and path:
-                    contextual_state.record_file(path)
-        elif event_type == "tool_result" and isinstance(event_data, dict):
-            tool_name = str(event_data.get("tool_use_id", "") or "")
-            content = str(event_data.get("content", "") or "")
-            if tool_name:
-                contextual_state.record_tool_result(tool_name, content)
+def records_to_agent_messages(records: list[SessionEntry]) -> list[AgentMessage]:
+    """将 session 事实账本投影为 provider 使用的消息历史。"""
+    return list(project_session_surface(records).messages)

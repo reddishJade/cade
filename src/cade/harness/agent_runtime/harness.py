@@ -181,13 +181,12 @@ class AgentHarness:
 
     def _build_context_messages(
         self,
-        question: str,
         composition: AgentComposition,
     ) -> list[AgentMessage]:
         """构建 turn 上下文消息。子类可添加模式通知、记忆概览等。"""
         parts: list[str] = []
         if composition.runtime_context_provider is not None:
-            parts = list(composition.runtime_context_provider(question))
+            parts = list(composition.runtime_context_provider())
         if self._resumed_notice is not None:
             parts.append(
                 f"<session-notices>\n{self._resumed_notice}\n</session-notices>"
@@ -524,7 +523,7 @@ class AgentHarness:
             messages=manager.history,
             context_manager=manager,
             request_prefix=[
-                *self._build_context_messages(question, composition),
+                *self._build_context_messages(composition),
                 SystemMessage(
                     content="Answer this side question from the supplied context. Tools are unavailable."
                 ),
@@ -601,7 +600,7 @@ class AgentHarness:
             provider = self._provider
         registry_snapshot = composition.registry
         active_registry = self._build_active_registry(registry_snapshot)
-        context_messages = self._build_context_messages(question, composition)
+        context_messages = self._build_context_messages(composition)
         context_snapshot_state = self._build_context_snapshot_state(active_registry)
         self._resumed_notice = None
         turn_agent = Agent(self._gate.adapt_tools(active_registry))
@@ -631,7 +630,7 @@ class AgentHarness:
             **self._build_loop_config_extras(),
         )
         loop_config.refresh_request_prefix = lambda: self._build_context_messages(
-            question, composition
+            composition
         )
 
         try:

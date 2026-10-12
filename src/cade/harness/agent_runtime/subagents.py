@@ -302,7 +302,7 @@ class SubagentSessionManager:
             config=parent_composition.config,
             gate=parent_composition.gate,
             request_assembler=parent_composition.request_assembler,
-            runtime_context_provider=lambda _question: [system_prompt],
+            runtime_context_provider=lambda: [system_prompt],
         )
         recorder = SessionRecorder(child_store)
         hooks = SignalHookManager()

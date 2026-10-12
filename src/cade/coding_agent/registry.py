@@ -25,13 +25,11 @@ from cade.harness.execution_env import Shell
 
 if TYPE_CHECKING:
     from cade.coding_agent.tools import ShellSpec
-    from cade.harness.agent_runtime import ContextualRetrievalState
     from cade.harness.skills import SkillRegistry
 
 
 def build_project_scoped_registry(
     project_root: Path,
-    contextual_state: ContextualRetrievalState | None,
     shell_spec: ShellSpec,
     cancel_event: threading.Event | None = None,
     shell: Shell | None = None,
@@ -41,13 +39,11 @@ def build_project_scoped_registry(
     registry += (
         build_read_file_tool(
             project_root,
-            context_state=contextual_state,
             cancel_event=cancel_event,
         ),
     )
     registry += build_write_file_tools(
         project_root,
-        context_state=contextual_state,
         cancel_event=cancel_event,
     )
     registry += build_glob_tools(project_root, cancel_event=cancel_event)

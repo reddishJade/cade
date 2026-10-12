@@ -28,7 +28,6 @@ from cade.coding_agent.tools import ShellSpec
 from cade.harness.agent_runtime import (
     AgentComposition,
     CancellationToken,
-    ContextualRetrievalState,
 )
 from cade.harness.agent_runtime.config import (
     GateConfig,
@@ -69,7 +68,6 @@ if TYPE_CHECKING:
 
 
 def build_hook_manager(
-    contextual_state: ContextualRetrievalState | None,
     external_hook_runner: ExternalHookRunner | None,
     session_recorder: SessionRecorder,
     project_root: Path,
@@ -81,15 +79,6 @@ def build_hook_manager(
         "before_provider_request",
         session_recorder.record_provider_request,
     )
-    if contextual_state is not None:
-
-        def record_post_tool(record: object) -> None:
-            contextual_state.record_tool_result(
-                getattr(record, "tool", ""),
-                getattr(record, "output", ""),
-            )
-
-        manager.register("post_tool", record_post_tool)
     if external_hook_runner is not None:
         for event in (
             "post_tool",
@@ -123,7 +112,6 @@ def build_agent(
     runtime_config: CadeRuntimeConfig,
     session_recorder: SessionRecorder,
     session_inbox: SessionInbox,
-    contextual_state: ContextualRetrievalState | None = None,
     shell_spec: ShellSpec | None = None,
     context_window_controller: ContextWindowController | None = None,
     cancellation_token: CancellationToken | None = None,
@@ -137,7 +125,6 @@ def build_agent(
 ) -> CodingAgentHarness:
 
     hook_manager = build_hook_manager(
-        contextual_state,
         external_hook_runner,
         session_recorder,
         project_root,
@@ -213,7 +200,6 @@ def build_agent(
         project_root,
         registry,
         shell_spec=shell_spec,
-        contextual_state=contextual_state,
         modules=runtime_config.prompt.modules,
         identity=CORE_IDENTITY,
     )

@@ -243,7 +243,7 @@ Skills registry 发现技能并发布目录，`load_skill` 按需读取正文；
 
 外部 hooks 是配置授权的宿主命令，由 `ExternalHookRunner` 处理匹配、超时、
 失败策略和对子代理的继承。pre-tool hook 的参数改写在权限判定前生效，决策约束
-只能收紧执行范围。内部 hooks 承担请求记录、运行审计和上下文状态更新。
+只能收紧执行范围。内部 hooks 承担请求记录和运行审计。
 
 工具通过 `ToolRenderIntent` 携带 terminal、diff、location 或 subagent 语义，
 intent 随类型化结果落盘，宿主从事件恢复相应呈现。工具实现负责执行和结果描述，

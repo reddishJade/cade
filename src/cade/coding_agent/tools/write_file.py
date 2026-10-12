@@ -6,7 +6,6 @@ import threading
 from pathlib import Path
 
 from cade.agent.types import ToolSpec
-from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_handlers import edit_file_content, write_file_content
@@ -54,7 +53,6 @@ EDIT_FILE_SCHEMA = {
 
 def build_write_file_tools(
     project_root: Path,
-    context_state: ContextualRetrievalState | None = None,
     operations: FileSystem | None = None,
     cancel_event: threading.Event | None = None,
 ) -> tuple[ToolSpec, ...]:
@@ -75,7 +73,7 @@ def build_write_file_tools(
             ),
             input_hint='JSON: {"path": "/absolute/path/to/file", "content": "..."}',
             handler=lambda data, _on_update=None: _handler(
-                lambda d: write_file_content(root, ops, context_state, d), data
+                lambda d: write_file_content(root, ops, d), data
             ),
             schema=WRITE_FILE_SCHEMA,
             prompt_snippet="Create new files or deliberately replace entire files",
@@ -92,7 +90,7 @@ def build_write_file_tools(
             ),
             input_hint='JSON: {"path": "/absolute/path/to/file", "old_text": "...", "new_text": "..."}',
             handler=lambda data, _on_update=None: _handler(
-                lambda d: edit_file_content(root, ops, context_state, d), data
+                lambda d: edit_file_content(root, ops, d), data
             ),
             schema=EDIT_FILE_SCHEMA,
             prompt_snippet=(

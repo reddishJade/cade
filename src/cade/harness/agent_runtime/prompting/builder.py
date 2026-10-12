@@ -4,7 +4,6 @@
 职责边界：
 - 稳定区：agent 身份、工具纪律、工具列表、搜索策略（注册表不变时缓存）
 - 动态区：环境信息（OS、Python、CWD）、CWD 目录快照（CWD 不变时缓存）
-- 易变区：contextual retrieval 状态、session 通知（每轮重建）
 
 不属于本模块（由动态 section 收集器管理）：
 - 项目指令 → InstructionCollector
@@ -24,7 +23,6 @@ from typing import Protocol
 from cade.agent.types import ToolSpec
 from cade.harness.config import DEFAULT_PROMPT_MODULES
 
-from ..contextual import ContextualRetrievalState
 from .identity import (
     CITATION_INSTRUCTION,
     DYNAMIC_PROMPT_MODULE_ORDER,
@@ -32,7 +30,6 @@ from .identity import (
     STABLE_PROMPT_MODULE_ORDER,
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     TOOL_DISCIPLINE,
-    VOLATILE_PROMPT_MODULE_ORDER,
 )
 from .token_budget import MAX_CWD_ENTRIES
 from .tools import build_tool_guidelines, build_tool_prompt
@@ -54,10 +51,6 @@ class ShellInfo(Protocol):
 class PromptContext:
     project_root: Path
     registry: tuple[ToolSpec, ...]
-    question: str
-    resumed_notice: str | None = None
-    interrupted_notice: str | None = None
-    contextual_state: ContextualRetrievalState | None = None
     shell_spec: ShellInfo | None = None
     modules: tuple[str, ...] = DEFAULT_PROMPT_MODULES
     identity: str = ""
@@ -67,23 +60,19 @@ class SystemPromptBuilder:
     def __init__(self) -> None:
         self._stable_builder = StableRegionBuilder()
         self._dynamic_builder = DynamicRegionBuilder()
-        self._volatile_builder = VolatileRegionBuilder()
 
     def build(self, context: PromptContext) -> str:
         enabled = set(context.modules)
         stable_prompt = self._stable_builder.build(context, enabled)
         dynamic_prompt = self._dynamic_builder.build(context, enabled)
-        volatile_parts = self._volatile_builder.build(context, enabled)
 
         full_parts = []
         if stable_prompt.strip():
             full_parts.append(stable_prompt)
-            if dynamic_prompt.strip() or volatile_parts:
+            if dynamic_prompt.strip():
                 full_parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
         if dynamic_prompt.strip():
             full_parts.append(dynamic_prompt)
-        if volatile_parts:
-            full_parts.append("\n\n".join(volatile_parts))
 
         return "\n\n".join(part for part in full_parts if part.strip())
 
@@ -92,8 +81,6 @@ class StableRegionBuilder:
     def __init__(self) -> None:
         self._invariant_cache: str | None = None
         self._invariant_key: frozenset | None = None
-        self._full_cache: str | None = None
-        self._full_key: PromptCacheKey | None = None
         self._tool_prompt_cache: str | None = None
         self._tool_prompt_key: PromptCacheKey | None = None
 
@@ -131,12 +118,6 @@ class StableRegionBuilder:
         # 组合完整 stable prompt
         parts = [p for p in [self._invariant_cache, tool_section] if p]
         full = "\n\n".join(parts)
-
-        # 缓存完整结果，方便外部命中
-        full_key = (registry_key, frozenset(stable_enabled))
-        if self._full_cache is None or self._full_key != full_key:
-            self._full_cache = full
-            self._full_key = full_key
 
         return full
 
@@ -192,33 +173,6 @@ class DynamicRegionBuilder:
         return dynamic_prompt
 
 
-class VolatileRegionBuilder:
-    def build(self, context: PromptContext, enabled: set[str]) -> list[str]:
-        volatile_parts: list[str] = []
-        for module in VOLATILE_PROMPT_MODULE_ORDER:
-            if module not in enabled:
-                continue
-            match module:
-                case "contextual_retrieval":
-                    if context.contextual_state is None:
-                        continue
-                    rendered = context.contextual_state.render()
-                    if rendered.strip():
-                        volatile_parts.append(rendered)
-                case "notices":
-                    notices = [
-                        context.resumed_notice,
-                        context.interrupted_notice,
-                    ]
-                    notice_text = "\n".join(notice for notice in notices if notice)
-                    if notice_text:
-                        volatile_parts.append(
-                            "<session-notices>\n" + notice_text + "\n</session-notices>"
-                        )
-
-        return volatile_parts
-
-
 def _registry_prompt_key(registry: tuple[ToolSpec, ...]) -> PromptCacheKey:
     return tuple(
         (
@@ -243,40 +197,22 @@ def _tool_prompt_section(registry: tuple[ToolSpec, ...]) -> str:
 def build_runtime_context_provider(
     project_root: Path,
     registry: tuple[ToolSpec, ...],
-    prompt_builder: SystemPromptBuilder | None = None,
-    resumed_notice: Callable[[], str | None] | None = None,
-    interrupted_notice: Callable[[], str | None] | None = None,
-    contextual_state: ContextualRetrievalState | None = None,
     modules: tuple[str, ...] | None = None,
     shell_spec: ShellInfo | None = None,
     identity: str = "",
-) -> Callable[[str], list[str]]:
+) -> Callable[[], list[str]]:
     """构建每轮运行时上下文和当前任务的工作笔记指引。"""
-    builder = prompt_builder or SystemPromptBuilder()
-    root = project_root.resolve()
+    builder = SystemPromptBuilder()
+    context = PromptContext(
+        project_root=project_root.resolve(),
+        registry=registry,
+        modules=modules or DEFAULT_PROMPT_MODULES,
+        shell_spec=shell_spec,
+        identity=identity,
+    )
 
-    def provide(question: str) -> list[str]:
-        current_registry = registry
-        parts = [
-            builder.build(
-                PromptContext(
-                    project_root=root,
-                    registry=current_registry,
-                    question=question,
-                    resumed_notice=resumed_notice() if resumed_notice else None,
-                    interrupted_notice=interrupted_notice()
-                    if interrupted_notice
-                    else None,
-                    contextual_state=contextual_state,
-                    modules=modules
-                    or PromptContext(
-                        project_root=root, registry=(), question=""
-                    ).modules,
-                    shell_spec=shell_spec,
-                    identity=identity,
-                )
-            )
-        ]
+    def provide() -> list[str]:
+        parts = [builder.build(context)]
         parts.append(
             "NOTE.md owns current task state. Keep status, next action, constraints and "
             "verification evidence first and concise; only its first 4 KiB is injected. "

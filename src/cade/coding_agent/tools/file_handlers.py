@@ -18,7 +18,6 @@ from cade.agent.types import (
     ToolOutput,
 )
 from cade.coding_agent.tools.path_utils import resolve_project_path
-from cade.harness.agent_runtime.contextual import ContextualRetrievalState
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_image import detect_image, read_image
@@ -66,7 +65,6 @@ class WriteFileRequest:
 def read_file_content(
     root: Path,
     operations: FileSystem,
-    context_state: ContextualRetrievalState | None,
     data: ToolInput,
 ) -> str:
     path_str = str(data.get("path", "")).strip()
@@ -79,9 +77,6 @@ def read_file_content(
 
     if not operations.exists(filepath):
         _file_not_found(filepath, root, operations)
-
-    if context_state is not None:
-        context_state.record_file(filepath)
 
     display = _display(root, filepath)
     if operations.is_dir(filepath):
@@ -324,13 +319,12 @@ def _write_safe_path(root: Path, raw_path: str) -> Path:
 def write_file_content(
     root: Path,
     operations: FileSystem,
-    context_state: ContextualRetrievalState | None,
     data: ToolInput,
 ) -> str:
     request = _parse_write_file_request(root, operations, data)
     return with_file_mutation(
         request.path,
-        lambda: _write_file_impl(root, request, operations, context_state),
+        lambda: _write_file_impl(root, request, operations),
     )
 
 
@@ -356,7 +350,6 @@ def _write_file_impl(
     root: Path,
     request: WriteFileRequest,
     operations: FileSystem,
-    context_state: ContextualRetrievalState | None,
 ) -> str:
     operations.mkdir(request.path.parent)
     display = _display(root, request.path)
@@ -385,9 +378,6 @@ def _write_file_impl(
     _write_text(request.path, clean_content, encoding, operations)
     _format_file(request.path)
 
-    if context_state is not None:
-        context_state.record_file(request.path)
-
     return ToolOutput(
         f"wrote file: {display}\n{diff}",
         metadata={"patch": diff},
@@ -398,13 +388,12 @@ def _write_file_impl(
 def edit_file_content(
     root: Path,
     operations: FileSystem,
-    context_state: ContextualRetrievalState | None,
     data: ToolInput,
 ) -> str:
     request = _parse_edit_file_request(root, operations, data)
     return with_file_mutation(
         request.path,
-        lambda: _edit_file_impl(root, request, operations, context_state),
+        lambda: _edit_file_impl(root, request, operations),
     )
 
 
@@ -440,7 +429,6 @@ def _edit_file_impl(
     root: Path,
     request: EditFileRequest,
     operations: FileSystem,
-    context_state: ContextualRetrievalState | None,
 ) -> str:
     path = request.path
     content, encoding = _read_text(path, operations)
@@ -472,9 +460,6 @@ def _edit_file_impl(
     _ensure_write_size(final)
     _write_text(path, final, encoding, operations)
     _format_file(path)
-
-    if context_state is not None:
-        context_state.record_file(path)
 
     diff = _diff_preview(display, content, final)
     return ToolOutput(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from cade.harness.agent_runtime import CancellationToken, ContextualRetrievalState
+from cade.harness.agent_runtime import CancellationToken
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
     ContextWindowRollover,
@@ -19,7 +19,6 @@ from ..working_note import capture_working_note
 
 @dataclass(frozen=True)
 class SharedInfra:
-    contextual_state: ContextualRetrievalState
     cancellation_token: CancellationToken
     context_window_controller: ContextWindowController
     context_rollover: ContextWindowRollover
@@ -33,7 +32,6 @@ def build_shared_infra(
     runtime_config: CadeRuntimeConfig,
     sessions_dir: Path | None = None,
 ) -> SharedInfra:
-    contextual_state = ContextualRetrievalState(project_root)
     cancellation_token = CancellationToken()
     context_window_controller = ContextWindowController()
 
@@ -63,7 +61,6 @@ def build_shared_infra(
     )
     session_inbox = SessionInbox(session_recorder.store)
     return SharedInfra(
-        contextual_state=contextual_state,
         cancellation_token=cancellation_token,
         context_window_controller=context_window_controller,
         context_rollover=context_rollover,

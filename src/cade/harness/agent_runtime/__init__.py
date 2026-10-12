@@ -2,7 +2,6 @@
 
 from .cancellation import CancellationToken
 from .composition import AgentComposition
-from .contextual import ContextualRetrievalState
 from .events import AgentHarnessEvent
 from .result import AgentHarnessResult, RunState
 from .run_control import (
@@ -22,7 +21,6 @@ __all__ = [
     "AgentHarnessResult",
     "BusyMessageMode",
     "CancellationToken",
-    "ContextualRetrievalState",
     "RunState",
     "SessionRunController",
     "SubmitOutcome",

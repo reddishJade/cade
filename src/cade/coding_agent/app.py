@@ -23,7 +23,6 @@ from cade.coding_agent.execution_modes import ExecutionMode
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.harness.agent_runtime import (
     AgentHarnessEvent,
-    ContextualRetrievalState,
 )
 from cade.harness.config import AgentConfig, CadeRuntimeConfig
 from cade.harness.observability import ExternalHookDiagnostic, ExternalHookRunner
@@ -69,7 +68,6 @@ class CadeApp:
 
     agent: CodingAgentHarness
     registry: tuple[ToolSpec, ...] = ()
-    contextual_state: ContextualRetrievalState | None = None
     external_hook_runner: ExternalHookRunner | None = None
 
     mcp_runtime: McpRuntimeRegistry | None = None
@@ -356,7 +354,6 @@ class CadeApp:
         replay_session(
             self.agent,
             self.session_store,
-            self.contextual_state,
             restoration_context_renderer=lambda state: render_working_note_restoration(
                 project_root, state
             ),
@@ -425,7 +422,6 @@ def build_app(
         subagent_provider=providers.llms.get("subagent", providers.llm),
         runtime_config=cfg.runtime_config,
         session_recorder=infra.session_recorder,
-        contextual_state=infra.contextual_state,
         cancel_event=infra.cancellation_token,
         skills_dir=cfg.skills_dir,
         session_history=infra.session_history,
@@ -455,7 +451,6 @@ def build_app(
         runtime_config=cfg.runtime_config,
         session_recorder=infra.session_recorder,
         session_inbox=infra.session_inbox,
-        contextual_state=infra.contextual_state,
         shell_spec=shell_spec,
         context_rollover=infra.context_rollover,
         context_window_controller=infra.context_window_controller,
@@ -471,7 +466,6 @@ def build_app(
     return CadeApp(
         agent=agent,
         registry=registry_state,
-        contextual_state=infra.contextual_state,
         external_hook_runner=external_hook_runner,
         mcp_runtime=mcp_runtime_registry,
         subagents=subagents,

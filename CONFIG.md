@@ -465,12 +465,12 @@ MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `modules` | array | 9 个模块 | 参与拼接的 prompt 模块 |
+| `modules` | array | 7 个模块 | 参与拼接的 prompt 模块 |
 | `instructions` | array | `[]` | 指令源列表（见下方） |
 
-默认模块顺序：`identity`、`tool_discipline`、`tools`、`search_strategy`、`environment`、`cwd`、`git_preflight`、`contextual_retrieval`、`notices`。
+默认模块顺序：`identity`、`tool_discipline`、`citations`、`tools`、`search_strategy`、`environment`、`cwd`。
 
-分三个缓存区域：STABLE（identity/tool_discipline/tools/search_strategy）→ DYNAMIC（environment/cwd）→ VOLATILE（git_preflight/contextual_retrieval/notices）。
+提示词缓存分为稳定区（身份、工具纪律、引用、工具与搜索策略）和动态区（环境与目录快照）。会话通知由 Harness 在当前请求边界注入，文件与工具历史来自会话消息。
 
 ### prompt.instructions 格式
 

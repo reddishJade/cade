@@ -27,10 +27,6 @@ STABLE_PROMPT_MODULE_ORDER: tuple[str, ...] = (
     "search_strategy",
 )
 DYNAMIC_PROMPT_MODULE_ORDER: tuple[str, ...] = ("environment", "cwd")
-VOLATILE_PROMPT_MODULE_ORDER: tuple[str, ...] = (
-    "contextual_retrieval",
-    "notices",
-)
 
 
 def prompt_version() -> str:
@@ -43,7 +39,6 @@ def prompt_version() -> str:
             SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
             STABLE_PROMPT_MODULE_ORDER,
             DYNAMIC_PROMPT_MODULE_ORDER,
-            VOLATILE_PROMPT_MODULE_ORDER,
             DEFAULT_PROMPT_MODULES,
         )
     )

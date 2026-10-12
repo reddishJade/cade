@@ -15,7 +15,7 @@ from cade.coding_agent.tools.subagent import (
     BUILD_SUBAGENT_PROMPTS,
     build_subagent_tools,
 )
-from cade.harness.agent_runtime import CancellationToken, ContextualRetrievalState
+from cade.harness.agent_runtime import CancellationToken
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
     build_new_context_tool,
@@ -103,7 +103,6 @@ def build_tool_registry(
     subagent_provider: ModelProvider,
     runtime_config: CadeRuntimeConfig,
     session_recorder: SessionRecorder,
-    contextual_state: ContextualRetrievalState | None = None,
     cancel_event: CancellationToken | None = None,
     shell: Shell | None = None,
     skills_dir: Path | None = None,
@@ -127,7 +126,6 @@ def build_tool_registry(
 
     registry = build_project_scoped_registry(
         project_root=project_root,
-        contextual_state=contextual_state,
         shell_spec=shell_spec,
         cancel_event=cancel_event,
         shell=shell,
