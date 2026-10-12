@@ -127,10 +127,42 @@ def _select_provider() -> tuple[str, Any] | None:
     return provider_key, PROVIDER_PRESETS[provider_key]
 
 
+def env_api_key(preset: dict[str, Any]) -> str:
+    """返回 preset 对应环境变量中的 API key，未设置时为空字符串。"""
+    return os.environ.get(preset["env_key"]) or ""
+
+
+def default_base_url(preset: dict[str, Any]) -> str:
+    """返回 Base URL 默认值：环境变量优先，其次 preset 内置地址。"""
+    return os.environ.get(preset["env_base_url"], "") or preset["base_url"]
+
+
+def save_api_key_connection(provider_key: str, api_key: str, base_url: str) -> Path:
+    """保存 API key 与 provider 连接到全局设置，不改动默认模型。
+
+    返回写入的全局设置文件路径。
+    """
+    global_path = Path.home() / ".cade" / "settings.json"
+    config_data = {
+        "provider": {
+            "connections": {
+                provider_key: {
+                    "transport": _resolve_transport(provider_key),
+                    "base_url": base_url,
+                }
+            }
+        }
+    }
+    merged = deep_merge(_load_existing_config(global_path), config_data)
+    global_path.parent.mkdir(parents=True, exist_ok=True)
+    AuthManager().save_api_key(provider_key, api_key)
+    _save_config(merged, global_path)
+    return global_path
+
+
 def _prompt_api_key(preset: dict[str, Any]) -> str | None:
     """交互式输入 API key。返回 key 或 None（取消）。"""
-    env_key = preset["env_key"]
-    env_val = os.environ.get(env_key) or ""
+    env_val = env_api_key(preset)
     api_key = safe_text("API Key:", default=env_val[:16] if env_val else "sk-")
     if api_key is None:
         return None
@@ -141,14 +173,10 @@ def _prompt_api_key(preset: dict[str, Any]) -> str | None:
 
 def _prompt_base_url(preset: dict[str, Any]) -> str | None:
     """交互式输入 Base URL。返回 URL 或 None（取消）。"""
-    default_base_url = preset["base_url"]
-    env_base_url = os.environ.get(preset["env_base_url"], "")
-    base_url = safe_text("Base URL:", default=env_base_url or default_base_url)
+    base_url = safe_text("Base URL:", default=default_base_url(preset))
     if base_url is None:
         return None
-    if not base_url:
-        base_url = env_base_url or default_base_url
-    return base_url
+    return base_url or default_base_url(preset)
 
 
 def _prompt_model(preset: dict[str, Any]) -> str | None:
@@ -292,21 +320,7 @@ def run_setup_wizard(
         return ("cancelled", None)
 
     if from_connect:
-        global_path = Path.home() / ".cade" / "settings.json"
-        config_data = {
-            "provider": {
-                "connections": {
-                    provider_key: {
-                        "transport": _resolve_transport(provider_key),
-                        "base_url": base_url,
-                    }
-                }
-            }
-        }
-        merged = deep_merge(_load_existing_config(global_path), config_data)
-        global_path.parent.mkdir(parents=True, exist_ok=True)
-        AuthManager().save_api_key(provider_key, api_key)
-        _save_config(merged, global_path)
+        save_api_key_connection(provider_key, api_key, base_url)
         print(f"Credentials saved for {provider_key}. Default model unchanged.")
         return ("saved", None)
 

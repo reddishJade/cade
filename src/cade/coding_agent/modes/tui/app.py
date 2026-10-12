@@ -89,6 +89,7 @@ from .config_registry import SettingSpec
 from .exit_keys import ExitKeyKind, exit_confirm_hint, exit_confirmed
 from .exit_summary import print_exit_summary
 from .inline_renderer import InlineRenderer
+from .login_flow import LoginTask, TuiLoginFlow, parse_login_command
 from .sessions import (
     select_session_interactively,
 )
@@ -222,6 +223,13 @@ class _CadeTui:
         except ImportError:
             pass
         self._command_output = TerminalCommandOutput()
+        self._login_cancel: Event | None = None
+        self._login_flow = TuiLoginFlow(
+            open_choices=self._open_command_choices,
+            open_text=self._open_command_text,
+            post=self._post_log,
+            run_task=self._run_login_task,
+        )
         self._awaiting_denial_suggestion = False
         self._exit_pending = 0.0
         self._exit_pending_key = ""
@@ -820,6 +828,12 @@ class _CadeTui:
             self._input.text = ""
             self._arm_exit(now, ExitKeyKind.INTERRUPT)
             return
+        if self._login_cancel is not None:
+            if not self._login_cancel.is_set():
+                self._login_cancel.set()
+                self._state.log.append(_LogEntry("stop", "Cancelling login..."))
+                self._refresh()
+            return
         if self._state.running:
             accepted = self._agent_app.agent.interrupt("interrupted by user")
             if accepted:
@@ -864,6 +878,8 @@ class _CadeTui:
 
     def _finish_exit(self) -> None:
         """保存当前会话并退出 TUI。"""
+        if self._login_cancel is not None:
+            self._login_cancel.set()
         self._application.exit()
 
     # ── 提交 ──
@@ -990,8 +1006,12 @@ class _CadeTui:
         self._state.add_command(text)
 
     def _show_native_command_choice(self, text: str) -> bool:
-        """为需要选择的会话命令打开 TUI 原生菜单。"""
+        """为需要选择或输入的命令打开 TUI 原生菜单。"""
         command = text.split(maxsplit=1)[0]
+        login = parse_login_command(text)
+        if login is not None:
+            self._login_flow.start(login)
+            return True
         if command == "/mode" and len(text.split()) == 1:
             self._open_command_choices(
                 [
@@ -1300,6 +1320,36 @@ class _CadeTui:
             switch(entry)
 
         open_selector()
+
+    def _post_log(self, kind: str, text: str) -> None:
+        """从任意线程追加一条界面消息。"""
+
+        def append() -> None:
+            self._state.log.append(_LogEntry(kind, text))
+            self._refresh()
+
+        self._call_in_ui_thread(append)
+
+    def _run_login_task(self, work: LoginTask) -> None:
+        """在后台线程等待账户授权；运行期间 Ctrl+C 设置取消事件。"""
+        cancel = Event()
+        self._login_cancel = cancel
+        self._state.running = True
+        self._refresh()
+
+        def finish() -> None:
+            self._login_cancel = None
+            self._state.running = False
+            self._refresh()
+            self._submit_pending_input()
+
+        def run() -> None:
+            try:
+                work(cancel)
+            finally:
+                self._call_in_ui_thread(finish)
+
+        threading.Thread(target=run, daemon=True).start()
 
     def _command_choice_hint_text(self) -> str:
         """选择菜单底部的灰色说明：跟随高亮项，否则显示操作提示。"""

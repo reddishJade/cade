@@ -1,6 +1,7 @@
 """Cade 认证命令处理器。
 
-提供 login、logout 与 status 操作，支持命令行与 TUI 调用。
+提供 login、logout 与 status 操作。login 的终端交互只供命令行使用；
+TUI 的 /login 由 modes/tui/login_flow.py 以界面内控件实现。
 """
 
 from __future__ import annotations
@@ -8,7 +9,30 @@ from __future__ import annotations
 import datetime
 from pathlib import Path
 
+from cade.ai.auth import AuthCredential
 from cade.harness.auth.manager import AuthManager
+
+
+def login_success_lines(
+    provider: str, credential: AuthCredential, storage_location: str
+) -> list[str]:
+    """生成登录成功后的说明文本，CLI 与 TUI 共用。"""
+    lines = [
+        (
+            f"✓ Successfully logged in to {provider}. "
+            f"Credentials securely saved to {storage_location}"
+        )
+    ]
+    if credential.account_id:
+        lines.append(f"  Account ID: {credential.account_id}")
+    if credential.expires:
+        exp_dt = datetime.datetime.fromtimestamp(
+            credential.expires, tz=datetime.UTC
+        ).astimezone()
+        lines.append(
+            f"  Access token expires at: {exp_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+    return lines
 
 
 def handle_login_command(
@@ -16,7 +40,7 @@ def handle_login_command(
     method: str | None = None,
     project_root: Path | None = None,
 ) -> int:
-    """处理账户 OAuth 或 API key 配置流程。"""
+    """在终端中处理账户 OAuth 或 API key 配置流程。"""
     if method is None:
         from ..modes.tui.setup_wizard import prompt_auth_method
 
@@ -75,16 +99,8 @@ def handle_login_command(
                 notify_callback=notify_browser,
             )
 
-        print(
-            f"\n✓ Successfully logged in to {provider}. Credentials securely saved to {manager.storage_location}"
-        )
-        if cred.account_id:
-            print(f"  Account ID: {cred.account_id}")
-        if cred.expires:
-            exp_dt = datetime.datetime.fromtimestamp(
-                cred.expires, tz=datetime.UTC
-            ).astimezone()
-            print(f"  Access token expires at: {exp_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
+        print("\n".join(login_success_lines(provider, cred, manager.storage_location)))
         return 0
     except KeyboardInterrupt:
         print("\nLogin cancelled.")

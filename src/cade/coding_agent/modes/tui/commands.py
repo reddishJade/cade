@@ -3,7 +3,6 @@ from __future__ import annotations
 from cade.coding_agent.interaction.commands import CommandContext
 
 from ...cli.auth_cmd import (
-    handle_login_command,
     handle_logout_command,
     handle_status_command,
 )
@@ -23,30 +22,6 @@ from .settings import (
 from .setup_wizard import CONFIG_FILENAME
 
 
-def cmd_login(cmd: str, ctx: CommandContext) -> bool:
-    """选择账户 OAuth 或 API key，连接一个 AI 提供方。"""
-
-    parts = cmd.split()
-    method: str | None = None
-    provider = "openai-codex"
-    for part in parts[1:]:
-        if part in ("device", "device_code", "--device", "-d"):
-            method = "device_code"
-        elif part in ("account", "browser"):
-            method = "browser"
-        elif part in ("api", "api_key"):
-            method = "api_key"
-        elif not part.startswith("-"):
-            provider = part
-
-    handle_login_command(
-        provider=provider,
-        method=method,
-        project_root=ctx.project_root,
-    )
-    return False
-
-
 def cmd_logout(cmd: str, ctx: CommandContext) -> bool:
     """登出 AI 提供方账号并清除本地凭据。"""
 
@@ -59,12 +34,10 @@ def cmd_logout(cmd: str, ctx: CommandContext) -> bool:
 
 
 def cmd_auth(cmd: str, ctx: CommandContext) -> bool:
-    """显示认证状态或执行登录/登出。"""
+    """显示认证状态或登出；/auth login|connect 由 TUI 登录流程处理。"""
 
     parts = cmd.split()
     subcmd = parts[1].lower() if len(parts) > 1 else "status"
-    if subcmd in {"login", "connect"}:
-        return cmd_login(" ".join(parts[1:]), ctx)
     if subcmd == "logout":
         return cmd_logout(" ".join(parts[1:]), ctx)
     if subcmd not in {"status", "list"} or len(parts) > 2:
@@ -133,8 +106,6 @@ def cmd_permissions(cmd: str, ctx: CommandContext) -> bool:
 
 
 HOST_COMMANDS = {
-    "/login": cmd_login,
-    "/connect": cmd_login,
     "/logout": cmd_logout,
     "/auth": cmd_auth,
     "/model": cmd_model,
@@ -146,4 +117,9 @@ HOST_COMMANDS = {
 
 
 def run_host_command(command: str, ctx: CommandContext) -> bool:
-    return HOST_COMMANDS[command.split(maxsplit=1)[0]](command, ctx)
+    """执行宿主命令；需要界面交互的命令（如 /login）由 TUI 在分发前处理。"""
+    handler = HOST_COMMANDS.get(command.split(maxsplit=1)[0])
+    if handler is None:
+        ctx.output.write(f"Command is handled by the TUI: {command}")
+        return False
+    return handler(command, ctx)
