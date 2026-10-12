@@ -27,7 +27,7 @@
   - `JsonlAuditLogger`：以原子追加方式将结构化事件记录到本地 JSONL 审计文件。
   - `redact_text`：在文本进入日志或外部系统前，自动扫描并遮蔽敏感凭据（如 `sk-...`、Authorization Header、私钥等）。
 - **全链路追踪上下文 ([correlation.py](correlation.py))**：维护跨会话、跨轮次、跨子代理调用的关联上下文（`RuntimeCorrelation`、`EventCorrelation`）。
-- **进程内生命周期 Hooks ([hooks.py](hooks.py))**：提供 `HookManager`，挂载 `BeforeAgentStart`、`BeforeProviderRequest`、`PreToolEvent`、`PostToolEvent` 等生命周期回调。
+- **进程内生命周期 Hooks ([hooks.py](hooks.py))**：提供 `HookManager`，以 `HookRecord` 分发 `before_agent_start`、`before_provider_request`、`pre_tool`、`post_tool` 等生命周期回调，支持同步处理和后台命令执行。
 - **进程外命令钩子 ([external_hooks.py](external_hooks.py))**：驱动外部 Shell 命令（如提交前执行 `git status` 检查或外部审查通知），并收集执行诊断信息。
 
 ---
