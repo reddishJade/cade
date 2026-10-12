@@ -5,18 +5,8 @@ SkillDef 是技能完整定义，SkillSummary 是轻量摘要，其余为附属�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-
-
-@dataclass(frozen=True)
-class SkillDiagnostic:
-    """技能加载时的诊断信息。"""
-
-    type: str  # "warning" | "error"
-    code: str
-    message: str
-    path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,19 +47,16 @@ class SkillResource:
 
 @dataclass(frozen=True)
 class SkillDef:
-    """技能的完整定义，包含懒加载的正文内容和引用元数据。"""
+    """发现时捕获的技能完整定义与资源元数据。"""
 
     name: str
     description: str
     file_path: Path
+    content: str
     disable_model_invocation: bool = False
     source: str = ""
-    license: str | None = None
     compatibility: str | None = None
-    metadata: dict[str, str] = field(default_factory=dict)
     allowed_tools: str | None = None
-    frontmatter: dict[str, object] = field(default_factory=dict)
-    content: str | None = None
     references: tuple[SkillReference, ...] = ()
     scripts: tuple[SkillResource, ...] = ()
     assets: tuple[SkillResource, ...] = ()

@@ -6,7 +6,6 @@ from cade.harness.skills.discovery import (
 )
 from cade.harness.skills.models import (
     SkillDef,
-    SkillDiagnostic,
     SkillReference,
     SkillResource,
     SkillSummary,
@@ -20,7 +19,6 @@ __all__ = [
     "SOURCE_PROJECT",
     "SOURCE_USER",
     "SkillDef",
-    "SkillDiagnostic",
     "SkillIndexCollector",
     "SkillReference",
     "SkillRegistry",

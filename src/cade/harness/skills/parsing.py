@@ -53,11 +53,11 @@ def parse_frontmatter(
     )
 
 
-def find_body_start(text: str) -> str | None:
+def find_body_start(text: str) -> str:
     """找到 frontmatter 结束后的正文内容。
 
     返回第二个 --- 分隔符之后的内容，去除前导空行。
-    无正文时返回 None。
+    无正文时返回空字符串。
     """
     lines = text.splitlines()
     delim_count = 0
@@ -69,7 +69,7 @@ def find_body_start(text: str) -> str | None:
         if delim_count >= 2:
             body_lines.append(line)
     body = "\n".join(body_lines).strip()
-    return body if body else None
+    return body
 
 
 def _frontmatter_yaml(text: str) -> str | None:
@@ -196,7 +196,6 @@ def _normalize_frontmatter(
             source_label,
         )
 
-    license_value = _optional_string(parsed, "license", source_label)
     compatibility = _optional_string(parsed, "compatibility", source_label)
     if (
         compatibility is not None
@@ -208,15 +207,12 @@ def _normalize_frontmatter(
             source_label,
         )
     allowed_tools = _optional_string(parsed, "allowed-tools", source_label)
-    metadata = _metadata_strings(parsed.get("metadata"), source_label)
 
     return {
         "name": name,
         "description": description,
         "disable_model_invocation": raw_disable,
-        "license": license_value,
         "compatibility": compatibility,
-        "metadata": metadata,
         "allowed-tools": allowed_tools,
     }
 
@@ -228,16 +224,6 @@ def frontmatter_optional_string(
     """读取已规范化 frontmatter 中的可选字符串。"""
     value = frontmatter.get(field_name)
     return value if isinstance(value, str) else None
-
-
-def frontmatter_metadata(
-    frontmatter: Mapping[str, object],
-) -> dict[str, str]:
-    """读取已规范化 frontmatter metadata 的独立副本。"""
-    value = frontmatter.get("metadata")
-    if not isinstance(value, dict):
-        return {}
-    return {str(key): str(item) for key, item in value.items()}
 
 
 def _warn_skill_name_issues(
@@ -286,24 +272,3 @@ def _optional_string(
         )
         return None
     return value.strip()
-
-
-def _metadata_strings(value: object, source_label: str) -> dict[str, str]:
-    """将 metadata 规范为字符串键值映射。"""
-    if value is None:
-        return {}
-    if not isinstance(value, Mapping):
-        logger.warning(
-            "Skill frontmatter 'metadata' must be a mapping in %s; ignoring",
-            source_label,
-        )
-        return {}
-    metadata: dict[str, str] = {}
-    for key, item in value.items():
-        if not isinstance(key, str) or not isinstance(item, str):
-            logger.warning(
-                "Skill metadata keys and values must be strings in %s; coercing entry",
-                source_label,
-            )
-        metadata[str(key)] = str(item)
-    return metadata

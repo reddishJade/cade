@@ -1,4 +1,4 @@
-"""SkillRegistry——技能发现、索引、懒加载的唯一后端。"""
+"""SkillRegistry——技能定义快照、资源索引与激活状态。"""
 
 from __future__ import annotations
 
@@ -13,10 +13,9 @@ from cade.harness.skills.discovery import (
     scan_skill_resources,
     source_for_priority,
 )
-from cade.harness.skills.models import SkillDef, SkillDiagnostic, SkillSummary
+from cade.harness.skills.models import SkillDef, SkillSummary
 from cade.harness.skills.parsing import (
     find_body_start,
-    frontmatter_metadata,
     frontmatter_optional_string,
     parse_frontmatter,
 )
@@ -25,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class SkillRegistry:
-    """技能发现、索引、懒加载的唯一后端。
+    """技能定义快照、资源索引与激活状态。
 
     使用方式：
         registry = SkillRegistry()
@@ -42,13 +41,12 @@ class SkillRegistry:
     def discover(
         self,
         search_dirs: list[tuple[Path, int]],
-    ) -> list[SkillDiagnostic]:
+    ) -> None:
         """扫描目录查找 SKILL.md 文件，缓存元数据。
 
         相同 name 按搜索路径优先级 first-wins。重复时记录警告。
         跳过 malformed frontmatter 或缺少必填字段的技能。
         """
-        diagnostics: list[SkillDiagnostic] = []
         all_dirs = sorted(search_dirs, key=lambda x: x[1])
         for search_dir, priority in all_dirs:
             if not search_dir.is_dir():
@@ -61,14 +59,6 @@ class SkillRegistry:
                     except OSError:
                         msg = f"Failed to read {file_path}; skipping"
                         logger.warning(msg)
-                        diagnostics.append(
-                            SkillDiagnostic(
-                                type="warning",
-                                code="read_failed",
-                                message=msg,
-                                path=str(file_path),
-                            )
-                        )
                         continue
                     frontmatter = parse_frontmatter(
                         text,
@@ -76,14 +66,6 @@ class SkillRegistry:
                         source=file_path,
                     )
                     if frontmatter is None:
-                        diagnostics.append(
-                            SkillDiagnostic(
-                                type="warning",
-                                code="parse_failed",
-                                message=f"Failed to parse frontmatter in {file_path}",
-                                path=str(file_path),
-                            )
-                        )
                         continue
                     name = str(frontmatter["name"])
                     if name in self._skills:
@@ -106,16 +88,13 @@ class SkillRegistry:
                         description=str(frontmatter["description"]),
                         disable_model_invocation=bool(raw_disable),
                         source=source,
-                        license=frontmatter_optional_string(frontmatter, "license"),
                         compatibility=frontmatter_optional_string(
                             frontmatter, "compatibility"
                         ),
-                        metadata=frontmatter_metadata(frontmatter),
                         allowed_tools=frontmatter_optional_string(
                             frontmatter, "allowed-tools"
                         ),
                         file_path=file_path,
-                        frontmatter=frontmatter,
                         content=body_start,
                         references=tuple(refs),
                         scripts=scripts,
@@ -126,7 +105,6 @@ class SkillRegistry:
             except Exception:
                 logger.exception("SkillRegistry: failed to scan %s", search_dir)
                 continue
-        return diagnostics
 
     def list_summaries(self) -> list[SkillSummary]:
         """返回所有未被 disable_model_invocation 禁止的可见技能摘要。"""
@@ -171,27 +149,8 @@ class SkillRegistry:
                     self._activated.add(name)
 
     def load(self, skill_name: str) -> SkillDef | None:
-        """懒加载技能正文。
-
-        首次调用时读取文件内容并缓存。
-        返回 None 表示技能不存在。
-        """
-        skill = self._skills.get(skill_name)
-        if skill is None:
-            return None
-        if skill.content is None:
-            try:
-                text = skill.file_path.read_text(encoding="utf-8", errors="replace")
-                body_start = find_body_start(text)
-                object.__setattr__(skill, "content", body_start)
-            except Exception:
-                logger.exception(
-                    "Failed to load skill %r from %s",
-                    skill_name,
-                    skill.file_path,
-                )
-                return None
-        return skill
+        """返回发现时捕获的技能定义；未知名称返回 None。"""
+        return self._skills.get(skill_name)
 
     def load_reference(self, skill_name: str, ref_name: str) -> str | None:
         """加载指定技能中的引用文件内容。
