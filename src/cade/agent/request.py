@@ -150,10 +150,7 @@ class DefaultRequestAssembler:
         context.messages[:] = context.context_manager.normalize_messages(
             context.messages
         )
-        context_blocks = self._collect(
-            context,
-            list(context.messages),
-        )
+        context_blocks = self._collect(context, list(context.messages))
         base_messages = [
             *context.request_prefix,
             *context.messages,
