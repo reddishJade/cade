@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 
 from ._process import POLL_INTERVAL, close_pipes, kill_process, start_process
 from .result import ExecutionResult
 from .sandbox import CommandSandbox
+
+logger = logging.getLogger(__name__)
 
 
 class SubprocessShell:
@@ -23,7 +26,6 @@ class SubprocessShell:
         on_progress: Callable[[str], None] | None = None,
         env: dict[str, str] | None = None,
     ) -> ExecutionResult:
-        logger = __import__("logging").getLogger(__name__)
         finalize_sandbox: Callable[[], str | None] | None = None
         if self._sandbox is not None:
             command = self._sandbox.wrap(argv, cwd)
@@ -36,38 +38,25 @@ class SubprocessShell:
             if finalize_sandbox is not None:
                 finalize_sandbox()
             raise
-        stdout_chunks: list[bytes] = []
-        stderr_chunks: list[bytes] = []
-        lock = threading.Lock()
+        output_chunks: list[bytes] = []
         cancelled = False
         timed_out = False
         sandbox_violation: str | None = None
 
-        def _drain(
-            src: Iterable[bytes] | None,
-            dest: list[bytes],
-            is_stderr: bool = False,
-        ) -> None:
-            if src is None:
+        def _drain() -> None:
+            if proc.stdout is None:
                 return
             try:
-                for raw in src:
-                    with lock:
-                        dest.append(raw)
+                for raw in proc.stdout:
+                    output_chunks.append(raw)
                     if on_progress:
                         text = raw.decode("utf-8", errors="replace")
                         on_progress(text)
-            except Exception:
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError):
                 logger.debug("error draining process output", exc_info=True)
 
-        out_thread = threading.Thread(
-            target=_drain, args=(proc.stdout, stdout_chunks, False), daemon=True
-        )
-        err_thread = threading.Thread(
-            target=_drain, args=(proc.stderr, stderr_chunks, True), daemon=True
-        )
-        out_thread.start()
-        err_thread.start()
+        output_thread = threading.Thread(target=_drain, daemon=True)
+        output_thread.start()
 
         try:
             deadline = time.monotonic() + (timeout / 1000.0)
@@ -81,8 +70,7 @@ class SubprocessShell:
                     cancelled = True
                     break
                 time.sleep(POLL_INTERVAL)
-            out_thread.join(timeout=2)
-            err_thread.join(timeout=2)
+            output_thread.join(timeout=2)
         except Exception:
             kill_process(proc)
             raise
@@ -91,22 +79,19 @@ class SubprocessShell:
             if finalize_sandbox is not None:
                 sandbox_violation = finalize_sandbox()
 
-        with lock:
-            stdout_text = b"".join(stdout_chunks).decode(errors="replace")
-            stderr_text = b"".join(stderr_chunks).decode(errors="replace")
+        output = b"".join(output_chunks).decode(errors="replace")
         returncode = proc.returncode
         if sandbox_violation is not None:
             if on_progress is not None:
                 on_progress(f"\n{sandbox_violation}\n")
-            if stderr_text and not stderr_text.endswith("\n"):
-                stderr_text += "\n"
-            stderr_text += sandbox_violation
+            if output and not output.endswith("\n"):
+                output += "\n"
+            output += sandbox_violation
             if returncode == 0:
                 returncode = 126
 
         return ExecutionResult(
-            stdout=stdout_text,
-            stderr=stderr_text,
+            output=output,
             returncode=returncode,
             timed_out=timed_out,
             cancelled=cancelled,

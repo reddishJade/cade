@@ -24,7 +24,7 @@ def start_process(
             shell=False,
             cwd=cwd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             env=env,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -33,7 +33,7 @@ def start_process(
         shell=False,
         cwd=cwd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         env=env,
         start_new_session=True,
     )

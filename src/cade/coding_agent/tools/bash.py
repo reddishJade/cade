@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,8 +20,8 @@ from cade.harness.execution_env import (
 )
 
 from ._constants import DEFAULT_TIMEOUT_SECONDS
-from .output_accumulator import OutputAccumulator
 from .shell_adapter import ShellSpec, build_shell_argv, detect_shell
+from .truncate import DEFAULT_MAX_BYTES, truncate_tail
 
 logger = logging.getLogger("cade.coding_agent.tools.bash")
 
@@ -79,32 +80,18 @@ def build_bash_tool(
         if env_hook:
             cmd_env = env_hook(plan.command, plan.cwd, dict(**os.environ))
 
-        acc = OutputAccumulator(on_progress=on_progress)
         before = (
             workspace_fingerprint(root) if request.purpose == "validation" else None
         )
-        try:
-            result = shell.run(
-                build_shell_argv(spec, plan.command),
-                cwd=plan.cwd,
-                timeout=plan.timeout,
-                cancel_event=cancel_event,
-                env=cmd_env,
-                on_progress=lambda chunk: acc.append(
-                    chunk.encode("utf-8", errors="replace")
-                ),
-            )
-        finally:
-            pass
-
-        # 如果运行环境未通过 on_progress 推送输出（如 mock），
-        # 从返回结果中回填 accumulator
-        if acc.total_bytes == 0 and (result.stdout or result.stderr):
-            for raw in [result.stdout.encode(), result.stderr.encode()]:
-                if raw:
-                    acc.append(raw)
-
-        output = _render_bash_output(result, acc, plan.timeout)
+        result = shell.run(
+            build_shell_argv(spec, plan.command),
+            cwd=plan.cwd,
+            timeout=plan.timeout,
+            cancel_event=cancel_event,
+            env=cmd_env,
+            on_progress=on_progress,
+        )
+        output = _render_bash_output(result, plan.timeout)
         return ToolOutput(
             output,
             metadata={
@@ -372,13 +359,9 @@ def _resolve_workdir(root: Path, workdir: str | None) -> Path:
 
 def _render_bash_output(
     result: ExecutionResult,
-    acc: OutputAccumulator,
     timeout_ms: int,
 ) -> str:
-    try:
-        output = acc.snapshot()
-    finally:
-        acc.close()
+    output = _truncate_bash_output(result.output)
 
     if result.timed_out:
         output += f"\nCommand timed out after {timeout_ms}ms"
@@ -387,3 +370,27 @@ def _render_bash_output(
     elif result.returncode not in (0, None):
         output = f"exit code: {result.returncode}\n{output}"
     return output
+
+
+def _truncate_bash_output(output: str) -> str:
+    """从唯一的完整输出生成有界尾部，超限时保存完整日志。"""
+    if not output:
+        return "(no output)"
+    truncated = truncate_tail(output)
+    if not truncated.truncated:
+        return truncated.content
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="",
+        prefix="cade-bash-",
+        suffix=".log",
+        delete=False,
+    ) as stream:
+        stream.write(output)
+        path = stream.name
+    return (
+        f"{truncated.content}\n"
+        f"[Showing {truncated.output_lines} of {truncated.total_lines} lines"
+        f" ({DEFAULT_MAX_BYTES // 1024}KB limit). Full output: {path}]"
+    )

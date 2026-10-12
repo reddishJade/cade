@@ -38,8 +38,7 @@ read / write / edit / bash
   - `webfetch.py`：抓取指定 URL 页面并转为精简 Markdown。
   - `websearch.py`：调用搜索引擎获取外部开发文档与最新技术方案。
 - **输出截断与安全护栏**：
-  - `truncate.py`：按行数和字节上限截断长输出。
-  - `output_accumulator.py`：流式输出聚合器。
+  - `truncate.py`：限制工具输出预览；`bash.py` 在超限时保存完整日志并返回恢复路径。
   - `file_mutation_queue.py`：并发写冲突队列与文件锁防护。
 
 ---

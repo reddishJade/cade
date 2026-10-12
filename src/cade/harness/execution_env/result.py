@@ -5,8 +5,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ExecutionResult:
-    stdout: str = ""
-    stderr: str = ""
+    output: str = ""
     returncode: int = 0
     timed_out: bool = False
     cancelled: bool = False
