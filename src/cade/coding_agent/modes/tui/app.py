@@ -121,6 +121,7 @@ _SHORTCUT_HELP = """Shortcuts
   ! command      run a bash command
   $skill [task]  invoke a skill
   /command       run a slash command
+  Up/Down        recall previous/next input (on first/last line)
   Tab            complete commands, skills, and @file references
   Enter          send; queue the next task while running
   Alt+Enter      steer the current task while running
@@ -630,19 +631,20 @@ class _CadeTui:
             self._refresh()
             return
         text = self._input.text.strip()
+        # 表单输入可能是密钥等敏感内容，只清空不写入历史。
         if self._state.pending_command_text is not None:
-            self._input.text = ""
+            buffer.reset()
             self._submit_command_text(text)
             return
         if self._awaiting_denial_suggestion:
-            self._input.text = ""
+            buffer.reset()
             self._finish_denial(text)
             return
         if not text:
             return
         self._exit_pending = 0.0
         self._exit_pending_key = ""
-        self._input.text = ""
+        buffer.reset(append_to_history=True)
         if self._state.running:
             if self._state.running and _is_live_command(text):
                 self._record_command(text)
@@ -671,7 +673,7 @@ class _CadeTui:
             )
             self._refresh()
             return
-        self._input.text = ""
+        self._input.buffer.reset(append_to_history=True)
         self._submit_busy_message(text, BusyMessageMode.STEER)
 
     def _submit_busy_message(
@@ -825,7 +827,8 @@ class _CadeTui:
             self._finish_exit()
             return
         if self._input.text:
-            self._input.text = ""
+            # reset 同时结束历史浏览，下次 ↑ 从最新一条开始。
+            self._input.buffer.reset()
             self._arm_exit(now, ExitKeyKind.INTERRUPT)
             return
         if self._login_cancel is not None:
