@@ -21,7 +21,7 @@ from typing import Any, cast
 
 import httpx
 
-from .types import AuthCredential
+from .types import AuthCredential, LoginCancelledError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,8 +115,12 @@ def login_openai_codex_browser(
     open_browser: bool = True,
     notify_callback: Callable[[str], None] | None = None,
     timeout_seconds: int = 180,
+    cancel_event: threading.Event | None = None,
 ) -> AuthCredential:
-    """通过系统默认浏览器执行 PKCE 授权登录。"""
+    """通过系统默认浏览器执行 PKCE 授权登录。
+
+    cancel_event 被设置时关闭回调服务器并抛出 LoginCancelledError。
+    """
     verifier, challenge = generate_pkce()
     state = secrets.token_urlsafe(16)
 
@@ -149,12 +153,14 @@ def login_openai_codex_browser(
 
     start_time = time.time()
     while server_thread.is_alive():
+        if _wait_cancelled(cancel_event, 0.5):
+            server.server_close()
+            raise LoginCancelledError("OpenAI Codex browser authorization cancelled.")
         if time.time() - start_time > timeout_seconds:
             server.server_close()
             raise TimeoutError(
                 "OpenAI Codex browser authorization timed out; please retry."
             )
-        time.sleep(0.5)
 
     server.server_close()
 
@@ -175,8 +181,12 @@ def login_openai_codex_browser(
 def login_openai_codex_device_code(
     notify_callback: Callable[[str, str], None],
     timeout_seconds: int = 900,
+    cancel_event: threading.Event | None = None,
 ) -> AuthCredential:
-    """通过 Device Code（适合远程、SSH 或无头环境）授权登录。"""
+    """通过 Device Code（适合远程、SSH 或无头环境）授权登录。
+
+    cancel_event 被设置时停止轮询并抛出 LoginCancelledError。
+    """
     with httpx.Client(timeout=30.0) as client:
         resp = client.post(
             DEVICE_USER_CODE_URL,
@@ -197,7 +207,8 @@ def login_openai_codex_device_code(
     start_time = time.time()
     with httpx.Client(timeout=30.0) as client:
         while time.time() - start_time < timeout_seconds:
-            time.sleep(interval)
+            if _wait_cancelled(cancel_event, interval):
+                raise LoginCancelledError("Device code authorization cancelled.")
             poll_resp = client.post(
                 DEVICE_TOKEN_URL,
                 json={
@@ -229,6 +240,14 @@ def login_openai_codex_device_code(
             )
 
     raise TimeoutError("Device code authorization timed out; please retry.")
+
+
+def _wait_cancelled(cancel_event: threading.Event | None, seconds: float) -> bool:
+    """等待一个轮询间隔；期间被取消时立即返回 True。"""
+    if cancel_event is None:
+        time.sleep(seconds)
+        return False
+    return cancel_event.wait(seconds)
 
 
 def exchange_code_for_token(
@@ -308,14 +327,19 @@ class OpenAICodexAuthProvider:
         *,
         method: str,
         notify_callback: Callable[..., None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> AuthCredential:
         """按指定交互方式执行 Codex OAuth 登录。"""
         if method == "device_code":
             if notify_callback is None:
                 raise ValueError("Device code login requires notify_callback")
-            return login_openai_codex_device_code(notify_callback=notify_callback)
+            return login_openai_codex_device_code(
+                notify_callback=notify_callback, cancel_event=cancel_event
+            )
         if method == "browser":
-            return login_openai_codex_browser(notify_callback=notify_callback)
+            return login_openai_codex_browser(
+                notify_callback=notify_callback, cancel_event=cancel_event
+            )
         raise ValueError(f"Unsupported OpenAI Codex login method: {method}")
 
     def refresh(self, credential: AuthCredential) -> AuthCredential:

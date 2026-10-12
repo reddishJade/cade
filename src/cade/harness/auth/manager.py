@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Mapping
 
@@ -47,14 +48,19 @@ class AuthManager:
         *,
         method: str = "browser",
         notify_callback: Callable[..., None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> AuthCredential:
-        """执行 Provider 登录并把结果写入宿主存储。"""
+        """执行 Provider 登录并把结果写入宿主存储。
+
+        cancel_event 被设置时登录抛出 LoginCancelledError，不写入凭据。
+        """
         auth_provider = self.providers.get(provider)
         if auth_provider is None:
             raise ValueError(f"Unsupported authentication provider: {provider}")
         credential = auth_provider.login(
             method=method,
             notify_callback=notify_callback,
+            cancel_event=cancel_event,
         )
         self.store.save(credential)
         return credential

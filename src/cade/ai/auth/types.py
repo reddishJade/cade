@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Protocol
 
 CredentialType = Literal["oauth", "api_key"]
+
+
+class LoginCancelledError(Exception):
+    """登录等待期间调用方通过 cancel_event 取消。"""
 
 
 @dataclass
@@ -80,6 +85,9 @@ class AuthProvider(Protocol):
         *,
         method: str,
         notify_callback: Callable[..., None] | None = None,
-    ) -> AuthCredential: ...
+        cancel_event: threading.Event | None = None,
+    ) -> AuthCredential:
+        """执行登录；cancel_event 被设置时抛出 LoginCancelledError。"""
+        ...
 
     def refresh(self, credential: AuthCredential) -> AuthCredential: ...
