@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,15 +37,8 @@ from ..observability import (
     RuntimeCorrelation,
     hook_correlation_fields,
 )
-from ..security import PermissionDecision, PermissionPolicy
-from ..security.approval import ApprovalPolicy
 from ..security.permission_model import (
-    ExternalDirectory,
     GrantStore,
-    PathExtractor,
-    PolicyEvaluator,
-    Rule,
-    SensitivePathOverride,
 )
 from ..session.inbox import SessionInbox
 from ..skill_activation import is_skill_activation_content
@@ -72,28 +65,6 @@ def _convert_to_llm_with_citations(
 
 ContextRollover = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
 RuntimeContextProvider = Callable[[tuple[ToolSpec, ...]], list[str]]
-
-
-@dataclass(frozen=True)
-class GateConfig:
-    """随 composition 发布的静态工具策略。"""
-
-    permission_policy: PermissionPolicy | None = None
-    approval_policy: ApprovalPolicy = "on-request"
-    restricted_dirs: tuple[str, ...] = ()
-    hook_constraint_providers: tuple[PolicyEvaluator, ...] = ()
-    external_directories: tuple[ExternalDirectory, ...] = ()
-    sensitive_path_overrides: tuple[SensitivePathOverride, ...] = ()
-    user_rulesets: Mapping[str, tuple[Rule, ...]] = field(default_factory=dict)
-    default_mode_rulesets: Mapping[str, tuple[Rule, ...]] = field(default_factory=dict)
-    mode_fallbacks: Mapping[str, PermissionDecision] = field(default_factory=dict)
-    shell_unresolved_policies: Mapping[str, PermissionDecision] = field(
-        default_factory=dict
-    )
-    shell_mutation_policies: Mapping[str, PermissionDecision] = field(
-        default_factory=dict
-    )
-    tool_path_extractors: Mapping[str, PathExtractor] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

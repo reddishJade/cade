@@ -128,15 +128,11 @@ class AgentHarness:
             else gate_runtime.correlation or RuntimeCorrelation(gate_runtime.session_id)
         )
         self._hook_manager = gate_runtime.hook_manager
-        self.external_directories = gate.external_directories
-        self.sensitive_path_overrides = gate.sensitive_path_overrides
-        self.hook_constraint_providers = gate.hook_constraint_providers
         self._gate = supplied_gate or ToolGate(
             mode_state=self._build_gate_mode(),
+            config=gate,
             user_approval_callback=gate_runtime.user_approval_callback,
             auto_approval_callback=gate_runtime.auto_approval_callback,
-            permission_policy=gate.permission_policy,
-            approval_policy=gate.approval_policy,
             hook_manager=gate_runtime.hook_manager,
             external_hook_runner=gate_runtime.external_hook_runner,
             external_hooks_subagent=gate_runtime.external_hooks_subagent,
@@ -144,20 +140,10 @@ class AgentHarness:
             correlation=self._correlation,
             audit_logger=gate_runtime.audit_logger,
             session_id=gate_runtime.session_id,
-            restricted_dirs=gate.restricted_dirs,
-            hook_constraint_providers=gate.hook_constraint_providers,
             project_root=runtime.project_root,
-            external_directories=gate.external_directories,
-            sensitive_path_overrides=gate.sensitive_path_overrides,
             session_grant_store=gate_runtime.session_grant_store,
             session_grant_store_provider=gate_runtime.session_grant_store_provider,
             permanent_grant_store=gate_runtime.permanent_grant_store,
-            user_rulesets=gate.user_rulesets,
-            default_mode_rulesets=gate.default_mode_rulesets,
-            mode_fallbacks=gate.mode_fallbacks,
-            shell_unresolved_policies=gate.shell_unresolved_policies,
-            shell_mutation_policies=gate.shell_mutation_policies,
-            tool_path_extractors=gate.tool_path_extractors,
         )
         self.audit_logger = gate_runtime.audit_logger
         self._context_manager = ContextManager()
@@ -356,7 +342,7 @@ class AgentHarness:
                 raise RuntimeError("cannot replace composition during an active run")
             composition = self._composition.with_permission_policy(policy)
             self._composition = composition
-            self._gate.set_permission_policy(composition.gate.permission_policy)
+            self._gate.replace_config(composition.gate)
         return composition.generation_id
 
     def inject(self, msg: AgentMessage) -> SubmitOutcome:

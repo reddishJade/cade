@@ -119,6 +119,28 @@ class _RedactingAdapter(ToolSpecAdapter):
 
 
 @dataclass(frozen=True)
+class GateConfig:
+    """随 composition 发布的静态工具策略。"""
+
+    permission_policy: PermissionPolicy | None = None
+    approval_policy: ApprovalPolicy = "on-request"
+    restricted_dirs: tuple[str, ...] = ()
+    hook_constraint_providers: tuple[PolicyEvaluator, ...] = ()
+    external_directories: tuple[ExternalDirectory, ...] = ()
+    sensitive_path_overrides: tuple[SensitivePathOverride, ...] = ()
+    user_rulesets: Mapping[str, tuple[Rule, ...]] = field(default_factory=dict)
+    default_mode_rulesets: Mapping[str, tuple[Rule, ...]] = field(default_factory=dict)
+    mode_fallbacks: Mapping[str, PermissionDecision] = field(default_factory=dict)
+    shell_unresolved_policies: Mapping[str, PermissionDecision] = field(
+        default_factory=dict
+    )
+    shell_mutation_policies: Mapping[str, PermissionDecision] = field(
+        default_factory=dict
+    )
+    tool_path_extractors: Mapping[str, PathExtractor] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ToolGateSnapshot:
     """ToolGate 在单个 turn 中使用的冻结配置。"""
 
@@ -149,49 +171,25 @@ class ToolGate:
     def __init__(
         self,
         mode_state: ToolGateMode,
+        config: GateConfig,
         user_approval_callback: ApprovalCallback | None,
         auto_approval_callback: ApprovalCallback | None,
-        permission_policy: PermissionPolicy | None,
         hook_manager: HookManager | None,
         audit_logger: AuditLogger | None,
         session_id: str,
-        approval_policy: ApprovalPolicy = "on-request",
         external_hook_runner: ExternalHookRunner | None = None,
         external_hooks_subagent: bool = False,
         external_hooks_cwd: Path | None = None,
         correlation: RuntimeCorrelation | None = None,
-        restricted_dirs: tuple[str, ...] = (),
-        hook_constraint_providers: tuple[PolicyEvaluator, ...] = (),
         project_root: Path | None = None,
-        external_directories: tuple[ExternalDirectory, ...] = (),
-        sensitive_path_overrides: tuple[SensitivePathOverride, ...] = (),
         session_grant_store: GrantStore | None = None,
         session_grant_store_provider: Callable[[], GrantStore | None] | None = None,
         permanent_grant_store: GrantStore | None = None,
-        user_ruleset: tuple[Rule, ...] = (),
-        user_rulesets: Mapping[str, tuple[Rule, ...]] | None = None,
-        default_mode_rulesets: Mapping[str, tuple[Rule, ...]] | None = None,
-        mode_fallbacks: Mapping[str, PermissionDecision] | None = None,
-        shell_unresolved_policies: Mapping[str, PermissionDecision] | None = None,
-        shell_mutation_policies: Mapping[str, PermissionDecision] | None = None,
-        tool_path_extractors: Mapping[str, PathExtractor] | None = None,
     ) -> None:
         self._mode = mode_state
-        self._user_ruleset = user_ruleset
-        self._user_rulesets = user_rulesets or {}
-        self._default_mode_rulesets = default_mode_rulesets or {}
-        self._mode_fallbacks = mode_fallbacks or {}
-        self._shell_unresolved_policies = shell_unresolved_policies or {}
-        self._shell_mutation_policies = shell_mutation_policies or {}
-        self._tool_path_extractors = tool_path_extractors or {}
+        self._config = config
         self._user_approval_callback = user_approval_callback
         self._auto_approval_callback = auto_approval_callback
-        self._approval_policy: ApprovalPolicy = approval_policy
-        self._permission_policy = permission_policy
-        self._restricted_dirs = restricted_dirs
-        self._hook_constraint_providers = hook_constraint_providers
-        self._external_directories = external_directories
-        self._sensitive_path_overrides = sensitive_path_overrides
         self._hook_manager = hook_manager
         self._external_hook_runner = external_hook_runner
         self._external_hooks_subagent = external_hooks_subagent
@@ -211,22 +209,19 @@ class ToolGate:
         return self._session_grant_store
 
     def _ruleset_for_mode(self, mode_name: str) -> tuple[Rule, ...]:
-        configured = self._user_rulesets.get(mode_name)
-        if configured is not None:
-            return configured
-        return self._user_ruleset
+        return self._config.user_rulesets.get(mode_name, ())
 
     def _default_ruleset_for_mode(self, mode_name: str) -> tuple[Rule, ...]:
-        return self._default_mode_rulesets.get(mode_name, ())
+        return self._config.default_mode_rulesets.get(mode_name, ())
 
     def _fallback_for_mode(self, mode_name: str) -> PermissionDecision:
-        return self._mode_fallbacks.get(mode_name, "ask")
+        return self._config.mode_fallbacks.get(mode_name, "ask")
 
     def _shell_unresolved_policy_for_mode(self, mode_name: str) -> PermissionDecision:
-        return self._shell_unresolved_policies.get(mode_name, "ask")
+        return self._config.shell_unresolved_policies.get(mode_name, "ask")
 
     def _shell_mutation_policy_for_mode(self, mode_name: str) -> PermissionDecision:
-        return self._shell_mutation_policies.get(mode_name, "ask")
+        return self._config.shell_mutation_policies.get(mode_name, "ask")
 
     def _approval_callback_for_mode(
         self, reviewer: ApprovalsReviewer
@@ -234,35 +229,6 @@ class ToolGate:
         if reviewer == "auto_review":
             return self._auto_approval_callback
         return self._user_approval_callback
-
-    def snapshot(self) -> ToolGateSnapshot:
-        mode_name = self._mode.current_mode
-        default_rules = self._default_ruleset_for_mode(mode_name)
-        fallback = self._fallback_for_mode(mode_name)
-        shell_unresolved_policy = self._shell_unresolved_policy_for_mode(mode_name)
-        shell_mutation_policy = self._shell_mutation_policy_for_mode(mode_name)
-        reviewer = self._mode.approvals_reviewer
-        return ToolGateSnapshot(
-            user_ruleset=self._ruleset_for_mode(mode_name),
-            approval_callback=self._approval_callback_for_mode(reviewer),
-            approvals_reviewer=reviewer,
-            permission_policy=self._permission_policy,
-            approval_policy=self._approval_policy,
-            mode_name=mode_name,
-            tool_map={},
-            restricted_dirs=self._restricted_dirs,
-            hook_constraint_providers=self._hook_constraint_providers,
-            project_root=self._project_root,
-            external_directories=self._external_directories,
-            sensitive_path_overrides=self._sensitive_path_overrides,
-            session_grant_store=self._resolve_session_store(),
-            permanent_grant_store=self._permanent_grant_store,
-            mode_ruleset=default_rules,
-            mode_fallback=fallback,
-            shell_unresolved_policy=shell_unresolved_policy,
-            shell_mutation_policy=shell_mutation_policy,
-            tool_path_extractors=dict(self._tool_path_extractors),
-        )
 
     def snapshot_for(self, registry: tuple[ToolSpec, ...]) -> ToolGateSnapshot:
         """为单个 turn 创建包含工具映射的门控快照。"""
@@ -276,22 +242,22 @@ class ToolGate:
             user_ruleset=self._ruleset_for_mode(mode_name),
             approval_callback=self._approval_callback_for_mode(reviewer),
             approvals_reviewer=reviewer,
-            permission_policy=self._permission_policy,
-            approval_policy=self._approval_policy,
+            permission_policy=self._config.permission_policy,
+            approval_policy=self._config.approval_policy,
             mode_name=mode_name,
             tool_map={tool.name: tool for tool in registry},
-            restricted_dirs=self._restricted_dirs,
-            hook_constraint_providers=self._hook_constraint_providers,
+            restricted_dirs=self._config.restricted_dirs,
+            hook_constraint_providers=self._config.hook_constraint_providers,
             project_root=self._project_root,
-            external_directories=self._external_directories,
-            sensitive_path_overrides=self._sensitive_path_overrides,
+            external_directories=self._config.external_directories,
+            sensitive_path_overrides=self._config.sensitive_path_overrides,
             session_grant_store=self._resolve_session_store(),
             permanent_grant_store=self._permanent_grant_store,
             mode_ruleset=default_rules,
             mode_fallback=fallback,
             shell_unresolved_policy=shell_unresolved_policy,
             shell_mutation_policy=shell_mutation_policy,
-            tool_path_extractors=dict(self._tool_path_extractors),
+            tool_path_extractors=dict(self._config.tool_path_extractors),
         )
 
     def adapt_tools(self, registry: tuple[ToolSpec, ...]) -> list[AgentTool]:
@@ -327,7 +293,7 @@ class ToolGate:
     @property
     def approval_policy(self) -> ApprovalPolicy:
         """返回 ask 的会话处理策略。"""
-        return self._approval_policy
+        return self._config.approval_policy
 
     @property
     def approvals_reviewer(self) -> ApprovalsReviewer:
@@ -345,9 +311,9 @@ class ToolGate:
         """更新 Act 等人工审批模式使用的回调。"""
         self._user_approval_callback = approval_callback
 
-    def set_permission_policy(self, policy: PermissionPolicy | None) -> None:
-        """应用新 composition generation 的静态权限策略。"""
-        self._permission_policy = policy
+    def replace_config(self, config: GateConfig) -> None:
+        """切换到新 composition 的静态配置，已有调用快照保持原样。"""
+        self._config = config
 
     def set_session_grant_store_provider(
         self, provider: Callable[[], GrantStore | None] | None
@@ -374,10 +340,9 @@ class ToolGate:
         child_session_id = session_id or self._session_id
         return ToolGate(
             mode_state=self._mode,
+            config=self._config,
             user_approval_callback=self._user_approval_callback,
             auto_approval_callback=self._auto_approval_callback,
-            permission_policy=self._permission_policy,
-            approval_policy=self._approval_policy,
             hook_manager=hook_manager,
             audit_logger=self._audit_logger,
             session_id=child_session_id,
@@ -385,21 +350,10 @@ class ToolGate:
             external_hooks_subagent=True,
             external_hooks_cwd=self._external_hooks_cwd,
             correlation=RuntimeCorrelation(child_session_id),
-            restricted_dirs=self._restricted_dirs,
-            hook_constraint_providers=self._hook_constraint_providers,
             project_root=self._project_root,
-            external_directories=self._external_directories,
-            sensitive_path_overrides=self._sensitive_path_overrides,
             session_grant_store=self._session_grant_store,
             session_grant_store_provider=self._session_grant_store_provider,
             permanent_grant_store=self._permanent_grant_store,
-            user_ruleset=self._user_ruleset,
-            user_rulesets=self._user_rulesets,
-            default_mode_rulesets=self._default_mode_rulesets,
-            mode_fallbacks=self._mode_fallbacks,
-            shell_unresolved_policies=self._shell_unresolved_policies,
-            shell_mutation_policies=self._shell_mutation_policies,
-            tool_path_extractors=self._tool_path_extractors,
         )
 
     @property

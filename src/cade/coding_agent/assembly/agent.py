@@ -30,7 +30,6 @@ from cade.harness.agent_runtime import (
     CancellationToken,
 )
 from cade.harness.agent_runtime.config import (
-    GateConfig,
     GateRuntimeConfig,
     build_request_assembler,
 )
@@ -39,6 +38,7 @@ from cade.harness.agent_runtime.context_window import (
     ContextWindowRollover,
 )
 from cade.harness.agent_runtime.prompting import build_runtime_context_provider
+from cade.harness.agent_runtime.tool_gate import GateConfig
 from cade.harness.config import AgentConfig, CadeRuntimeConfig
 from cade.harness.memory.catalog import MemoryCatalogCollector
 from cade.harness.observability import (
