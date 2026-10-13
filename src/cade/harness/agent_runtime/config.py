@@ -17,7 +17,7 @@ from ...agent.config import (
     CompletionVerifier,
     ContextWindowResetReason,
 )
-from ...agent.context import ContextCollectorRegistry, DefaultContextAssembler
+from ...agent.context import ContextSection, DefaultContextAssembler
 from ...agent.context_policy import ContextPolicy
 from ...agent.messages import (
     AgentMessage,
@@ -286,15 +286,13 @@ def _request_option_value(value: object) -> object:
 
 
 def build_request_assembler(
-    context_collectors: ContextCollectorRegistry | None,
+    context_sections: tuple[ContextSection, ...],
     context_assembler: DefaultContextAssembler | None,
 ) -> DefaultRequestAssembler:
-    """在 composition 发布前冻结请求组装贡献。"""
+    """使用固定 section 集合装配请求边界。"""
     return DefaultRequestAssembler(
         converter=_convert_to_llm_with_citations,
-        context_collectors=(
-            context_collectors.freeze() if context_collectors is not None else None
-        ),
+        context_sections=context_sections,
         context_assembler=context_assembler or DefaultContextAssembler(),
         preserve_tool_result=lambda message: is_skill_activation_content(
             message.content

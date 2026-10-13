@@ -23,14 +23,12 @@ from cade.agent import (
     ContextAssemblyError,
     ContextBlock,
     ContextBlockSource,
-    ContextCollectorRegistry,
     ContextManager,
     ContextPolicy,
     ContextPriority,
+    ContextSection,
     DefaultRequestAssembler,
-    FrozenContextCollectorRegistry,
     TerminationReason,
-    make_collector_section,
     make_state_section,
     run_agent_loop,
 )
@@ -56,10 +54,8 @@ class SelectedContext:
     def collect(self, input: object) -> list[ContextBlock]:
         return self.blocks
 
-    def freeze(self) -> FrozenContextCollectorRegistry:
-        registry = ContextCollectorRegistry()
-        registry.register_section(make_collector_section("selected", self))
-        return registry.freeze()
+    def sections(self) -> tuple[ContextSection, ...]:
+        return (ContextSection("selected", self.collect),)
 
 
 class UncalledProvider:
@@ -151,7 +147,7 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
         request_token_budget=2048,
     )
     assembly = DefaultRequestAssembler(
-        context_collectors=SelectedContext(blocks).freeze()
+        context_sections=SelectedContext(blocks).sections()
     ).assemble(context, current_step=1, options=None)
     assembly.require_sendable()
     assert assembly.estimated_tokens <= assembly.token_budget
@@ -202,7 +198,7 @@ def test_special_token_literals_do_not_bypass_context_budget(marker: str) -> Non
 def test_safe_budget_is_not_next_turn_soft_target() -> None:
     blocks = selected_blocks()
     assembler = DefaultRequestAssembler(
-        context_collectors=SelectedContext(blocks).freeze()
+        context_sections=SelectedContext(blocks).sections()
     )
     context = AgentContext(messages=[UserMessage(content="Task")])
     baseline = assembler.assemble(context, current_step=1, options=None)
@@ -226,7 +222,7 @@ def test_unassemblable_context_terminates_without_provider_call(
     else:
         blocks[0].content = "Required selected context " * 4000
     assembler = DefaultRequestAssembler(
-        context_collectors=SelectedContext(blocks).freeze()
+        context_sections=SelectedContext(blocks).sections()
     )
     context = AgentContext(messages=messages, context_policy=policy())
     projection = assembler.assemble(context, current_step=1, options=None)
@@ -255,9 +251,10 @@ def test_unassemblable_context_terminates_without_provider_call(
 
 
 def test_section_failure_does_not_send_partial_context() -> None:
-    registry = ContextCollectorRegistry()
-    registry.register_section(
-        make_state_section("environment", "environment", ContextBlockSource.ENVIRONMENT)
+    sections = (
+        make_state_section(
+            "environment", "environment", ContextBlockSource.ENVIRONMENT
+        ),
     )
     result = asyncio.run(
         collect_loop_result(
@@ -269,9 +266,7 @@ def test_section_failure_does_not_send_partial_context() -> None:
             ),
             AgentLoopConfig(
                 provider=UncalledProvider(),
-                request_assembler=DefaultRequestAssembler(
-                    context_collectors=registry.freeze()
-                ),
+                request_assembler=DefaultRequestAssembler(context_sections=sections),
                 rollover_context=ContextWindowRollover().rollover_messages,
             ),
         )
@@ -288,10 +283,7 @@ def test_rollover_refreshes_catalog_and_preserves_latest_durable_state(
     memory.mkdir(parents=True)
     entry = memory / "lesson.md"
     entry.write_text("# Before rollover\n\nOld catalog hint.\n", encoding="utf-8")
-    registry = ContextCollectorRegistry()
-    registry.register_section(
-        make_collector_section("memory", MemoryCatalogCollector())
-    )
+    sections = (ContextSection("memory", MemoryCatalogCollector().collect),)
     manager = ContextManager()
     context = AgentContext(
         messages=[
@@ -306,7 +298,7 @@ def test_rollover_refreshes_catalog_and_preserves_latest_durable_state(
         context_manager=manager,
         context_policy=policy(4096),
     )
-    assembler = DefaultRequestAssembler(context_collectors=registry.freeze())
+    assembler = DefaultRequestAssembler(context_sections=sections)
     first = assembler.assemble(context, current_step=1, options=None)
     assert "Before rollover" in str(first.wire_messages)
     rolled = ContextWindowRollover().rollover_messages(

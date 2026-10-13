@@ -22,8 +22,8 @@ from .context import (
     ContextBlockSource,
     ContextBlockTarget,
     ContextCollectionInput,
+    ContextSection,
     DefaultContextAssembler,
-    FrozenContextCollectorRegistry,
     _block_to_text,
     _estimate_base_tokens,
     _estimate_messages_tokens,
@@ -116,7 +116,7 @@ class DefaultRequestAssembler:
     """按固定阶段收集、注入、裁剪并编码模型输入。"""
 
     converter: MessageConverter = convert_to_llm
-    context_collectors: FrozenContextCollectorRegistry | None = None
+    context_sections: tuple[ContextSection, ...] = ()
     context_assembler: ContextAssembler = field(default_factory=DefaultContextAssembler)
     preserve_tool_result: Callable[[ToolResultMessage], bool] | None = None
 
@@ -391,7 +391,7 @@ class DefaultRequestAssembler:
         context: AgentContext,
         messages: list[AgentMessage],
     ) -> list[ContextBlock]:
-        if self.context_collectors is None:
+        if not self.context_sections:
             return []
         collection_input = ContextCollectionInput(
             system_prompt=context.system_prompt,
@@ -401,7 +401,15 @@ class DefaultRequestAssembler:
             cwd=context.cwd,
             state=dict(context.state),
         )
-        return self.context_collectors.collect(collection_input)
+        current_blocks: dict[str, list[ContextBlock]] = {}
+        for section in self.context_sections:
+            try:
+                current_blocks[section.section_id] = section.collect(collection_input)
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError):
+                raise ContextAssemblyError(
+                    f"Cannot render context section: {section.section_id}"
+                ) from None
+        return [block for blocks in current_blocks.values() for block in blocks]
 
 
 def _context_snapshot(

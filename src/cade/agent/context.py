@@ -122,59 +122,8 @@ class ContextSection:
     collect: Callable[[ContextCollectionInput], list[ContextBlock]]
 
 
-# ── 收集器协议 ──
-
-
 class ContextAssemblyError(RuntimeError):
     """上下文无法完整收集或无法安全发送。"""
-
-
-class ContextCollector(Protocol):
-    def collect(self, input: ContextCollectionInput) -> list[ContextBlock]: ...
-
-
-# ── 收集器注册表 ──
-
-
-class ContextCollectorRegistry:
-    def __init__(self) -> None:
-        self._sections: list[ContextSection] = []
-
-    def register_section(self, section: ContextSection) -> None:
-        """注册每次请求重新收集的动态 section。"""
-        self._sections.append(section)
-
-    def freeze(self) -> FrozenContextCollectorRegistry:
-        """发布不可再注册 section 的组合快照。"""
-        return FrozenContextCollectorRegistry(tuple(self._sections))
-
-
-@dataclass(frozen=True)
-class FrozenContextCollectorRegistry:
-    """请求组装使用的不可变 section 集合。"""
-
-    sections: tuple[ContextSection, ...] = ()
-
-    def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        """直接收集本次完整快照，不保留上次请求的投影。"""
-        current_blocks: dict[str, list[ContextBlock]] = {}
-        for section in self.sections:
-            try:
-                current_blocks[section.section_id] = section.collect(input)
-            except (LookupError, OSError, RuntimeError, TypeError, ValueError):
-                raise ContextAssemblyError(
-                    f"Cannot render context section: {section.section_id}"
-                ) from None
-        return [block for blocks in current_blocks.values() for block in blocks]
-
-
-def make_collector_section(
-    section_id: str,
-    collector: ContextCollector,
-) -> ContextSection:
-    """把 collector 包装为当前快照 section。"""
-
-    return ContextSection(section_id, collector.collect)
 
 
 def make_state_section(

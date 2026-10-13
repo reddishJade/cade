@@ -228,20 +228,14 @@ class CadeApp:
 
     def instruction_paths(self) -> tuple[Path, ...]:
         """从当前指令收集器读取实际可用的文件来源，不改变上下文状态。"""
-        from cade.agent.context import (
-            ContextCollectionInput,
-            FrozenContextCollectorRegistry,
-        )
+        from cade.agent.context import ContextCollectionInput
         from cade.agent.request import DefaultRequestAssembler
 
         assembler = self.agent.composition.request_assembler
         if not isinstance(assembler, DefaultRequestAssembler):
             return ()
-        collectors = assembler.context_collectors
-        if not isinstance(collectors, FrozenContextCollectorRegistry):
-            return ()
         paths: list[Path] = []
-        for section in collectors.sections:
+        for section in assembler.context_sections:
             if section.section_id == "agents":
                 for block in section.collect(ContextCollectionInput()):
                     if block.provenance and block.provenance != "inline instruction":
