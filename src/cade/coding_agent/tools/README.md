@@ -1,6 +1,6 @@
 # Cade Coding Agent Tools — 核心工程工具集
 
-本目录包含 Coding Agent 执行真实软件工程任务的全套内置工具，专注于解决：**如何为 Agent 提供具备并发控制、副作用感知、沙箱保护与精确指纹校验的高可用代码读写与执行环境。**
+本目录包含 Coding Agent 执行真实软件工程任务的全套内置工具，专注于解决：**如何为 Agent 提供具备并发控制、副作用感知与沙箱保护的高可用代码读写与执行环境。**
 
 ---
 
@@ -21,8 +21,8 @@ read / write / edit / bash
 - **代码读写与精准编辑**：
   - `read_file.py`：安全读取文件内容，支持分片与行范围。
   - `write_file.py`：创建新文件或覆写已有文件。
-  - `file_handlers.py`：实现 model-facing `edit`。强制校验 **SHA256 指纹**，若文件在读取后被外部修改则拒绝写入，彻底根除脏写冲突。
-  - `text_edit.py`：基于行范围和精确匹配的替换辅助引擎。
+  - `file_handlers.py`：实现文件读写与 model-facing `edit`，按 `old_text` 精确匹配当前文件内容。
+  - `text_edit.py`：精确文本替换与换行格式处理。
   - `file_image.py`：多模态图片文件支持与 Base64 提取。
 - **文件检索与代码搜索**：
   - `glob_search.py`：文件树通配符检索（model-facing `glob`、`find`、`ls`）；文件发现优先使用 `fd`，回退到 `rg` 或 Python。
@@ -31,7 +31,6 @@ read / write / edit / bash
 - **环境交互与进程执行**：
   - `bash.py`：执行终端命令。自动对接底层 Bubblewrap 沙箱或系统原生 Shell，控制超时与进程组清理。
   - `shell_adapter.py`：命令适配器，连接权限判定与 Shell 执行引擎。
-  - `cygpath.py`：针对 Windows 环境下 MSYS/Cygwin/POSIX 风格路径的自动互转。
 - **协同与任务流**：
   - `subagent.py`：子代理派发工具，支持多子任务批量并发执行并归集结果。
   - `question.py`：人机交互工具，向用户主动提出选择题或确认事项。
@@ -39,7 +38,7 @@ read / write / edit / bash
   - `webfetch.py`：抓取指定 URL 页面并转为精简 Markdown。
   - `websearch.py`：调用搜索引擎获取外部开发文档与最新技术方案。
 - **输出截断与安全护栏**：
-  - `truncate.py` / `truncation_cleanup.py`：长输出智能折叠，防止单次工具执行导致上下文 Token 溢出。
+  - `truncate.py`：按行数和字节上限截断长输出。
   - `output_accumulator.py`：流式输出聚合器。
   - `file_mutation_queue.py`：并发写冲突队列与文件锁防护。
 
@@ -47,7 +46,6 @@ read / write / edit / bash
 
 ## 2. 架构不变量与设计禁忌
 
-- **Read-Before-Edit 铁律**：`edit` 工具必须校验文件的预读取 SHA256 指纹；模型未曾读取过的文件严禁直接发起局部编辑。
 - **并发与副作用分区**：
   - 只读工具（`read` 及可选 `grep/glob/find/ls`）声明并发安全，由调度器并行触发。
   - 具有文件写（`write`、`edit`）或 Shell 执行副作用的工具严格保持单线程串行互斥。

@@ -137,12 +137,6 @@ def _questions(value: object) -> list[dict[str, Any]]:
     return questions
 
 
-def choice_label(label: str, description: object) -> str:
-    if isinstance(description, str) and description.strip():
-        return f"{label} - {description.strip()}"
-    return label
-
-
 def _format_answers(questions: list[dict[str, Any]], answers: list[list[str]]) -> str:
     formatted = []
     for index, question in enumerate(questions):

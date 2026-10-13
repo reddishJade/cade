@@ -337,10 +337,3 @@ def _display(root: Path, path: Path) -> str:
     from .path_utils import display_path
 
     return display_path(root, path)
-
-
-def mtime_ns(path: Path) -> int:
-    try:
-        return path.stat().st_mtime_ns
-    except OSError:
-        return 0

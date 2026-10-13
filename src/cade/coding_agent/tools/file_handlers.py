@@ -50,15 +50,10 @@ MAX_WRITE_BYTES = 1_000_000
 
 
 @dataclass(frozen=True)
-class FileEdit:
-    old_text: str
-    new_text: str
-
-
-@dataclass(frozen=True)
 class EditFileRequest:
     path: Path
-    edits: list[FileEdit]
+    old_text: str
+    new_text: str
     replace_all: bool
 
 
@@ -427,13 +422,16 @@ def _parse_edit_file_request(
     if not operations.is_file(path):
         raise ValueError(f"not a file: {_display(root, path)}")
 
-    edits = _prepare_edits(data)
-    if not edits:
-        raise ValueError("no edits provided")
+    old_text = str(data.get("old_text", ""))
+    if not old_text.strip():
+        raise ValueError("old_text must not be empty")
+    if "new_text" not in data:
+        raise ValueError("new_text is required")
 
     return EditFileRequest(
         path=path,
-        edits=edits,
+        old_text=old_text,
+        new_text=str(data.get("new_text", "")),
         replace_all=bool(data.get("replace_all", False)),
     )
 
@@ -451,24 +449,18 @@ def _edit_file_impl(
     normalized = normalize_to_lf(clean_content)
     display = _display(root, path)
 
-    updated = normalized
-    total_replacements = 0
-    for edit in request.edits:
-        try:
-            result = apply_text_replacement(
-                updated,
-                edit.old_text,
-                edit.new_text,
-                replace_all=request.replace_all and len(request.edits) == 1,
-            )
-        except ValueError as exc:
-            raise ValueError(f"{exc} in {display}") from exc
-        if request.replace_all and len(request.edits) == 1:
-            count = normalized.count(edit.old_text)
-            total_replacements = count
-        else:
-            total_replacements += 1
-        updated = result
+    try:
+        updated = apply_text_replacement(
+            normalized,
+            request.old_text,
+            request.new_text,
+            replace_all=request.replace_all,
+        )
+    except ValueError as exc:
+        raise ValueError(f"{exc} in {display}") from exc
+    total_replacements = (
+        normalized.count(request.old_text) if request.replace_all else 1
+    )
 
     if updated == normalized:
         raise ValueError(
@@ -573,12 +565,3 @@ def _first_changed_line(before: str, after: str) -> int | None:
 
 def _display(root: Path, path: Path) -> str:
     return display_path(root, path)
-
-
-def _prepare_edits(data: ToolInput) -> list[FileEdit]:
-    old_text = str(data.get("old_text", ""))
-    if not old_text.strip():
-        raise ValueError("old_text must not be empty")
-    if "new_text" not in data:
-        raise ValueError("new_text is required")
-    return [FileEdit(old_text=old_text, new_text=str(data.get("new_text", "")))]
