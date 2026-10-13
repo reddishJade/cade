@@ -222,17 +222,6 @@ def _read_text_file(
 
     return ToolOutput(
         text,
-        metadata={
-            "display": {
-                "type": "file",
-                "path": display,
-                "text": "\n".join(lines),
-                "lineStart": offset,
-                "lineEnd": last_line,
-                "totalLines": total_count,
-                "truncated": more or cut,
-            },
-        },
         render_intent=LocationRenderIntent(
             path=display,
             line_start=offset,
@@ -276,16 +265,6 @@ def _read_directory(
 
     return ToolOutput(
         text,
-        metadata={
-            "display": {
-                "type": "directory",
-                "path": display,
-                "entries": sliced,
-                "offset": offset,
-                "totalEntries": len(formatted),
-                "truncated": truncated,
-            },
-        },
         render_intent=LocationRenderIntent(path=display),
     )
 
@@ -380,7 +359,6 @@ def _write_file_impl(
 
     return ToolOutput(
         f"wrote file: {display}\n{diff}",
-        metadata={"patch": diff},
         render_intent=DiffRenderIntent(patch=diff, files=(display,)),
     )
 
@@ -464,10 +442,6 @@ def _edit_file_impl(
     diff = _diff_preview(display, content, final)
     return ToolOutput(
         f"edited file: {display} replacements={total_replacements}\n{diff}",
-        metadata={
-            "patch": diff,
-            "first_changed_line": _first_changed_line(content, final),
-        },
         render_intent=DiffRenderIntent(
             patch=diff,
             files=(display,),
