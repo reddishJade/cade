@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from inspect import Parameter, signature
 
 from cade.ai.events import Message, ProviderEvent
 from cade.ai.providers.base import ModelProvider
@@ -11,7 +10,7 @@ from cade.ai.types import StreamOptions, ToolDefinition
 from cade.ai.usage import UsageTotals
 
 
-class _FallbackSwitchingProvider:
+class FallbackWithRetryPrimary:
     """连续错误达到阈值后切换到回退 provider 的包装器。
 
     追踪连续错误计数，到达阈值后切换到 fallback_provider。
@@ -32,18 +31,6 @@ class _FallbackSwitchingProvider:
         self._consecutive_errors: int = 0
         self._fallback_successes: int = 0
         self._using_fallback: bool = False
-
-    def replace_primary(self, primary: ModelProvider) -> None:
-        """热替换主 provider 并重置容灾计数。
-
-        /model、/thinking、/effort 等命令重建主 provider 后调用此方法，
-        原地换主以保留 fallback 容灾包装层。新主 provider 视为全新实例，
-        下一轮 stream 优先尝试新主而非沿用 fallback 状态。
-        """
-        self._primary = primary
-        self._consecutive_errors = 0
-        self._fallback_successes = 0
-        self._using_fallback = False
 
     @property
     def active_provider(self) -> ModelProvider:
@@ -106,8 +93,8 @@ class _FallbackSwitchingProvider:
         provider = self._fallback if self._using_fallback else self._primary
         emitted = False
         try:
-            async for event in self._stream_with(
-                provider, messages, tools, options, kwargs
+            async for event in provider.stream(
+                messages, tools, options=options, **kwargs
             ):
                 emitted = True
                 yield event
@@ -138,8 +125,8 @@ class _FallbackSwitchingProvider:
     ) -> AsyncIterator[ProviderEvent]:
         """主 provider 在输出前失败时，流式执行并记录 fallback 结果。"""
         try:
-            async for event in self._stream_with(
-                self._fallback, messages, tools, options, kwargs
+            async for event in self._fallback.stream(
+                messages, tools, options=options, **kwargs
             ):
                 yield event
         except Exception:
@@ -153,32 +140,8 @@ class _FallbackSwitchingProvider:
         if provider is self._fallback:
             self._fallback_successes = 0
 
-    def _record_success(self, _provider: ModelProvider) -> None:
-        self._consecutive_errors = 0
-
-    @staticmethod
-    async def _stream_with(
-        provider: ModelProvider,
-        messages: list[Message],
-        tools: list[ToolDefinition],
-        options: StreamOptions | None,
-        kwargs: dict[str, object],
-    ) -> AsyncIterator[ProviderEvent]:
-        if _accepts_stream_options(provider):
-            async for event in provider.stream(
-                messages, tools, options=options, **kwargs
-            ):
-                yield event
-            return
-        async for event in provider.stream(messages, tools):
-            yield event
-
-
-class FallbackWithRetryPrimary(_FallbackSwitchingProvider):
-    """扩展 _FallbackSwitchingProvider，在回退成功达到阈值后重试主 provider。"""
-
     def _record_success(self, provider: ModelProvider) -> None:
-        super()._record_success(provider)
+        self._consecutive_errors = 0
         if provider is not self._fallback:
             self._fallback_successes = 0
             return
@@ -186,15 +149,3 @@ class FallbackWithRetryPrimary(_FallbackSwitchingProvider):
         if self._fallback_successes >= self._fallback_success_threshold:
             self._using_fallback = False
             self._fallback_successes = 0
-
-
-def _accepts_stream_options(provider: ModelProvider) -> bool:
-    """判断 provider.stream 是否支持标准 options/关键字参数。"""
-    try:
-        parameters = signature(provider.stream).parameters.values()
-    except (TypeError, ValueError):
-        return True
-    return any(
-        parameter.name == "options" or parameter.kind is Parameter.VAR_KEYWORD
-        for parameter in parameters
-    )

@@ -7,8 +7,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 from typing import Any
 
 import orjson
@@ -330,39 +328,3 @@ def _content_blocks_to_chat_messages(
             msg["prefix"] = prefix
         converted.insert(0, msg)
     return converted
-
-
-# ── 工具列表规范化与指纹计算 ──
-
-
-def canonical_tool_schema(tool: ToolDefinition) -> dict[str, Any]:
-    """规范化工具 schema（字典键排序）。"""
-    result: dict[str, Any] = {
-        "name": tool.name,
-        "description": tool.description,
-        "schema": tool.parameters,
-    }
-    if tool.builtin is not None:
-        result["builtin"] = tool.builtin
-    return _sort_dict_recursive(result)
-
-
-def _sort_dict_recursive(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: _sort_dict_recursive(v) for k, v in sorted(obj.items())}
-    elif isinstance(obj, list):
-        return [_sort_dict_recursive(item) for item in obj]
-    return obj
-
-
-def canonical_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-    """按 name 排序并规范化工具列表。"""
-    sorted_tools = sorted(tools, key=lambda t: t.name)
-    return [canonical_tool_schema(t) for t in sorted_tools]
-
-
-def tool_catalog_fingerprint(tools: list[ToolDefinition]) -> str:
-    """计算工具集合的稳定短指纹。"""
-    canonical = canonical_tools(tools)
-    serialized = json.dumps(canonical, sort_keys=True, ensure_ascii=False)
-    return hashlib.blake2b(serialized.encode(), digest_size=8).hexdigest()
