@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from .coding_agent.app import build_app
-from .harness.config import discover_runtime_config, resolve_config_path
+from .harness.config import CadeRuntimeConfig, discover_runtime_config
 
 
 class _ExplicitAuthMethodAction(argparse.Action):
@@ -53,9 +53,13 @@ def _add_auth_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_config_parser(subparsers) -> None:
-    config_parser = subparsers.add_parser(
+def _build_config_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
+    subparsers.add_parser(
         "config",
+        parents=[workspace_arguments],
         help="Browse and edit cade settings interactively",
         description=(
             "Open an interactive browser over all cade.config.json settings: "
@@ -64,30 +68,38 @@ def _build_config_parser(subparsers) -> None:
             "type a new one; changes are validated before they are saved."
         ),
     )
-    config_parser.add_argument(
-        "--project-root", type=Path, default=Path.cwd(), help="Project root directory."
+
+
+def _build_setup_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
+    subparsers.add_parser(
+        "setup", parents=[workspace_arguments], help="Run the provider setup wizard"
     )
-    config_parser.add_argument(
-        "--config", type=Path, help="Path to cade.config.json to manage."
-    )
 
 
-def _build_setup_parser(subparsers) -> None:
-    subparsers.add_parser("setup", help="Run the provider setup wizard")
-
-
-def _build_login_parser(subparsers) -> None:
+def _build_login_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
     login_parser = subparsers.add_parser(
         "login",
+        parents=[workspace_arguments],
         aliases=["connect"],
         help="Connect an account or API-key provider",
     )
     _add_auth_arguments(login_parser)
 
 
-def _build_logout_parser(subparsers) -> None:
+def _build_logout_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
     logout_parser = subparsers.add_parser(
-        "logout", help="Log out from an AI provider and remove credentials"
+        "logout",
+        parents=[workspace_arguments],
+        help="Log out from an AI provider and remove credentials",
     )
     logout_parser.add_argument(
         "--provider",
@@ -96,21 +108,28 @@ def _build_logout_parser(subparsers) -> None:
     )
 
 
-def _build_auth_parser(subparsers) -> None:
+def _build_auth_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
     auth_parser = subparsers.add_parser(
-        "auth", help="Manage authentication credentials"
+        "auth", parents=[workspace_arguments], help="Manage authentication credentials"
     )
-    auth_subparsers = auth_parser.add_subparsers(dest="auth_action")
+    auth_subparsers = auth_parser.add_subparsers(
+        dest="auth_action",
+        parser_class=_CommandArgumentParser,
+    )
 
     login_p = auth_subparsers.add_parser(
         "login",
+        parents=[workspace_arguments],
         aliases=["connect"],
         help="Connect an account or API-key provider",
     )
     _add_auth_arguments(login_p)
 
     logout_p = auth_subparsers.add_parser(
-        "logout", help="Log out from a provider account"
+        "logout", parents=[workspace_arguments], help="Log out from a provider account"
     )
     logout_p.add_argument(
         "--provider",
@@ -118,16 +137,29 @@ def _build_auth_parser(subparsers) -> None:
         help="Provider to log out from (default: openai-codex).",
     )
 
-    auth_subparsers.add_parser("status", help="Show current authentication status")
+    auth_subparsers.add_parser(
+        "status",
+        parents=[workspace_arguments],
+        help="Show current authentication status",
+    )
 
 
-def _build_tui_parser(subparsers) -> None:
-    subparsers.add_parser("tui", help="Run the terminal workbench")
+def _build_tui_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
+    subparsers.add_parser(
+        "tui", parents=[workspace_arguments], help="Run the terminal workbench"
+    )
 
 
-def _build_web_parser(subparsers) -> None:
+def _build_web_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
     web_parser = subparsers.add_parser(
         "web",
+        parents=[workspace_arguments],
         help="Run the browser workbench (FastAPI + WebSocket UI)",
         description=(
             "Start the Cade browser workbench: a single-page frontend that "
@@ -145,46 +177,51 @@ def _build_web_parser(subparsers) -> None:
         action="store_true",
         help="Open the browser automatically after the server starts.",
     )
-    web_parser.add_argument(
-        "--project-root",
-        type=Path,
-        default=Path.cwd(),
-        help="Project root directory.",
-    )
 
 
-def _build_exec_parser(subparsers) -> None:
+def _build_exec_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
     from .coding_agent.modes.exec_mode import add_exec_arguments
 
     exec_parser = subparsers.add_parser(
         "exec",
+        parents=[workspace_arguments],
         help="Run one prompt with a stable automation protocol",
     )
     add_exec_arguments(exec_parser)
 
 
-def _build_session_parser(subparsers) -> None:
+def _build_session_parser(
+    subparsers: argparse._SubParsersAction[_CommandArgumentParser],
+    workspace_arguments: _CommandArgumentParser,
+) -> None:
     from .coding_agent.cli.session_cmd import add_session_arguments
 
     session_parser = subparsers.add_parser(
         "session",
+        parents=[workspace_arguments],
         help="Inspect and control persisted sessions",
     )
-    add_session_arguments(session_parser)
+    add_session_arguments(session_parser, workspace_arguments)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    effective_argv = list(sys.argv[1:] if argv is None else argv)
-    effective_argv = _normalize_exec_resume(effective_argv)
-    parser = argparse.ArgumentParser(description="Cade coding agent.")
-    parser.add_argument(
-        "--project-root", type=Path, default=Path.cwd(), help="Project root directory."
+    workspace_arguments = _CommandArgumentParser(
+        add_help=False, argument_default=argparse.SUPPRESS
     )
-    parser.add_argument(
+    workspace_arguments.add_argument(
+        "--project-root", type=Path, help="Project root directory (default: cwd)."
+    )
+    workspace_arguments.add_argument(
         "--config", type=Path, help="Path to cade.config.json runtime settings."
     )
-    parser.add_argument(
+    workspace_arguments.add_argument(
         "--sessions-dir", type=Path, help="Session transcript directory."
+    )
+    parser = argparse.ArgumentParser(
+        description="Cade coding agent.", parents=[workspace_arguments]
     )
     parser.add_argument(
         "--resume",
@@ -204,40 +241,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Resume a specific session by id.",
     )
     subparsers = parser.add_subparsers(
-        dest="command", parser_class=_CommandArgumentParser
+        dest="command",
+        parser_class=_CommandArgumentParser,
     )
-    _build_config_parser(subparsers)
-    _build_setup_parser(subparsers)
-    _build_login_parser(subparsers)
-    _build_logout_parser(subparsers)
-    _build_auth_parser(subparsers)
-    _build_tui_parser(subparsers)
-    _build_exec_parser(subparsers)
-    _build_session_parser(subparsers)
-    _build_web_parser(subparsers)
-    return parser.parse_args(effective_argv)
-
-
-def _normalize_exec_resume(argv: list[str]) -> list[str]:
-    """将 `exec resume ID` 转换为统一的 session 恢复参数。"""
-    try:
-        exec_index = argv.index("exec")
-    except ValueError:
-        return argv
-    resume_index = exec_index + 1
-    session_index = exec_index + 2
-    if (
-        session_index >= len(argv)
-        or argv[resume_index] != "resume"
-        or argv[session_index].startswith("-")
-    ):
-        return argv
-    return [
-        *argv[:resume_index],
-        "--session",
-        argv[session_index],
-        *argv[session_index + 1 :],
-    ]
+    _build_config_parser(subparsers, workspace_arguments)
+    _build_setup_parser(subparsers, workspace_arguments)
+    _build_login_parser(subparsers, workspace_arguments)
+    _build_logout_parser(subparsers, workspace_arguments)
+    _build_auth_parser(subparsers, workspace_arguments)
+    _build_tui_parser(subparsers, workspace_arguments)
+    _build_exec_parser(subparsers, workspace_arguments)
+    _build_session_parser(subparsers, workspace_arguments)
+    _build_web_parser(subparsers, workspace_arguments)
+    return parser.parse_args(
+        argv,
+        namespace=argparse.Namespace(
+            project_root=Path.cwd(), config=None, sessions_dir=None
+        ),
+    )
 
 
 def main() -> int:
@@ -327,6 +348,7 @@ def main() -> int:
                     port=args.port,
                     config_path=args.config,
                     runtime_config=runtime_config,
+                    sessions_dir=args.sessions_dir,
                     open_browser=args.open,
                 )
             return _run(args, runtime_config)
@@ -404,18 +426,15 @@ def main() -> int:
             temp_config.unlink()
 
 
-def _run(args, runtime_config) -> int:
+def _run(args: argparse.Namespace, runtime_config: CadeRuntimeConfig) -> int:
     if args.command == "exec":
         from .coding_agent.modes.exec_mode import run_exec
 
-        return run_exec(args, runtime_config, _build_app_from_config)
+        return run_exec(args, runtime_config)
 
-    sessions_dir = (
-        args.sessions_dir
-        or resolve_config_path(args.project_root, runtime_config.paths.sessions_dir)
-        or (args.project_root / ".cade" / "sessions")
+    app = build_app(
+        args.project_root, runtime_config=runtime_config, sessions_dir=args.sessions_dir
     )
-    app = _build_app_from_config(args.project_root, runtime_config, sessions_dir)
     try:
         from .coding_agent.modes.tui.app import run_tui
 
@@ -428,21 +447,7 @@ def _run(args, runtime_config) -> int:
             config_path=args.config,
         )
     finally:
-        close = getattr(app, "close", None)
-        if callable(close):
-            close()
-
-
-def _build_app_from_config(
-    project_root: Path,
-    runtime_config,
-    sessions_dir: Path,
-):
-    return build_app(
-        project_root=project_root,
-        runtime_config=runtime_config,
-        sessions_dir=sessions_dir,
-    )
+        app.close()
 
 
 if __name__ == "__main__":

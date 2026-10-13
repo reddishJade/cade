@@ -14,11 +14,17 @@ Cade 提供了开箱即用的命令行工具 `cade`。本节汇总启动参数�
 
 | 选项参数 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `-m, --mode <plan\|build\|act>` | string | 覆盖本次启动的默认执行模式（默认：`act`） |
-| `--model <name>` | string | 指定本次运行使用的大模型名称（如 `deepseek-flash` 或 `gpt-6-sol`） |
-| `--provider <name>` | string | 指定使用的 Provider 协议（如 `deepseek_chat`、`openai_responses`、`custom`） |
-| `-v, --version` | flag | 打印当前安装的 Cade 版本号 |
+| `--project-root <path>` | path | 工作区根，默认当前目录 |
+| `--config <path>` | path | 替代项目配置文件 |
+| `--sessions-dir <path>` | path | 覆盖本次会话目录 |
+| `-c, --continue` | flag | 恢复当前项目最近会话 |
+| `--session <id>` | string | 恢复指定会话 |
+| `--resume` | flag | 启动 TUI 会话选择器 |
 | `-h, --help` | flag | 打印命令行帮助信息 |
+
+三个公共路径参数可以放在子命令前后，`session` 查询还可放在动作后；重复指定时
+最后的显式值生效。会话目录优先使用 CLI 覆盖，再使用配置中的 `paths.sessions_dir`，
+未配置时使用工作区 `.cade/sessions/`。
 
 ### 命令行常用场景
 
@@ -26,12 +32,14 @@ Cade 提供了开箱即用的命令行工具 `cade`。本节汇总启动参数�
 # 1. 默认交互式启动
 cade
 
-# 2. 直接以 Build 模式启动，使用 DeepSeek-V4-Pro 旗舰模型
-cade --mode build --model deepseek-v4-pro
+# 2. 在指定工作区启动 TUI
+cade tui --project-root ./repo
 
 # 3. 在 CI 或脚本中非交互式执行单条任务（Headless）
 cade exec "运行 pytest 并修复所有失败的测试用例"
 ```
+
+`exec` 的模型、模式、审批与运行上限由子命令选项覆盖，见 `cade exec --help`。
 
 ---
 

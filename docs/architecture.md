@@ -48,6 +48,7 @@ Agent 通过 provider 协议请求模型，通过工具协议执行动作。Harn
 store、recorder、inbox、History 和取消服务，再构造 provider bundle、本地工具、
 MCP、Skills、Memory 与子代理 registry，最后发布 composition 并返回 `CadeApp`。
 recorder 和 inbox 共享 store，应用拥有装配所得服务的关闭责任。
+各宿主只传入显式会话目录覆盖；配置目录与默认目录由共享基础设施装配统一选择。
 
 `AgentComposition` 是不可变的配置代际，包含主备 provider、冻结的工具 schema、
 `AgentConfig`、静态 gate 策略、请求组装器和上下文入口。会话 inbox、取消信号、

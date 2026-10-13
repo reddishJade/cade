@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, TextIO
 from urllib.parse import urlparse
@@ -24,11 +24,12 @@ from cade.harness.agent_runtime.events import (
     ToolResultStructuredEvent,
     ToolUseStructuredEvent,
 )
-from cade.harness.config import CadeRuntimeConfig, resolve_config_path
+from cade.harness.config import CadeRuntimeConfig
 from cade.harness.security import HITLResult
 from cade.harness.session.schema import SESSION_EVENT_SCHEMA_VERSION
 from cade.server.serialize import event_to_dict, to_jsonable
 
+from ..app import CadeApp, build_app
 from ..cli.session_control import SessionRunControl
 
 _DURATION_RE = re.compile(r"^(?P<value>[0-9]+(?:\.[0-9]+)?)(?P<unit>s|m|h)?$")
@@ -84,24 +85,6 @@ def add_exec_arguments(parser: argparse.ArgumentParser) -> None:
         "--prompt-file",
         type=Path,
         help="Read the prompt from a UTF-8 file, or use '-' for stdin.",
-    )
-    parser.add_argument(
-        "--project-root",
-        type=Path,
-        default=argparse.SUPPRESS,
-        help="Project root directory.",
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=argparse.SUPPRESS,
-        help="Runtime configuration file.",
-    )
-    parser.add_argument(
-        "--sessions-dir",
-        type=Path,
-        default=argparse.SUPPRESS,
-        help="Session transcript directory.",
     )
     parser.add_argument("--model", help="Override the main model for this run.")
     parser.add_argument(
@@ -241,10 +224,9 @@ def prepare_exec_config(
 def run_exec(
     args: argparse.Namespace,
     runtime_config: CadeRuntimeConfig,
-    app_builder: Callable[[Path, CadeRuntimeConfig, Path], Any],
 ) -> int:
     """执行一个 prompt，并通过稳定的文本或 NDJSON 协议返回结果。"""
-    app: Any | None = None
+    app: CadeApp | None = None
     emitter = _ExecEmitter(args.event_format, args.event_detail)
     redirected = (
         contextlib.redirect_stdout(sys.stderr)
@@ -256,14 +238,9 @@ def run_exec(
             prompt = _read_prompt(args)
             config = prepare_exec_config(runtime_config, args)
             _validate_approval(config, args)
-            sessions_dir = (
-                args.sessions_dir
-                or resolve_config_path(args.project_root, config.paths.sessions_dir)
-                or (args.project_root / ".cade" / "sessions")
+            app = build_app(
+                args.project_root, runtime_config=config, sessions_dir=args.sessions_dir
             )
-            app = app_builder(args.project_root, config, sessions_dir)
-            if app is None:
-                raise RuntimeError("application builder returned no application")
             _validate_model_endpoint(app.get_model_info())
             _restore_exec_session(app, args)
             _install_exec_approval(app, config)
@@ -287,9 +264,7 @@ def run_exec(
             return 3
         finally:
             if app is not None:
-                close = getattr(app, "close", None)
-                if callable(close):
-                    close()
+                app.close()
 
 
 def _read_prompt(args: argparse.Namespace) -> str:

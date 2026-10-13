@@ -8,7 +8,6 @@ from cade.coding_agent.app import CadeApp, build_app
 from cade.harness.config import (
     CadeRuntimeConfig,
     discover_runtime_config,
-    resolve_config_path,
 )
 
 
@@ -25,27 +24,18 @@ def run_web_server(
     """启动 Web 服务；阻塞直到进程退出。"""
     if runtime_config is None:
         runtime_config = discover_runtime_config(project_root, config_path)
-    resolved_sessions = (
-        sessions_dir
-        or resolve_config_path(project_root, runtime_config.paths.sessions_dir)
-        or (project_root / ".cade" / "sessions")
-    )
     app = build_app(
         project_root=project_root,
         runtime_config=runtime_config,
-        sessions_dir=resolved_sessions,
+        sessions_dir=sessions_dir,
     )
 
     def build_for(target: Path) -> CadeApp:
         """为指定工作区重新装配运行时（工作区切换用）。"""
         rc = discover_runtime_config(target, None)
-        sessions = resolve_config_path(target, rc.paths.sessions_dir) or (
-            target / ".cade" / "sessions"
-        )
         return build_app(
             project_root=target,
             runtime_config=rc,
-            sessions_dir=sessions,
         )
 
     try:
