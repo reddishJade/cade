@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,14 +24,6 @@ class RunState:
     def to_dict(self) -> dict[str, Any]:
         """转换为 JSON 可序列化字典。"""
         return {"messages": self.messages}
-
-    @classmethod
-    def from_dict(cls, payload: object) -> RunState:
-        """从 JSON 字典恢复运行状态。"""
-        if not isinstance(payload, Mapping):
-            return cls(messages=[])
-        raw_messages = payload.get("messages", [])
-        return cls(messages=_message_dicts(raw_messages))
 
 
 @dataclass(frozen=True)
@@ -130,12 +121,6 @@ def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
             messages=[to_dict(message) for message in result.surface],
         ),
     )
-
-
-def _message_dicts(value: object) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
 def final_event(

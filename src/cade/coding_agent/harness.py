@@ -24,7 +24,7 @@ from cade.harness.agent_runtime.config import build_turn_context_messages
 from cade.harness.agent_runtime.events import AgentHarnessEvent
 from cade.harness.agent_runtime.goal import GoalController
 from cade.harness.agent_runtime.harness import AgentHarness
-from cade.harness.agent_runtime.result import AgentHarnessResult, RunState
+from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.harness.skill_activation import (
     ExplicitSkillActivationResult,
     is_skill_activation_content,
@@ -117,10 +117,6 @@ class CodingAgentHarness(AgentHarness):
     def _post_load_history(self, messages: list[AgentMessage]) -> None:
         if self._coding_runtime.skill_registry is not None:
             self._coding_runtime.skill_registry.restore_activations(messages)
-
-    def load_run_state(self, run_state: RunState) -> None:
-        super().load_run_state(run_state)
-        self.restore_run_state_metadata(run_state)
 
     def restore_run_state_metadata(self, payload: object) -> None:
         """恢复模式与目标，但不替换已经重建好的消息历史。"""

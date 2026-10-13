@@ -48,7 +48,6 @@ from .context_window import (
     ContextWindowController,
     ContextWindowRollover,
 )
-from .message_codec import messages_from_provider_dicts
 from .prompting.citations import decorate_citable_messages
 from .tool_gate import ToolGate
 
@@ -63,7 +62,6 @@ def _convert_to_llm_with_citations(
     return _convert_to_llm(decorated)
 
 
-ContextRollover = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
 RuntimeContextProvider = Callable[[tuple[ToolSpec, ...]], list[str]]
 
 
@@ -92,7 +90,7 @@ class AgentRuntimeConfig:
     session_inbox: SessionInbox
     gate: GateRuntimeConfig = field(default_factory=GateRuntimeConfig)
     gate_instance: ToolGate | None = None
-    context_rollover: ContextRollover | None = None
+    context_rollover: ContextWindowRollover | None = None
     context_window_controller: ContextWindowController | None = None
     cancellation_token: CancellationToken | None = None
     project_root: Path | None = None
@@ -119,7 +117,7 @@ def build_turn_context_messages(
 
 def _rollover_and_emit(
     loop_messages: list[AgentMessage],
-    context_rollover: ContextRollover | None,
+    context_rollover: ContextWindowRollover | None,
     emit_hook: Callable[[HookRecord], None],
     correlation: RuntimeCorrelation,
     policy: ContextPolicy | None = None,
@@ -127,11 +125,7 @@ def _rollover_and_emit(
     """切换上下文窗口并发射 Hook。"""
     if context_rollover is None:
         return loop_messages
-    if isinstance(context_rollover, ContextWindowRollover):
-        next_window = context_rollover.rollover_messages(loop_messages, policy=policy)
-    else:
-        dict_messages = [_to_dict_safe(message) for message in loop_messages]
-        next_window = messages_from_provider_dicts(context_rollover(dict_messages))
+    next_window = context_rollover.rollover_messages(loop_messages, policy=policy)
     current = correlation.snapshot()
     emit_hook(
         HookRecord(
@@ -144,12 +138,6 @@ def _rollover_and_emit(
         )
     )
     return next_window
-
-
-def _to_dict_safe(message: AgentMessage) -> dict[str, Any]:
-    from .agent_helpers import to_dict
-
-    return to_dict(message)
 
 
 def _build_before_provider_request_closure(
@@ -320,7 +308,7 @@ def build_loop_config(
     provider: ModelProvider,
     gate: ToolGate,
     registry: tuple[ToolSpec, ...],
-    context_rollover: ContextRollover | None,
+    context_rollover: ContextWindowRollover | None,
     requested_rollover: Callable[[], ContextWindowResetReason | None] | None,
     last_prompt_tokens: int | None,
     steer: Callable[[AgentMessage], None],
@@ -483,7 +471,7 @@ def resolve_context_policy(
 
 def _rollover_decision(
     messages: list[AgentMessage],
-    context_rollover: ContextRollover | None,
+    context_rollover: ContextWindowRollover | None,
     requested_rollover: Callable[[], ContextWindowResetReason | None] | None,
     last_prompt_tokens: int | None,
     composition: AgentComposition,

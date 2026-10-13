@@ -51,10 +51,8 @@ from .events import (
     translate_event,
 )
 from .fallback import FallbackWithRetryPrimary
-from .message_codec import messages_from_run_state
 from .result import (
     AgentHarnessResult,
-    RunState,
     build_structured_result,
     final_event,
 )
@@ -477,11 +475,6 @@ class AgentHarness:
 
     def set_resumed_notice(self, notice: str) -> None:
         self._resumed_notice = notice
-
-    def load_run_state(self, run_state: RunState) -> None:
-        self._context_manager.replace_history(messages_from_run_state(run_state))
-        self._context_manager.invalidate_token_anchor()
-        self._reset_provider_conversation_state()
 
     def history_messages(self) -> list[AgentMessage]:
         return list(self._history)

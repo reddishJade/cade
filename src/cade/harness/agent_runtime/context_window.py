@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 from cade.agent.config import ContextWindowResetReason
@@ -128,24 +127,6 @@ class ContextWindowRollover:
                     )
                     break
         return restored
-
-    def __call__(
-        self,
-        messages: list[dict[str, Any]],
-        *,
-        preserve_user_request: bool = True,
-    ) -> list[dict[str, Any]]:
-        """仅适配会话展示格式；策略只在类型化消息路径执行。"""
-        from .agent_helpers import to_dict
-        from .message_codec import messages_from_provider_dicts
-
-        return [
-            to_dict(message)
-            for message in self.rollover_messages(
-                messages_from_provider_dicts(messages),
-                preserve_user_request=preserve_user_request,
-            )
-        ]
 
 
 def _render_completed_actions(messages: list[AgentMessage]) -> str:

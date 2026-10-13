@@ -33,7 +33,7 @@ class CodingRunState(RunState):
 
     @classmethod
     def from_dict(cls, payload: object) -> CodingRunState:
-        """从 JSON 字典恢复编码运行状态。"""
+        """恢复模式与目标元数据；消息历史由会话回放提供。"""
         if not isinstance(payload, Mapping):
             return cls(messages=[])
         mode = payload.get("current_mode")
@@ -41,7 +41,7 @@ class CodingRunState(RunState):
             mode if mode in {"plan", "build", "act"} else "act"
         )
         return cls(
-            messages=RunState.from_dict(payload).messages,
+            messages=[],
             current_mode=current_mode,
             last_agent=str(payload.get("last_agent", "main")),
             needs_follow_up=bool(payload.get("needs_follow_up", False)),
