@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
+import queue
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,8 +29,9 @@ from ...agent.types import (
     CancellationSignal,
     TextContent,
     ToolCallContent,
+    ToolExecutionMode,
+    ToolInput,
     ToolSpec,
-    ToolSpecAdapter,
     stringify_tool_input,
 )
 from ..observability import (
@@ -78,8 +83,27 @@ _TOOL_ACTION_PROFILES: dict[str, tuple[str, str]] = {
 }
 
 
-class _RedactingAdapter(ToolSpecAdapter):
-    """ToolSpecAdapter + 输出脱敏（生产环境用）。"""
+class _RedactingAdapter:
+    """在运行时执行同步工具，转换结果并脱敏可见文本。"""
+
+    def __init__(self, spec: ToolSpec) -> None:
+        self._spec = spec
+
+    @property
+    def name(self) -> str:
+        return self._spec.name
+
+    @property
+    def description(self) -> str:
+        return self._spec.description
+
+    @property
+    def parameters(self) -> Mapping[str, object]:
+        return self._spec.schema or {}
+
+    @property
+    def execution_mode(self) -> ToolExecutionMode | None:
+        return self._spec.execution_mode
 
     async def execute(
         self,
@@ -112,6 +136,41 @@ class _RedactingAdapter(ToolSpecAdapter):
             is_error=bool(getattr(content, "is_error", False)),
             render_intent=render_intent,
         )
+
+    async def _execute_handler(
+        self,
+        params: ToolInput,
+        on_update: Callable[[str], None] | None,
+    ) -> str:
+        """在独立 daemon 线程中执行同步 handler，并轮询收取结果。
+
+        不响应取消的 handler 不能阻塞退出，因此不使用需等待关闭的默认 executor。
+        """
+        outcomes: queue.SimpleQueue[str | Exception] = queue.SimpleQueue()
+        context = contextvars.copy_context()
+
+        def run_handler() -> None:
+            try:
+                result = context.run(self._spec.handler, params, on_update)
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                outcomes.put(exc)
+            else:
+                outcomes.put(result)
+
+        threading.Thread(
+            target=run_handler,
+            name=f"cade-tool-{self.name}",
+            daemon=True,
+        ).start()
+        while True:
+            try:
+                outcome = outcomes.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+                continue
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
 
 
 @dataclass(frozen=True)

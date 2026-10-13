@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextvars
 import json
-import queue
-import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Protocol, Self
@@ -278,9 +274,6 @@ class AgentTool(Protocol):
     def name(self) -> str: ...
 
     @property
-    def label(self) -> str: ...
-
-    @property
     def description(self) -> str: ...
 
     @property
@@ -289,9 +282,6 @@ class AgentTool(Protocol):
     @property
     def execution_mode(self) -> ToolExecutionMode | None: ...
 
-    @property
-    def examples(self) -> list[dict[str, object]]: ...
-
     async def execute(
         self,
         tool_call_id: str,
@@ -299,87 +289,3 @@ class AgentTool(Protocol):
         signal: CancellationSignal | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult: ...
-
-
-class ToolSpecAdapter:
-    """ToolSpec → AgentTool 适配器（无 redaction，可用于子代理等场景）。"""
-
-    def __init__(self, spec: ToolSpec) -> None:
-        self._spec = spec
-
-    @property
-    def name(self) -> str:
-        return self._spec.name
-
-    @property
-    def label(self) -> str:
-        return self._spec.name
-
-    @property
-    def description(self) -> str:
-        return self._spec.description
-
-    @property
-    def parameters(self) -> Mapping[str, object]:
-        return self._spec.schema or {}
-
-    @property
-    def execution_mode(self) -> ToolExecutionMode | None:
-        return self._spec.execution_mode
-
-    @property
-    def examples(self) -> list[dict[str, object]]:
-        return []
-
-    async def execute(
-        self,
-        tool_call_id: str,
-        params: ToolArguments,
-        signal: CancellationSignal | None = None,
-        on_update: ToolUpdateCallback | None = None,
-    ) -> AgentToolResult:
-        def _text_update(text: str) -> None:
-            if on_update is not None:
-                on_update(AgentToolResult(content=[TextContent(text=text)]))
-
-        content = await self._execute_handler(dict(params), _text_update)
-        metadata = getattr(content, "metadata", None)
-        render_intent = getattr(content, "render_intent", None)
-        return AgentToolResult(
-            content=[TextContent(text=str(content))],
-            details=metadata if isinstance(metadata, dict) else None,
-            is_error=bool(getattr(content, "is_error", False)),
-            render_intent=render_intent,
-        )
-
-    async def _execute_handler(
-        self,
-        params: ToolInput,
-        on_update: Callable[[str], None] | None,
-    ) -> str:
-        """在独立 daemon 线程中执行同步 handler，并轮询收取结果。"""
-        outcomes: queue.SimpleQueue[str | Exception] = queue.SimpleQueue()
-        context = contextvars.copy_context()
-
-        def run_handler() -> None:
-            try:
-                result = context.run(self._spec.handler, params, on_update)
-            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
-                outcomes.put(exc)
-            else:
-                outcomes.put(result)
-
-        threading.Thread(
-            target=run_handler,
-            name=f"cade-tool-{self.name}",
-            daemon=True,
-        ).start()
-        while True:
-            try:
-                outcome = outcomes.get_nowait()
-            except queue.Empty:
-                await asyncio.sleep(0.01)
-                continue
-            if isinstance(outcome, Exception):
-                raise outcome
-            return outcome
