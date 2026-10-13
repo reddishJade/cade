@@ -26,6 +26,7 @@ class TerminationReason(StrEnum):
     LLM_CALL_LIMIT = "llm_call_limit"
     WATCHDOG = "watchdog"
     PROVIDER_ERROR = "provider_error"
+    CONTEXT_ERROR = "context_error"
 
 
 class AgentLoopMetrics(BaseModel):

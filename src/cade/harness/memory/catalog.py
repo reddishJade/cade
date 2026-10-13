@@ -98,7 +98,7 @@ class MemoryCatalogCollector:
             ContextBlock(
                 source=ContextBlockSource.MEMORY,
                 target=ContextBlockTarget.USER_CONTEXT,
-                priority=ContextPriority.HIGH,
+                priority=ContextPriority.CONTEXT,
                 content=content,
                 block_id="memory_catalog",
                 provenance=str(directory),

@@ -304,6 +304,7 @@ class CadeApp:
         from cade.harness.agent_runtime.cancellation import CancellationToken
 
         request = self.agent.prepare_read_only_request(question)
+        request.require_sendable()
         profiles = self._model_profiles or {}
         provider = build_provider_bundle(
             ProviderSettings(

@@ -16,13 +16,13 @@ from ._codec import convert_to_llm
 from ._context_window import context_window_id, estimate_tokens
 from .context import (
     ContextAssembler,
+    ContextAssemblyError,
     ContextAssemblyInput,
     ContextBlock,
     ContextBlockSource,
     ContextBlockTarget,
     ContextCollectionInput,
     ContextCollectorSource,
-    ContextPriority,
     DefaultContextAssembler,
     _block_to_text,
     _estimate_base_tokens,
@@ -86,6 +86,17 @@ class RequestAssembly:
     context_snapshot: ContextSnapshot | None = None
     source_message_digests: tuple[str, ...] = ()
     working_omitted: tuple[str, ...] = ()
+    assembly_error: str | None = None
+
+    def require_sendable(self) -> None:
+        """失败投影只用于预算诊断和换窗，不得发送给模型。"""
+        if self.assembly_error is not None:
+            raise ContextAssemblyError(self.assembly_error)
+        if self.token_budget > 0 and self.estimated_tokens > self.token_budget:
+            raise ContextAssemblyError(
+                f"Cannot assemble context: input {self.estimated_tokens} tokens "
+                f"exceeds safe budget {self.token_budget} tokens"
+            )
 
 
 class RequestAssembler(Protocol):
@@ -117,6 +128,16 @@ class DefaultRequestAssembler:
         options: StreamOptions | None,
     ) -> RequestAssembly:
         policy = context.context_policy
+        if policy is None and context.request_token_budget > 0:
+            # 只有输入上限的调用方也使用同一回收策略，不额外扣除输出预留。
+            policy = ContextPolicy(
+                physical_window=context.request_token_budget,
+                output_reserve=0,
+                headroom_tokens=0,
+                trigger_ratio=1,
+                next_turn_input_tokens=0,
+                automatic_rollover=False,
+            )
         if policy is not None:
             policy = policy.for_request(options)
             options = policy.request_options(options)
@@ -139,7 +160,6 @@ class DefaultRequestAssembler:
         legacy_blocks, world_blocks = self._collect(
             context,
             list(context.messages),
-            current_step,
         )
         base_messages = [
             *context_state.persistent_messages,
@@ -194,7 +214,6 @@ class DefaultRequestAssembler:
             messages=request_messages,
             tools=list(context.tools),
             context_blocks=[*world_blocks, *legacy_blocks],
-            current_step=current_step,
             token_budget=admission_budget,
             calibrate_tokens=calibrate_tokens,
         )
@@ -240,6 +259,23 @@ class DefaultRequestAssembler:
                     break
                 working_omitted = (*working_omitted, *omitted)
                 assembly_input.messages = reduced
+                result = self.context_assembler.assemble(assembly_input)
+        if policy is not None and admission_budget > 0:
+            for _attempt in range(3):
+                deficit = result.total_tokens - admission_budget
+                if deficit <= 0:
+                    break
+                prefix_length = len(context_state.persistent_messages)
+                history, omitted = policy.project_history(
+                    assembly_input.messages[prefix_length:], protected_ids, deficit
+                )
+                if not omitted:
+                    break
+                working_omitted = (*working_omitted, *omitted)
+                assembly_input.messages = [
+                    *assembly_input.messages[:prefix_length],
+                    *history,
+                ]
                 result = self.context_assembler.assemble(assembly_input)
         if working_omitted and admission_budget > result.total_tokens:
             # 旧交互释放空间后，优先恢复近期原文，避免先裁正文导致优先级倒置。
@@ -300,7 +336,6 @@ class DefaultRequestAssembler:
                 if b.target == ContextBlockTarget.SYSTEM
                 else UserMessage(content=_block_to_text(b))
                 for b in result.blocks_used
-                if b.priority <= ContextPriority.HIGH
             ],
         ]
         mandatory_tokens = _estimate_base_tokens(
@@ -311,22 +346,26 @@ class DefaultRequestAssembler:
         )
         rotation_blocked_reason = None
         if policy is not None:
-            if admission_budget > 0 and mandatory_tokens >= admission_budget:
+            if token_budget > 0 and mandatory_tokens > token_budget:
                 rotation_blocked_reason = "mandatory_input_exceeds_budget"
             elif not policy.can_reclaim_history(context.messages, protected_ids):
                 rotation_blocked_reason = "no_reclaimable_history"
         messages = result.messages
-        wire_messages = self.converter(messages)
+        assembly_error = None
+        if token_budget > 0 and result.total_tokens > token_budget:
+            assembly_error = (
+                f"Cannot assemble context: input {result.total_tokens} tokens exceeds "
+                f"safe budget {token_budget} tokens after history/evidence reclamation; "
+                f"mandatory input estimate is {mandatory_tokens} tokens. "
+                "Reduce selected context or use a larger model window."
+            )
+        wire_messages = self.converter(messages) if assembly_error is None else []
         assembly = RequestAssembly(
             messages=tuple(messages),
             wire_messages=tuple(wire_messages),
             tools=tuple(tool_definitions),
             context_trace=(
-                _context_trace(
-                    result.blocks_used,
-                    result.blocks_dropped,
-                )
-                + _tool_trace(tool_definitions)
+                _context_trace(result.blocks_used) + _tool_trace(tool_definitions)
             ),
             current_step=current_step,
             estimated_tokens=result.total_tokens,
@@ -344,6 +383,7 @@ class DefaultRequestAssembler:
             mandatory_estimated_tokens=mandatory_tokens,
             source_message_digests=source_digests,
             working_omitted=working_omitted,
+            assembly_error=assembly_error,
             context_snapshot=_context_snapshot(
                 context,
                 assembly_input.messages,
@@ -362,7 +402,6 @@ class DefaultRequestAssembler:
         self,
         context: AgentContext,
         messages: list[AgentMessage],
-        current_step: int,
     ) -> tuple[list[ContextBlock], list[ContextBlock]]:
         if self.context_collectors is None:
             return [], []
@@ -370,7 +409,6 @@ class DefaultRequestAssembler:
             system_prompt=context.system_prompt,
             messages=messages,
             tools=list(context.tools),
-            current_step=current_step,
             project_root=context.project_root,
             cwd=context.cwd,
             state=dict(context.state),
@@ -482,15 +520,8 @@ def _context_snapshot(
     )
 
 
-def _context_trace(
-    used: list[ContextBlock],
-    dropped: list[ContextBlock],
-) -> tuple[RequestContextTrace, ...]:
-    return tuple(
-        _trace(block, included)
-        for included, blocks in ((True, used), (False, dropped))
-        for block in blocks
-    )
+def _context_trace(used: list[ContextBlock]) -> tuple[RequestContextTrace, ...]:
+    return tuple(_trace(block, True) for block in used)
 
 
 def _trace(block: ContextBlock, included: bool) -> RequestContextTrace:

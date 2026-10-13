@@ -188,7 +188,7 @@ class ValidationCollector:
             ContextBlock(
                 source=ContextBlockSource.RECENT_VALIDATION,
                 target=ContextBlockTarget.USER_CONTEXT,
-                priority=ContextPriority.HIGH,
+                priority=ContextPriority.CONTEXT,
                 content=body,
                 provenance="session:validation",
                 scope="runtime",

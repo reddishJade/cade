@@ -16,9 +16,9 @@
 ```
 
 ### 资产文件职责
-- **HTML 单页结构 ([index.html](file:///C:/Users/dwei/workspace/cade/src/cade/server/static/index.html))**：定义全屏三栏布局（左侧会话树与历史列表、中间主步骤与思考流视口、右侧状态与属性面板）及模态审批弹窗骨架。
-- **CSS 视觉样式 ([styles.css](file:///C:/Users/dwei/workspace/cade/src/cade/server/static/styles.css))**：无外部 CSS 框架依赖，纯原生 Flexbox/Grid 排版，提供代码高亮、思考折叠框微动效、状态徽章与自适应暗色主题。
-- **JavaScript 客户端应用 ([app.js](file:///C:/Users/dwei/workspace/cade/src/cade/server/static/app.js))**：
+- **HTML 单页结构 ([index.html](index.html))**：定义全屏三栏布局（左侧会话树与历史列表、中间主步骤与思考流视口、右侧状态与属性面板）及模态审批弹窗骨架。
+- **CSS 视觉样式 ([styles.css](styles.css))**：无外部 CSS 框架依赖，纯原生 Flexbox/Grid 排版，提供代码高亮、思考折叠框微动效、状态徽章与自适应暗色主题。
+- **JavaScript 客户端应用 ([app.js](app.js))**：
   - 管理原生 WebSocket `/ws` 连接与断线重连；
   - 实时增量追加思考流与模型文本，自动折叠已完结的长时间推理过程；
   - 渲染工具调用状态卡片（Running / Completed / Failed）与行内 Diff 补丁视图；

@@ -26,10 +26,10 @@ build_tool_prompt()    build_citations()    build_runtime_context()
 ```
 
 ### 核心文件与职责
-- **动态拼装引擎 ([builder.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/agent_runtime/prompting/builder.py))**：`SystemPromptBuilder` 与 `PromptContext`，协调静态身份与动态上下文的组合。
-- **工具使用规范生成 ([tools.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/agent_runtime/prompting/tools.py))**：`build_tool_guidelines` 根据已注册的工具动态提取用法范式。
-- **引用与元数据 ([citations.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/agent_runtime/prompting/citations.py))**：上下文文件引用与事实出处的标准化格式化。
-- **Token 预算评估 ([token_budget.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/agent_runtime/prompting/token_budget.py))**：计算系统提示词所占 Token 空间，防止提示词过长挤压对话窗口。
+- **动态拼装引擎 ([builder.py](builder.py))**：`SystemPromptBuilder` 与 `PromptContext`，协调静态身份与动态上下文的组合。
+- **工具使用规范生成 ([tools.py](tools.py))**：`build_tool_guidelines` 根据已注册的工具动态提取用法范式。
+- **引用与元数据 ([citations.py](citations.py))**：上下文文件引用与事实出处的标准化格式化。
+- **Token 预算评估 ([token_budget.py](token_budget.py))**：计算系统提示词所占 Token 空间，防止提示词过长挤压对话窗口。
 
 ---
 

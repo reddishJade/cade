@@ -26,11 +26,11 @@
 ```
 
 ### 核心模块职责
-- **目录发现 ([discovery.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/discovery.py))**：扫描项目级与用户级目录，按优先级去重覆盖（项目级优先于用户级同名技能）。
-- **文件解析 ([parsing.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/parsing.py))**：提取 `SKILL.md` 的 YAML Frontmatter 元数据与正文指令，发现子目录资源与 reference 文档。
-- **实体定义 ([models.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/models.py))**：定义 `SkillDef`、`SkillSummary`、`SkillResource` 与 `SkillDiagnostic`。
-- **动态注册表 ([registry.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/registry.py))**：`SkillRegistry` 维护已加载技能的缓存与索引。
-- **激活工具 ([tools.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/skills/tools.py))**：提供 `load_skill` 工具，执行第二阶段的完整加载。
+- **目录发现 ([discovery.py](discovery.py))**：扫描项目级与用户级目录，按优先级去重覆盖（项目级优先于用户级同名技能）。
+- **文件解析 ([parsing.py](parsing.py))**：提取 `SKILL.md` 的 YAML Frontmatter 元数据与正文指令，发现子目录资源与 reference 文档。
+- **实体定义 ([models.py](models.py))**：定义 `SkillDef`、`SkillSummary`、`SkillResource` 与 `SkillDiagnostic`。
+- **动态注册表 ([registry.py](registry.py))**：`SkillRegistry` 维护已加载技能的缓存与索引。
+- **激活工具 ([tools.py](tools.py))**：提供 `load_skill` 工具，执行第二阶段的完整加载。
 
 ---
 

@@ -144,8 +144,9 @@ Memory 正文和来源的保存周期相互独立。默认会话日志位于 `.c
 UTF-8 前缀。每个文件最多读取开头 8 KiB，标题最多 160 字符，提示最多 320 字符。
 目录缺失时不注入也不创建；超限提示未展示数量。外部编辑、删除和 `save_memory`
 保存会在下一请求更新 Catalog，恢复与换窗后也重新生成，无持久索引或文件缓存。
-Catalog 使用 `ContextBlockSource.MEMORY`、`USER_CONTEXT` 和 HIGH 优先级，复用
-现有预算、trace 和 fingerprint。条目是可能过期的历史数据，不是指令；标签转义
+Catalog 使用 `ContextBlockSource.MEMORY`、`USER_CONTEXT` 和 CONTEXT 排序档，
+复用现有 trace 和 fingerprint。收集后完整注入，预算不足时先回收历史和工具证据；
+仍超限则明确报告组装失败，不静默丢弃 Catalog。条目是可能过期的历史数据，不是指令；标签转义
 不保证模型服从边界。SystemPromptBuilder 不包含动态 Memory，Catalog 位于历史
 消息之前，内容改变会使该位置之后的 provider cache 前缀失效。
 

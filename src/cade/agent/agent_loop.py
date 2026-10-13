@@ -42,6 +42,7 @@ from .config import (
     LoopRunState,
     ShouldStopAfterTurnContext,
 )
+from .context import ContextAssemblyError
 from .events import (
     AgentEndEvent,
     AgentEvent,
@@ -211,79 +212,19 @@ async def _run_loop(
             current_context.context_policy = (
                 current_context.context_policy.for_provider(state.active_provider)
             )
-        prepared_assembly: RequestAssembly | None = None
-        has_rollover_decision = bool(
-            config.request_rollover_decision
-            or config.rollover_decision
-            or current_context.context_policy is not None
-        )
-        if has_rollover_decision and config.rollover_context:
-            if (
-                config.request_rollover_decision is not None
-                or current_context.context_policy is not None
-            ) and state.active_provider is not None:
-                prepared_assembly = config.request_assembler.assemble(
-                    current_context,
-                    current_step=step,
-                    options=config.options,
-                )
-                prepared_assembly = _prepare_request_context(
-                    current_context,
-                    config,
-                    new_messages,
-                    steer_queue,
-                    prepared_assembly,
-                    step,
-                )
-            if config.request_rollover_decision is not None:
-                reset_reason = config.request_rollover_decision(
-                    current_context.messages,
-                    (
-                        prepared_assembly.estimated_tokens
-                        if prepared_assembly is not None
-                        else None
-                    ),
-                )
-            elif config.rollover_decision is not None:
-                rollover_decision = config.rollover_decision
-                if rollover_decision is None:
-                    raise RuntimeError("context rollover decision is not configured")
-                reset_reason = rollover_decision(current_context.messages)
-            else:
-                reset_reason = None
-            if (
-                prepared_assembly is not None
-                and prepared_assembly.context_policy is not None
-                and prepared_assembly.context_policy.should_rotate(
-                    prepared_assembly.estimated_tokens
-                )
-            ):
-                reset_reason = reset_reason or "token_limit"
-            if (
-                reset_reason == "token_limit"
-                and prepared_assembly is not None
-                and prepared_assembly.rotation_blocked_reason is not None
-            ):
-                reset_reason = None
-            if reset_reason is not None:
-                _rotate_context(
-                    current_context,
-                    config,
-                    emit,
-                    metrics,
-                    state.active_provider,
-                    reset_reason,
-                )
-                if state.active_provider is not None:
-                    prepared_assembly = config.request_assembler.assemble(
-                        current_context,
-                        current_step=step,
-                        options=config.options,
-                    )
-
-        # ── 内层循环：模型调用 + 重试 + max_tokens ──
-        ctx_len_before = len(current_context.messages)
+        # ── 内层循环：组装/换窗 + 模型调用 + 重试 + max_tokens ──
         try:
+            prepared_assembly = _prepare_step_assembly(
+                current_context,
+                config,
+                new_messages,
+                steer_queue,
+                emit,
+                metrics,
+                state.active_provider,
+                step,
+            )
+            ctx_len_before = len(current_context.messages)
             inner_result = await _run_inner_loop(
                 current_context,
                 config,
@@ -293,6 +234,17 @@ async def _run_loop(
                 step,
                 state,
                 prepared_assembly,
+            )
+        except ContextAssemblyError as exc:
+            return _finish_loop(
+                new_messages,
+                current_context.messages,
+                step,
+                metrics,
+                state.active_provider,
+                emit,
+                termination_reason=TerminationReason.CONTEXT_ERROR,
+                error_detail=str(exc),
             )
         except LlmCallLimitReached:
             return _finish_loop(
@@ -463,6 +415,63 @@ async def _run_loop(
     )
     emit(_agent_end_event(new_messages, result))
     return result
+
+
+def _prepare_step_assembly(
+    context: AgentContext,
+    config: AgentLoopConfig,
+    new_messages: list[AgentMessage],
+    steer_queue: Callable[[], list[AgentMessage]] | None,
+    emit: Callable[[AgentEvent], None],
+    metrics: AgentLoopMetrics,
+    provider: StreamProvider | None,
+    step: int,
+) -> RequestAssembly | None:
+    """检查完整请求投影，再决定是否换窗；失败投影不直接发给模型。"""
+    if not config.rollover_context or not (
+        config.request_rollover_decision
+        or config.rollover_decision
+        or context.context_policy is not None
+    ):
+        return None
+    assembly = None
+    if provider is not None and (
+        config.request_rollover_decision is not None
+        or context.context_policy is not None
+    ):
+        assembly = config.request_assembler.assemble(
+            context, current_step=step, options=config.options
+        )
+        assembly = _prepare_request_context(
+            context, config, new_messages, steer_queue, assembly, step
+        )
+    if config.request_rollover_decision is not None:
+        reason = config.request_rollover_decision(
+            context.messages, assembly.estimated_tokens if assembly else None
+        )
+    elif config.rollover_decision is not None:
+        reason = config.rollover_decision(context.messages)
+    else:
+        reason = None
+    if (
+        assembly is not None
+        and assembly.context_policy is not None
+        and assembly.context_policy.should_rotate(assembly.estimated_tokens)
+    ):
+        reason = reason or "token_limit"
+    if (
+        reason == "token_limit"
+        and assembly is not None
+        and assembly.rotation_blocked_reason is not None
+    ):
+        reason = None
+    if reason is not None:
+        _rotate_context(context, config, emit, metrics, provider, reason)
+        if provider is not None:
+            assembly = config.request_assembler.assemble(
+                context, current_step=step, options=config.options
+            )
+    return assembly
 
 
 def _prepare_request_context(

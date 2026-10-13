@@ -7,6 +7,7 @@ from .agent_loop import run_agent_loop
 from .config import AgentContext, AgentLoopConfig
 from .context import (
     ContextAssembler,
+    ContextAssemblyError,
     ContextAssemblyInput,
     ContextAssemblyResult,
     ContextBlock,
@@ -14,7 +15,6 @@ from .context import (
     ContextCollectionInput,
     ContextCollector,
     ContextCollectorRegistry,
-    ContextExpiry,
     ContextPriority,
     ContextSection,
     ContextState,
@@ -27,7 +27,6 @@ from .context import (
     WorldState,
     make_collector_section,
     make_state_section,
-    trim_to_budget,
 )
 from .context_manager import (
     ContextManager,
@@ -65,6 +64,7 @@ __all__ = [
     "AssistantMessage",
     "CancellationSignal",
     "ContextAssembler",
+    "ContextAssemblyError",
     "ContextAssemblyInput",
     "ContextAssemblyResult",
     "ContextBlock",
@@ -72,7 +72,6 @@ __all__ = [
     "ContextCollectionInput",
     "ContextCollector",
     "ContextCollectorRegistry",
-    "ContextExpiry",
     "ContextManager",
     "ContextPolicy",
     "ContextPriority",
@@ -100,5 +99,4 @@ __all__ = [
     "make_collector_section",
     "make_state_section",
     "run_agent_loop",
-    "trim_to_budget",
 ]

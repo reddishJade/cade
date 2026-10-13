@@ -125,8 +125,8 @@ surface、context collectors 的动态块、工具 schema 和 options 组装为
 
 用户输入、纠偏和运行时注入通过 inbox 调度；系统前缀经 `request_prefix` 提供，
 项目指令、NOTE、验证事实、技能目录和运行状态由上下文入口收集。每个动态块具有
-来源、优先级和生命周期，更新后替换旧投影。collector 负责提供事实，assembler
-负责选择和组装请求内容。
+来源、注入目标、排序优先级与审计信息，更新后替换旧投影。collector/section
+负责选定上下文，assembler 完整注入选定块，并回收历史与工具证据来满足预算。
 
 `ContextPolicy` 从模型物理窗口扣除输出预留与额外余量，为输入、工具证据和新增
 消息分配预算。预测以成功请求的 provider 输入用量为锚点，结合本地差额估算；
@@ -134,8 +134,9 @@ surface、context collectors 的动态块、工具 schema 和 options 组装为
 
 大工具结果在请求中裁剪为预览与恢复引用，完整结果保留在 transcript 或 artifact。
 同一 `context_key` 的最新成功 durable 状态受保护，旧版本转为历史索引。必需
-上下文超限时保留诊断；换窗成立还要求存在可回收历史，预算策略的有效范围受模型
-窗口和必需输入规模约束。
+上下文超过安全输入预算时，组装明确失败并以 `context_error` 结束，不发送残缺
+请求；换窗成立还要求存在可回收历史，预算策略的有效范围受模型窗口和必需输入
+规模约束。
 
 自动换窗保留当前用户请求、持久状态和有界的近期完整交互，重新收集 NOTE、验证
 事实与运行状态，并将 surface replacement 写入 session。旧窗口原文通过
@@ -184,7 +185,7 @@ surface；原 transcript 保留。校验范围和请求指纹协议见
 NOTE 由用户或模型维护，collector 读取当前文件；恢复时若当前 NOTE 与换窗快照
 不同，运行时提供旧快照和核对提示，文件由后续操作协调。Memory 保存带来源的少量
 知识，模型通过普通文件读取与搜索按需使用；保存和证据边界见
-[Cade's Memory](memory.md)。
+[Cade's Memory](guide/memory.md)。
 
 ## 模式、权限与执行环境
 

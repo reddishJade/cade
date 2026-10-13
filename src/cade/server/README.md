@@ -22,12 +22,12 @@
 ```
 
 ### 核心模块职责
-- **FastAPI 路由与 WebSocket 处理器 ([api.py](file:///C:/Users/dwei/workspace/cade/src/cade/server/api.py))**：
+- **FastAPI 路由与 WebSocket 处理器 ([api.py](api.py))**：
   - REST 端点：会话列表检索、单会话事件回放、文件树结构读取、配置修改；
   - WebSocket `/ws`：维持客户端长连接，双向传输事件与指令。
-- **后台异步调度 ([runner.py](file:///C:/Users/dwei/workspace/cade/src/cade/server/runner.py))**：将 Web 端的异步请求安全派发给 `CadeApp`，管理当前任务的取消、排队与状态广播。
-- **服务启动器 ([serve.py](file:///C:/Users/dwei/workspace/cade/src/cade/server/serve.py))**：`run_web_server` 封装 Uvicorn 启动逻辑，支持端口绑定、工作区动态重载与启动后自动打开浏览器（`--open`）。
-- **事件序列化 ([serialize.py](file:///C:/Users/dwei/workspace/cade/src/cade/server/serialize.py))**：将 `AgentHarnessEvent` 及领域对象转为 Web 端消费的标准 JSON。
+- **后台异步调度 ([runner.py](runner.py))**：将 Web 端的异步请求安全派发给 `CadeApp`，管理当前任务的取消、排队与状态广播。
+- **服务启动器 ([serve.py](serve.py))**：`run_web_server` 封装 Uvicorn 启动逻辑，支持端口绑定、工作区动态重载与启动后自动打开浏览器（`--open`）。
+- **事件序列化 ([serialize.py](serialize.py))**：将 `AgentHarnessEvent` 及领域对象转为 Web 端消费的标准 JSON。
 
 ---
 
@@ -40,4 +40,4 @@
 
 ## 3. 子模块分工
 
-- **[static/](file:///C:/Users/dwei/workspace/cade/src/cade/server/static/README.md)**：包含原生单页面前端资产（HTML/CSS/JS），无第三方打包构建依赖。
+- **[static/](static/README.md)**：包含原生单页面前端资产（HTML/CSS/JS），无第三方打包构建依赖。

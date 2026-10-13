@@ -321,11 +321,14 @@ def _replace_context_window(
         ctx.output.write("Agent does not support history replacement.")
         return False
 
+    from cade.harness.agent_runtime.config import resolve_context_policy
     from cade.harness.agent_runtime.context_window import ContextWindowRollover
 
     if isinstance(rollover, ContextWindowRollover):
         after_msgs = rollover.rollover_messages(
-            before_msgs, preserve_user_request=preserve_user_request
+            before_msgs,
+            preserve_user_request=preserve_user_request,
+            policy=resolve_context_policy(agent.provider, agent.composition.config),
         )
     else:
         dict_messages = [to_dict(message) for message in before_msgs]

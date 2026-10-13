@@ -182,7 +182,7 @@ def build_agent(
             "environment",
             "environment",
             ContextBlockSource.ENVIRONMENT,
-            priority=ContextPriority.MEDIUM,
+            priority=ContextPriority.CONTEXT,
         )
     )
     context_collectors.register_section(
@@ -190,7 +190,7 @@ def build_agent(
             "tools",
             "tools",
             ContextBlockSource.TOOLS,
-            priority=ContextPriority.MEDIUM,
+            priority=ContextPriority.CONTEXT,
         )
     )
     context_collectors.register_section(
@@ -198,7 +198,7 @@ def build_agent(
             "permissions",
             "permissions",
             ContextBlockSource.PERMISSIONS,
-            priority=ContextPriority.HIGH,
+            priority=ContextPriority.CONTEXT,
         )
     )
     context_collectors.register_section(
@@ -206,7 +206,7 @@ def build_agent(
             "mode",
             "mode",
             ContextBlockSource.MODE,
-            priority=ContextPriority.HIGH,
+            priority=ContextPriority.CONTEXT,
         )
     )
 

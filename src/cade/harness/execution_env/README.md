@@ -23,10 +23,10 @@
 ```
 
 ### 核心文件与职责
-- **文件系统抽象 ([filesystem.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/filesystem.py))**：定义 `FileSystem` 契约与 `LocalFileSystem`，规范文件路径检查与读写接口。
-- **Shell 执行协议 ([shell.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/shell.py) / [subprocess.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/subprocess.py))**：定义 `Shell` 执行契约，`SubprocessShell` 负责超时控制、环境变量透传与实时流捕获。
-- **沙箱模型 ([sandbox.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/sandbox.py))**：定义 `SandboxPolicy`、`SandboxMode`、`NetworkAccess` 与 `SandboxedCommand` 数据结构。
-- **Linux Bubblewrap 沙箱 ([linux_sandbox.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/execution_env/linux_sandbox.py))**：基于 Linux `bwrap` 命名空间技术的轻量级沙箱实现，隔离文件系统可写区域与外部网络。
+- **文件系统抽象 ([filesystem.py](filesystem.py))**：定义 `FileSystem` 契约与 `LocalFileSystem`，规范文件路径检查与读写接口。
+- **Shell 执行协议 ([shell.py](shell.py) / [subprocess.py](subprocess.py))**：定义 `Shell` 执行契约，`SubprocessShell` 负责超时控制、环境变量透传与实时流捕获。
+- **沙箱模型 ([sandbox.py](sandbox.py))**：定义 `SandboxPolicy`、`SandboxMode`、`NetworkAccess` 与 `SandboxedCommand` 数据结构。
+- **Linux Bubblewrap 沙箱 ([linux_sandbox.py](linux_sandbox.py))**：基于 Linux `bwrap` 命名空间技术的轻量级沙箱实现，隔离文件系统可写区域与外部网络。
 
 ---
 

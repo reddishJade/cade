@@ -38,14 +38,14 @@
 ```
 
 ### 核心模块与文件
-- **权限引擎核心 ([permissions.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permissions.py))**：`PermissionEngine` 综合当前执行模式、已记录授权凭证与求值器流水线，给出最终裁决。
-- **Shell 语义分析器 ([shell_analyzer.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/shell_analyzer.py))**：
+- **权限引擎核心 ([permissions.py](permissions.py))**：`PermissionEngine` 综合当前执行模式、已记录授权凭证与求值器流水线，给出最终裁决。
+- **Shell 语义分析器 ([shell_analyzer.py](shell_analyzer.py))**：
   - 支持 POSIX Bash、PowerShell 与 CMD 命令语法树解析；
   - 自动提取命令读写的具体文件、重定向目标及潜在危险动作（删除、环境变量篡改、网络外发等）。
-- **审批流水线 ([approval.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/approval.py) / [approval_reviewer.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/approval_reviewer.py))**：
+- **审批流水线 ([approval.py](approval.py) / [approval_reviewer.py](approval_reviewer.py))**：
   - `HITLDecision` / `HITLResult`：人机协同审批回调；
   - `AutoApprovalReviewer`：Build 模式下调动独立的大模型对越界或写操作执行非交互式自动审查。
-- **规则匹配引擎 ([rule_matcher.py](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/rule_matcher.py))**：支持 `findLast` 倒序命中语义，支持模式通配符与特定工具覆盖。
+- **规则匹配引擎 ([rule_matcher.py](rule_matcher.py))**：支持 `findLast` 倒序命中语义，支持模式通配符与特定工具覆盖。
 
 ---
 
@@ -59,4 +59,4 @@
 
 ## 3. 子模块分工
 
-- **[permission_model/](file:///C:/Users/dwei/workspace/cade/src/cade/harness/security/permission_model/README.md)**：细粒度权限领域实体、求值器接口（`PolicyEvaluator`）与凭证存储实现。
+- **[permission_model/](permission_model/README.md)**：细粒度权限领域实体、求值器接口（`PolicyEvaluator`）与凭证存储实现。

@@ -33,10 +33,10 @@ Agent 层是 Cade 最内层的领域无关核心，专注于解决一个核心�
 ```
 
 ### 核心类型契约
-- **中性消息体 ([messages.py](file:///C:/Users/dwei/workspace/cade/src/cade/agent/messages.py))**：[`SystemMessage`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/messages.py)、[`UserMessage`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/messages.py)、[`AssistantMessage`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/messages.py)、[`ToolResultMessage`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/messages.py)。
-- **外部事件流 ([events.py](file:///C:/Users/dwei/workspace/cade/src/cade/agent/events.py))**：`TurnStart`、`TurnEnd`、`BeforeToolCall`、`AfterToolCall` 等。
-- **工具与执行契约 ([types.py](file:///C:/Users/dwei/workspace/cade/src/cade/agent/types.py))**：[`AgentTool`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/types.py)（声明 schema、只读性与并发安全等级）、[`CancellationSignal`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/types.py)。
-- **上下文管线 ([context.py](file:///C:/Users/dwei/workspace/cade/src/cade/agent/context.py))**：[`ContextAssembler`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/context.py)、[`ContextCollector`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/context.py) 与 [`trim_to_budget`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/context.py)（根据优先级裁剪 Token 预算）。
+- **中性消息体 ([messages.py](messages.py))**：[`SystemMessage`](messages.py)、[`UserMessage`](messages.py)、[`AssistantMessage`](messages.py)、[`ToolResultMessage`](messages.py)。
+- **外部事件流 ([events.py](events.py))**：`TurnStart`、`TurnEnd`、`BeforeToolCall`、`AfterToolCall` 等。
+- **工具与执行契约 ([types.py](types.py))**：[`AgentTool`](types.py)（声明 schema、只读性与并发安全等级）、[`CancellationSignal`](types.py)。
+- **上下文管线 ([context.py](context.py))**：[`ContextAssembler`](context.py)、[`ContextCollector`](context.py) 与 `ContextPriority`（仅用于稳定排序）；选定块完整注入，预算策略回收历史与工具证据，无法安全组装时明确失败。
 
 ---
 
@@ -44,13 +44,13 @@ Agent 层是 Cade 最内层的领域无关核心，专注于解决一个核心�
 
 - **单向无依赖法则**：
   - `agent` 拥有算法与状态机，通过 `cade.ai` 的模型协议和本层的工具协议运行；Harness、编码产品和宿主向本层注入服务。
-  - 所有工具与环境交互必须通过 [`AgentTool`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/types.py) 合约注入；所有模型交互必须通过标准异步迭代器注入。
+  - 所有工具与环境交互必须通过 [`AgentTool`](types.py) 合约注入；所有模型交互必须通过标准异步迭代器注入。
 - **循环闭环稳定性**：
-  - 循环逻辑（[`agent_loop.py`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/agent_loop.py)）一旦稳定，不应因业务层新增工具、切换模型厂商或修改权限策略而做出任何修改。
+  - 循环逻辑（[`agent_loop.py`](agent_loop.py)）一旦稳定，不应因业务层新增工具、切换模型厂商或修改权限策略而做出任何修改。
 - **确定性与无副作用调度**：
   - 工具由调度器统一并发控制：只读且标记并发安全的工具并行执行；有写操作或系统副作用的工具严格串行互斥。
 - **无静默异常**：
-  - 工具执行异常被统一捕获为结构化的 [`ToolResultMessage`](file:///C:/Users/dwei/workspace/cade/src/cade/agent/messages.py) 回传给模型，严禁抛出未捕获异常导致主事件循环崩溃。
+  - 工具执行异常被统一捕获为结构化的 [`ToolResultMessage`](messages.py) 回传给模型，严禁抛出未捕获异常导致主事件循环崩溃。
 
 ---
 
