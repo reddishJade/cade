@@ -471,7 +471,7 @@ MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺
 
 默认模块顺序：`identity`、`tool_discipline`、`citations`、`tools`、`search_strategy`、`environment`、`cwd`。
 
-提示词缓存分为稳定区（身份、工具纪律、引用、工具与搜索策略）和动态区（环境与目录快照）。会话通知由 Harness 在当前请求边界注入，文件与工具历史来自会话消息。
+身份、工具纪律、引用、工具与搜索策略在装配时生成固定文本；环境信息在同次装配中捕获，目录条目在每次请求读取。前缀保留固定区与动态区的分界。会话通知由 Harness 在当前请求边界注入，文件与工具历史来自会话消息。
 
 ### prompt.instructions 格式
 

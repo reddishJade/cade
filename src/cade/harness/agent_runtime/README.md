@@ -15,7 +15,7 @@
                                 ▼ (多轮迭代)
         ┌────────────────────────────────────────────────┐
         │  1. 检查 ContextWindowRollover (无摘要平滑换窗)   │
-        │  2. 动态拼装 SystemPromptBuilder               │
+        │  2. 组装请求前缀与当前目录                     │
         │  3. 调用 Provider.stream()                     │
         │  4. ToolGate 拦截与权限审查                     │
         │     - 前置 Hook / 审计                         │

@@ -2,8 +2,8 @@
 
 本模块构建运行时前缀；动态 section 由 agent/context.py 收集。
 职责边界：
-- 稳定区：agent 身份、工具纪律、工具列表、搜索策略（注册表不变时缓存）
-- 动态区：环境信息（OS、Python、CWD）、CWD 目录快照（CWD 不变时缓存）
+- 固定文本：agent 身份、工具纪律、工具列表、搜索策略与环境信息（装配时生成）
+- 当前目录：每次请求读取目录条目
 
 不属于本模块（由动态 section 收集器管理）：
 - 项目指令 → InstructionCollector
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import platform
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -31,10 +30,9 @@ from .identity import (
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     TOOL_DISCIPLINE,
 )
-from .token_budget import MAX_CWD_ENTRIES
 from .tools import build_tool_guidelines, build_tool_prompt
 
-type PromptCacheKey = tuple[object, ...]
+_MAX_CWD_ENTRIES = 12
 
 
 class ShellInfo(Protocol):
@@ -47,143 +45,27 @@ class ShellInfo(Protocol):
     def syntax(self) -> str: ...
 
 
-@dataclass(frozen=True)
-class PromptContext:
-    project_root: Path
-    registry: tuple[ToolSpec, ...]
-    shell_spec: ShellInfo | None = None
-    modules: tuple[str, ...] = DEFAULT_PROMPT_MODULES
-    identity: str = ""
-
-
-class SystemPromptBuilder:
-    def __init__(self) -> None:
-        self._stable_builder = StableRegionBuilder()
-        self._dynamic_builder = DynamicRegionBuilder()
-
-    def build(self, context: PromptContext) -> str:
-        enabled = set(context.modules)
-        stable_prompt = self._stable_builder.build(context, enabled)
-        dynamic_prompt = self._dynamic_builder.build(context, enabled)
-
-        full_parts = []
-        if stable_prompt.strip():
-            full_parts.append(stable_prompt)
-            if dynamic_prompt.strip():
-                full_parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
-        if dynamic_prompt.strip():
-            full_parts.append(dynamic_prompt)
-
-        return "\n\n".join(part for part in full_parts if part.strip())
-
-
-class StableRegionBuilder:
-    def __init__(self) -> None:
-        self._invariant_cache: str | None = None
-        self._invariant_key: frozenset | None = None
-        self._tool_prompt_cache: str | None = None
-        self._tool_prompt_key: PromptCacheKey | None = None
-
-    def build(self, context: PromptContext, enabled: set[str]) -> str:
-        stable_enabled = enabled.intersection(STABLE_PROMPT_MODULE_ORDER)
-        registry_key = _registry_prompt_key(context.registry)
-
-        # 不变模块（identity、tool_discipline、citations、search_strategy）
-        # 不依赖工具注册表，可独立缓存
-        invariant_enabled = stable_enabled - {"tools"}
-        inv_key = frozenset(invariant_enabled)
-        if self._invariant_cache is None or self._invariant_key != inv_key:
-            inv_parts: list[str] = []
-            for module in STABLE_PROMPT_MODULE_ORDER:
-                if module not in invariant_enabled:
-                    continue
-                match module:
-                    case "identity":
-                        if context.identity:
-                            inv_parts.append(context.identity)
-                    case "tool_discipline":
-                        inv_parts.append(TOOL_DISCIPLINE)
-                    case "citations":
-                        inv_parts.append(CITATION_INSTRUCTION)
-                    case "search_strategy":
-                        inv_parts.append(SEARCH_STRATEGY)
-            self._invariant_cache = "\n\n".join(inv_parts) if inv_parts else ""
-            self._invariant_key = inv_key
-
-        # tools 模块依赖注册表
-        tool_section = ""
-        if "tools" in stable_enabled:
-            tool_section = self._tool_prompt_section(context.registry, registry_key)
-
-        # 组合完整 stable prompt
-        parts = [p for p in [self._invariant_cache, tool_section] if p]
-        full = "\n\n".join(parts)
-
-        return full
-
-    def _tool_prompt_section(
-        self, registry: tuple[ToolSpec, ...], registry_key: PromptCacheKey
-    ) -> str:
-        if (
-            self._tool_prompt_cache is not None
-            and self._tool_prompt_key == registry_key
-        ):
-            return self._tool_prompt_cache
-        prompt = _tool_prompt_section(registry)
-        self._tool_prompt_key = registry_key
-        self._tool_prompt_cache = prompt
-        return prompt
-
-
-class DynamicRegionBuilder:
-    def __init__(self) -> None:
-        self._dynamic_cache: str | None = None
-        self._dynamic_key: PromptCacheKey | None = None
-
-    def build(self, context: PromptContext, enabled: set[str]) -> str:
-        dynamic_enabled = enabled.intersection(DYNAMIC_PROMPT_MODULE_ORDER)
-        cwd_signature = (
-            _cwd_signature(context.project_root) if "cwd" in dynamic_enabled else ()
-        )
-        dynamic_key = (
-            context.project_root,
-            context.shell_spec.name if context.shell_spec else None,
-            cwd_signature,
-            frozenset(dynamic_enabled),
-        )
-
-        if self._dynamic_cache is not None and self._dynamic_key == dynamic_key:
-            return self._dynamic_cache
-
-        dynamic_parts: list[str] = []
-        for module in DYNAMIC_PROMPT_MODULE_ORDER:
-            if module not in enabled:
-                continue
-            match module:
-                case "environment":
-                    dynamic_parts.append(
-                        _environment_info(context.project_root, context.shell_spec)
-                    )
-                case "cwd":
-                    dynamic_parts.append(_cwd_info(context.project_root))
-
-        dynamic_prompt = "\n\n".join(dynamic_parts)
-        self._dynamic_cache = dynamic_prompt
-        self._dynamic_key = dynamic_key
-        return dynamic_prompt
-
-
-def _registry_prompt_key(registry: tuple[ToolSpec, ...]) -> PromptCacheKey:
-    return tuple(
-        (
-            tool.name,
-            tool.description,
-            tool.input_hint,
-            tool.prompt_snippet,
-            tool.prompt_guidelines,
-        )
-        for tool in registry
-    )
+def _stable_prompt(
+    registry: tuple[ToolSpec, ...], enabled: set[str], identity: str
+) -> str:
+    """在装配时生成身份、规则与工具说明。"""
+    parts: list[str] = []
+    for module in STABLE_PROMPT_MODULE_ORDER:
+        if module == "tools" or module not in enabled:
+            continue
+        match module:
+            case "identity":
+                if identity:
+                    parts.append(identity)
+            case "tool_discipline":
+                parts.append(TOOL_DISCIPLINE)
+            case "citations":
+                parts.append(CITATION_INSTRUCTION)
+            case "search_strategy":
+                parts.append(SEARCH_STRATEGY)
+    if "tools" in enabled:
+        parts.append(_tool_prompt_section(registry))
+    return "\n\n".join(part for part in parts if part)
 
 
 def _tool_prompt_section(registry: tuple[ToolSpec, ...]) -> str:
@@ -201,18 +83,33 @@ def build_runtime_context_provider(
     shell_spec: ShellInfo | None = None,
     identity: str = "",
 ) -> Callable[[], list[str]]:
-    """构建每轮运行时上下文和当前任务的工作笔记指引。"""
-    builder = SystemPromptBuilder()
-    context = PromptContext(
-        project_root=project_root.resolve(),
-        registry=registry,
-        modules=modules or DEFAULT_PROMPT_MODULES,
-        shell_spec=shell_spec,
-        identity=identity,
+    """装配固定前缀，返回按请求读取当前目录的上下文入口。"""
+    root = project_root.resolve()
+    enabled = set(modules or DEFAULT_PROMPT_MODULES)
+    stable_prompt = _stable_prompt(registry, enabled, identity)
+    environment = (
+        _environment_info(root, shell_spec) if "environment" in enabled else ""
     )
 
     def provide() -> list[str]:
-        parts = [builder.build(context)]
+        dynamic_parts: list[str] = []
+        for module in DYNAMIC_PROMPT_MODULE_ORDER:
+            if module not in enabled:
+                continue
+            match module:
+                case "environment":
+                    dynamic_parts.append(environment)
+                case "cwd":
+                    dynamic_parts.append(_cwd_info(root))
+        dynamic_prompt = "\n\n".join(dynamic_parts)
+        full_parts: list[str] = []
+        if stable_prompt.strip():
+            full_parts.append(stable_prompt)
+            if dynamic_prompt.strip():
+                full_parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+        if dynamic_prompt.strip():
+            full_parts.append(dynamic_prompt)
+        parts = ["\n\n".join(part for part in full_parts if part.strip())]
         parts.append(
             "NOTE.md owns current task state. Keep status, next action, constraints and "
             "verification evidence first and concise; only its first 4 KiB is injected. "
@@ -245,11 +142,11 @@ def _environment_info(project_root: Path, shell_spec: ShellInfo | None = None) -
 
 
 def _cwd_info(project_root: Path) -> str:
-    names = list(_cwd_signature(project_root))
+    names = _cwd_entries(project_root)
     return "<cwd-info>\n" + "\n".join(names) + "\n</cwd-info>"
 
 
-def _cwd_signature(project_root: Path) -> tuple[str, ...]:
+def _cwd_entries(project_root: Path) -> tuple[str, ...]:
     names = []
     try:
         entries = sorted(project_root.iterdir())
@@ -259,6 +156,6 @@ def _cwd_signature(project_root: Path) -> tuple[str, ...]:
         if path.name in {".git", ".venv", "__pycache__"}:
             continue
         names.append(path.name + ("/" if path.is_dir() else ""))
-        if len(names) >= MAX_CWD_ENTRIES:
+        if len(names) >= _MAX_CWD_ENTRIES:
             break
     return tuple(names)
