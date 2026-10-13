@@ -24,17 +24,12 @@ class ContextSummary:
         if snapshot is None:
             return ""
         total = snapshot.total_input_tokens
-        source = (
-            "calibrated estimate"
-            if snapshot.total_input_source == "provider_anchor"
-            else "local estimate"
-        )
         if snapshot.physical_window:
             return (
                 f"{_format_token(total)}/{_format_token(snapshot.physical_window)}"
-                f" ({total / snapshot.physical_window * 100:.1f}%, {source})"
+                f" ({total / snapshot.physical_window * 100:.1f}%)"
             )
-        return f"{_format_token(total)} tokens ({source})"
+        return f"{_format_token(total)} tokens"
 
 
 def _format_token(n: int) -> str:
