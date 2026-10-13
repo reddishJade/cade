@@ -89,6 +89,9 @@ model/provider 元数据，用户可覆盖窗口大小；fallback 到较小模�
 本地计量函数，标记 `category_source=local`；其总量为 `category_total_tokens`，
 provider 锚定的输入预测为 `total_input_tokens`。
 
+TUI `/context` 和 web 状态栏使用同一请求组装器的只读投影，显示当前预测和
+估算来源；`/context` 同时展示有效输入预算和生命周期分项。累计用量与费用来自 provider。
+
 预算分项按注入位置归因：当前前缀中的混合运行状态计入 fixed prefix，NOTE、
 验证事实、当前用户意图与受保护工具组计入 durable。审计保存快照、选定块的
 来源、证据回收量，以及换窗条件未满足的原因。

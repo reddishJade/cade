@@ -10,6 +10,7 @@ from __future__ import annotations
 import platform
 from collections.abc import AsyncIterator, Callable, Iterator
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
@@ -498,6 +499,30 @@ class AgentHarness:
 
     def history_messages(self) -> list[AgentMessage]:
         return list(self._history)
+
+    def preview_request(self) -> RequestAssembly:
+        """投影当前上下文供宿主观测，不执行模型、工具或会话写入。"""
+        with self._composition_lock:
+            composition = self._composition
+            provider = self._provider
+        registry = self._build_active_registry(composition.registry)
+        manager = replace(
+            self._context_manager, history=deepcopy(self.history_messages())
+        )
+        manager.bind_provider(provider)
+        context = AgentContext(
+            messages=manager.history,
+            context_manager=manager,
+            request_prefix=self._build_context_messages(composition, registry),
+            tools=self._gate.adapt_tools(registry),
+            state=self._build_context_snapshot_state(),
+            project_root=self.project_root,
+            cwd=Path.cwd(),
+            context_policy=resolve_context_policy(provider, composition.config),
+        )
+        return composition.request_assembler.assemble(
+            context, current_step=0, options=None
+        )
 
     def prepare_read_only_request(self, question: str) -> RequestAssembly:
         """从会话副本组装一次工具集为空的请求，供宿主独立查询。"""

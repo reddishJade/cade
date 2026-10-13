@@ -65,9 +65,7 @@ def create_app(
     @server.get("/api/stats")
     async def stats() -> JSONResponse:
         loop = asyncio.get_running_loop()
-        payload = await loop.run_in_executor(
-            None, lambda: _stats_payload(hub.app, server.state.project_root)
-        )
+        payload = await loop.run_in_executor(None, lambda: _stats_payload(hub.app))
         return JSONResponse(payload)
 
     @server.get("/api/model")
@@ -299,7 +297,7 @@ def create_app(
     return server
 
 
-def _stats_payload(app: CadeApp, project_root: Path) -> dict[str, object]:
+def _stats_payload(app: CadeApp) -> dict[str, object]:
     """底栏统计：累计用量 + 上下文占用 + 模型/effort（与 TUI 使用同一统计服务）。"""
     payload: dict[str, object] = {
         "usage": "",
@@ -322,7 +320,7 @@ def _stats_payload(app: CadeApp, project_root: Path) -> dict[str, object]:
 
         agent = getattr(app, "agent", None)
         if agent is not None:
-            summary = compute_context_summary(agent, project_root)
+            summary = compute_context_summary(agent)
             payload["usage"] = summary.usage_stats
             payload["context"] = summary.context_usage
             payload["model"] = summary.model_name

@@ -463,7 +463,7 @@ class _CadeTui:
                 compute_context_summary,
             )
 
-            self._context_summary = compute_context_summary(agent, self._project_root)
+            self._context_summary = compute_context_summary(agent)
 
         from cade.coding_agent.tools.question import set_question_prompt_handler
 
@@ -1624,7 +1624,7 @@ class _CadeTui:
                 compute_context_summary,
             )
 
-            self._context_summary = compute_context_summary(agent, self._project_root)
+            self._context_summary = compute_context_summary(agent)
         self._refresh()
 
     def _run_shell_shortcut(self, text: str) -> None:
@@ -1955,9 +1955,7 @@ class _CadeTui:
         _exit_snapshot_ctx(snapshot, _snapshot_ctx, self._store.session_id, tool_names)
         from cade.coding_agent.interaction.context_stats import compute_context_summary
 
-        self._context_summary = compute_context_summary(
-            self._agent_app.agent, self._project_root
-        )
+        self._context_summary = compute_context_summary(self._agent_app.agent)
         self._schedule_turn_commit()
 
     def _schedule_turn_commit(self) -> None:

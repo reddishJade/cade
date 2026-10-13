@@ -4,7 +4,9 @@ from collections.abc import Iterator
 from typing import Protocol
 
 from cade.agent.messages import AgentMessage, UserMessage
+from cade.agent.request import RequestAssembly
 from cade.agent.types import AgentToolResult, ApprovalCallback, ToolInput, ToolSpec
+from cade.ai.providers.base import ModelProvider
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.harness.agent_runtime import (
     AgentHarnessEvent,
@@ -23,6 +25,11 @@ class ToolRegistryApp(Protocol):
 
 
 class InteractionAgent(Protocol):
+    @property
+    def provider(self) -> ModelProvider: ...
+
+    def preview_request(self) -> RequestAssembly: ...
+
     @property
     def enabled_tools(self) -> tuple[ToolSpec, ...]: ...
 

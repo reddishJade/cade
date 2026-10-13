@@ -385,7 +385,7 @@ def _context_window_cap(info: dict[str, str]) -> int | None:
     return int(window)
 
 
-def _rollover_notice(app: object, project_root: Path) -> str | None:
+def _rollover_notice(app: object) -> str | None:
     """已用上下文达到新窗口的换窗阈值时，说明下一回合会自动换窗。"""
     agent = getattr(app, "agent", None)
     if agent is None:
@@ -393,7 +393,8 @@ def _rollover_notice(app: object, project_root: Path) -> str | None:
     provider = agent.provider
     active = getattr(provider, "active_provider", provider)
     policy = resolve_context_policy(active, agent.composition.config)
-    used = compute_context_summary(agent, project_root).total
+    snapshot = compute_context_summary(agent).snapshot
+    used = snapshot.total_input_tokens if snapshot is not None else 0
     if not policy.automatic_rollover or used < policy.rotation_threshold:
         return None
     return (
@@ -444,7 +445,7 @@ def handle_context_window_command(
         return
     label = format_token_count(window) if window else "model default"
     print(f"Context window set to: {label}")
-    notice = _rollover_notice(app, project_root)
+    notice = _rollover_notice(app)
     if notice:
         print(notice)
 

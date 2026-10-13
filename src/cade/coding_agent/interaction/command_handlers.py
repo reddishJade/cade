@@ -573,39 +573,47 @@ def cmd_context(cmd: str, ctx: CommandContext) -> bool:
         ctx.output.write("No agent available.")
         return False
 
-    summary = compute_context_summary(agent, ctx.project_root)
+    summary = compute_context_summary(agent)
 
-    cost_str = f" · ${summary.spent:.2f}" if summary.spent > 0 else ""
     usage_str = f" · {summary.usage_stats}" if summary.usage_stats else ""
     ctx.output.write(
-        f" Context Usage · {summary.model_name} · "
-        f"{summary.context_usage}{usage_str}{cost_str}"
+        f" Context Usage · {summary.model_name} · {summary.context_usage}{usage_str}"
     )
     ctx.output.write()
 
-    ICONS = {
-        "System prompt": "\u26c1",
-        "Tool schemas": "\u26c1",
-        "User messages": "\u25c9",
-        "Agent responses": "\u25c9",
-        "Tool calls": "\u25c9",
-        "Skills": "\u26c1",
-        "Memory files": "\u26c1",
-    }
-    for name, tokens in summary.categories:
-        icon = ICONS.get(name, " ")
-        pct = (
-            (tokens / summary.context_window * 100) if summary.context_window > 0 else 0
+    snapshot = summary.snapshot
+    if snapshot is not None:
+        ctx.output.write(" Local estimates:")
+        for name, tokens in (
+            ("Fixed prefix", snapshot.fixed_prefix_tokens),
+            ("Durable state", snapshot.durable_tokens),
+            ("Working messages", snapshot.working_tokens),
+            ("Tool evidence", snapshot.evidence_tokens),
+        ):
+            ctx.output.write(f"   {name:<18} {_format_token(tokens):>7} tokens")
+        ctx.output.write(
+            f" Input budget: {_format_token(snapshot.effective_input_budget)}"
+            if snapshot.effective_input_budget > 0
+            else " Input budget: unknown"
+        )
+        if snapshot.effective_input_budget > 0:
+            ctx.output.write(
+                f" Remaining input: {_format_token(snapshot.remaining_input_budget)}"
+            )
+        ctx.output.write(
+            f" Output reserve: {_format_token(snapshot.output_reserve_tokens)}"
+            f" · Headroom: {_format_token(snapshot.operational_headroom_tokens)}"
         )
         ctx.output.write(
-            f"   {icon} {name:<18} {_format_token(tokens):>7} tokens ({pct:.1f}%)"
+            f" Next input allowance: {_format_token(snapshot.next_turn_input_tokens)}"
+            f" · Admission target: {_format_token(snapshot.admission_target)}"
         )
-
-    if summary.context_window > 0:
-        free_pct = summary.free / summary.context_window * 100
-        ctx.output.write(
-            f"   □ {'Free space':<18} {_format_token(summary.free):>7} ({free_pct:.1f}%)"
-        )
+        if snapshot.current_window_id:
+            ctx.output.write(f" Window: {snapshot.current_window_id}")
+        if snapshot.last_rotation_reason:
+            ctx.output.write(f" Last rollover: {snapshot.last_rotation_reason}")
+        if snapshot.rotation_blocked_reason:
+            ctx.output.write(f" Rollover blocked: {snapshot.rotation_blocked_reason}")
 
     if summary.instruction_files:
         ctx.output.write("\n Instructions \u00b7 auto-loaded")
@@ -613,18 +621,11 @@ def cmd_context(cmd: str, ctx: CommandContext) -> bool:
             ctx.output.write(f" \u2514 {f}")
 
     if summary.skill_count > 0:
-        skill_token = next((t for n, t in summary.categories if n == "Skills"), 0)
-        ctx.output.write("\n Skills \u00b7 /skills")
+        ctx.output.write("\n Skills \u00b7 $name or /skill NAME")
         ctx.output.write(
             f" \u2514 {summary.skill_count} skills"
-            f" \u00b7 {_format_token(skill_token)} tokens"
+            f" \u00b7 {_format_token(summary.skill_tokens)} injected tokens"
         )
-        if summary.skill_source_dirs:
-            seen_labels: set[str] = set()
-            for label, path in summary.skill_source_dirs:
-                if label not in seen_labels:
-                    seen_labels.add(label)
-                    ctx.output.write(f"    {label}: {path}")
 
     return False
 
