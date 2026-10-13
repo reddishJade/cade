@@ -3,7 +3,7 @@
 权限相关类型请从 `cade.harness.security` 导入。
 """
 
-from .audit import AuditLogger, AuditRecord, JsonlAuditLogger, redact_text
+from .audit import AuditLogger, AuditRecord, JsonlAuditLogger, redact_json, redact_text
 from .correlation import (
     EventCorrelation,
     HookCorrelationFields,
@@ -37,5 +37,6 @@ __all__ = [
     "RuntimeCorrelation",
     "SignalHookManager",
     "hook_correlation_fields",
+    "redact_json",
     "redact_text",
 ]

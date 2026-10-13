@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,10 +12,13 @@ from typing import Protocol
 
 
 SECRET_PATTERNS = (
-    re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"sk-[^\s]+", re.IGNORECASE),
     re.compile(
-        r"(?i)\b(api[_-]?key|secret|token|password)\b(\s*[:=]\s*)([\"']?)([A-Za-z0-9_./+=-]{8,})"
+        r"(?P<prefix>\b(api[_-]?key|secret|token|password)\b\s*[:=]\s*[\"']?)[A-Za-z0-9_./+=-]{8,}",
+        re.IGNORECASE,
     ),
+    re.compile(r"(?P<prefix>Bearer\s+)[^\s]+", re.IGNORECASE),
+    re.compile(r"(?P<prefix>(?:api_key|token|secret)=)[^\s]+", re.IGNORECASE),
 )
 
 
@@ -99,7 +103,17 @@ def redact_text(value: object) -> str:
 
 
 def _redact_match(match: re.Match[str]) -> str:
-    if len(match.groups()) >= 4:
-        prefix = f"{match.group(1)}{match.group(2)}{match.group(3)}"
-        return f"{prefix}[REDACTED]"
-    return "[REDACTED]"
+    return (match.groupdict().get("prefix") or "") + "[REDACTED]"
+
+
+def redact_json(value: object) -> object:
+    """递归脱敏文本值，保留 JSON 的键、数值和容器结构。"""
+    if value is None or isinstance(value, int | float | bool):
+        return value
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, list | tuple):
+        return [redact_json(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): redact_json(item) for key, item in value.items()}
+    return redact_text(value)

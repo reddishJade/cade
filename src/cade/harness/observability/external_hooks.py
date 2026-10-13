@@ -15,7 +15,7 @@ from typing import Literal
 
 from ..config import ExternalHookRuntimeConfig
 from ..session import JsonValue
-from .audit import redact_text
+from .audit import redact_json, redact_text
 from .hooks import HookRecord
 
 logger = logging.getLogger("cade.harness.observability.external_hooks")
@@ -277,20 +277,7 @@ def _hook_payload(record: HookRecord) -> str:
         "request_id": record.request_id,
         "tool_call_id": record.tool_call_id,
     }
-    return json.dumps(_redacted_json(payload), ensure_ascii=False)
-
-
-def _redacted_json(value: object) -> JsonValue:
-    """递归脱敏 JSON 边界值。"""
-    if value is None or isinstance(value, int | float | bool):
-        return value
-    if isinstance(value, str):
-        return redact_text(value)
-    if isinstance(value, list | tuple):
-        return [_redacted_json(item) for item in value]
-    if isinstance(value, Mapping):
-        return {str(key): _redacted_json(item) for key, item in value.items()}
-    return redact_text(value)
+    return json.dumps(redact_json(payload), ensure_ascii=False)
 
 
 def _parse_hook_response(stdout: str) -> dict[str, JsonValue]:

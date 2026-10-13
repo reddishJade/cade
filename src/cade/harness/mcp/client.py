@@ -6,7 +6,6 @@ import asyncio
 import concurrent.futures
 import logging
 import os
-import re
 import tempfile
 import threading
 import time
@@ -25,6 +24,7 @@ from pydantic import BaseModel
 from pydantic.networks import FileUrl
 
 from cade.harness.agent_runtime.async_worker import IsolatedAsyncWorker
+from cade.harness.observability.audit import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -37,23 +37,10 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
 T = TypeVar("T")
 _Operation = Literal["list_tools", "call_tool", "close"]
 
-_REDACT_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(Bearer\s+)[^\s]+", re.IGNORECASE),
-    re.compile(r"(sk-)[^\s]+", re.IGNORECASE),
-    re.compile(r"((?:api_key|token|secret)=)[^\s]+", re.IGNORECASE),
-]
-
-
-def redact_mcp_text(text: str) -> str:
-    """脱敏 MCP 诊断文本中的常见凭据。"""
-    for pattern in _REDACT_PATTERNS:
-        text = pattern.sub(r"\1****", text)
-    return text
-
 
 def truncate_redact(text: str, max_len: int = 200) -> str:
     """先脱敏再按字符上限截断诊断文本。"""
-    redacted = redact_mcp_text(text)
+    redacted = redact_text(text)
     if len(redacted) > max_len:
         return redacted[:max_len] + "..."
     return redacted
