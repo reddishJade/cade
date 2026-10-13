@@ -786,10 +786,6 @@ class _TuiState:
             for line in partial.splitlines():
                 self._record_subagent_update(line.strip())
 
-    def record_subagent_update(self, clean: str) -> bool:
-        """公开的 subagent 更新入口，测试和 _handle_tool_update 共用。"""
-        return self._record_subagent_update(clean)
-
     def _record_subagent_update(self, clean: str) -> bool:
         if not clean:
             return False

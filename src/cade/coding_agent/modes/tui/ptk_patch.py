@@ -236,29 +236,6 @@ def safe_select(
             return None
 
 
-def safe_checkbox(
-    message: str,
-    choices: Sequence[Any],
-    **kwargs: Any,
-) -> list[Any] | None:
-    """执行可取消的多选器；Ctrl+C 或 Esc 返回 None。"""
-    with terminal_isolated():
-        try:
-            import questionary
-
-            question = questionary.checkbox(message, choices=choices, **kwargs)
-            bindings = cast(KeyBindings, question.application.key_bindings)
-
-            @bindings.add("escape", eager=True)
-            def _cancel_with_escape(event: Any) -> None:
-                """使用 Cade 统一的 Esc 语义关闭多选器。"""
-                event.app.exit(result=None, style="class:aborting")
-
-            return cast(list[Any] | None, question.unsafe_ask())
-        except (KeyboardInterrupt, EOFError):
-            return None
-
-
 def safe_text(
     message: str,
     *,

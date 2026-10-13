@@ -6,9 +6,6 @@ import shutil
 import textwrap
 import time
 
-_MIN_REASONING_SUMMARY_SECONDS = 0.5
-_MIN_REASONING_SUMMARY_CHARS = 24
-
 
 def format_elapsed(seconds: float) -> str:
     """推理耗时格式化。"""
@@ -19,15 +16,6 @@ def format_elapsed(seconds: float) -> str:
     if seconds < 3600:
         return f"{seconds / 60:.1f}m"
     return f"{seconds / 3600:.1f}h"
-
-
-def should_print_reasoning_summary(text: str, elapsed: float) -> bool:
-    """判断是否有足够的推理内容值得显示摘要。"""
-    preview = " ".join(text.split())
-    return bool(preview) and (
-        elapsed >= _MIN_REASONING_SUMMARY_SECONDS
-        or len(preview) >= _MIN_REASONING_SUMMARY_CHARS
-    )
 
 
 def reasoning_preview_lines(text: str, width: int | None = None) -> list[str]:

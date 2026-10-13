@@ -1,11 +1,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Protocol
-
-
-class MarkdownRenderer(Protocol):
-    def render(self, text: str) -> None: ...
 
 
 class TerminalMarkdownRenderer:
