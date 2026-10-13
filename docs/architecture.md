@@ -128,6 +128,9 @@ surface、context collectors 的动态块、工具 schema 和 options 组装为
 section 的一次收集直接返回具有来源、注入目标、排序优先级与审计信息的完整动态块。
 section 负责选定上下文，assembler 完整注入选定块，并回收历史与工具证据来满足预算。
 
+工具名称、描述和参数由 API schema 声明；系统前缀中的操作指南使用与 schema
+相同的当次启用工具集合，只读旁支查询不注入工具指南。
+
 `ContextManager` 统一持有会话历史、用量锚点和窗口统计；
 独立 Agent 调用也使用这一入口。`ContextPolicy` 从模型物理窗口扣除输出预留与额外余量，为输入、工具证据和新增
 消息分配预算。预测以成功请求的 provider 输入用量为锚点，结合本地差额估算；

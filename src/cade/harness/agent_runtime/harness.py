@@ -41,6 +41,7 @@ from .composition import AgentComposition
 from .config import (
     AgentRuntimeConfig,
     build_loop_config,
+    build_turn_context_messages,
     resolve_context_policy,
 )
 from .events import (
@@ -182,24 +183,13 @@ class AgentHarness:
     def _build_context_messages(
         self,
         composition: AgentComposition,
+        registry: tuple[ToolSpec, ...],
     ) -> list[AgentMessage]:
         """构建 turn 上下文消息。子类可添加模式通知、记忆概览等。"""
-        parts: list[str] = []
-        if composition.runtime_context_provider is not None:
-            parts = list(composition.runtime_context_provider())
-        if self._resumed_notice is not None:
-            parts.append(
-                f"<session-notices>\n{self._resumed_notice}\n</session-notices>"
-            )
-        if parts:
-            return [SystemMessage(content="\n\n".join(p for p in parts if p))]
-        return []
+        return build_turn_context_messages(composition, registry, self._resumed_notice)
 
-    def _build_context_snapshot_state(
-        self,
-        active_registry: tuple[ToolSpec, ...],
-    ) -> dict[str, object]:
-        """构建供动态 section 使用的环境、工具、权限和模式快照。"""
+    def _build_context_snapshot_state(self) -> dict[str, object]:
+        """构建供动态 section 使用的环境、权限和模式快照。"""
         permission_policy = self.permission_policy
         policy_payload = (
             {
@@ -218,7 +208,6 @@ class AgentHarness:
                 else None,
                 "platform": platform.platform(),
             },
-            "tools": tuple(tool.name for tool in active_registry),
             "permissions": {
                 "approval_policy": self.approval_policy,
                 "restricted_dirs": tuple(self.restricted_dirs),
@@ -523,7 +512,7 @@ class AgentHarness:
             messages=manager.history,
             context_manager=manager,
             request_prefix=[
-                *self._build_context_messages(composition),
+                *self._build_context_messages(composition, ()),
                 SystemMessage(
                     content="Answer this side question from the supplied context. Tools are unavailable."
                 ),
@@ -600,8 +589,8 @@ class AgentHarness:
             provider = self._provider
         registry_snapshot = composition.registry
         active_registry = self._build_active_registry(registry_snapshot)
-        context_messages = self._build_context_messages(composition)
-        context_snapshot_state = self._build_context_snapshot_state(active_registry)
+        context_messages = self._build_context_messages(composition, active_registry)
+        context_snapshot_state = self._build_context_snapshot_state()
         self._resumed_notice = None
         turn_agent = Agent(self._gate.adapt_tools(active_registry))
 
@@ -630,7 +619,7 @@ class AgentHarness:
             **self._build_loop_config_extras(),
         )
         loop_config.refresh_request_prefix = lambda: self._build_context_messages(
-            composition
+            composition, active_registry
         )
 
         try:

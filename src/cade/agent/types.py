@@ -249,7 +249,6 @@ class ToolSpec:
     input_hint: str
     handler: ActionHandler
     schema: Mapping[str, Any] | None = None
-    prompt_snippet: str | None = None
     prompt_guidelines: tuple[str, ...] = ()
     action_profile: tuple[str, str] | None = None
     path_extractor: ToolPathExtractor | None = None

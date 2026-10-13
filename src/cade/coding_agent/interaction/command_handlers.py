@@ -585,7 +585,7 @@ def cmd_context(cmd: str, ctx: CommandContext) -> bool:
 
     ICONS = {
         "System prompt": "\u26c1",
-        "System tools": "\u26c1",
+        "Tool schemas": "\u26c1",
         "User messages": "\u25c9",
         "Agent responses": "\u25c9",
         "Tool calls": "\u25c9",

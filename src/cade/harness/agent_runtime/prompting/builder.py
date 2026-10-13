@@ -2,7 +2,8 @@
 
 本模块构建运行时前缀；动态 section 由 agent/context.py 收集。
 职责边界：
-- 固定文本：agent 身份、工具纪律、工具列表、搜索策略与环境信息（装配时生成）
+- 固定文本：agent 身份、工具纪律、搜索策略与环境信息（装配时生成）
+- 操作指南：从当次启用的工具集合生成
 - 当前目录：每次请求读取目录条目
 
 不属于本模块（由动态 section 收集器管理）：
@@ -30,7 +31,7 @@ from .identity import (
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     TOOL_DISCIPLINE,
 )
-from .tools import build_tool_guidelines, build_tool_prompt
+from .tools import build_tool_guidelines
 
 _MAX_CWD_ENTRIES = 12
 
@@ -45,10 +46,8 @@ class ShellInfo(Protocol):
     def syntax(self) -> str: ...
 
 
-def _stable_prompt(
-    registry: tuple[ToolSpec, ...], enabled: set[str], identity: str
-) -> str:
-    """在装配时生成身份、规则与工具说明。"""
+def _stable_prompt(enabled: set[str], identity: str) -> str:
+    """在装配时生成固定的身份与规则。"""
     parts: list[str] = []
     for module in STABLE_PROMPT_MODULE_ORDER:
         if module == "tools" or module not in enabled:
@@ -63,35 +62,24 @@ def _stable_prompt(
                 parts.append(CITATION_INSTRUCTION)
             case "search_strategy":
                 parts.append(SEARCH_STRATEGY)
-    if "tools" in enabled:
-        parts.append(_tool_prompt_section(registry))
     return "\n\n".join(part for part in parts if part)
-
-
-def _tool_prompt_section(registry: tuple[ToolSpec, ...]) -> str:
-    parts = ["Available tools:\n" + build_tool_prompt(registry)]
-    guidelines = build_tool_guidelines(registry)
-    if guidelines:
-        parts.append("Guidelines:\n" + guidelines)
-    return "\n\n".join(parts)
 
 
 def build_runtime_context_provider(
     project_root: Path,
-    registry: tuple[ToolSpec, ...],
     modules: tuple[str, ...] | None = None,
     shell_spec: ShellInfo | None = None,
     identity: str = "",
-) -> Callable[[], list[str]]:
+) -> Callable[[tuple[ToolSpec, ...]], list[str]]:
     """装配固定前缀，返回按请求读取当前目录的上下文入口。"""
     root = project_root.resolve()
     enabled = set(modules or DEFAULT_PROMPT_MODULES)
-    stable_prompt = _stable_prompt(registry, enabled, identity)
+    stable_prompt = _stable_prompt(enabled, identity)
     environment = (
         _environment_info(root, shell_spec) if "environment" in enabled else ""
     )
 
-    def provide() -> list[str]:
+    def provide(registry: tuple[ToolSpec, ...]) -> list[str]:
         dynamic_parts: list[str] = []
         for module in DYNAMIC_PROMPT_MODULE_ORDER:
             if module not in enabled:
@@ -105,8 +93,11 @@ def build_runtime_context_provider(
         full_parts: list[str] = []
         if stable_prompt.strip():
             full_parts.append(stable_prompt)
-            if dynamic_prompt.strip():
-                full_parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+        guidelines = build_tool_guidelines(registry) if "tools" in enabled else ""
+        if guidelines:
+            full_parts.append("Guidelines:\n" + guidelines)
+        if full_parts and dynamic_prompt.strip():
+            full_parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
         if dynamic_prompt.strip():
             full_parts.append(dynamic_prompt)
         parts = ["\n\n".join(part for part in full_parts if part.strip())]

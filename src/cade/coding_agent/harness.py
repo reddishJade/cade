@@ -81,9 +81,11 @@ class CodingAgentHarness(AgentHarness):
     def _build_context_messages(
         self,
         composition: AgentComposition,
+        registry: tuple[ToolSpec, ...],
     ) -> list[AgentMessage]:
         return build_turn_context_messages(
             composition,
+            registry,
             self._resumed_notice,
             mode_notice=mode_notice(self._mode.current_mode),
         )

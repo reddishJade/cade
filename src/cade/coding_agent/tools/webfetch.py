@@ -61,7 +61,6 @@ def build_webfetch_tool() -> ToolSpec:
             "required": ["url"],
             "additionalProperties": False,
         },
-        prompt_snippet="Fetch web page content from an HTTP(S) URL.",
     )
 
 

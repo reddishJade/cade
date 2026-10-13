@@ -235,6 +235,13 @@ def build_new_context_tool(
             ),
             input_hint='JSON: {"reason":"the active window is stale or noisy"}',
             handler=request_new_context,
+            prompt_guidelines=(
+                (
+                    "Use rollover when the current working set is stale or near its "
+                    "token budget. Save progress in NOTE.md before the budget is exhausted; "
+                    "no summary is generated."
+                ),
+            ),
             schema={
                 "type": "object",
                 "properties": {
@@ -246,10 +253,6 @@ def build_new_context_tool(
                 "required": ["reason"],
                 "additionalProperties": False,
             },
-            prompt_snippet=(
-                "Use rollover when the current working set is stale or near its "
-                "token budget. Save progress in NOTE.md before the budget is exhausted; no summary is generated."
-            ),
         ),
     )
 

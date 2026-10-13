@@ -32,7 +32,6 @@ class ContextBlockSource(StrEnum):
     MEMORY = "memory"
     RECENT_VALIDATION = "recent_validation"
     ENVIRONMENT = "environment"
-    TOOLS = "tools"
     PERMISSIONS = "permissions"
     MODE = "mode"
 

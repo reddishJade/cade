@@ -387,6 +387,15 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                 '"entry_id":"abc123","before":3,"after":3}'
             ),
             handler=handle,
+            prompt_guidelines=(
+                (
+                    "After a context reset, use history list_windows/search to locate "
+                    "evidence, then read for exact content. If a page is marked omitted "
+                    "from the request, reduce max_chars and retry the same offset; "
+                    "next_offset describes the stored page, not the admitted preview. "
+                    "History is the source of truth."
+                ),
+            ),
             schema={
                 "type": "object",
                 "properties": {
@@ -420,12 +429,6 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
                 "required": ["operation"],
                 "additionalProperties": False,
             },
-            prompt_snippet=(
-                "After a context reset, use list_windows/search to locate evidence, "
-                "then read for exact content. If a page is marked omitted from the request, "
-                "reduce max_chars and retry the same offset; next_offset describes "
-                "the stored page, not the admitted preview. History is the source of truth."
-            ),
         ),
     )
 

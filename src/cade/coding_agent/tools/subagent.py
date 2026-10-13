@@ -304,7 +304,6 @@ def _build_delegate_tool(manager: SubagentSessionManager) -> ToolSpec:
                 },
             ],
         },
-        prompt_snippet="Delegate bounded work to a child agent",
         prompt_guidelines=(
             "Use one_shot for bounded independent work.",
             "Use continuable only when later delegate calls with session_id are expected.",

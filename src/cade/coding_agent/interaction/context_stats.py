@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from cade.harness.agent_runtime.harness import AgentHarness
 
 
 @dataclass
@@ -126,32 +130,19 @@ def _usage_stats_for_agent(agent: object) -> str:
 def compute_context_summary(agent: object, project_root: Path) -> ContextSummary:
     """计算上下文统计并返回宿主可消费的快照。"""
     from cade.agent._context_window import estimate_tokens
-    from cade.coding_agent.prompting.identity import (
-        CORE_IDENTITY,
-    )
-    from cade.harness.agent_runtime.prompting.identity import (
-        SEARCH_STRATEGY,
-        TOOL_DISCIPLINE,
-    )
+    from cade.agent.context import _estimate_messages_tokens, _estimate_tools_tokens
+    from cade.agent.types import ToolSpecAdapter
 
-    categories: list[tuple[str, int]] = []
-
-    system_text = f"{CORE_IDENTITY}\n\n{TOOL_DISCIPLINE}\n\n{SEARCH_STRATEGY}"
-    categories.append(("System prompt", estimate_tokens(system_text)))
-
-    registry = getattr(agent, "registry", None)
-    if registry is not None:
-        snap = registry
-        from cade.harness.agent_runtime.prompting import (
-            build_tool_guidelines,
-            build_tool_prompt,
-        )
-
-        parts = ["Available tools:\n" + build_tool_prompt(snap)]
-        guidelines = build_tool_guidelines(snap)
-        if guidelines:
-            parts.append("Guidelines:\n" + guidelines)
-        categories.append(("System tools", estimate_tokens("\n\n".join(parts))))
+    harness = cast("AgentHarness", agent)
+    registry = harness.enabled_tools
+    context_messages = harness._build_context_messages(harness.composition, registry)
+    categories: list[tuple[str, int]] = [
+        ("System prompt", _estimate_messages_tokens(context_messages)),
+        (
+            "Tool schemas",
+            _estimate_tools_tokens([ToolSpecAdapter(t) for t in registry]),
+        ),
+    ]
 
     history_messages = getattr(agent, "history_messages", None)
     messages = history_messages() if history_messages is not None else []

@@ -76,7 +76,6 @@ def build_question_tool() -> ToolSpec:
             "required": ["questions"],
             "additionalProperties": False,
         },
-        prompt_snippet="Ask the user concise multiple-choice clarification questions.",
         prompt_guidelines=(
             "Use question only when clarification or a user decision is needed.",
             "When recommending an option, make it the first option and add '(Recommended)' to its label.",

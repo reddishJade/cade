@@ -93,7 +93,6 @@ def build_bash_tool(
         description="Run a shell command.",
         input_hint='JSON: {"command": "git status --short", "timeout_ms": 30000}',
         handler=bash,
-        prompt_snippet=_build_prompt_snippet(spec, shell_syntax),
         prompt_guidelines=_build_prompt_guidelines(spec, shell_syntax, root),
         schema=_build_schema(shell_syntax),
     )
@@ -140,16 +139,6 @@ def _build_schema(shell_syntax: str) -> dict[str, Any]:
 
 
 # ── Prompt ──
-
-
-def _build_prompt_snippet(spec: ShellSpec, syntax: str) -> str:
-    """按 shell 类型生成 prompt 摘要。"""
-    name = spec.name
-    if syntax == "powershell":
-        return f"Run a PowerShell ({name}) command in the project root."
-    if syntax == "cmd":
-        return "Run a cmd.exe command in the project root."
-    return f"Run a shell ({name}) command in the project root."
 
 
 def _build_prompt_guidelines(

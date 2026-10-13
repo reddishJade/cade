@@ -173,14 +173,6 @@ def build_agent(
     )
     context_collectors.register_section(
         make_state_section(
-            "tools",
-            "tools",
-            ContextBlockSource.TOOLS,
-            priority=ContextPriority.CONTEXT,
-        )
-    )
-    context_collectors.register_section(
-        make_state_section(
             "permissions",
             "permissions",
             ContextBlockSource.PERMISSIONS,
@@ -198,7 +190,6 @@ def build_agent(
 
     runtime_context_provider = build_runtime_context_provider(
         project_root,
-        registry,
         shell_spec=shell_spec,
         modules=runtime_config.prompt.modules,
         identity=CORE_IDENTITY,

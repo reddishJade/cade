@@ -76,7 +76,6 @@ def build_write_file_tools(
                 lambda d: write_file_content(root, ops, d), data
             ),
             schema=WRITE_FILE_SCHEMA,
-            prompt_snippet="Create new files or deliberately replace entire files",
             prompt_guidelines=(
                 "Use write only for new files or deliberate full-file rewrites.",
             ),
@@ -93,9 +92,6 @@ def build_write_file_tools(
                 lambda d: edit_file_content(root, ops, d), data
             ),
             schema=EDIT_FILE_SCHEMA,
-            prompt_snippet=(
-                "Make precise file edits with exact old_text/new_text replacements"
-            ),
             prompt_guidelines=(
                 "Use edit for precise changes to existing files.",
                 "When editing, provide the full old_text that should be replaced.",
