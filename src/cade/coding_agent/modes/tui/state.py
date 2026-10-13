@@ -31,6 +31,8 @@ from .thinking import (
 from .tool_rendering import render_intent_summary
 from .tool_summary import brief_input, tool_call_text
 
+_TOOL_ANSI = "\x1b[38;2;139;148;158m"
+_ERROR_ANSI = "\x1b[38;2;255;123;114m"
 _THINKING_ANSI = "\x1b[38;2;139;148;158;3m"
 _USER_ANSI = "\x1b[48;2;33;38;45m\x1b[38;2;201;209;217m"
 _ANSI_RESET = "\x1b[0m"
@@ -427,6 +429,8 @@ class _TuiState:
                         not in {
                             "tool",
                             "tool-detail",
+                            "tool-notice",
+                            "tool-error",
                             "exploration",
                             "response-metrics",
                         },
@@ -497,7 +501,19 @@ class _TuiState:
                 return wrap_ansi_lines(lines, width) if color else lines
             if entry.role == "thinking":
                 return lines
-            wrapped = _wrap_plain_lines(lines, width)
+            wrapped: list[str] = []
+            for line in lines:
+                if entry.role == "tool-notice" or line.startswith("  ⎿  "):
+                    # 在换行前确定工具样式，避免续行被当作普通消息。
+                    detail_lines = _wrap_plain_line(line, width, "     ")
+                    if color:
+                        style = _ERROR_ANSI if "✗" in line else _TOOL_ANSI
+                        detail_lines = [
+                            f"{style}{detail}{_ANSI_RESET}" for detail in detail_lines
+                        ]
+                    wrapped.extend(detail_lines)
+                else:
+                    wrapped.extend(_wrap_plain_line(line, width))
             if color and entry.role == "response-metrics":
                 return [f"{_THINKING_ANSI}{line}{_ANSI_RESET}" for line in wrapped]
             if color and entry.role == "you":
@@ -584,6 +600,10 @@ class _TuiState:
             if show_tool_collapse:
                 detail_lines[-1] += " (ctrl+o to collapse)"
             lines.extend(detail_lines)
+        elif entry.role == "tool-notice":
+            notice_lines = entry.content().splitlines() or [""]
+            lines.append(notice_lines[0])
+            lines.extend(f"     {line}" for line in notice_lines[1:])
         elif entry.role == "thinking":
             self._append_thinking_entry(
                 entry,
@@ -994,10 +1014,16 @@ def _wrap_plain_lines(lines: list[str], width: int | None) -> list[str]:
     return [wrapped for line in lines for wrapped in _wrap_plain_line(line, width)]
 
 
-def _wrap_plain_line(line: str, width: int | None) -> list[str]:
-    """按字符显示宽度折叠单行，保留组合字符。"""
+def _wrap_plain_line(
+    line: str, width: int | None, continuation_prefix: str = ""
+) -> list[str]:
+    """按字符显示宽度折叠单行，保留组合字符和指定的续行缩进。"""
     if width is None or width <= 0:
         return [line]
+    prefix_width = get_cwidth(continuation_prefix)
+    if prefix_width >= width:
+        continuation_prefix = ""
+        prefix_width = 0
     wrapped: list[str] = []
     current: list[str] = []
     current_width = 0
@@ -1005,8 +1031,8 @@ def _wrap_plain_line(line: str, width: int | None) -> list[str]:
         character_width = get_cwidth(character)
         if current and current_width + character_width > width:
             wrapped.append("".join(current))
-            current = []
-            current_width = 0
+            current = list(continuation_prefix)
+            current_width = prefix_width
         current.append(character)
         current_width += character_width
     wrapped.append("".join(current))
