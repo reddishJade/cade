@@ -788,7 +788,7 @@ class _ExecEmitter:
                     "token_budget": self.token_budget,
                 }
             )
-        elif event_type in {"error", "warning"}:
+        elif event_type in {"response_metrics", "error", "warning"}:
             self.emit(payload)
 
     def completed(self, **payload: object) -> None:

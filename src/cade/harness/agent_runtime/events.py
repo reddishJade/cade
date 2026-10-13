@@ -19,6 +19,7 @@ from ...agent.events import (
     MessageEndEvent,
     MessageStartEvent,
     MessageUpdateEvent,
+    ResponseMetricsEvent,
     ThinkingUpdateEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
@@ -67,6 +68,23 @@ class UsageUpdateStructuredEvent:
     type: Literal["usage_update"]
     step: int
     data: dict[str, int]
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True)
+class ResponseMetricsData:
+    """请求级性能；TTFT 至首文本或思考增量，TPS 使用服务端输出用量。"""
+
+    ttft_seconds: float | None
+    tokens_per_second: float | None
+    completed: bool
+
+
+@dataclass(frozen=True)
+class ResponseMetricsStructuredEvent:
+    type: Literal["response_metrics"]
+    step: int
+    data: ResponseMetricsData
     correlation: EventCorrelation = field(default_factory=EventCorrelation)
 
 
@@ -184,6 +202,7 @@ type AgentHarnessEvent = (
     | TextDeltaStructuredEvent
     | ReasoningDeltaStructuredEvent
     | UsageUpdateStructuredEvent
+    | ResponseMetricsStructuredEvent
     | AssistantStructuredEvent
     | ToolUseStructuredEvent
     | ToolUpdateStructuredEvent
@@ -230,6 +249,19 @@ def translate_event(
                 "input_tokens": event.input_tokens,
                 "output_tokens": event.output_tokens,
             },
+            state.correlation.snapshot(),
+        )
+
+    if isinstance(event, ResponseMetricsEvent):
+        if not event.completed:
+            # 同一 step 的重试或续写也属于新消息，文本差分不能沿用上次请求。
+            state.text_seen.pop(state.step, None)
+        return ResponseMetricsStructuredEvent(
+            "response_metrics",
+            state.step,
+            ResponseMetricsData(
+                event.ttft_seconds, event.tokens_per_second, event.completed
+            ),
             state.correlation.snapshot(),
         )
 

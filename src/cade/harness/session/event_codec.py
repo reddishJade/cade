@@ -15,6 +15,7 @@ from cade.harness.agent_runtime.events import (
     ContextWindowResetStructuredEvent,
     MessageStartStructuredEvent,
     ReasoningDeltaStructuredEvent,
+    ResponseMetricsStructuredEvent,
     TextDeltaStructuredEvent,
     ToolResultStructuredEvent,
     ToolUpdateStructuredEvent,
@@ -92,6 +93,8 @@ def _event_payload(event: AgentHarnessEvent) -> object:
         }
     if isinstance(event, UsageUpdateStructuredEvent):
         return dict(event.data)
+    if isinstance(event, ResponseMetricsStructuredEvent):
+        return asdict(event.data)
     run_state = (
         event.data.run_state.to_dict() if event.data.run_state is not None else None
     )

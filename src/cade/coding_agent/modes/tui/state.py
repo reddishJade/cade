@@ -178,10 +178,12 @@ class _TuiState:
 
     tool use/text_delta 事件按到达顺序直接追加到 self.log，
     和 CLI 的 Live.update() 逐事件流式输出一致。
+    请求性能显示在对应消息下方，不进入回答正文或持久化会话。
     """
 
     log: list[_LogEntry] = field(default_factory=list)
     streaming_answer: _LogEntry | None = None
+    response_metrics: _LogEntry | None = None
     tool_names: dict[str, str] = field(default_factory=dict)
     project_root: Path | None = None
     thinking_core: ReasoningCore = field(default_factory=ReasoningCore)
@@ -241,6 +243,7 @@ class _TuiState:
         """将会话分支重建为与实时输出一致的 TUI 日志。"""
         self.log.clear()
         self.streaming_answer = None
+        self.response_metrics = None
         self.tool_names.clear()
         self.thinking_core.reset()
         self.subagents.clear()
@@ -306,7 +309,25 @@ class _TuiState:
         self.log.append(_LogEntry("thinking", text + suffix))
 
     def handle_event(self, event: AgentHarnessEvent) -> None:
-        if event.type == "reasoning_delta":
+        if event.type == "response_metrics":
+            # 无内容的工具请求或失败重试没有消息可标注，仍保留 JSONL 指标。
+            if event.data.ttft_seconds is None:
+                return
+            ttft = f"{event.data.ttft_seconds:.2f}s"
+            tps = (
+                f"{event.data.tokens_per_second:.1f}"
+                if event.data.tokens_per_second is not None
+                else "—"
+            )
+            self.response_metrics = _LogEntry(
+                "response-metrics", f"TTFT {ttft} · TPS {tps}"
+            )
+            if event.data.completed:
+                self._finish_thinking()
+                self._commit_streaming_answer()
+                self.log.append(self.response_metrics)
+                self.response_metrics = None
+        elif event.type == "reasoning_delta":
             self.thinking_core.handle_delta(event.data)
         elif event.type == "text_delta":
             self._handle_text_delta(event.data)
@@ -402,7 +423,13 @@ class _TuiState:
                     _DisplayBlock(
                         lines,
                         leading_blank=bool(blocks)
-                        and entry.role not in {"tool", "tool-detail", "exploration"},
+                        and entry.role
+                        not in {
+                            "tool",
+                            "tool-detail",
+                            "exploration",
+                            "response-metrics",
+                        },
                     )
                 )
 
@@ -421,6 +448,11 @@ class _TuiState:
         if self.thinking.strip():
             lines = self._thinking_lines(color=color, width=width)
             blocks.append(_DisplayBlock(lines, leading_blank=bool(blocks)))
+        if self.response_metrics is not None:
+            lines = self._entry_block_lines(
+                self.response_metrics, md_fn, color, False, False, width
+            )
+            blocks.append(_DisplayBlock(lines))
         self._append_optional_block(
             blocks, _wrap_plain_lines(self._subagent_lines(), width)
         )
@@ -466,6 +498,8 @@ class _TuiState:
             if entry.role == "thinking":
                 return lines
             wrapped = _wrap_plain_lines(lines, width)
+            if color and entry.role == "response-metrics":
+                return [f"{_THINKING_ANSI}{line}{_ANSI_RESET}" for line in wrapped]
             if color and entry.role == "you":
                 return [
                     f"{_USER_ANSI}{line}"

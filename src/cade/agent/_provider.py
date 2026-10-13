@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import cast
 
@@ -20,6 +20,7 @@ from cade.agent.config import AgentContext, AgentLoopConfig
 from cade.agent.events import (
     AgentEvent,
     MessageUpdateEvent,
+    ResponseMetricsEvent,
     ThinkingUpdateEvent,
     UsageUpdateEvent,
 )
@@ -53,6 +54,64 @@ logger = logging.getLogger(__name__)
 class _ProviderResponse:
     message: AssistantMessage
     stop_reason: StopReason
+
+
+@dataclass
+class _ResponseTiming:
+    """以单调时钟测量请求；TTFT 含思考，TPS 不含首增量前的等待。"""
+
+    started: float = field(default_factory=perf_counter)
+    first_token_at: float | None = None
+    finished_at: float | None = None
+    output_tokens: int | None = None
+    succeeded: bool = False
+
+    def observe(self, event: ProviderEvent) -> bool:
+        """记录事件时间和用量，返回是否首次收到非空内容增量。"""
+        first = (
+            self.first_token_at is None
+            and isinstance(event, (TextDelta, ReasoningDelta))
+            and bool(event.chunk)
+        )
+        if first:
+            self.first_token_at = perf_counter()
+        if isinstance(event, FinalMessage):
+            self.finished_at = perf_counter()
+            self.succeeded = event.stop_reason not in {"error", "aborted", "cancelled"}
+        elif isinstance(event, ProviderFailure):
+            self.succeeded = False
+        elif isinstance(event, UsageUpdate):
+            self.output_tokens = (self.output_tokens or 0) + event.output_tokens
+        return first
+
+    def event(
+        self, *, completed: bool, cancelled: bool = False
+    ) -> ResponseMetricsEvent:
+        """仅完整响应使用服务端用量；缺少用量或时间时不估算速度。"""
+        duration = (
+            self.finished_at - self.first_token_at
+            if self.finished_at is not None and self.first_token_at is not None
+            else 0.0
+        )
+        tps = None
+        if (
+            completed
+            and self.succeeded
+            and not cancelled
+            and self.output_tokens is not None
+            and self.output_tokens > 0
+            and duration > 0
+        ):
+            tps = self.output_tokens / duration
+        return ResponseMetricsEvent(
+            ttft_seconds=(
+                self.first_token_at - self.started
+                if self.first_token_at is not None
+                else None
+            ),
+            tokens_per_second=tps,
+            completed=completed,
+        )
 
 
 class LlmCallLimitReached(RuntimeError):
@@ -142,6 +201,7 @@ async def _collect_provider_events(
     """逐事件收集 provider 流；取消时中止在途请求并返回 None。"""
     events: list[ProviderEvent] = []
     text_parts: list[str] = []
+    timing = _ResponseTiming()
     try:
         kwargs = {}
         if options is not None:
@@ -155,6 +215,8 @@ async def _collect_provider_events(
                     await _aclose_stream(stream_iter)
                     return
                 events.append(event)
+                if timing.observe(event):
+                    emit(timing.event(completed=False))
                 if isinstance(event, TextDelta):
                     _append_text_delta(text_parts, event, emit)
                     await asyncio.sleep(0)
@@ -206,7 +268,10 @@ async def _collect_provider_events(
                 status_code=_exception_status_code(e),
             )
         )
+        timing.succeeded = False
         return events
+    finally:
+        emit(timing.event(completed=True, cancelled=_is_cancelled(signal)))
 
 
 def _provider_events_to_response(

@@ -97,6 +97,16 @@ class UsageUpdateEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ResponseMetricsEvent(BaseModel):
+    """单次模型请求的性能；首增量时更新 TTFT，流结束时更新 TPS。"""
+
+    type: str = "response_metrics"
+    ttft_seconds: float | None = None
+    tokens_per_second: float | None = None
+    completed: bool = False
+    model_config = ConfigDict(extra="forbid")
+
+
 class ContextWindowResetEvent(BaseModel):
     """旧上下文窗口关闭、新窗口开始事件。"""
 
@@ -120,5 +130,6 @@ type AgentEvent = (
     | ToolExecutionEndEvent
     | ThinkingUpdateEvent
     | UsageUpdateEvent
+    | ResponseMetricsEvent
     | ContextWindowResetEvent
 )
