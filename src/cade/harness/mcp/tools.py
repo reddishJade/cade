@@ -545,7 +545,7 @@ def build_fetch_tools_tool(
     )
 
 
-def _format_tool_match(server_name: str, server_slug: str, tool: dict[str, Any]) -> str:
+def _format_tool_match(server_slug: str, tool: dict[str, Any]) -> str:
     name = tool["name"]
     desc = tool.get("description", "")
     schema = tool.get("inputSchema", {})
@@ -607,7 +607,7 @@ def build_mcp_tool_search(
             if matched:
                 results.append(f"### Server '{server_name}' matched tools:")
                 for tool in matched:
-                    results.append(_format_tool_match(server_name, server_slug, tool))
+                    results.append(_format_tool_match(server_slug, tool))
 
         return (
             "\n\n".join(results)
@@ -743,7 +743,6 @@ def _format_progress_update(
 
 def _detect_collisions(
     tools_by_server: dict[str, list[dict[str, Any]]],
-    validated_servers: dict[str, McpServerConfig],
 ) -> set[str]:
     """Detect host_tool_id collisions and return set of (server, tool) to disable.
 
@@ -1094,7 +1093,7 @@ def _build_runtime_mcp_tools(
     refresh_server_tools: Callable[[str, _mcp_mod.McpClient], None],
 ) -> tuple[ToolSpec, ...]:
     """根据最新服务器 schema 构建无冲突的运行时 MCP 工具。"""
-    disabled = _detect_collisions(all_tools_by_server, validated_servers)
+    disabled = _detect_collisions(all_tools_by_server)
     registered: list[ToolSpec] = []
 
     for server_name, tools_list in all_tools_by_server.items():
@@ -1188,7 +1187,6 @@ def _tools_for_server(
         cache_path,
         cache_data,
         server_name,
-        raw_config,
         validated,
         config_hash,
         cached_entry,
@@ -1202,7 +1200,6 @@ def _query_server_tools(
     cache_path: Path,
     cache_data: dict[str, Any],
     server_name: str,
-    raw_config: dict[str, Any],
     validated: McpServerConfig,
     config_hash: str,
     cached_entry: dict[str, Any],
@@ -1267,16 +1264,6 @@ def _build_registered_mcp_tool(
     tool_schema, tool_description = _mcp_tool_schema_and_description(
         validated.name, tool, is_deferred
     )
-    annotations = tool.get("annotations")
-    _read_only_hint = isinstance(annotations, dict) and bool(
-        annotations.get("readOnlyHint")
-    )
-    _read_only = (
-        tool_override.read_only
-        if tool_override.read_only is not None
-        else _read_only_hint
-    )
-    _concurrency_safe = bool(tool_override.concurrency_safe)
     description = tool_override.description or tool_description
     mcp_handler = _make_handler(
         lazy_ref,
@@ -1291,7 +1278,7 @@ def _build_registered_mcp_tool(
         name=metadata.host_tool_id,
         description=description,
         input_hint=_mcp_tool_input_hint(tool.get("inputSchema", {})),
-        handler=lambda args, on_update=None: mcp_handler(args, on_update),
+        handler=mcp_handler,
         schema=tool_schema,
     )
 

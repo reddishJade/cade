@@ -141,7 +141,6 @@ class McpClient:
         self._callback_running = False
         self._callback_pending = False
         self._session: ClientSession | None = None
-        self._latest_progress: dict[str, object] | None = None
         self.protocol_version: str | None = None
         self.server_capabilities: dict[str, Any] = {}
         self.server_info: dict[str, Any] = {}
@@ -151,11 +150,6 @@ class McpClient:
     def status(self) -> str:
         """返回当前连接状态。"""
         return self._status
-
-    @property
-    def latest_progress(self) -> dict[str, object] | None:
-        """返回最近一次工具调用进度。"""
-        return self._latest_progress
 
     def start(self) -> None:
         """启动 owner task、stdio server 并完成 SDK initialize。"""
@@ -319,11 +313,6 @@ class McpClient:
             total: float | None,
             message: str | None,
         ) -> None:
-            self._latest_progress = {
-                "progress": progress,
-                "total": total,
-                "message": message,
-            }
             if progress_callback is not None:
                 progress_callback(progress, total, message)
 
@@ -333,7 +322,6 @@ class McpClient:
             read_timeout_seconds=self._timeout_delta(timeout),
             progress_callback=on_progress,
         )
-        self._latest_progress = None
         return _model_dict(result)
 
     def _message_handler(self) -> MessageHandlerFnT:
