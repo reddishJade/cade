@@ -20,7 +20,7 @@ description: Run and assess real Cade end-to-end acceptance tests through exec, 
 ## 配置与前置检查
 
 1. 在本次运行目录下准备独立 fixture 或 Git worktree，以及专用 sessions 和结果目录。检查 runtime、依赖、shell、sandbox 和独立验证命令能够运行。记录 Cade 与任务仓库的版本及初始状态。
-2. 显式选择 mode、model、transport、effort 和审批方式。用户指定参数优先；普通 Cade 验收默认使用已有 Codex 登录、`openai_codex`、`gpt-5.6-luna`、`high`、`build`、`auto-review`。模型可用性仍需确认；验证其他 provider、mode 或审批边界时使用场景要求的参数。
+2. 显式选择 mode、model、transport、effort 和审批方式。用户指定参数优先；普通 Cade 验收默认使用已有 Codex 登录、`openai_codex`、`gpt-5.6-luna`、`none`、`thinking: false`、`build`、`auto-review`。主模型与辅助角色均关闭推理；只有验收推理行为时才使用场景要求的强度。模型可用性仍需确认；验证其他 provider、mode 或审批边界时使用场景要求的参数。
 3. 使用独立 `--config`，不修改全局 `~/.cade/settings.json` 或删除 API 配置。默认模型与连接保存在 settings，API key 和 OAuth 按 provider 独立保存在 `~/.cade/auth.json`。当前 DeepSeek API 欠费，普通验收不使用它；明确测试 DeepSeek 时先确认服务可用。
 4. `--config` 只替代项目 `cade.config.json`，仍会合并全局配置和工作区 `.cade/settings.json`。检查有效 main、subagent、fallback 和 Reviewer 来源；单独传 `--model` 不足以控制它们。使用 [配置示例与运行命令](references/run.md) 显式指定默认与辅助角色的 provider/model/effort，避免合并后遗留 DeepSeek 选择。
 5. 检查凭据存在和配置解析；只记录模型、transport、effort、端点和是否有凭据。不要打印或复制 API key、OAuth token、refresh token 或完整认证配置。凭据存在不代表服务有额度。

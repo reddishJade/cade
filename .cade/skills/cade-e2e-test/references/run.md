@@ -6,19 +6,20 @@
 {
   "default_provider": "openai-codex",
   "default_model": "gpt-5.6-luna",
-  "default_reasoning_effort": "high",
+  "default_reasoning_effort": "none",
   "provider": {
+    "options": {"thinking": false},
     "model_profiles": {
-      "subagent": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "high"},
-      "fallback": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "high"},
-      "reviewer": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "high"}
+      "subagent": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "none", "thinking": false},
+      "fallback": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "none", "thinking": false},
+      "reviewer": {"provider": "openai-codex", "model": "gpt-5.6-luna", "reasoning_effort": "none", "thinking": false}
     }
   },
   "execution_modes": {"default_mode": "build"}
 }
 ```
 
-辅助角色显式指定三项选择，覆盖可能存在的全局角色选择。其他请求选项和连接参数仍会合并，运行前检查实际值；需要清除某个选项时用该字段支持的显式值，例如 `context_window: null`。不要复制认证文件。针对固定 provider 协议的验收使用对应配置，其他角色（如 judge/refiner）按场景显式检查。
+辅助角色显式指定模型选择和推理设置，覆盖可能存在的全局角色选择。Codex 的 `thinking: false` 只关闭推理摘要，必须同时设置 `reasoning_effort: "none"` 才能关闭推理。其他请求选项和连接参数仍会合并，运行前检查实际值；需要清除某个选项时用该字段支持的显式值，例如 `context_window: null`。不要复制认证文件。针对固定 provider 协议的验收使用对应配置，其他角色（如 judge/refiner）按场景显式检查。
 
 ## 运行命令
 
