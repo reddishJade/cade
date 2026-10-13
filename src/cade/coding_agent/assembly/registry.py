@@ -51,24 +51,6 @@ def _discover_skills(
     return skill_registry
 
 
-def _build_base_project_registry(
-    project_root: Path,
-    shell_spec: ShellSpec,
-    cancel_event: threading.Event | None,
-    shell: Shell | None,
-    skill_registry: SkillRegistry | None,
-    contextual_state: ContextualRetrievalState | None = None,
-) -> tuple[ToolSpec, ...]:
-    return build_project_scoped_registry(
-        project_root=project_root,
-        contextual_state=contextual_state,
-        shell_spec=shell_spec,
-        cancel_event=cancel_event,
-        shell=shell,
-        skill_registry=skill_registry,
-    )
-
-
 def _build_child_registry(
     registry: tuple[ToolSpec, ...],
     subagent_extra_tools: set[str],
@@ -95,7 +77,6 @@ def _extend_registry_with_features(
     registry: tuple[ToolSpec, ...],
     project_root: Path,
     mcp_runtime_registry: McpRuntimeRegistry,
-    runtime_config: CadeRuntimeConfig,
     session_history: SessionHistory | None = None,
     context_window_controller: ContextWindowController | None = None,
     cancel_event: threading.Event | None = None,
@@ -113,7 +94,7 @@ def _extend_registry_with_features(
             build_save_memory_tool(project_root, session_history, cancel_event),
         )
     if context_window_controller is not None:
-        registry += build_new_context_tool(context_window_controller, project_root)
+        registry += build_new_context_tool(context_window_controller)
     return registry
 
 
@@ -144,13 +125,13 @@ def build_tool_registry(
 
     skill_registry = _discover_skills(project_root, runtime_config, skills_dir)
 
-    registry = _build_base_project_registry(
-        project_root,
-        shell_spec,
-        cancel_event,
-        shell,
-        skill_registry,
+    registry = build_project_scoped_registry(
+        project_root=project_root,
         contextual_state=contextual_state,
+        shell_spec=shell_spec,
+        cancel_event=cancel_event,
+        shell=shell,
+        skill_registry=skill_registry,
     )
     mcp_runtime_registry = McpRuntimeRegistry()
     mcp_runtime_registry.configure_runtime(
@@ -161,7 +142,6 @@ def build_tool_registry(
         registry,
         project_root,
         mcp_runtime_registry,
-        runtime_config,
         session_history=session_history,
         context_window_controller=context_window_controller,
         cancel_event=cancel_event,

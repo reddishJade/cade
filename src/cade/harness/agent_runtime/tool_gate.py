@@ -12,6 +12,7 @@ from cade.ai.events import ToolCall
 
 from ...agent.config import (
     AfterToolCallContext,
+    AfterToolCallHook,
     AfterToolCallResult,
     BeforeToolCallContext,
     BeforeToolCallResult,
@@ -468,12 +469,7 @@ class ToolGate:
 
         return before_tool
 
-    def build_after_tool_hook(
-        self, snapshot: ToolGateSnapshot
-    ) -> Callable[
-        [AfterToolCallContext, CancellationSignal | None],
-        AfterToolCallResult | None,
-    ]:
+    def build_after_tool_hook(self) -> AfterToolCallHook:
         def after_tool(
             ctx: AfterToolCallContext, _signal: CancellationSignal | None
         ) -> AfterToolCallResult | None:
@@ -509,9 +505,7 @@ class ToolGate:
 
         return after_tool
 
-    def build_is_tool_productive_hook(
-        self, snapshot: ToolGateSnapshot
-    ) -> IsToolProductiveHook:
+    def build_is_tool_productive_hook(self) -> IsToolProductiveHook:
         def is_productive(
             tool_calls: list[ToolCallContent],
             tool_results: list[Any],
@@ -524,7 +518,6 @@ class ToolGate:
                     for tc in tool_calls
                 ],
                 tool_results,
-                snapshot.tool_map,
             )
 
         return is_productive
@@ -730,9 +723,7 @@ def _truncate_transcript(text: str, limit: int) -> str:
 def _tool_results_count_as_progress(
     tool_uses: list[ToolCall],
     tool_results: list[Any],
-    tool_map: dict[str, ToolSpec],
 ) -> bool:
-    del tool_map
     if not tool_uses or not tool_results:
         return False
     results_by_id = {

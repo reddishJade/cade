@@ -260,13 +260,6 @@ class CadeApp:
                 answer = event.data.answer
         return answer
 
-    async def aask(self, question: str) -> str:
-        answer = ""
-        async for event in self.aask_stream(question):
-            if event.type == "final":
-                answer = event.data.answer
-        return answer
-
     @property
     def session_store(self) -> SessionStore:
         recorder = self.session_recorder
@@ -332,30 +325,6 @@ class CadeApp:
                         yield event.content
 
         yield from aiter_to_sync_iter(answer(), CancellationToken())
-
-    async def aask_stream(
-        self,
-        question: str | None,
-        mode: ExecutionMode | None = None,
-        *,
-        display_question: str | None = None,
-    ) -> AsyncIterator[AgentHarnessEvent]:
-        recorder = self.session_recorder
-        if recorder is None:
-            raise RuntimeError("session recorder is not configured")
-        recorder.bind_agent(self.agent)
-        if question is not None:
-            self.agent.followup(
-                UserMessage(content=question),
-                display_text=display_question,
-            )
-        async for event in self.agent.arun_stream(
-            None,
-            mode=mode,
-            display_question=display_question,
-        ):
-            recorder.record_event(event)
-            yield event
 
     def hook_diagnostics(self) -> tuple[ExternalHookDiagnostic, ...]:
         """返回外部命令 hook 的运行时诊断。"""

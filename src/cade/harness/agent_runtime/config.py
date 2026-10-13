@@ -472,9 +472,9 @@ def build_loop_config(
         ),
         rollover_context=rollover_fn if context_rollover is not None else None,
         completion_verifier=completion_verifier,
-        is_tool_productive=gate.build_is_tool_productive_hook(gate_snapshot),
+        is_tool_productive=gate.build_is_tool_productive_hook(),
         before_tool_call=gate.build_before_tool_hook(gate_snapshot),
-        after_tool_call=gate.build_after_tool_hook(gate_snapshot),
+        after_tool_call=gate.build_after_tool_hook(),
         before_provider_request=_build_before_provider_request_closure(
             emit_hook,
             get_prompt_version,
@@ -557,14 +557,3 @@ def tool_definition_to_dict(tool: Any) -> dict[str, Any]:
         "description": str(getattr(tool, "description", "")),
         "parameters": getattr(tool, "parameters", {}),
     }
-
-
-def resolve_permission_policy(
-    project_root: Path | None, base: PermissionPolicy | None
-) -> PermissionPolicy | None:
-    """返回静态权限策略，直接使用已通过 discover_runtime_config 合并的结果。
-
-    各配置源的合并已在 config.discover_runtime_config() 中完成，
-    无需在此处再次加载 .cade/settings.json。
-    """
-    return base

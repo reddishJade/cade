@@ -71,13 +71,6 @@ class Agent:
         self._last_result: AgentLoopResult | None = None
         self._last_messages: list[AgentMessage] = []
 
-    def update_tools(self, tools: list[AgentTool]) -> None:
-        """替换当前工具列表。
-
-        用于执行模式切换等场景，需动态更换可用工具集。
-        """
-        self._tools = tools
-
     @property
     def last_result(self) -> AgentLoopResult | None:
         return self._last_result

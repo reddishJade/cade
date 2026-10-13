@@ -57,39 +57,6 @@ from .messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMes
 from .request import RequestAssembly
 from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 
-# ── 事件辅助构造 ──
-
-
-def _agent_start_event() -> AgentStartEvent:
-    return AgentStartEvent()
-
-
-def _agent_end_event(
-    messages: list[AgentMessage] | None = None,
-    result: AgentLoopResult | None = None,
-) -> AgentEndEvent:
-    return AgentEndEvent(messages=messages or [])
-
-
-def _turn_start_event() -> TurnStartEvent:
-    return TurnStartEvent()
-
-
-def _turn_end_event(
-    message: AgentMessage | None = None,
-    tool_results: list[ToolResultMessage] | None = None,
-) -> TurnEndEvent:
-    return TurnEndEvent(message=message, tool_results=tool_results or [])
-
-
-def _message_start_event(message: AgentMessage) -> MessageStartEvent:
-    return MessageStartEvent(message=message)
-
-
-def _message_end_event(message: AgentMessage) -> MessageEndEvent:
-    return MessageEndEvent(message=message)
-
-
 # ── 公共 API ──
 
 
@@ -130,11 +97,11 @@ async def run_agent_loop(
         current_context.context_manager.token_usage.context_budget = (
             current_context.request_token_budget
         )
-    emit(_agent_start_event())
-    emit(_turn_start_event())
+    emit(AgentStartEvent())
+    emit(TurnStartEvent())
     for prompt in prompts:
-        emit(_message_start_event(prompt))
-        emit(_message_end_event(prompt))
+        emit(MessageStartEvent(message=prompt))
+        emit(MessageEndEvent(message=prompt))
     result = await _run_loop(
         current_context,
         new_messages,
@@ -195,7 +162,7 @@ async def _run_loop(
 
         # ── 发出 turn 事件 ──
         if not state.first_turn:
-            emit(_turn_start_event())
+            emit(TurnStartEvent())
         else:
             state.first_turn = False
 
@@ -277,7 +244,7 @@ async def _run_loop(
 
         # ── 错误/中止 → 退出 ──
         if stop_reason in ("error", "aborted"):
-            emit(_turn_end_event(message, []))
+            emit(TurnEndEvent(message=message, tool_results=[]))
             result = AgentLoopResult(
                 messages=new_messages,
                 surface=list(current_context.messages),
@@ -292,7 +259,7 @@ async def _run_loop(
                 metrics=metrics,
                 active_provider=state.active_provider,
             )
-            emit(_agent_end_event(new_messages, result))
+            emit(AgentEndEvent(messages=new_messages or []))
             return result
 
         # ── 提取工具调用 ──
@@ -300,7 +267,7 @@ async def _run_loop(
 
         if not tool_calls:
             # 模型没有请求工具 → 本轮结束
-            emit(_turn_end_event(message, []))
+            emit(TurnEndEvent(message=message, tool_results=[]))
 
             if config.completion_verifier is not None:
                 feedback = await config.completion_verifier(current_context.messages)
@@ -342,7 +309,7 @@ async def _run_loop(
         tool_results = executed.results
         _append_tool_results(current_context, new_messages, metrics, tool_results)
 
-        emit(_turn_end_event(message, tool_results))
+        emit(TurnEndEvent(message=message, tool_results=tool_results or []))
 
         # ── 重复工具看门狗 ──
         repeated_watchdog_reason = update_repeated_tool_watchdog(
@@ -413,7 +380,7 @@ async def _run_loop(
         metrics=metrics,
         active_provider=state.active_provider,
     )
-    emit(_agent_end_event(new_messages, result))
+    emit(AgentEndEvent(messages=new_messages or []))
     return result
 
 
@@ -521,7 +488,7 @@ def _finish_loop(
         metrics=metrics,
         active_provider=active_provider,
     )
-    emit(_agent_end_event(new_messages, result))
+    emit(AgentEndEvent(messages=new_messages or []))
     return result
 
 
@@ -653,8 +620,8 @@ async def _run_inner_loop(
                 content=[TextContent(text="No provider configured")],
                 stop_reason="end_turn",
             )
-            emit(_message_start_event(msg))
-            emit(_message_end_event(msg))
+            emit(MessageStartEvent(message=msg))
+            emit(MessageEndEvent(message=msg))
             return msg, "end_turn", provider
 
         response = await call_provider(
@@ -686,12 +653,12 @@ async def _run_inner_loop(
                 and config.rollover_context is not None
             ):
                 overflow_recovered = True
-                emit(_message_end_event(message))
+                emit(MessageEndEvent(message=message))
                 _rotate_context(context, config, emit, metrics, provider, "token_limit")
                 prepared_assembly = None
                 continue
             if _is_context_overflow(message):
-                emit(_message_end_event(message))
+                emit(MessageEndEvent(message=message))
                 return message, stop_reason, provider
             state.step_retries += 1
             should_retry, fallback_message = await _handle_provider_error(
@@ -702,7 +669,7 @@ async def _run_inner_loop(
             if fallback_message is not None:
                 context.messages.append(fallback_message)
                 return fallback_message, "error", provider
-            emit(_message_end_event(message))
+            emit(MessageEndEvent(message=message))
             return message, stop_reason, provider
 
         # ── max_tokens 续写 ──
@@ -713,8 +680,8 @@ async def _run_inner_loop(
             if continuation_count is None:
                 fallback = _continuation_limit_message(config)
                 context.messages.append(fallback)
-                emit(_message_start_event(fallback))
-                emit(_message_end_event(fallback))
+                emit(MessageStartEvent(message=fallback))
+                emit(MessageEndEvent(message=fallback))
                 return fallback, "error", provider
             state.consecutive_continuations = continuation_count
             _append_continuation_prompt(context, message)
@@ -723,7 +690,7 @@ async def _run_inner_loop(
 
         # ── 正常结束 ──
         context.messages.append(message)
-        emit(_message_end_event(message))
+        emit(MessageEndEvent(message=message))
         state.step_retries = 0
         state.consecutive_continuations = 0
         return message, stop_reason, provider
@@ -748,8 +715,8 @@ async def _handle_provider_error(
             error_message=_assistant_error_detail(message),
             provider_failure=message.provider_failure,
         )
-        emit(_message_start_event(msg))
-        emit(_message_end_event(msg))
+        emit(MessageStartEvent(message=msg))
+        emit(MessageEndEvent(message=msg))
         return False, msg
     return False, None
 

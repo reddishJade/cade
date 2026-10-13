@@ -331,7 +331,7 @@ class AgentHarness:
                 content=[TextContent(text=f"{type(exc).__name__}: {exc}")],
                 is_error=True,
             )
-        after = self._gate.build_after_tool_hook(snapshot)(
+        after = self._gate.build_after_tool_hook()(
             AfterToolCallContext(
                 assistant_message=assistant_message,
                 tool_call=tool_call,

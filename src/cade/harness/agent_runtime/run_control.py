@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from threading import Event, Lock
+from threading import Lock
 from uuid import uuid4
 
 from ...agent.messages import AgentMessage, UserMessage
@@ -64,7 +64,6 @@ class ActiveRunHandle:
         self._state = ActiveRunState.RUNNING
         self._accepting_step_input = True
         self._lock = Lock()
-        self._finished = Event()
 
     def steer(
         self,
@@ -128,15 +127,10 @@ class ActiveRunHandle:
                 self._accepting_step_input = False
 
     def finish(self) -> None:
-        """标记 run 已完整提交并唤醒等待者。"""
+        """标记 run 已完整提交。"""
         with self._lock:
             self._state = ActiveRunState.FINISHED
             self._accepting_step_input = False
-            self._finished.set()
-
-    def wait_finished(self, timeout: float | None = None) -> bool:
-        """同步等待 run 完整结束。"""
-        return self._finished.wait(timeout)
 
 
 class SessionRunController:

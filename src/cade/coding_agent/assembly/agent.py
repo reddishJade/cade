@@ -34,7 +34,6 @@ from cade.harness.agent_runtime.config import (
     GateConfig,
     GateRuntimeConfig,
     build_request_assembler,
-    resolve_permission_policy,
 )
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
@@ -219,10 +218,7 @@ def build_agent(
         identity=CORE_IDENTITY,
     )
     gate = GateConfig(
-        permission_policy=resolve_permission_policy(
-            project_root,
-            permission_policy_from_security(sec),
-        ),
+        permission_policy=permission_policy_from_security(sec),
         approval_policy=sec.approval_policy,
         restricted_dirs=sec.restricted_dirs,
         hook_constraint_providers=hook_constraint_providers,

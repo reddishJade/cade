@@ -211,7 +211,6 @@ def has_working_note(project_root: Path) -> bool:
 
 def build_new_context_tool(
     controller: ContextWindowController,
-    project_root: Path,
 ) -> tuple[ToolSpec, ...]:
     """构建模型主动换窗工具；笔记用于交接但不阻塞释放窗口。"""
 
