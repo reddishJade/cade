@@ -232,7 +232,7 @@ syscall seccomp 当前处于关闭状态。
 
 Provider adapter 将厂商响应转换为统一文本、工具调用、用量、结束与失败事件，
 模型调用方通过 [provider 协议](../src/cade/ai/providers/base.py) 消费这些事件。
-transport runtime 处理网络瞬时错误与限流重试，Agent 循环处理 step 级重试、
+SDK 处理请求建立阶段的网络瞬时错误与限流重试，Agent 循环处理 step 级重试、
 输出续写和上下文超限恢复，harness 管理主备切换。已输出事件的失败流结束后，
 后续重试按循环状态处理；主备包装器仅在当前流尚未输出时直接重发到备用 provider。
 

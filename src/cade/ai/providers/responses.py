@@ -33,7 +33,6 @@ from cade.ai.types import (
 from cade.ai.usage import UsageAccumulator, UsageTotals
 
 from ._codec import make_schema_strict
-from ._runtime import ProviderRuntime
 from ._stream import parse_tool_arguments
 
 _LOGGER = logging.getLogger(__name__)
@@ -371,12 +370,10 @@ class OpenAIResponsesProvider:
         config: ProviderConfig,
         *,
         client: Any | None = None,
-        runtime: ProviderRuntime | None = None,
     ) -> None:
         self.config = config
         self.transport = "openai_responses"
         self._usage = UsageAccumulator(config.model)
-        self.runtime = runtime or ProviderRuntime()
         self._client = client
         self._current_options: StreamOptions | None = None
         self._metrics: dict[str, object] = {
@@ -726,9 +723,8 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
         config: ProviderConfig,
         *,
         client: Any | None = None,
-        runtime: ProviderRuntime | None = None,
     ) -> None:
-        super().__init__(config, client=client, runtime=runtime)
+        super().__init__(config, client=client)
         self.transport = "openai_codex"
         self._metrics["transport"] = self.transport
 

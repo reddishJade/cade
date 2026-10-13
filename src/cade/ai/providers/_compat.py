@@ -22,7 +22,6 @@ from cade.ai.types import (
 from cade.ai.usage import UsageAccumulator, UsageTotals
 
 from ._codec import normalize_cross_provider_messages, to_chat_messages, to_chat_tools
-from ._runtime import ProviderRuntime
 from ._stream import chat_stream_to_events
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,6 @@ class OpenAICompatProvider:
         *,
         transport: str = "openai_chat",
         client: Any | None = None,
-        runtime: ProviderRuntime | None = None,
     ) -> None:
         if client is None:
             from openai import OpenAI as _OpenAIClient
@@ -70,7 +68,6 @@ class OpenAICompatProvider:
         self.client = client
         self.config = config
         self._usage = UsageAccumulator(config.model)
-        self.runtime = runtime or ProviderRuntime()
         self.transport = transport
         self._current_options: StreamOptions | None = None
         self._metrics: dict[str, object] = self._init_metrics()
@@ -132,8 +129,13 @@ class OpenAICompatProvider:
     ) -> AsyncIterator[ProviderEvent]:
         self._current_options = options
         messages = self._normalize_messages(messages)
-        for event in self._stream_sync(messages, tuple(tools)):
-            yield event
+        from openai import APIError
+
+        try:
+            for event in self._stream_sync(messages, tuple(tools)):
+                yield event
+        except APIError as exc:
+            raise RuntimeError(f"Provider request failed: {exc}") from exc
 
     def _stream_sync(
         self,
@@ -202,7 +204,7 @@ class OpenAICompatProvider:
                 params["extra_headers"] = extra_headers
 
         self._abort_pending = False
-        stream = self.runtime.run(lambda: self.client.chat.completions.create(**params))
+        stream = self.client.chat.completions.create(**params)
         self._active_stream = stream
         if self._abort_pending:
             # 请求建立期间收到打断：立即关闭，避免阻塞读取。

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -20,7 +20,6 @@ from cade.ai.providers.base import ModelProvider
 from cade.ai.resolver import ModelResolver
 from cade.ai.types import ProviderConfig
 
-from ._runtime import ProviderRuntime, RateLimitPolicy, RetryPolicy
 from .chatglm import ChatGLMProvider
 from .deepseek import DeepSeekProvider
 from .mimo import MiMoProvider
@@ -92,8 +91,6 @@ class ModelProfileConfig:
 class ProviderSettings:
     env_files: tuple[Path, ...]
     model_profiles: Mapping[str, ModelProfileProto]
-    retry: RetryPolicy = field(default_factory=RetryPolicy)
-    rate_limit: RateLimitPolicy = field(default_factory=RateLimitPolicy)
 
 
 @dataclass(frozen=True)
@@ -145,10 +142,6 @@ def _build_llm_profiles(
             profile,
             name,
             settings.env_files,
-            ProviderRuntime(
-                retry=settings.retry,
-                rate_limit=settings.rate_limit,
-            ),
         )
         for name, profile in profile_settings.items()
     }
@@ -181,7 +174,6 @@ def _build_llm_profile(
     profile: ModelProfileProto,
     profile_name: str,
     env_files: tuple[Path, ...],
-    runtime: ProviderRuntime,
 ) -> ModelProvider:
     """构造单个 provider 实例。"""
     transport = profile.transport
@@ -216,4 +208,4 @@ def _build_llm_profile(
         response_format=profile.response_format,
         extra=extra,
     )
-    return provider_cls(config, runtime=runtime)
+    return provider_cls(config)
