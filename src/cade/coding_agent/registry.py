@@ -13,8 +13,6 @@ from typing import TYPE_CHECKING
 from cade.agent.types import ToolSpec
 from cade.coding_agent.tools import (
     build_bash_tool,
-    build_glob_tools,
-    build_grep_tool,
     build_question_tool,
     build_read_file_tool,
     build_webfetch_tool,
@@ -46,8 +44,6 @@ def build_project_scoped_registry(
         project_root,
         cancel_event=cancel_event,
     )
-    registry += build_glob_tools(project_root, cancel_event=cancel_event)
-    registry += (build_grep_tool(project_root, cancel_event=cancel_event),)
     registry += (build_webfetch_tool(), build_websearch_tool())
     registry += (build_question_tool(),)
     registry += (

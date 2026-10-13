@@ -17,9 +17,6 @@ from cade.harness.security.permissions import PermissionDecision
 
 ExecutionMode = Literal["plan", "build", "act"]
 
-# 结构化搜索保持可选；默认编码工具通过 bash 组合 rg/find/ls。
-_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
-
 _PLAN_TOOLS = frozenset(
     {
         "read",
@@ -87,9 +84,7 @@ class ExecutionModeState:
         """根据当前模式过滤工具集。"""
         if self._current_mode == "plan":
             return tuple(tool for tool in registry if tool.name in _PLAN_TOOLS)
-        return tuple(
-            tool for tool in registry if tool.name not in _STRUCTURED_SEARCH_TOOLS
-        )
+        return registry
 
 
 def parse_execution_mode(value: object) -> ExecutionMode | None:
@@ -144,10 +139,6 @@ def build_default_mode_rulesets(
     """构建 coding product 的默认执行模式规则。"""
     read_rules = (
         Rule(action="read", effect="allow"),
-        Rule(action="glob", effect="allow"),
-        Rule(action="grep", effect="allow"),
-        Rule(action="find", effect="allow"),
-        Rule(action="ls", effect="allow"),
         Rule(action="webfetch", effect="allow"),
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),

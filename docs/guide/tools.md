@@ -11,10 +11,6 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 | **`read`** | 只读并发池 | `path`, `offset`, `limit` | 读取指定文件内容，支持按行切片和大文件分页读取 |
 | **`edit`** | 串行写屏障 | `path`, `old_text`, `new_text`, `replace_all` | 基于精准定位与防脏写校验的代码块修改 |
 | **`write`** | 串行写屏障 | `path`, `content` | 创建全新文件或全量覆写指定文件内容 |
-| **`grep`** | 可选只读并发工具 | `pattern`, `path`, `glob`, `max_results`, `ignore_case`, `literal`, `context` | 优先通过系统 ripgrep 进行极速全文或正则搜索 |
-| **`glob`** | 可选只读并发工具 | `pattern`, `path`, `max_results` | 按 Glob 通配符（如 `src/**/*.py`）匹配文件路径 |
-| **`find`** | 可选只读并发工具 | `pattern`, `path`, `max_results` | 模糊查找包含特定文件名的项目文件 |
-| **`ls`** | 可选只读并发工具 | `path`, `limit` | 结构化遍历指定目录下的子文件与目录树 |
 | **`bash`** | 串行执行 | `command`, `timeout_ms`, `workdir`, `purpose` | 在 Linux 沙箱或本地隔离环境中执行 Shell 脚本 |
 | **`webfetch`** | 只读并发池 | `url`, `selector` | 抓取指定网页文档内容，提取纯文本或 Markdown |
 | **`websearch`** | 只读并发池 | `query` | 调用搜索引擎检索外部最新开源库文档与问题解法 |
@@ -27,10 +23,10 @@ Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具
 
 ## 2. 调度机制：只读并发与写操作屏障
 
-模型在单轮推理中经常会一次性输出多个工具调用（例如同时读取 4 个源文件，或者同时执行搜索）。Cade 的工具执行器（Tools Manager）会自动进行**副作用分类**：
+模型可以在单轮中输出多个工具调用。工具执行器按照 `ToolSpec.execution_mode` 调度它们。
 
 ### 2.1 只读并发池（Read Pool）
-`ToolSpec.execution_mode="parallel"` 的工具才会进入并发批次。当前明确标记为 parallel 的是 `read` 以及可选的 `grep/glob/find/ls`；其余工具默认 sequential。
+`ToolSpec.execution_mode="parallel"` 的工具才会进入并发批次。当前明确标记为 parallel 的是 `read`；其余工具默认 sequential。
 - 这避免把“工具是否只读”的猜测散落到调度器里，调度语义由工具契约显式声明。
 
 ### 2.2 串行写屏障（Serial Write Barrier）

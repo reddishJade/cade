@@ -12,7 +12,6 @@
 read / write / edit / bash
 ```
 
-`grep / glob / find / ls` 保留为可选结构化搜索实现，默认搜索通过 `bash`；
 正常 Plan / Build / Act 代码探索由 `bash` 组合 `rg`、`fd`、`git` 等原生命令。
 交互、Web 与运行时能力（如 `question`、`webfetch`、`websearch`、`delegate`）
 按产品功能独立注册。
@@ -24,10 +23,8 @@ read / write / edit / bash
   - `file_handlers.py`：实现文件读写与 model-facing `edit`，按 `old_text` 精确匹配当前文件内容。
   - `text_edit.py`：精确文本替换与换行格式处理。
   - `file_image.py`：多模态图片文件支持与 Base64 提取。
-- **文件检索与代码搜索**：
-  - `glob_search.py`：文件树通配符检索（model-facing `glob`、`find`、`ls`）；文件发现优先使用 `fd`，回退到 `rg` 或 Python。
-  - `grep_search.py`：基于 Ripgrep 的代码内容搜索（model-facing `grep`）。
-  - `file_index.py` / `_search_utils.py`：工程目录索引构建与过滤支持。
+- **交互式文件补全**：
+  - `file_index.py`：在数量和时间预算内枚举工程文件，供输入补全使用。
 - **环境交互与进程执行**：
   - `bash.py`：执行终端命令。自动对接底层 Bubblewrap 沙箱或系统原生 Shell，控制超时与进程组清理。
   - `shell_adapter.py`：命令适配器，连接权限判定与 Shell 执行引擎。
@@ -46,6 +43,6 @@ read / write / edit / bash
 ## 2. 架构不变量与设计禁忌
 
 - **并发与副作用分区**：
-  - 只读工具（`read` 及可选 `grep/glob/find/ls`）声明并发安全，由调度器并行触发。
+  - `read` 声明并发安全，由调度器并行触发。
   - 具有文件写（`write`、`edit`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
 - **统一异常契约**：工具发生 IO 错误、找不到路径或语法错误时，必须返回清晰的文本错误说明，严禁直接抛出未捕获的 Python 异常导致循环终结。
