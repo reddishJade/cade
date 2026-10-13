@@ -647,7 +647,7 @@ class _CadeTui:
         buffer.reset(append_to_history=True)
         if self._state.running:
             if self._state.running and _is_live_command(text):
-                self._record_command(text)
+                self._show_command(text)
                 self._run_command(text, preserve_running=True)
             elif self._state.running and not text.startswith(("/", "!", "$")):
                 self._submit_busy_message(text)
@@ -906,12 +906,12 @@ class _CadeTui:
                 return
             text = remaining_text
         if text.startswith("/"):
-            self._record_command(text)
+            self._show_command(text)
             self._run_command(text)
             self._refresh()
             return
         if text.startswith("!"):
-            self._record_command(text)
+            self._show_command(text)
             self._run_shell_shortcut(text)
             self._refresh()
             return
@@ -1003,9 +1003,8 @@ class _CadeTui:
         else:
             self._application.create_background_task(run_inline())
 
-    def _record_command(self, text: str) -> None:
-        """记录用户输入的命令，命令本身不进入 agent 回合。"""
-        self._store.append("event", {"type": "command", "data": text})
+    def _show_command(self, text: str) -> None:
+        """显示命令输入；需要恢复的输入、状态和结果由各自处理器持久化。"""
         self._state.add_command(text)
 
     def _show_native_command_choice(self, text: str) -> bool:

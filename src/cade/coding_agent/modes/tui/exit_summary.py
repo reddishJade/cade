@@ -25,7 +25,7 @@ def print_exit_summary(
     minutes, seconds = divmod(seconds, 60)
     duration = f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
     info = [Text(f"Time {duration}", style="#8b949e")]
-    if metadata is not None:
+    if metadata is not None and store.is_meaningful_session(store.current_path):
         args = ["cade", "--session", metadata.id]
         if project_root.resolve() != Path.cwd().resolve():
             args.extend(["--project-root", str(project_root.resolve())])

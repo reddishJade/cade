@@ -664,6 +664,7 @@ class SessionStore:
 
     @staticmethod
     def is_meaningful_session(path: Path) -> bool:
+        """判断是否有可恢复内容，旧版的通用命令记录不构成有效会话。"""
         if not path.exists():
             return False
         try:
@@ -675,7 +676,13 @@ class SessionStore:
                     model = TreeEntryModel.model_validate(data)
                 except (ValidationError, json.JSONDecodeError):
                     continue
-                if model.type in {"user", "assistant", "event"}:
+                if model.type in {"user", "assistant"}:
+                    return True
+                if (
+                    model.type == "event"
+                    and isinstance(model.content, dict)
+                    and model.content.get("type") != "command"
+                ):
                     return True
         except (OSError, json.JSONDecodeError):
             return False
