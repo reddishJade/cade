@@ -147,8 +147,7 @@ def build_tool_registry(
     )
     subagents = SubagentSessionManager(
         provider=subagent_provider,
-        coding_tools=child_registry,
-        research_tools=child_registry,
+        tools=child_registry,
         system_prompts=BUILD_SUBAGENT_PROMPTS,
         parent_store=session_recorder.store,
     )
