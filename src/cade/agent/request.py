@@ -460,7 +460,6 @@ def _context_snapshot(
     durable_tokens = _estimate_messages_tokens(durable)
     working_tokens = _estimate_messages_tokens(working)
     evidence_tokens = _estimate_messages_tokens(evidence)
-    window = context.context_manager.context_window
     return ContextSnapshot(
         physical_window=policy.physical_window if policy else None,
         effective_input_budget=token_budget,
@@ -484,7 +483,7 @@ def _context_snapshot(
         if token_budget > 0
         else 0,
         current_window_id=context_window_id(context.messages) or None,
-        last_rotation_reason=window.last_reason,
+        last_rotation_reason=context.context_manager.last_rotation_reason,
         rotation_blocked_reason=blocked_reason,
     )
 

@@ -92,9 +92,6 @@ async def run_agent_loop(
         ),
         context_policy=config.context_policy or context.context_policy,
     )
-    current_context.context_manager.token_usage.context_budget = (
-        current_context.request_token_budget
-    )
     emit(AgentStartEvent())
     emit(TurnStartEvent())
     for prompt in prompts:
@@ -543,7 +540,7 @@ def _rotate_context(
     before = len(context.messages)
     next_window = config.rollover_context(context.messages)
     context.messages = context.context_manager.complete_rollover(
-        next_window, reason=reason, before_messages=before
+        next_window, reason=reason
     )
     _refresh_request_prefix(context, config)
     _reset_provider_conversation_state(provider)

@@ -25,12 +25,7 @@ from .context import (
     make_collector_section,
     make_state_section,
 )
-from .context_manager import (
-    ContextManager,
-    ContextTokenUsage,
-    ContextWindowState,
-    PromptCacheMetadata,
-)
+from .context_manager import ContextManager
 from .context_policy import ContextPolicy, ContextSnapshot
 from .events import AgentEvent
 from .messages import (
@@ -74,15 +69,12 @@ __all__ = [
     "ContextPriority",
     "ContextSection",
     "ContextSnapshot",
-    "ContextTokenUsage",
-    "ContextWindowState",
     "DefaultContextAssembler",
     "DefaultRequestAssembler",
     "FrozenContextCollectorRegistry",
     "InstructionCollector",
     "InstructionSource",
     "NotesCollector",
-    "PromptCacheMetadata",
     "RequestAssembler",
     "RequestAssembly",
     "RequestContextTrace",

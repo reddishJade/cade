@@ -83,7 +83,7 @@ model/provider 元数据，用户可覆盖窗口大小；fallback 到较小模�
 
 ## 预算观测
 
-`RequestAssembly.context_snapshot` 和 `ContextManager.context_snapshot` 提供
+`RequestAssembly.context_snapshot` 提供
 物理与有效窗口、固定前缀、持久状态、工作消息、证据、输出预留、余量、剩余预算、
 新增输入预留、准入目标、下一轮输入预测、窗口编号与换窗原因。分项复用请求的
 本地计量函数，标记 `category_source=local`；其总量为 `category_total_tokens`，
