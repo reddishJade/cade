@@ -12,20 +12,6 @@ def resume_latest(store: SessionStore) -> SessionMetadataView | None:
     return sessions[0]
 
 
-def select_session(
-    sessions: list[SessionMetadataView],
-    choice: str,
-) -> SessionMetadataView | None:
-    if choice.isdigit():
-        index = int(choice) - 1
-        if 0 <= index < len(sessions):
-            return sessions[index]
-    for item in sessions:
-        if choice in {item.id, item.title}:
-            return item
-    return None
-
-
 def current_view(store: SessionStore) -> SessionMetadataView:
     metadata = store.current_metadata()
     if metadata is not None:

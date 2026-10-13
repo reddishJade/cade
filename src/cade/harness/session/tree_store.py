@@ -223,10 +223,7 @@ def _read_log_tail(path: Path) -> tuple[TreeEntryModel | None, int]:
 
 
 class TreeSessionRepo:
-    """树结构会话存储。
-
-    API 兼容 SessionStore（cade.harness.session.SessionStore）。
-    """
+    """树结构会话存储。"""
 
     def __init__(
         self,
@@ -368,20 +365,6 @@ class TreeSessionRepo:
         _secure_existing_file(path)
         self.current_path = path
 
-    def switch_branch(self, target: str) -> SessionInfoView:
-        """切换分支并设置 head_id。"""
-        self.resume(target)
-        meta = self.current_metadata()
-        view = self._view_for_path(self.current_path, meta)
-        return view
-
-    def resume_latest(self) -> Path | None:
-        sessions = [item.path for item in self.list_infos(limit=1)]
-        if not sessions:
-            return None
-        self.current_path = sessions[0]
-        return self.current_path
-
     def rewind_turns(self, turns: int = 1) -> int:
         """回退指定轮次：将 head_id 往回移动。"""
         if turns < 1:
@@ -432,9 +415,6 @@ class TreeSessionRepo:
                 count += 1
                 claimed = False
         return count
-
-    def list_sessions(self, limit: int = 10) -> list[Path]:
-        return [item.path for item in self.list_infos(limit=limit)]
 
     def list_infos(self, limit: int | None = 10) -> list[SessionInfoView]:
         known = {item.id: item for item in self._load_metadata()}
@@ -537,27 +517,6 @@ class TreeSessionRepo:
             if metadata
             else None
         )
-
-    def protocol_info(self) -> dict:
-        return {
-            "version": 1,
-            "storage": "tree-jsonl-v1",
-            "recovery_boundary": "committed_log_head_and_entry_tree",
-        }
-
-    def get_user_messages(self) -> list[SessionEntry]:
-        """当前会话所有已 claim 的用户输入，去重。"""
-        raw = self.read_entries()
-        seen: set[str] = set()
-        out: list[SessionEntry] = []
-        for e in raw:
-            text = _claimed_user_text(e)
-            if text is None:
-                continue
-            if text not in seen:
-                seen.add(text)
-                out.append(e)
-        return out
 
     def get_forkable_user_messages(self) -> list[SessionEntry]:
         """返回当前分支中可被 fork_from_entry 接受的用户消息。"""

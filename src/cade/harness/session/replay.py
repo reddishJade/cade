@@ -152,8 +152,3 @@ def restore_contextual_state(
             content = str(event_data.get("content", "") or "")
             if tool_name:
                 contextual_state.record_tool_result(tool_name, content)
-
-
-def records_to_agent_messages(records: list[SessionEntry]) -> list[AgentMessage]:
-    """将 session 事实账本投影为 provider 使用的消息历史。"""
-    return list(project_session_surface(records).messages)

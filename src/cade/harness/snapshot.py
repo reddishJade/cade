@@ -328,9 +328,6 @@ class SnapshotStore:
     def _index_path(self, session_id: str) -> Path:
         return self._project_root / ".cade" / "snapshots" / session_id / "index.json"
 
-    def _lock_path(self, session_id: str) -> Path:
-        return self._project_root / ".cade" / "snapshots" / session_id / "index.lock"
-
     def next_turn_id(self, session_id: str) -> str:
         records = self._load_index(session_id)
         if not records:
