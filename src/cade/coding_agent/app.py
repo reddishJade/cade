@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
@@ -16,8 +16,7 @@ from cade.ai.events import FinalMessage, TextDelta
 from cade.ai.models import get_model_context_window
 from cade.ai.providers.registry import (
     ModelProfileConfig,
-    ProviderSettings,
-    build_provider_bundle,
+    build_provider,
 )
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.coding_agent.harness import CodingAgentHarness
@@ -73,7 +72,7 @@ class CadeApp:
     mcp_runtime: McpRuntimeRegistry | None = None
     subagents: SubagentSessionManager | None = None
     session_recorder: SessionRecorder | None = None
-    _model_profiles: dict[str, Any] | None = None
+    _model_profiles: dict[str, ModelProfileConfig] | None = None
     _runtime_config: CadeRuntimeConfig | None = None
     _env_files: tuple[Path, ...] = ()
     _closers: tuple[Callable[[], None], ...] = ()
@@ -91,14 +90,17 @@ class CadeApp:
         context_window: int | None = None,
     ) -> str:
         """切换主/子 agent 模型；`context_window` 为 0 时恢复模型默认窗口。"""
-        from cade.ai.providers.registry import ModelProfileConfig, ModelProfileProto
         from cade.ai.resolver import ModelResolver, provider_for_transport
 
         if profile not in {"main", "subagent"}:
             raise ValueError("profile must be main or subagent")
         if self._model_profiles is None or self._runtime_config is None:
             raise RuntimeError("model configuration is not available")
-        sync_reviewer = profile == "main" and "reviewer" not in self._model_profiles
+        sync_reviewer = (
+            profile == "main"
+            and self.agent.auto_approval_callback is not None
+            and "reviewer" not in self._model_profiles
+        )
         current = self._model_profiles.get(profile) or ModelProfileConfig()
         resolution = ModelResolver.resolve(
             model_or_alias=model,
@@ -158,27 +160,15 @@ class CadeApp:
         )
         new_cfg = _bound_context_window(new_cfg, context_window)
         resolved_model = new_cfg.chat_model
-        profiles: dict[str, ModelProfileProto] = {
-            "main": self._model_profiles["main"],
-            profile: new_cfg,
-        }
-        if sync_reviewer:
-            profiles["reviewer"] = new_cfg
-
-        bundle = build_provider_bundle(
-            ProviderSettings(
-                env_files=self._env_files,
-                model_profiles=profiles,
-            )
-        )
-        new_provider = bundle.llms.get(profile, bundle.llm)
+        new_provider = build_provider(new_cfg)
+        new_reviewer = build_provider(new_cfg) if sync_reviewer else None
         if profile == "main":
             self.agent.replace_primary_provider(new_provider)
-            if sync_reviewer:
+            if new_reviewer is not None:
                 reviewer = self.agent.auto_approval_callback
                 replace_provider = getattr(reviewer, "replace_provider", None)
                 if callable(replace_provider):
-                    replace_provider(bundle.llms["reviewer"])
+                    replace_provider(new_reviewer)
         elif self.subagents is None:
             raise RuntimeError("subagent runtime is not configured")
         else:
@@ -289,13 +279,9 @@ class CadeApp:
 
         request = self.agent.prepare_read_only_request(question)
         request.require_sendable()
-        profiles = self._model_profiles or {}
-        provider = build_provider_bundle(
-            ProviderSettings(
-                env_files=self._env_files,
-                model_profiles={"main": profiles["main"]} if "main" in profiles else {},
-            )
-        ).llm
+        if self._model_profiles is None:
+            raise RuntimeError("model configuration is not available")
+        provider = build_provider(self._model_profiles["main"])
 
         async def answer() -> AsyncIterator[str]:
             streamed = False
@@ -386,12 +372,9 @@ def build_app(
     )
 
     model_profiles = resolve_model_profiles(cfg.runtime_config, cfg.env_files)
-    providers = build_provider_bundle(
-        ProviderSettings(
-            env_files=cfg.env_files,
-            model_profiles=model_profiles,
-        )
-    )
+    primary_provider = build_provider(model_profiles["main"])
+    subagent_provider = build_provider(model_profiles["subagent"])
+    fallback_provider = build_provider(model_profiles["fallback"])
     external_hook_runner = (
         ExternalHookRunner(cfg.runtime_config.hooks.entries, project_root)
         if cfg.runtime_config.hooks.entries
@@ -406,7 +389,7 @@ def build_app(
         subagents,
     ) = _assembly.build_tool_registry(
         project_root=project_root,
-        subagent_provider=providers.llms.get("subagent", providers.llm),
+        subagent_provider=subagent_provider,
         runtime_config=cfg.runtime_config,
         session_recorder=infra.session_recorder,
         cancel_event=infra.cancellation_token,
@@ -421,17 +404,16 @@ def build_app(
         from cade.harness.security import AutoApprovalReviewer
 
         auto_reviewer = AutoApprovalReviewer(
-            providers.llms.get("reviewer", providers.llm),
+            build_provider(model_profiles.get("reviewer", model_profiles["main"])),
             timeout_seconds=float(security.auto_review_timeout_seconds),
             max_workers=cfg.agent_config.tool_workers,
         )
         auto_approval_callback = auto_reviewer
         closers = (*closers, auto_reviewer.close)
 
-    fallback_provider = providers.llms.get("fallback")
     agent = build_agent(
         project_root=project_root,
-        llm=providers.llm,
+        llm=primary_provider,
         registry=registry_state,
         config=cfg.agent_config,
         audit_path=cfg.audit_path,

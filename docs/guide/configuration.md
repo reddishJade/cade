@@ -117,8 +117,7 @@ Linux sandbox、结构化文件工具和外部服务的执行边界见
 
 `provider.options` 保存共享请求选项：`context_window`、`thinking`、
 `clear_thinking`、`tool_stream`、`response_format`。辅助角色由
-`provider.model_profiles` 配置，支持 `subagent`、`fallback`、`reviewer`、`judge`、
-`refiner`；不写的角色继承主模型，角色对象中未提供的字段继承主模型选项。例如：
+`provider.model_profiles` 配置，支持 `subagent`、`fallback`、`reviewer`；不写的角色继承主模型，角色对象中未提供的字段继承主模型选项。例如：
 
 ```json
 {

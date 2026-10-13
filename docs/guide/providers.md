@@ -72,8 +72,7 @@ DeepSeek 可设 `default_provider: "deepseek"`、`default_model: "deepseek-flash
 }
 ```
 
-`subagent` 执行委派任务；`fallback` 用于主模型容灾；`reviewer`、`judge`、`refiner`
-按服务用途选择。省略角色或字段时继承主模型，显式指定其他 provider 时解析其独立凭据。
+`subagent` 执行委派任务；`fallback` 用于主模型容灾；`reviewer` 用于自动审批。省略角色或字段时继承主模型，显式指定其他 provider 时解析其独立凭据。
 配置备用 provider 不代表它有余额；验收应使用可用服务，并检查有效配置。
 
 ---

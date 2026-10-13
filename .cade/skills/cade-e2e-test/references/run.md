@@ -21,7 +21,8 @@
 }
 ```
 
-`thinking: false` 关闭推理摘要；`reasoning_effort: "none"` 关闭推理。测试推理行为时，使用场景指定的设置。
+`thinking: false` 关闭推理摘要；`reasoning_effort: "none"` 关闭推理。测试推理行为时，使用场景指定的设置。Goal 验收使用当前主模型。
+
 
 `--config` 替代项目配置，仍会合并全局配置和工作区的 `.cade/settings.json`。检查默认模型和辅助角色的实际选择。只传 `--model` 无法覆盖辅助角色。
 

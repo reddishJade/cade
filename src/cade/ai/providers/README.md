@@ -7,10 +7,10 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
 ## 1. 核心抽象与适配架构
 
 ```
-                 ModelProfileConfig / ProviderSettings
+                 ModelProfileConfig
                                 │
                                 ▼
-                   build_provider_bundle()
+                   build_provider()
                                 │
           ┌─────────────────────┴─────────────────────┐
           ▼                                           ▼
@@ -33,10 +33,9 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
   - `_compat.py`：OpenAI 兼容协议基础通信抽象。
   - `_codec.py`：请求/响应报文与工具调用（ToolCall）双向编解码。
   - `_stream.py`：底层 SSE 字符块缓冲、行切分与 JSON 流解析。
-  - `_runtime.py`：HTTP 客户端底层会话与连接池管理。
 - **注册与工厂 ([registry.py](registry.py))**：
   - `PROVIDER_REGISTRY`：厂商名称到 Provider 构造器的映射表。
-  - `build_provider_bundle`：依据配置一键装配包含主模型与辅助模型的 `ProviderBundle`。
+  - `build_provider`：依据已解析的模型配置构造一个 Provider；产品层按实际用途装配角色。
 
 ---
 
@@ -51,17 +50,18 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
 ## 3. 典型使用示例
 
 ```python
-from cade.ai.providers import build_provider_bundle, ProviderSettings
+from cade.ai.providers import build_provider, ModelProfileConfig
 
 # 装配 DeepSeek 运行时
-bundle = build_provider_bundle(
-    settings=ProviderSettings(
+provider = build_provider(
+    ModelProfileConfig(
         provider="deepseek",
-        model="deepseek-reasoner",
-        api_key="sk-...",
+        transport="deepseek_chat",
+        chat_model="deepseek-reasoner",
+        api_key="<resolved-api-key>",
     )
 )
 
 # 获取流式生成器
-events = bundle.llm.stream(messages, tools=tool_specs)
+events = provider.stream(messages, tools=tool_specs)
 ```

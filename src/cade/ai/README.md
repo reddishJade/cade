@@ -60,19 +60,20 @@ AI 层是 Agent 与各大模型厂商之间的**协议翻译与流归一化层**
 ## 3. 典型装配与调用
 
 ```python
-from cade.ai.providers.registry import build_provider_bundle, ProviderSettings
+from cade.ai.providers import build_provider, ModelProfileConfig
 
-# 根据配置构建 Provider 运行时绑束
-bundle = build_provider_bundle(
-    settings=ProviderSettings(
+# 使用已解析的模型配置构建 Provider
+provider = build_provider(
+    ModelProfileConfig(
         provider="deepseek",
-        model="deepseek-reasoner",
-        api_key="sk-...",
+        transport="deepseek_chat",
+        chat_model="deepseek-reasoner",
+        api_key="<resolved-api-key>",
     )
 )
 
 # 直接发起流式会话并消费归一化事件
-async for event in bundle.llm.stream(messages, tools=tools):
+async for event in provider.stream(messages, tools=tools):
     match event:
         case ReasoningDelta(chunk=thought):
             print(f"[Thinking] {thought}", end="")

@@ -2,17 +2,16 @@
 
 职责：
 1. 维护 transport → provider class 的映射
-2. 从 settings 构建 provider 实例
+2. 从已解析的模型配置构建单个 provider 实例
 3. 解析 API key（环境变量回退）
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from dotenv import dotenv_values
 
@@ -43,34 +42,6 @@ PROVIDER_REGISTRY: dict[str, type] = {
 # ── 配置类型 ──
 
 
-class ModelProfileProto(Protocol):
-    @property
-    def provider(self) -> str: ...
-
-    @property
-    def transport(self) -> str: ...
-    @property
-    def chat_model(self) -> str: ...
-    @property
-    def base_url(self) -> str: ...
-    @property
-    def api_key(self) -> str: ...
-    @property
-    def context_window(self) -> int | None: ...
-    @property
-    def thinking(self) -> bool: ...
-    @property
-    def reasoning_effort(self) -> str | None: ...
-    @property
-    def clear_thinking(self) -> bool: ...
-    @property
-    def tool_stream(self) -> bool: ...
-    @property
-    def response_format(self) -> dict[str, Any] | None: ...
-    @property
-    def account_id(self) -> str | None: ...
-
-
 @dataclass(frozen=True)
 class ModelProfileConfig:
     provider: str = "openai"
@@ -85,18 +56,6 @@ class ModelProfileConfig:
     tool_stream: bool = True
     response_format: dict[str, Any] | None = None
     account_id: str | None = None
-
-
-@dataclass(frozen=True)
-class ProviderSettings:
-    env_files: tuple[Path, ...]
-    model_profiles: Mapping[str, ModelProfileProto]
-
-
-@dataclass(frozen=True)
-class ProviderBundle:
-    llm: ModelProvider
-    llms: dict[str, ModelProvider]
 
 
 # ── 环境变量工具 ──
@@ -117,34 +76,6 @@ def get_config_value(name: str, env_files: tuple[Path, ...] = ()) -> str | None:
 
 
 # ── Factory ──
-
-
-def build_provider_bundle(settings: ProviderSettings) -> ProviderBundle:
-    llms = _build_llm_profiles(settings)
-    return ProviderBundle(
-        llm=llms["main"],
-        llms=llms,
-    )
-
-
-def _build_llm_profiles(
-    settings: ProviderSettings,
-) -> dict[str, ModelProvider]:
-    """构造所有 model profile 的 provider 实例。"""
-    profile_settings = dict(settings.model_profiles)
-    profile_settings.setdefault("main", ModelProfileConfig())
-    profile_settings.setdefault("subagent", profile_settings["main"])
-    profile_settings.setdefault("reviewer", profile_settings["main"])
-    profile_settings.setdefault("judge", profile_settings["main"])
-    profile_settings.setdefault("refiner", profile_settings["main"])
-    return {
-        name: _build_llm_profile(
-            profile,
-            name,
-            settings.env_files,
-        )
-        for name, profile in profile_settings.items()
-    }
 
 
 _PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
@@ -170,16 +101,11 @@ def get_environment_api_key(
     return None
 
 
-def _build_llm_profile(
-    profile: ModelProfileProto,
-    profile_name: str,
-    env_files: tuple[Path, ...],
-) -> ModelProvider:
-    """构造单个 provider 实例。"""
+def build_provider(profile: ModelProfileConfig) -> ModelProvider:
+    """从已解析凭据与选项的模型配置构造单个 provider。"""
     transport = profile.transport
-    api_key = profile.api_key or get_environment_api_key(transport, env_files)
-    if not api_key:
-        raise RuntimeError(f"Missing credentials for profile '{profile_name}'")
+    if not profile.api_key:
+        raise RuntimeError("Missing credentials for model profile")
 
     provider_cls = PROVIDER_REGISTRY.get(transport)
     if provider_cls is None:
@@ -194,12 +120,12 @@ def _build_llm_profile(
         "clear_thinking": profile.clear_thinking,
         "tool_stream": profile.tool_stream,
     }
-    account_id = getattr(profile, "account_id", None)
+    account_id = profile.account_id
     if account_id:
         extra["account_id"] = account_id
 
     config = ProviderConfig(
-        api_key=api_key,
+        api_key=profile.api_key,
         model=profile.chat_model,
         base_url=base_url,
         context_window=profile.context_window,

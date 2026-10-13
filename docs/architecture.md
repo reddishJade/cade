@@ -45,7 +45,7 @@ Agent 通过 provider 协议请求模型，通过工具协议执行动作。Harn
 `FileSystem`，命令工具依赖 `Shell`，生产实现访问本地工作区和宿主进程。
 
 [`build_app()`](../src/cade/coding_agent/app.py) 先解析配置，构造共享 session
-store、recorder、inbox、History 和取消服务，再构造 provider bundle、本地工具、
+store、recorder、inbox、History 和取消服务，再按主模型、子代理、回退与审批用途构造 provider、本地工具、
 MCP、Skills、Memory 与子代理 registry，最后发布 composition 并返回 `CadeApp`。
 recorder 和 inbox 共享 store，应用拥有装配所得服务的关闭责任。
 各宿主只传入显式会话目录覆盖；配置目录与默认目录由共享基础设施装配统一选择。
