@@ -8,7 +8,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -104,20 +104,27 @@ class McpServerStatus:
     last_error: str | None = None
 
 
+@dataclass(frozen=True)
+class _ServerRuntime:
+    """同一 server 的配置、发现结果与客户端所有权。"""
+
+    raw: dict[str, Any] | None = None
+    validated: McpServerConfig | None = None
+    tool_count: int = 0
+    cache_metadata: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    client_ref: _mcp_mod.LazyClientRef | None = None
+
+
 class McpRuntimeRegistry:
     """管理 MCP 发现缓存、状态和持久客户端生命周期。"""
 
     def __init__(self) -> None:
         """初始化空的运行时注册状态。"""
         self._lock = threading.Lock()
-        self._client_refs: dict[str, _mcp_mod.LazyClientRef] = {}
+        self._servers: dict[str, _ServerRuntime] = {}
         self._workspace_roots: tuple[Path, ...] = ()
         self._cancel_event: threading.Event | None = None
-        self._raw_servers: dict[str, dict[str, Any]] = {}
-        self._validated_servers: dict[str, McpServerConfig] = {}
-        self._tool_counts: dict[str, int] = {}
-        self._cache_metadata: dict[str, dict[str, Any]] = {}
-        self._server_errors: dict[str, str] = {}
 
     def configure_runtime(
         self,
@@ -143,27 +150,46 @@ class McpRuntimeRegistry:
     ) -> None:
         """保存当前配置与发现结果，供状态接口读取。"""
         with self._lock:
-            self._raw_servers = dict(raw_servers)
-            self._validated_servers = dict(validated_servers)
-            self._tool_counts = dict(tool_counts)
-            self._cache_metadata = dict(cache_metadata)
-            self._server_errors = dict(server_errors)
+            # 配置移除后不展示 server，但其客户端仍需随运行时关闭。
+            servers = {
+                name: _ServerRuntime(client_ref=server.client_ref)
+                for name, server in self._servers.items()
+                if server.client_ref is not None
+            }
+            for name, raw in raw_servers.items():
+                previous = servers.get(name)
+                servers[name] = _ServerRuntime(
+                    raw=raw,
+                    validated=validated_servers.get(name),
+                    tool_count=tool_counts.get(name, 0),
+                    cache_metadata=cache_metadata.get(name, {}),
+                    error=server_errors.get(name),
+                    client_ref=previous.client_ref if previous is not None else None,
+                )
+            self._servers = servers
+
+    def update_discovery(
+        self, server_name: str, tool_count: int, cache_metadata: dict[str, Any]
+    ) -> None:
+        """更新一个 server 的发现结果，不重新发布配置或客户端。"""
+        with self._lock:
+            server = self._servers[server_name]
+            self._servers[server_name] = replace(
+                server, tool_count=tool_count, cache_metadata=cache_metadata
+            )
 
     def status_snapshot(self) -> tuple[McpServerStatus, ...]:
         """返回所有已配置 server 的只读运行时状态。"""
         with self._lock:
-            raw_servers = dict(self._raw_servers)
-            validated_servers = dict(self._validated_servers)
-            tool_counts = dict(self._tool_counts)
-            cache_metadata = dict(self._cache_metadata)
-            server_errors = dict(self._server_errors)
-            client_refs = dict(self._client_refs)
+            servers = dict(self._servers)
         statuses: list[McpServerStatus] = []
-        for server_name, raw in raw_servers.items():
-            validated = validated_servers.get(server_name)
+        for server_name, server in servers.items():
+            raw = server.raw
+            if raw is None:
+                continue
             enabled = bool(raw.get("enabled", True))
-            last_error = server_errors.get(server_name)
-            ref = client_refs.get(server_name)
+            last_error = server.error
+            ref = server.client_ref
             protocol_version = None
             server_info = None
             state = "configured"
@@ -177,21 +203,21 @@ class McpRuntimeRegistry:
                 server_info = ref.client.server_info
                 last_error = ref.last_error or last_error
             else:
-                cached = cache_metadata.get(server_name, {})
+                cached = server.cache_metadata
                 protocol_version = cached.get("protocol_version")
                 server_info = cached.get("server_info")
                 if last_error or (ref is not None and ref.last_error):
                     state = "failed"
                     if ref is not None and ref.last_error:
                         last_error = ref.last_error
-            if validated is None:
+            if server.validated is None:
                 state = "failed"
             statuses.append(
                 McpServerStatus(
                     server_name=server_name,
                     state=state,
                     enabled=enabled,
-                    tool_count=tool_counts.get(server_name, 0),
+                    tool_count=server.tool_count,
                     protocol_version=protocol_version,
                     server_info=server_info,
                     last_error=last_error,
@@ -214,20 +240,33 @@ class McpRuntimeRegistry:
         normalized = tuple(path.resolve() for path in workspace_roots if path.exists())
         with self._lock:
             self._workspace_roots = normalized
-            refs = tuple(self._client_refs.values())
+            refs = tuple(
+                server.client_ref
+                for server in self._servers.values()
+                if server.client_ref is not None
+            )
         for ref in refs:
             ref.update_workspace_roots(normalized)
 
     def track_client_ref(self, server_name: str, ref: _mcp_mod.LazyClientRef) -> None:
         """登记需要随应用关闭的延迟客户端。"""
         with self._lock:
-            self._client_refs[server_name] = ref
+            server = self._servers.get(server_name, _ServerRuntime())
+            self._servers[server_name] = replace(server, client_ref=ref)
 
     def close(self) -> None:
         """关闭所有已启动的 MCP 持久客户端。"""
         with self._lock:
-            refs = tuple(self._client_refs.values())
-            self._client_refs.clear()
+            refs = tuple(
+                server.client_ref
+                for server in self._servers.values()
+                if server.client_ref is not None
+            )
+            self._servers = {
+                name: replace(server, client_ref=None)
+                for name, server in self._servers.items()
+                if server.raw is not None
+            }
         for ref in refs:
             ref.stop()
 
@@ -562,10 +601,7 @@ def build_mcp_tools(
         validated_servers=validated_servers,
         mcp_servers=mcp_servers,
         cache_path=cache_path,
-        all_tools_by_server=collected.all_tools_by_server,
-        cache_metadata_by_server=collected.cache_metadata_by_server,
         runtime_registry=runtime_registry,
-        server_errors=server_errors,
     )
 
     registered_tools = _build_runtime_mcp_tools(
@@ -683,10 +719,7 @@ def _build_mcp_refresh_fn(
     validated_servers: dict[str, McpServerConfig],
     mcp_servers: dict[str, dict[str, Any]],
     cache_path: Path,
-    all_tools_by_server: dict[str, list[dict[str, Any]]],
-    cache_metadata_by_server: dict[str, dict[str, Any]],
     runtime_registry: McpRuntimeRegistry,
-    server_errors: dict[str, str],
 ) -> Callable[[str, _mcp_mod.McpClient], None]:
     """构建 MCP server 工具刷新回调。"""
     refresh_lock = threading.Lock()
@@ -707,17 +740,9 @@ def _build_mcp_refresh_fn(
                 **cache_metadata,
             }
             _save_cache(cache_path, current_cache)
-            all_tools_by_server[server_name] = tools_list
-            cache_metadata_by_server[server_name] = cache_metadata
             _warn_unknown_overrides(server_name, mcp_servers[server_name], tools_list)
-            runtime_registry.update_runtime_snapshot(
-                raw_servers=mcp_servers,
-                validated_servers=validated_servers,
-                tool_counts={
-                    name: len(tools) for name, tools in all_tools_by_server.items()
-                },
-                cache_metadata=cache_metadata_by_server,
-                server_errors=server_errors,
+            runtime_registry.update_discovery(
+                server_name, len(tools_list), cache_metadata
             )
 
     return _refresh
