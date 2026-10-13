@@ -15,7 +15,6 @@ from cade.ai.events import ToolCall
 
 from ...agent.events import (
     AgentEvent,
-    AgentStartEvent,
     ContextWindowResetEvent,
     MessageEndEvent,
     MessageStartEvent,
@@ -207,9 +206,6 @@ def translate_event(
     event: AgentEvent,
     state: _StreamTranslationState,
 ) -> AgentHarnessEvent | list[AgentHarnessEvent] | None:
-    if isinstance(event, AgentStartEvent):
-        return None
-
     if isinstance(event, TurnStartEvent):
         state.step += 1
         return None
@@ -249,10 +245,7 @@ def translate_event(
     if isinstance(event, ToolExecutionEndEvent):
         return _translate_tool_execution_end(event, state)
 
-    if isinstance(event, ContextWindowResetEvent):
-        return _translate_context_window_reset(event, state)
-
-    return None
+    return _translate_context_window_reset(event, state)
 
 
 def _translate_message_update(

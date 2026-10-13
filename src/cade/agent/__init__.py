@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from .agent import Agent
 from .agent_loop import run_agent_loop
 from .config import AgentContext, AgentLoopConfig
 from .context import (
@@ -45,7 +44,6 @@ from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 from .types import AgentTool, CancellationSignal
 
 __all__ = [
-    "Agent",
     "AgentContext",
     "AgentEvent",
     "AgentLoopConfig",

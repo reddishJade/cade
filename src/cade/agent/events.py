@@ -8,21 +8,6 @@ from .messages import AgentMessage, ToolResultMessage
 from .types import AgentToolResult, ToolArguments
 
 
-class AgentStartEvent(BaseModel):
-    """Agent 循环开始事件。"""
-
-    type: str = "agent_start"
-    model_config = ConfigDict(extra="forbid")
-
-
-class AgentEndEvent(BaseModel):
-    """Agent 循环结束事件，携带最终消息列表。"""
-
-    type: str = "agent_end"
-    messages: list[AgentMessage] = Field(default_factory=list)
-    model_config = ConfigDict(extra="forbid")
-
-
 class TurnStartEvent(BaseModel):
     """单次 turn 开始事件（调用模型前）。"""
 
@@ -125,9 +110,7 @@ class ContextWindowResetEvent(BaseModel):
 
 
 type AgentEvent = (
-    AgentStartEvent
-    | AgentEndEvent
-    | TurnStartEvent
+    TurnStartEvent
     | TurnEndEvent
     | MessageStartEvent
     | MessageUpdateEvent

@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 
 from cade.agent.types import CancellationSignal, TextContent, ToolCallContent
 from cade.ai.providers.base import StreamProvider
@@ -44,9 +44,7 @@ from .config import (
 )
 from .context import ContextAssemblyError
 from .events import (
-    AgentEndEvent,
     AgentEvent,
-    AgentStartEvent,
     ContextWindowResetEvent,
     MessageEndEvent,
     MessageStartEvent,
@@ -61,6 +59,47 @@ from .results import AgentLoopMetrics, AgentLoopResult, TerminationReason
 
 
 async def run_agent_loop(
+    prompts: list[AgentMessage],
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: CancellationSignal | None = None,
+    steer_queue: Callable[[], list[AgentMessage]] | None = None,
+    finish_steering: Callable[[], list[AgentMessage]] | None = None,
+    reopen_steering: Callable[[], None] | None = None,
+) -> AsyncIterator[AgentEvent | AgentLoopResult]:
+    """实时交付循环事件，最后交付结果；关闭消费方时清理执行任务。"""
+    events: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
+
+    async def run() -> AgentLoopResult:
+        try:
+            return await _run_agent_loop(
+                prompts,
+                context,
+                config,
+                events.put_nowait,
+                signal,
+                steer_queue,
+                finish_steering,
+                reopen_steering,
+            )
+        finally:
+            events.put_nowait(None)
+
+    task = asyncio.create_task(run())
+    try:
+        while (event := await events.get()) is not None:
+            yield event
+        yield await task
+    finally:
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _run_agent_loop(
     prompts: list[AgentMessage],
     context: AgentContext,
     config: AgentLoopConfig,
@@ -92,7 +131,6 @@ async def run_agent_loop(
         ),
         context_policy=config.context_policy or context.context_policy,
     )
-    emit(AgentStartEvent())
     emit(TurnStartEvent())
     for prompt in prompts:
         emit(MessageStartEvent(message=prompt))
@@ -146,7 +184,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
                 termination_reason=TerminationReason.CANCELLED,
                 error_detail=cancel_reason(signal),
             )
@@ -200,7 +237,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
                 termination_reason=TerminationReason.CONTEXT_ERROR,
                 error_detail=str(exc),
             )
@@ -211,7 +247,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
                 termination_reason=TerminationReason.LLM_CALL_LIMIT,
             )
 
@@ -222,7 +257,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
                 termination_reason=TerminationReason.PROVIDER_ERROR,
             )
 
@@ -250,7 +284,6 @@ async def _run_loop(
                 metrics=metrics,
                 active_provider=state.active_provider,
             )
-            emit(AgentEndEvent(messages=new_messages or []))
             return result
 
         # ── 提取工具调用 ──
@@ -288,7 +321,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
             )
 
         # ── 工具执行 ──
@@ -313,7 +345,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
                 termination_reason=TerminationReason.WATCHDOG,
                 watchdog_reason=repeated_watchdog_reason,
             )
@@ -329,7 +360,6 @@ async def _run_loop(
                 step,
                 metrics,
                 state.active_provider,
-                emit,
                 termination_reason=TerminationReason.WATCHDOG,
                 watchdog_reason=idle_watchdog_reason,
             )
@@ -355,7 +385,6 @@ async def _run_loop(
                     step,
                     metrics,
                     state.active_provider,
-                    emit,
                 )
 
         # 工具已执行，继续内层循环（下一轮工具调用）
@@ -371,7 +400,6 @@ async def _run_loop(
         metrics=metrics,
         active_provider=state.active_provider,
     )
-    emit(AgentEndEvent(messages=new_messages or []))
     return result
 
 
@@ -463,7 +491,6 @@ def _finish_loop(
     step: int,
     metrics: AgentLoopMetrics,
     active_provider: StreamProvider | None,
-    emit: Callable[[AgentEvent], None],
     *,
     termination_reason: TerminationReason = TerminationReason.COMPLETED,
     watchdog_reason: str | None = None,
@@ -479,7 +506,6 @@ def _finish_loop(
         metrics=metrics,
         active_provider=active_provider,
     )
-    emit(AgentEndEvent(messages=new_messages or []))
     return result
 
 

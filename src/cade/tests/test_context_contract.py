@@ -18,6 +18,7 @@ import pytest
 from cade.agent import (
     AgentContext,
     AgentLoopConfig,
+    AgentLoopResult,
     ContextAssemblyError,
     ContextBlock,
     ContextBlockSource,
@@ -69,6 +70,17 @@ class UncalledProvider:
         **kwargs: object,
     ) -> AsyncIterator[ProviderEvent]:
         raise AssertionError("An incomplete or oversized request was sent")
+
+
+async def collect_loop_result(
+    prompts: list[AgentMessage], context: AgentContext, config: AgentLoopConfig
+) -> AgentLoopResult:
+    result = None
+    async for event in run_agent_loop(prompts, context, config):
+        if isinstance(event, AgentLoopResult):
+            result = event
+    assert result is not None
+    return result
 
 
 def policy(budget: int = 2048, *, next_input: int = 0) -> ContextPolicy:
@@ -193,7 +205,7 @@ def test_unassemblable_context_terminates_without_provider_call(
     with pytest.raises(ContextAssemblyError, match="safe budget"):
         projection.require_sendable()
     result = asyncio.run(
-        run_agent_loop(
+        collect_loop_result(
             [],
             context,
             AgentLoopConfig(
@@ -203,7 +215,6 @@ def test_unassemblable_context_terminates_without_provider_call(
                 if rollover_enabled
                 else None,
             ),
-            lambda event: None,
         )
     )
     assert result.termination_reason is TerminationReason.CONTEXT_ERROR
@@ -218,7 +229,7 @@ def test_section_failure_does_not_send_partial_context() -> None:
         make_state_section("environment", "environment", ContextBlockSource.ENVIRONMENT)
     )
     result = asyncio.run(
-        run_agent_loop(
+        collect_loop_result(
             [],
             AgentContext(
                 messages=[UserMessage(content="Task")],
@@ -232,7 +243,6 @@ def test_section_failure_does_not_send_partial_context() -> None:
                 ),
                 rollover_context=ContextWindowRollover().rollover_messages,
             ),
-            lambda event: None,
         )
     )
     assert result.termination_reason is TerminationReason.CONTEXT_ERROR

@@ -60,22 +60,26 @@ Agent 层是 Cade 最内层的领域无关核心，专注于解决一个核心�
 from cade.agent import (
     AgentContext,
     AgentLoopConfig,
-    SystemMessage,
+    AgentLoopResult,
     UserMessage,
     run_agent_loop,
 )
 
 # 配置轻量循环上下文与预算
-config = AgentLoopConfig(max_turns=10, token_budget=100_000)
-context = AgentContext(system_prompt=SystemMessage("You are a helpful assistant."))
+config = AgentLoopConfig(provider=model_provider, max_steps=10)
+context = AgentContext(
+    system_prompt="You are a helpful assistant.", tools=tool_registry
+)
 
 # 运行主循环并消费结构化事件流
 async for event in run_agent_loop(
-    context=context,
-    user_message=UserMessage("Analyze project structure"),
-    provider=model_provider,
-    tools=tool_registry,
-    config=config,
+    [UserMessage(content="Analyze project structure")], context, config
 ):
-    print(event)
+    if isinstance(event, AgentLoopResult):
+        print(event.termination_reason, event.metrics)
+    else:
+        print(event.type)
 ```
+
+循环直接交付事件和最后一个 `AgentLoopResult`；上下文与工具由调用方显式提供。
+关闭事件流会取消并等待当前循环任务，结果不保存在额外的 Agent 实例中。

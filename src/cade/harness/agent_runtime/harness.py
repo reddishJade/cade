@@ -21,7 +21,7 @@ from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, Tool
 from cade.ai.events import ToolCall
 from cade.ai.providers.base import ModelProvider
 
-from ...agent.agent import Agent
+from ...agent.agent_loop import run_agent_loop
 from ...agent.context_manager import ContextManager
 from ...agent.messages import (
     AgentMessage,
@@ -615,7 +615,7 @@ class AgentHarness:
         context_messages = self._build_context_messages(composition, active_registry)
         context_snapshot_state = self._build_context_snapshot_state()
         self._resumed_notice = None
-        turn_agent = Agent(self._gate.adapt_tools(active_registry))
+        tools = self._gate.adapt_tools(active_registry)
 
         def inject_runtime(message: AgentMessage) -> None:
             self.inject(message)
@@ -661,19 +661,28 @@ class AgentHarness:
             )
 
             translation_state = _StreamTranslationState(correlation=self._correlation)
-            async for event in turn_agent.run_stream(
-                turn_messages,
-                loop_config,
-                signal=self.cancellation_token,
+            context = AgentContext(
+                messages=self._context_manager.history_messages(),
                 request_prefix=context_messages,
+                tools=tools,
                 context_manager=self._context_manager,
                 state=context_snapshot_state,
                 project_root=self.project_root,
                 cwd=Path.cwd(),
-                step_input=run_handle.claim_step_input,
-                finish_step_input=run_handle.finish_step_input,
-                reopen_step_input=run_handle.reopen_step_input,
+            )
+            result: AgentLoopResult | None = None
+            async for event in run_agent_loop(
+                turn_messages,
+                context,
+                loop_config,
+                signal=self.cancellation_token,
+                steer_queue=run_handle.claim_step_input,
+                finish_steering=run_handle.finish_step_input,
+                reopen_steering=run_handle.reopen_step_input,
             ):
+                if isinstance(event, AgentLoopResult):
+                    result = event
+                    continue
                 translated = translate_event(event, translation_state)
                 if translated is not None:
                     for te in (
@@ -681,7 +690,6 @@ class AgentHarness:
                     ):
                         yield te
 
-            result = turn_agent.last_result
             if result is None:
                 raise RuntimeError("agent loop completed without a result")
 
