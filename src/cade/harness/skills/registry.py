@@ -15,9 +15,8 @@ from cade.harness.skills.discovery import (
 )
 from cade.harness.skills.models import SkillDef, SkillSummary
 from cade.harness.skills.parsing import (
-    find_body_start,
     frontmatter_optional_string,
-    parse_frontmatter,
+    parse_skill,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,13 +59,14 @@ class SkillRegistry:
                         msg = f"Failed to read {file_path}; skipping"
                         logger.warning(msg)
                         continue
-                    frontmatter = parse_frontmatter(
+                    parsed = parse_skill(
                         text,
                         skill_directory_name=file_path.parent.name,
                         source=file_path,
                     )
-                    if frontmatter is None:
+                    if parsed is None:
                         continue
+                    frontmatter, body = parsed
                     name = str(frontmatter["name"])
                     if name in self._skills:
                         logger.warning(
@@ -76,8 +76,6 @@ class SkillRegistry:
                             self._skills[name].file_path,
                         )
                         continue
-                    body_start = find_body_start(text)
-
                     refs, ref_map = scan_skill_references(file_path.parent)
                     scripts = scan_skill_resources(file_path.parent, "scripts")
                     assets = scan_skill_resources(file_path.parent, "assets")
@@ -95,7 +93,7 @@ class SkillRegistry:
                             frontmatter, "allowed-tools"
                         ),
                         file_path=file_path,
-                        content=body_start,
+                        content=body,
                         references=tuple(refs),
                         scripts=scripts,
                         assets=assets,

@@ -1,7 +1,4 @@
-"""YAML frontmatter 解析与校验。
-
-提供从 SKILL.md 文本中提取和规范化 YAML frontmatter 的纯函数。
-"""
+"""从同一文件分界解析技能字段与 Markdown 正文。"""
 
 from __future__ import annotations
 
@@ -25,62 +22,41 @@ _COLON_REPAIR_FIELDS = frozenset(
 )
 
 
-def parse_frontmatter(
+def parse_skill(
     text: str,
     *,
     skill_directory_name: str | None = None,
     source: Path | None = None,
-) -> dict[str, Any] | None:
-    """解析 SKILL.md 的 YAML frontmatter。
+) -> tuple[dict[str, Any], str] | None:
+    """一次解析规范化的 frontmatter 与正文；无效定义返回 None。
 
-    从 --- 分隔符之间提取 YAML，并按规范策略校验字段。
-    description 缺失或 YAML 无法解析时返回 None。
+    关闭分界必须位于行首，缩进的 YAML scalar 内容不参与分界。
+    关闭分界后的 Markdown 仅去除首尾空白，不再识别 YAML 标记。
     """
-    yaml_text = _frontmatter_yaml(text)
-    if yaml_text is None:
+    lines = text.splitlines()
+    closing_line = None
+    if lines and lines[0].strip() == "---":
+        for index, line in enumerate(lines[1:], 1):
+            if line.rstrip() == "---":
+                closing_line = index
+                break
+    if closing_line is None:
         logger.warning(
             "Missing or unclosed YAML frontmatter in %s; skipping",
             source or "skill",
         )
         return None
-    parsed = _load_frontmatter_yaml(yaml_text, source)
+    parsed = _load_frontmatter_yaml("\n".join(lines[1:closing_line]), source)
     if parsed is None:
         return None
-    return _normalize_frontmatter(
+    frontmatter = _normalize_frontmatter(
         parsed,
         skill_directory_name=skill_directory_name,
         source=source,
     )
-
-
-def find_body_start(text: str) -> str:
-    """找到 frontmatter 结束后的正文内容。
-
-    返回第二个 --- 分隔符之后的内容，去除前导空行。
-    无正文时返回空字符串。
-    """
-    lines = text.splitlines()
-    delim_count = 0
-    body_lines: list[str] = []
-    for line in lines:
-        if line.strip() == "---":
-            delim_count += 1
-            continue
-        if delim_count >= 2:
-            body_lines.append(line)
-    body = "\n".join(body_lines).strip()
-    return body
-
-
-def _frontmatter_yaml(text: str) -> str | None:
-    """提取 frontmatter YAML 文本。"""
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
+    if frontmatter is None:
         return None
-    for index, line in enumerate(lines[1:], 1):
-        if line.strip() == "---":
-            return "\n".join(lines[1:index])
-    return None
+    return frontmatter, "\n".join(lines[closing_line + 1 :]).strip()
 
 
 def _load_frontmatter_yaml(
