@@ -95,11 +95,6 @@ def _event_payload(event: AgentHarnessEvent) -> object:
         return dict(event.data)
     if isinstance(event, ResponseMetricsStructuredEvent):
         return asdict(event.data)
-    run_state = (
-        event.data.run_state.to_dict() if event.data.run_state is not None else None
-    )
-    if run_state is not None:
-        run_state.pop("messages", None)
     return {
         "answer": event.data.answer,
         "steps": event.data.steps,
@@ -110,7 +105,7 @@ def _event_payload(event: AgentHarnessEvent) -> object:
         "error_detail": event.data.error_detail,
         "needs_follow_up": event.data.needs_follow_up,
         "last_agent": event.data.last_agent,
-        "run_state": run_state,
+        "run_state": dict(event.data.run_state),
     }
 
 

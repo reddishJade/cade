@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from cade.agent.types import TextContent, ToolCallContent
@@ -13,17 +13,6 @@ from ...agent.results import AgentLoopResult, TerminationReason
 from ..observability import EventCorrelation
 from .agent_helpers import text_from_blocks, to_dict
 from .events import FinalStructuredEvent
-
-
-@dataclass(frozen=True)
-class RunState:
-    """通用、可序列化的运行状态快照。"""
-
-    messages: list[dict[str, Any]]
-
-    def to_dict(self) -> dict[str, Any]:
-        """转换为 JSON 可序列化字典。"""
-        return {"messages": self.messages}
 
 
 @dataclass(frozen=True)
@@ -39,7 +28,8 @@ class AgentHarnessResult:
     provider_failure: ProviderFailure | None = None
     needs_follow_up: bool = False
     last_agent: str = "main"
-    run_state: RunState | None = None
+    # 消息历史由会话事件重建；这里只保存产品恢复所需的元数据。
+    run_state: dict[str, Any] = field(default_factory=dict)
 
 
 def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
@@ -117,9 +107,6 @@ def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
         watchdog_reason=result.watchdog_reason,
         error_detail=result.error_detail,
         provider_failure=result.provider_failure,
-        run_state=RunState(
-            messages=[to_dict(message) for message in result.surface],
-        ),
     )
 
 
