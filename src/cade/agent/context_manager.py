@@ -225,10 +225,6 @@ class ContextManager:
         self.prompt_cache = PromptCacheMetadata()
         self.invalidate_token_anchor()
 
-    def set_last_prompt_tokens(self, value: int | None) -> None:
-        self.invalidate_token_anchor()
-        self.token_usage.last_prompt_tokens = value
-
     def record_request(self, assembly: RequestAssembly) -> None:
         """记录组装后的请求预算和 prompt/cache fingerprint。"""
         self.context_snapshot = assembly.context_snapshot

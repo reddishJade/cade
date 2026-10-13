@@ -170,10 +170,6 @@ class SkillRegistry:
                 if name in self._skills:
                     self._activated.add(name)
 
-    def activated_names(self) -> tuple[str, ...]:
-        """返回当前会话已激活技能名称。"""
-        return tuple(sorted(self._activated))
-
     def load(self, skill_name: str) -> SkillDef | None:
         """懒加载技能正文。
 

@@ -5,9 +5,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Any
-
 from cade.agent.messages import AgentMessage, ToolResultMessage
 from cade.agent.types import CITATION_SOURCES_METADATA_KEY, CitationSource, TextContent
 
@@ -21,7 +18,7 @@ def decorate_citable_messages(messages: list[AgentMessage]) -> list[AgentMessage
     turn_index = 0
     decorated: list[AgentMessage] = []
     for msg in messages:
-        if isinstance(msg, ToolResultMessage) and _has_citation_sources(msg):
+        if isinstance(msg, ToolResultMessage):
             sources = _get_citation_sources(msg)
             if sources:
                 decorated_turn = _decorate_tool_result(msg, turn_index, sources)
@@ -30,13 +27,6 @@ def decorate_citable_messages(messages: list[AgentMessage]) -> list[AgentMessage
                 continue
         decorated.append(msg)
     return decorated
-
-
-def _has_citation_sources(msg: ToolResultMessage) -> bool:
-    if not msg.metadata:
-        return False
-    raw = msg.metadata.get(CITATION_SOURCES_METADATA_KEY)
-    return bool(raw)
 
 
 def _get_citation_sources(msg: ToolResultMessage) -> list[CitationSource]:
@@ -132,7 +122,3 @@ def _line_numbered_text(
         line_num = start_line + i
         numbered.append(f"[L{line_num}] {line}")
     return "\n".join(numbered)
-
-
-def citation_sources_as_dicts(sources: list[CitationSource]) -> list[dict[str, Any]]:
-    return [asdict(s) for s in sources]

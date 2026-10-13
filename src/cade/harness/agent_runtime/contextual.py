@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 
@@ -15,16 +14,6 @@ class RecentToolResult:
     summary: str
 
 
-@dataclass(frozen=True)
-class RecentToolCall:
-    tool: str
-    input_brief: str
-    status: str
-    approval_scope: str | None
-    target_path: str | None
-    timestamp: str
-
-
 class ContextualRetrievalState:
     """记录已明确相关的文件和工具结果，供下一轮 system context 使用。"""
 
@@ -34,18 +23,14 @@ class ContextualRetrievalState:
         # 上下文预算限制（基于 system prompt token 预算设计）
         max_files: int = 8,  # 约占 200 token 预算
         max_results: int = 6,  # 约占 150 token 预算
-        max_tool_calls: int = 8,  # 约占 200 token 预算
     ) -> None:
         self.project_root = project_root.resolve()
         self.max_files = max_files
         self.max_results = max_results
         self._files: deque[str] = deque()
         self._file_set: set[str] = set()
-        self._active_file: str | None = None
         self._tool_results: deque[RecentToolResult] = deque(maxlen=max_results)
-        self._tool_calls: deque[RecentToolCall] = deque(maxlen=max_tool_calls)
         self._render_cache: str | None = None
-        self._dirty = True
         self._lock = RLock()
 
     def record_file(self, path: Path | str) -> None:
@@ -59,13 +44,10 @@ class ContextualRetrievalState:
             else:
                 self._file_set.add(text)
             self._files.append(text)
-            self._active_file = text
             while len(self._files) > self.max_files:
                 removed = self._files.popleft()
                 self._file_set.discard(removed)
-                if self._active_file == removed:
-                    self._active_file = self._files[-1] if self._files else None
-            self._dirty = True
+            self._render_cache = None
 
     def record_tool_result(self, tool: str, content: str) -> None:
         """记录工具结果摘要，用于下一轮 system prompt。"""
@@ -76,49 +58,20 @@ class ContextualRetrievalState:
             clean = clean[:237] + "..."
         with self._lock:
             self._tool_results.append(RecentToolResult(tool=tool, summary=clean))
-            self._dirty = True
-
-    def record_tool_call(
-        self,
-        *,
-        tool: str,
-        input_brief: str,
-        status: str,
-        approval_scope: str | None = None,
-        target_path: str | None = None,
-    ) -> None:
-        """记录工具调用历史，包含状态和审批范围。"""
-        clean_input = " ".join(input_brief.strip().split())
-        if len(clean_input) > 160:
-            clean_input = clean_input[:157] + "..."
-        with self._lock:
-            self._tool_calls.append(
-                RecentToolCall(
-                    tool=tool,
-                    input_brief=clean_input,
-                    status=status,
-                    approval_scope=approval_scope,
-                    target_path=target_path,
-                    timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
-                )
-            )
-            self._dirty = True
+            self._render_cache = None
 
     def clear(self) -> None:
         """清空当前 session 投影，供切换或重建会话时使用。"""
         with self._lock:
             self._files.clear()
             self._file_set.clear()
-            self._active_file = None
             self._tool_results.clear()
-            self._tool_calls.clear()
             self._render_cache = None
-            self._dirty = True
 
     def render(self) -> str:
         """渲染为 system prompt 的 contextual-retrieval 块。"""
         with self._lock:
-            if not self._dirty and self._render_cache is not None:
+            if self._render_cache is not None:
                 return self._render_cache
             lines = [
                 "<contextual-retrieval>",
@@ -126,9 +79,8 @@ class ContextualRetrievalState:
                 "Use it to orient tool choices; do not treat it as a replacement for exact search or file reads.",
                 "For ambiguous references such as 'this file' or 'it', prefer active_file as the first candidate, then verify before editing.",
             ]
-            if self._active_file:
-                lines.append(f"active_file: {self._active_file}")
             if self._files:
+                lines.append(f"active_file: {self._files[-1]}")
                 lines.append("recent_files:")
                 lines.extend(f"- {path}" for path in self._files)
             if self._tool_results:
@@ -137,29 +89,16 @@ class ContextualRetrievalState:
                     f"- {result.tool}: {result.summary}"
                     for result in self._tool_results
                 )
-            if self._tool_calls:
-                lines.append("recent_tool_calls:")
-                for call in self._tool_calls:
-                    approval = (
-                        f" approval={call.approval_scope}"
-                        if call.approval_scope
-                        else ""
-                    )
-                    target = f" target={call.target_path}" if call.target_path else ""
-                    lines.append(
-                        f"- {call.tool} status={call.status}{approval}{target}: {call.input_brief}"
-                    )
             lines.append("</contextual-retrieval>")
             rendered = "\n".join(lines)
             self._render_cache = rendered
-            self._dirty = False
             return rendered
 
     @property
     def active_file(self) -> str | None:
         """返回当前最相关文件。"""
         with self._lock:
-            return self._active_file
+            return self._files[-1] if self._files else None
 
     @property
     def recent_files(self) -> tuple[str, ...]:

@@ -11,7 +11,6 @@ from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import ModelProvider
 
 from ...agent._codec import convert_to_llm as _convert_to_llm
-from ...agent._context_window import extract_prompt_tokens_from_usage
 from ...agent.config import (
     AgentLoopConfig,
     AgentLoopTurnUpdate,
@@ -22,7 +21,6 @@ from ...agent.context import ContextCollectorRegistry, DefaultContextAssembler
 from ...agent.context_policy import ContextPolicy
 from ...agent.messages import (
     AgentMessage,
-    AssistantMessage,
     SystemMessage,
 )
 from ...agent.request import (
@@ -570,15 +568,3 @@ def resolve_permission_policy(
     无需在此处再次加载 .cade/settings.json。
     """
     return base
-
-
-def record_last_prompt_tokens(
-    messages: list[AgentMessage],
-) -> int | None:
-    for message in reversed(messages):
-        if not isinstance(message, AssistantMessage):
-            continue
-        prompt_tokens = extract_prompt_tokens_from_usage(message.usage)
-        if prompt_tokens is not None:
-            return prompt_tokens
-    return None
