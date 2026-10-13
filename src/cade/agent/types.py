@@ -208,17 +208,6 @@ class ApprovalRequest:
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
 
 
-@dataclass(frozen=True)
-class CitationSource:
-    """模型可引用的本地证据来源。"""
-
-    kind: Literal["file", "search"]
-    path: str
-    start_line: int
-    end_line: int
-    text: str
-
-
 class ToolOutput(str):
     """带结构化元数据的工具输出文本。"""
 
@@ -271,7 +260,6 @@ def _materialize_json_value(value: object) -> object:
 
 
 AGENT_CONTENT_BLOCKS_METADATA_KEY = "agent_content_blocks"
-CITATION_SOURCES_METADATA_KEY = "citation_sources"
 
 
 def stringify_tool_input(action_input: ToolInput) -> str:

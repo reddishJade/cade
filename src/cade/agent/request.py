@@ -44,8 +44,6 @@ from .types import AgentTool, materialize_json_mapping
 if TYPE_CHECKING:
     from .config import AgentContext
 
-type MessageConverter = Callable[[list[AgentMessage]], list[Message]]
-
 
 @dataclass(frozen=True)
 class RequestContextTrace:
@@ -115,7 +113,6 @@ class RequestAssembler(Protocol):
 class DefaultRequestAssembler:
     """按固定阶段收集、注入、裁剪并编码模型输入。"""
 
-    converter: MessageConverter = convert_to_llm
     context_sections: tuple[ContextSection, ...] = ()
     context_assembler: ContextAssembler = field(default_factory=DefaultContextAssembler)
     preserve_tool_result: Callable[[ToolResultMessage], bool] | None = None
@@ -187,7 +184,7 @@ class DefaultRequestAssembler:
             nonlocal local_tokens, estimate_source
             local_tokens = tokens
             predicted, anchored = context.context_manager.estimate_request_tokens(
-                self.converter(messages),
+                convert_to_llm(messages),
                 tool_definitions,
                 options,
                 tokens,
@@ -347,7 +344,7 @@ class DefaultRequestAssembler:
                 f"mandatory input estimate is {mandatory_tokens} tokens. "
                 "Reduce selected context or use a larger model window."
             )
-        wire_messages = self.converter(messages) if assembly_error is None else []
+        wire_messages = convert_to_llm(messages) if assembly_error is None else []
         assembly = RequestAssembly(
             messages=tuple(messages),
             wire_messages=tuple(wire_messages),

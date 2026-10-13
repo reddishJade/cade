@@ -10,21 +10,18 @@ from typing import TYPE_CHECKING, Any
 from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import ModelProvider
 
-from ...agent._codec import convert_to_llm as _convert_to_llm
 from ...agent.config import (
     AgentLoopConfig,
     AgentLoopTurnUpdate,
     CompletionVerifier,
     ContextWindowResetReason,
 )
-from ...agent.context import ContextSection, DefaultContextAssembler
 from ...agent.context_policy import ContextPolicy
 from ...agent.messages import (
     AgentMessage,
     SystemMessage,
 )
 from ...agent.request import (
-    DefaultRequestAssembler,
     RequestAssembly,
 )
 from ...agent.types import ApprovalCallback, ToolSpec
@@ -41,25 +38,16 @@ from ..security.permission_model import (
     GrantStore,
 )
 from ..session.inbox import SessionInbox
-from ..skill_activation import is_skill_activation_content
 from ._mode_protocol import RuntimeModeState
 from .cancellation import CancellationToken
 from .context_window import (
     ContextWindowController,
     ContextWindowRollover,
 )
-from .prompting.citations import decorate_citable_messages
 from .tool_gate import ToolGate
 
 if TYPE_CHECKING:
     from .composition import AgentComposition
-
-
-def _convert_to_llm_with_citations(
-    messages: list[AgentMessage],
-) -> list[dict[str, Any]]:
-    decorated = decorate_citable_messages(messages)
-    return _convert_to_llm(decorated)
 
 
 RuntimeContextProvider = Callable[[tuple[ToolSpec, ...]], list[str]]
@@ -283,21 +271,6 @@ def _request_option_value(value: object) -> object:
             for item in fields(value)
         }
     return f"<{type(value).__module__}.{type(value).__qualname__}>"
-
-
-def build_request_assembler(
-    context_sections: tuple[ContextSection, ...],
-    context_assembler: DefaultContextAssembler | None,
-) -> DefaultRequestAssembler:
-    """使用固定 section 集合装配请求边界。"""
-    return DefaultRequestAssembler(
-        converter=_convert_to_llm_with_citations,
-        context_sections=context_sections,
-        context_assembler=context_assembler or DefaultContextAssembler(),
-        preserve_tool_result=lambda message: is_skill_activation_content(
-            message.content
-        ),
-    )
 
 
 def build_loop_config(

@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 from cade.agent.context import (
     ContextBlockSource,
     ContextSection,
-    DefaultContextAssembler,
     InstructionCollector,
     NotesCollector,
     make_state_section,
 )
+from cade.agent.request import DefaultRequestAssembler
 from cade.agent.types import ApprovalCallback, ToolSpec
 from cade.ai.providers.base import ModelProvider
 from cade.coding_agent.execution_modes import (
@@ -29,7 +29,6 @@ from cade.harness.agent_runtime import (
 )
 from cade.harness.agent_runtime.config import (
     GateRuntimeConfig,
-    build_request_assembler,
 )
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
@@ -49,6 +48,7 @@ from cade.harness.observability import (
 from cade.harness.security.permission_model import PolicyEvaluator
 from cade.harness.session.inbox import SessionInbox
 from cade.harness.session.recorder import SessionRecorder
+from cade.harness.skill_activation import is_skill_activation_content
 
 from ..prompting import CORE_IDENTITY
 from ..runtime import CodingAgentRuntimeConfig
@@ -195,9 +195,11 @@ def build_agent(
         registry=registry,
         config=config,
         gate=gate,
-        request_assembler=build_request_assembler(
-            tuple(context_sections),
-            DefaultContextAssembler(),
+        request_assembler=DefaultRequestAssembler(
+            context_sections=tuple(context_sections),
+            preserve_tool_result=lambda message: is_skill_activation_content(
+                message.content
+            ),
         ),
         runtime_context_provider=runtime_context_provider,
     )
