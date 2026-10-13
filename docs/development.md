@@ -25,6 +25,10 @@ across models and remove stale or conflicting instructions.
 
 ## Commits & Pull Requests
 
+Develop on `dev` and synchronize with `origin/dev`. Prefer fast-forward updates.
+If the histories diverge, rebase local commits. Use a merge commit only when
+rebase is unsuitable.
+
 Use focused commits with imperative Conventional Commit-style subjects, such as
 `fix: refine tui input presentation` or `feat: add session export`. Stage only
 explicit paths (`git add src/cade/...`). Review reusable validation scenarios
