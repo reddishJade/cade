@@ -112,16 +112,15 @@ class ContextAssemblyResult:
     base_tokens: int = 0
 
 
-# ── 会话级上下文 section ──
+# ── 请求级上下文 section ──
 
 
 @dataclass(frozen=True)
 class ContextSection:
-    """每次请求以当前快照渲染的动态上下文 section。"""
+    """每次请求直接收集完整动态上下文块。"""
 
     section_id: str
-    snapshot: Callable[[ContextCollectionInput], object]
-    render_full: Callable[[object], list[ContextBlock]]
+    collect: Callable[[ContextCollectionInput], list[ContextBlock]]
 
 
 # ── 收集器协议 ──
@@ -162,8 +161,7 @@ class FrozenContextCollectorRegistry:
         current_blocks: dict[str, list[ContextBlock]] = {}
         for section in self.sections:
             try:
-                current = section.snapshot(input)
-                current_blocks[section.section_id] = section.render_full(current)
+                current_blocks[section.section_id] = section.collect(input)
             except (LookupError, OSError, RuntimeError, TypeError, ValueError):
                 raise ContextAssemblyError(
                     f"Cannot render context section: {section.section_id}"
@@ -177,13 +175,7 @@ def make_collector_section(
 ) -> ContextSection:
     """把 collector 包装为当前快照 section。"""
 
-    def snapshot(input: ContextCollectionInput) -> object:
-        return tuple(collector.collect(input))
-
-    def render_full(snapshot_value: object) -> list[ContextBlock]:
-        return _snapshot_blocks(snapshot_value)
-
-    return ContextSection(section_id, snapshot, render_full)
+    return ContextSection(section_id, collector.collect)
 
 
 def make_state_section(
@@ -195,25 +187,13 @@ def make_state_section(
 ) -> ContextSection:
     """把 ContextCollectionInput.state 中的运行时快照包装为 section。"""
 
-    def snapshot(input: ContextCollectionInput) -> object:
-        return input.state.get(state_key)
-
-    def render_full(snapshot_value: object) -> list[ContextBlock]:
-        if snapshot_value is None:
+    def collect(input: ContextCollectionInput) -> list[ContextBlock]:
+        value = input.state.get(state_key)
+        if value is None:
             return []
-        return [_state_block(section_id, source, priority, snapshot_value)]
+        return [_state_block(section_id, source, priority, value)]
 
-    return ContextSection(section_id, snapshot, render_full)
-
-
-def _snapshot_blocks(value: object) -> list[ContextBlock]:
-    if not isinstance(value, tuple | list) or not all(
-        isinstance(block, ContextBlock) for block in value
-    ):
-        raise TypeError(
-            "Context section snapshot must contain only ContextBlock values"
-        )
-    return list(value)
+    return ContextSection(section_id, collect)
 
 
 def _state_block(

@@ -243,8 +243,7 @@ class CadeApp:
         paths: list[Path] = []
         for section in collectors.sections:
             if section.section_id == "agents":
-                snapshot = section.snapshot(ContextCollectionInput())
-                for block in section.render_full(snapshot):
+                for block in section.collect(ContextCollectionInput()):
                     if block.provenance and block.provenance != "inline instruction":
                         path = Path(block.provenance)
                         if path not in paths:
