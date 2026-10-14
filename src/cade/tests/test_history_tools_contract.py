@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -211,7 +212,12 @@ class TestHistoryToolsContract:
         )
 
         symlink_file = sessions_dir / "session-symlinked.jsonl"
-        symlink_file.symlink_to(outside_file)
+        try:
+            symlink_file.symlink_to(outside_file)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows 当前账号缺少创建符号链接的权限")
+            raise
 
         history = SessionHistory(sessions_dir, project_root=tmp_path)
         with pytest.raises(ValueError, match="History session path escapes its store"):

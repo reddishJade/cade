@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,12 @@ def test_memory_catalog_symlink_defense(tmp_path: Path) -> None:
     cade_dir = tmp_path / ".cade"
     cade_dir.mkdir(parents=True)
     memory_symlink = cade_dir / "memory"
-    memory_symlink.symlink_to(real_outside_dir)
+    try:
+        memory_symlink.symlink_to(real_outside_dir, target_is_directory=True)
+    except OSError as exc:
+        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows 当前账号缺少创建符号链接的权限")
+        raise
 
     collector = MemoryCatalogCollector(project_root=tmp_path)
     blocks = collector.collect(ContextCollectionInput(project_root=tmp_path))
