@@ -219,12 +219,16 @@ def to_responses_input(
 
         if role == "tool":
             call_id = str(msg.get("tool_call_id") or "")
-            output_str = str(content) if content is not None else ""
+            output = (
+                _responses_content(content)
+                if isinstance(content, list)
+                else (str(content) if content is not None else "")
+            )
             items.append(
                 {
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": output_str,
+                    "output": output,
                 }
             )
             continue
@@ -265,7 +269,7 @@ def to_responses_input(
                 {
                     "type": "message",
                     "role": "user",
-                    "content": content,
+                    "content": _responses_content(content),
                 }
             )
         else:
@@ -279,6 +283,26 @@ def to_responses_input(
             )
 
     return items
+
+
+def _responses_content(content: list) -> list[dict[str, Any]]:
+    """将通用文本与图片字段映射为 Responses 内容块。"""
+    parts: list[dict[str, Any]] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append({"type": "input_text", "text": block.get("text", "")})
+        elif isinstance(block, dict) and block.get("type") == "image_url":
+            image = block.get("image_url", {})
+            parts.append(
+                {
+                    "type": "input_image",
+                    "image_url": image["url"],
+                    "detail": image.get("detail", "auto"),
+                }
+            )
+        else:
+            parts.append(block)
+    return parts
 
 
 def to_responses_text_config(

@@ -116,34 +116,40 @@ class _RedactingAdapter:
                 )
 
         content = await self._execute_handler(dict(params), _redacted_update)
-        metadata = getattr(content, "metadata", None)
-        render_intent = getattr(content, "render_intent", None)
-        original_text = str(content)
-        visible_text = redact_text(original_text)
-        if visible_text != original_text:
-            visible_text += (
-                "\n\n[Tool output notice: masked values are display-only; the "
-                "source is unchanged by masking. Exact-text edits must match "
-                "the real file. "
-                "Use unmasked surrounding text or another precise edit method.]"
-            )
-        return AgentToolResult(
-            content=[TextContent(text=visible_text)],
-            details=metadata if isinstance(metadata, dict) else None,
-            is_error=bool(getattr(content, "is_error", False)),
-            render_intent=render_intent,
+        result = (
+            content
+            if isinstance(content, AgentToolResult)
+            else AgentToolResult(content)
         )
+        redacted_content = []
+        for block in result.content:
+            if not isinstance(block, TextContent):
+                redacted_content.append(block)
+                continue
+            visible_text = redact_text(block.text)
+            if visible_text != block.text:
+                visible_text += (
+                    "\n\n[Tool output notice: masked values are display-only; the "
+                    "source is unchanged by masking. Exact-text edits must match "
+                    "the real file. "
+                    "Use unmasked surrounding text or another precise edit method.]"
+                )
+            redacted_content.append(TextContent(text=visible_text))
+        result.content = redacted_content
+        return result
 
     async def _execute_handler(
         self,
         params: ToolInput,
         on_update: Callable[[str], None] | None,
-    ) -> str:
+    ) -> str | AgentToolResult:
         """在独立 daemon 线程中执行同步 handler，并轮询收取结果。
 
         不响应取消的 handler 不能阻塞退出，因此不使用需等待关闭的默认 executor。
         """
-        outcomes: queue.SimpleQueue[str | Exception] = queue.SimpleQueue()
+        outcomes: queue.SimpleQueue[str | AgentToolResult | Exception] = (
+            queue.SimpleQueue()
+        )
         context = contextvars.copy_context()
 
         def run_handler() -> None:

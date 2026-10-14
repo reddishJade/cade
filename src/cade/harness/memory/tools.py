@@ -10,7 +10,7 @@ from pathlib import Path
 
 from filelock import FileLock
 
-from cade.agent.types import LocationRenderIntent, ToolInput, ToolOutput, ToolSpec
+from cade.agent.types import AgentToolResult, LocationRenderIntent, ToolInput, ToolSpec
 from cade.harness.session import SessionHistory
 
 _MAX_FILE_BYTES = 1_000_000
@@ -29,7 +29,7 @@ def build_save_memory_tool(
     def save(
         data: ToolInput,
         _on_update: Callable[[str], None] | None = None,
-    ) -> ToolOutput:
+    ) -> AgentToolResult:
         if cancel_event is not None and cancel_event.is_set():
             raise ValueError("Tool cancelled")
         path = _memory_path(root, data.get("path"))
@@ -59,7 +59,7 @@ def build_save_memory_tool(
             if cancel_event is not None and cancel_event.is_set():
                 raise ValueError("Tool cancelled")
             _atomic_write(path, content, create=current is None)
-        return ToolOutput(
+        return AgentToolResult(
             f"Saved Memory: {path.relative_to(root).as_posix()}\n"
             "Sources exist; their interpretation and current applicability were not verified.",
             render_intent=LocationRenderIntent(path=str(path)),

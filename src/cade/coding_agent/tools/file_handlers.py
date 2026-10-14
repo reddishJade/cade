@@ -12,10 +12,10 @@ from difflib import unified_diff
 from pathlib import Path
 
 from cade.agent.types import (
+    AgentToolResult,
     DiffRenderIntent,
     LocationRenderIntent,
     ToolInput,
-    ToolOutput,
 )
 from cade.coding_agent.tools.path_utils import resolve_project_path
 from cade.harness.execution_env import FileSystem, LocalFileSystem
@@ -66,7 +66,7 @@ def read_file_content(
     root: Path,
     operations: FileSystem,
     data: ToolInput,
-) -> str:
+) -> str | AgentToolResult:
     path_str = str(data.get("path", "")).strip()
     if not path_str:
         raise ValueError("path is required")
@@ -88,7 +88,7 @@ def read_file_content(
 
     sample = operations.read_head(filepath, SAMPLE_BYTES)
     if is_binary_file(filepath, sample):
-        return ToolOutput(
+        return AgentToolResult(
             f"Cannot read binary file: {display}",
             is_error=True,
         )
@@ -164,7 +164,7 @@ def _read_text_file(
     offset: int,
     limit: int,
     operations: FileSystem,
-) -> ToolOutput:
+) -> AgentToolResult:
     start = offset - 1
     lines: list[str] = []
     bytes_count = 0
@@ -220,7 +220,7 @@ def _read_text_file(
     output_parts.append("</content>")
     text = "\n".join(output_parts)
 
-    return ToolOutput(
+    return AgentToolResult(
         text,
         render_intent=LocationRenderIntent(
             path=display,
@@ -235,7 +235,7 @@ def _read_directory(
     display: str,
     operations: FileSystem,
     data: ToolInput,
-) -> ToolOutput:
+) -> AgentToolResult:
     items = operations.read_dir_entries(path)
     formatted = [name + "/" if is_dir else name for name, is_dir in items]
 
@@ -263,7 +263,7 @@ def _read_directory(
     output_parts.append("</entries>")
     text = "\n".join(output_parts)
 
-    return ToolOutput(
+    return AgentToolResult(
         text,
         render_intent=LocationRenderIntent(path=display),
     )
@@ -299,7 +299,7 @@ def write_file_content(
     root: Path,
     operations: FileSystem,
     data: ToolInput,
-) -> str:
+) -> AgentToolResult:
     request = _parse_write_file_request(root, operations, data)
     return with_file_mutation(
         request.path,
@@ -329,7 +329,7 @@ def _write_file_impl(
     root: Path,
     request: WriteFileRequest,
     operations: FileSystem,
-) -> str:
+) -> AgentToolResult:
     operations.mkdir(request.path.parent)
     display = _display(root, request.path)
 
@@ -357,7 +357,7 @@ def _write_file_impl(
     _write_text(request.path, clean_content, encoding, operations)
     _format_file(request.path)
 
-    return ToolOutput(
+    return AgentToolResult(
         f"wrote file: {display}\n{diff}",
         render_intent=DiffRenderIntent(patch=diff, files=(display,)),
     )
@@ -367,7 +367,7 @@ def edit_file_content(
     root: Path,
     operations: FileSystem,
     data: ToolInput,
-) -> str:
+) -> AgentToolResult:
     request = _parse_edit_file_request(root, operations, data)
     return with_file_mutation(
         request.path,
@@ -407,7 +407,7 @@ def _edit_file_impl(
     root: Path,
     request: EditFileRequest,
     operations: FileSystem,
-) -> str:
+) -> AgentToolResult:
     path = request.path
     content, encoding = _read_text(path, operations)
     bom, clean_content = strip_bom(content)
@@ -440,7 +440,7 @@ def _edit_file_impl(
     _format_file(path)
 
     diff = _diff_preview(display, content, final)
-    return ToolOutput(
+    return AgentToolResult(
         f"edited file: {display} replacements={total_replacements}\n{diff}",
         render_intent=DiffRenderIntent(
             patch=diff,

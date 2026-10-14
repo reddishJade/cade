@@ -72,7 +72,9 @@ def _event_payload(event: AgentHarnessEvent) -> object:
     if isinstance(event, ToolResultEvent):
         return {
             "tool_use_id": event.data.tool_use_id,
-            "content": event.data.content,
+            "content": [block.model_dump() for block in event.data.content]
+            if isinstance(event.data.content, list)
+            else event.data.content,
             "status": event.data.status,
             "permission_notice": event.data.permission_notice,
             "approval_denied": event.data.approval_denied,

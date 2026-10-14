@@ -105,13 +105,14 @@ class SessionRecorder:
             data = encoded.get("data")
             if not isinstance(data, dict):
                 raise TypeError("tool result event data must be an object")
-            preview, reference = offload_large_tool_result(
-                self.store.artifacts_dir,
-                event.data.content,
-            )
-            data["content"] = preview
-            if reference is not None:
-                data["content_artifact"] = reference
+            if isinstance(event.data.content, str):
+                preview, reference = offload_large_tool_result(
+                    self.store.artifacts_dir,
+                    event.data.content,
+                )
+                data["content"] = preview
+                if reference is not None:
+                    data["content_artifact"] = reference
         if isinstance(event, ContextWindowResetEvent):
             data = encoded.get("data")
             if not isinstance(data, dict):

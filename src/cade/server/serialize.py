@@ -12,6 +12,8 @@ from datetime import date, datetime
 from pathlib import PurePath
 from typing import Any
 
+from cade.agent.events import ToolResultEvent
+from cade.agent.types import tool_content_text
 from cade.harness.agent_runtime import AgentHarnessEvent
 
 # 长文本（如审批 transcript）只推送头部，避免撑爆浏览器内存
@@ -52,6 +54,8 @@ def event_to_dict(event: AgentHarnessEvent) -> dict[str, Any]:
     payload = to_jsonable(event)
     if not isinstance(payload, dict):
         raise TypeError("serialized harness event must be an object")
+    if isinstance(event, ToolResultEvent):
+        payload["data"]["content"] = tool_content_text(event.data.content)
     return _trim_event(payload)
 
 

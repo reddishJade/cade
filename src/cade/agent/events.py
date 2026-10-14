@@ -7,7 +7,12 @@ from typing import Literal
 
 from cade.ai.events import ToolCall
 
-from .messages import AgentMessage, AssistantMessage, ToolResultMessage
+from .messages import (
+    AgentMessage,
+    AssistantMessage,
+    ToolResultMessage,
+    ToolResultMessageContent,
+)
 from .types import TextContent, ToolArguments, ToolCallContent, ToolRenderIntent
 
 
@@ -139,7 +144,7 @@ class ToolUpdateEvent:
 @dataclass(frozen=True, kw_only=True)
 class ToolResultBlock:
     tool_use_id: str
-    content: str
+    content: ToolResultMessageContent
     status: Literal["ok", "error"] = "ok"
     permission_notice: str | None = None
     approval_denied: bool = False
@@ -214,7 +219,7 @@ def tool_result_event(result: ToolResultMessage) -> ToolResultEvent:
     return ToolResultEvent(
         data=ToolResultBlock(
             tool_use_id=result.tool_call_id,
-            content=str(result.content),
+            content=result.content,
             status="error" if result.is_error else "ok",
             permission_notice=notice if isinstance(notice, str) else None,
             approval_denied=metadata.get("approval_denied") is True,

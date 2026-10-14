@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from cade.agent.types import ToolInput, ToolSpec
+from cade.agent.types import AgentToolResult, ToolInput, ToolSpec
 
 from . import client as _mcp_mod
 from .results import convert_mcp_tool_result
@@ -471,7 +471,7 @@ def _make_handler(
     def handler(
         args: ToolInput,
         on_update: Callable[[str], None] | None = None,
-    ) -> str:
+    ) -> AgentToolResult:
         client_instance = ref.get_or_create()
         progress_updates: list[dict[str, object]] = []
 
@@ -499,10 +499,10 @@ def _make_handler(
         result = convert_mcp_tool_result(response, output_schema)
         if not progress_updates:
             return result
-        metadata = getattr(result, "metadata", {})
-        merged = dict(metadata)
+        merged = dict(result.details) if isinstance(result.details, dict) else {}
         merged["mcp_progress"] = progress_updates
-        return type(result)(str(result), metadata=merged, is_error=result.is_error)
+        result.details = merged
+        return result
 
     return handler
 

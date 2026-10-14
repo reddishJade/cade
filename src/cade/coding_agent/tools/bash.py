@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from cade.agent.types import TerminalRenderIntent, ToolInput, ToolOutput, ToolSpec
+from cade.agent.types import AgentToolResult, TerminalRenderIntent, ToolInput, ToolSpec
 from cade.coding_agent.validation import workspace_fingerprint
 from cade.harness.execution_env import (
     ExecutionResult,
@@ -49,7 +49,9 @@ def build_bash_tool(
     shell = shell or SubprocessShell()
     shell_syntax = spec.syntax
 
-    def bash(data: ToolInput, _on_update: Callable[[str], None] | None = None) -> str:
+    def bash(
+        data: ToolInput, _on_update: Callable[[str], None] | None = None
+    ) -> AgentToolResult:
         request = _parse_bash_request(data)
         cwd = _resolve_workdir(root, request.workdir)
         before = (
@@ -63,9 +65,9 @@ def build_bash_tool(
             on_progress=on_progress,
         )
         output = _render_bash_output(result, request.timeout)
-        return ToolOutput(
+        return AgentToolResult(
             output,
-            metadata={
+            details={
                 "exit_code": result.returncode,
                 "timed_out": result.timed_out,
                 "cancelled": result.cancelled,

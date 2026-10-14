@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Protocol, Self
+from typing import Annotated, Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -155,6 +155,51 @@ type ToolResultContentBlock = (
 )
 
 
+def tool_content_text(content: object) -> str:
+    """生成工具内容的文本投影，不展开图片或文件的二进制数据。"""
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, TextContent):
+                parts.append(item.text)
+            elif isinstance(item, ImageContent):
+                parts.append(_image_result_summary(item))
+            elif isinstance(item, FileContent):
+                parts.append(_file_result_summary(item))
+            elif isinstance(item, ShellCallOutputContent):
+                parts.append(str(item.output))
+            elif isinstance(item, ToolResultContent):
+                parts.append(item.content)
+            elif isinstance(item, dict):
+                kind = item.get("type")
+                if kind == "text":
+                    parts.append(str(item.get("text", "")))
+                elif kind == "image":
+                    parts.append(
+                        _image_result_summary(ImageContent.model_validate(item))
+                    )
+                elif kind == "file":
+                    parts.append(_file_result_summary(FileContent.model_validate(item)))
+                else:
+                    parts.append(str(item))
+            else:
+                parts.append(str(item))
+        return "".join(parts)
+    return str(content)
+
+
+def _image_result_summary(content: ImageContent) -> str:
+    source = content.source or {}
+    media_type = source.get("media_type")
+    suffix = f": {media_type}" if isinstance(media_type, str) else ""
+    return f"[image result{suffix}]"
+
+
+def _file_result_summary(content: FileContent) -> str:
+    identity = content.filename or content.file_id or "unnamed"
+    return f"[file result: {identity}]"
+
+
 class AgentToolResult:
     content: list[ToolResultContentBlock]
     details: ToolResultDetails | None = None
@@ -164,13 +209,15 @@ class AgentToolResult:
 
     def __init__(
         self,
-        content: list[ToolResultContentBlock] | None = None,
+        content: str | list[ToolResultContentBlock] | None = None,
         details: ToolResultDetails | None = None,
         is_error: bool = False,
         terminate: bool = False,
         render_intent: ToolRenderIntent | None = None,
     ) -> None:
-        self.content = content or []
+        self.content = (
+            [TextContent(text=content)] if isinstance(content, str) else (content or [])
+        )
         self.details = details
         self.is_error = is_error
         self.terminate = terminate
@@ -182,7 +229,9 @@ type ToolUpdateCallback = Callable[[AgentToolResult], None]
 
 ToolInput = dict[str, Any]
 ToolPathExtractor = Callable[[Mapping[str, object]], tuple[str, ...]]
-ActionHandler = Callable[[ToolInput, Callable[[str], None] | None], str]
+ActionHandler = Callable[
+    [ToolInput, Callable[[str], None] | None], str | AgentToolResult
+]
 HITLResult = Any
 ApprovalScope = Literal["once", "session", "permanent"]
 
@@ -202,27 +251,6 @@ class ApprovalRequest:
 
 
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
-
-
-class ToolOutput(str):
-    """带结构化元数据的工具输出文本。"""
-
-    metadata: dict[str, object]
-    is_error: bool
-    render_intent: ToolRenderIntent | None
-
-    def __new__(
-        cls,
-        content: str,
-        metadata: Mapping[str, object] | None = None,
-        is_error: bool = False,
-        render_intent: ToolRenderIntent | None = None,
-    ) -> Self:
-        output = str.__new__(cls, content)
-        output.metadata = dict(metadata) if metadata else {}
-        output.is_error = is_error
-        output.render_intent = render_intent
-        return output
 
 
 @dataclass(frozen=True)
@@ -253,9 +281,6 @@ def _materialize_json_value(value: object) -> object:
     if isinstance(value, list | tuple):
         return [_materialize_json_value(item) for item in value]
     return value
-
-
-AGENT_CONTENT_BLOCKS_METADATA_KEY = "agent_content_blocks"
 
 
 def stringify_tool_input(action_input: ToolInput) -> str:

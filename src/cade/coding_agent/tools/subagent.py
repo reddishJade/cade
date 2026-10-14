@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 from uuid import uuid4
 
-from cade.agent.types import SubagentRenderIntent, ToolOutput, ToolSpec
+from cade.agent.types import AgentToolResult, SubagentRenderIntent, ToolSpec
 from cade.harness.agent_runtime.cancellation import CancellationToken
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.subagents import (
@@ -62,7 +62,7 @@ class _SubagentHandler:
         self,
         data: dict[str, Any],
         on_update: Callable[[str], None] | None = None,
-    ) -> str:
+    ) -> str | AgentToolResult:
         tasks_or_error = _parse_tasks(data)
         if isinstance(tasks_or_error, str):
             return tasks_or_error
@@ -96,7 +96,7 @@ class _SubagentHandler:
             return text, tuple(run.run_id for run in runs)
 
         text, run_ids = async_run(execute())
-        return ToolOutput(
+        return AgentToolResult(
             text,
             render_intent=SubagentRenderIntent(
                 batch_id=batch_id,
@@ -113,7 +113,7 @@ class _SubagentContinueHandler:
         self,
         data: dict[str, Any],
         on_update: Callable[[str], None] | None = None,
-    ) -> str:
+    ) -> str | AgentToolResult:
         session_id = str(data.get("session_id", "")).strip()
         prompt = str(data.get("prompt", "")).strip()
         if not session_id or not prompt:
@@ -127,7 +127,7 @@ class _SubagentContinueHandler:
         )
         if result.status != "completed":
             raise RuntimeError(_format_continuation(result))
-        return ToolOutput(
+        return AgentToolResult(
             _format_continuation(result),
             render_intent=SubagentRenderIntent(
                 batch_id=result.run_id,
@@ -148,7 +148,7 @@ class _DelegateHandler:
         self,
         data: dict[str, Any],
         on_update: Callable[[str], None] | None = None,
-    ) -> str:
+    ) -> str | AgentToolResult:
         if str(data.get("session_id", "")).strip():
             return self._continue(data, on_update)
         return self._create(data, on_update)
