@@ -7,7 +7,7 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
 ## 1. 核心抽象与适配架构
 
 ```
-                 ModelProfileConfig
+                 ProviderConfig
                                 │
                                 ▼
                    build_provider()
@@ -41,7 +41,7 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
 
 ## 2. 架构不变量与设计禁忌
 
-- **无泄露适配**：所有厂商特异性参数（如 DeepSeek reasoning 模式开关、智谱参数）只能在各自的 Provider 内部消化，不得泄露到通用 `ProviderConfig` 公共字段中（通过 `extra` 字典透传）。
+- **配置归属**：角色解析与适配器共享同一份 `ProviderConfig`；厂商请求字段由适配器映射，配置字段具有明确类型。
 - **零业务状态**：Provider 实例应当无业务状态，仅持有网络连接客户端配置与模型元信息。
 - **测试环境解耦**：上层测试若需模拟 Provider，应通过标准接口构造假流，不得在生产包内留存已废弃的假桩模块。
 
@@ -50,14 +50,15 @@ Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型
 ## 3. 典型使用示例
 
 ```python
-from cade.ai.providers import build_provider, ModelProfileConfig
+from cade.ai.providers import build_provider
+from cade.ai.types import ProviderConfig
 
 # 装配 DeepSeek 运行时
 provider = build_provider(
-    ModelProfileConfig(
+    ProviderConfig(
         provider="deepseek",
         transport="deepseek_chat",
-        chat_model="deepseek-reasoner",
+        model="deepseek-reasoner",
         api_key="<resolved-api-key>",
     )
 )

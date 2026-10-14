@@ -43,20 +43,25 @@ type ToolArguments = dict[str, object]
 
 @dataclass(frozen=True)
 class ProviderConfig:
-    """标准化 provider 构造参数。
+    """角色解析与适配器共享的不可变模型配置。
 
-    所有 provider 共享此构造契约，factory 无需感知 provider 专有字段。
-    专有配置通过 extra 传递，各 provider 在 __init__ 中自行提取。
+    产品层解析连接、凭据和角色覆盖；适配器把类型化字段映射为厂商请求参数。
     """
 
     api_key: str
     model: str
+    provider: str = "openai"
+    transport: str = "openai_chat"
     base_url: str = ""
     context_window: int | None = None
     thinking: bool = True
     reasoning_effort: str | None = None
     response_format: dict[str, Any] | None = None
-    extra: dict[str, Any] = field(default_factory=dict)
+    clear_thinking: bool = False
+    tool_stream: bool = True
+    account_id: str | None = None
+    originator: str = "cade"
+    strict_tools: bool = False
 
 
 @dataclass(frozen=True)

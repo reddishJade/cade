@@ -6,7 +6,6 @@ from .mimo import MiMoProvider
 from .openai import OpenAIChatProvider
 from .registry import (
     PROVIDER_REGISTRY,
-    ModelProfileConfig,
     build_provider,
 )
 from .responses import OpenAICodexResponsesProvider, OpenAIResponsesProvider
@@ -16,7 +15,6 @@ __all__ = [
     "ChatGLMProvider",
     "DeepSeekProvider",
     "MiMoProvider",
-    "ModelProfileConfig",
     "OpenAIChatProvider",
     "OpenAICodexResponsesProvider",
     "OpenAIResponsesProvider",

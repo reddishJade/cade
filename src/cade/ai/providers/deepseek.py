@@ -33,7 +33,6 @@ class DeepSeekProvider(OpenAICompatProvider):
         tools: tuple[ToolDefinition, ...],
         options: StreamOptions | None,
     ) -> dict[str, Any]:
-        strict_tools = self.config.extra.get("strict_tools", False)
         effective_format = self.config.response_format
         if effective_format and effective_format.get("type") == "json_object":
             api_messages = self._ensure_json_word(api_messages)
@@ -41,7 +40,7 @@ class DeepSeekProvider(OpenAICompatProvider):
         params: dict[str, Any] = {
             "model": self.config.model,
             "messages": api_messages,
-            "tools": to_chat_tools(tools, strict=strict_tools),
+            "tools": to_chat_tools(tools, strict=self.config.strict_tools),
             "stream": True,
             "stream_options": {"include_usage": True},
         }

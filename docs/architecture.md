@@ -60,7 +60,8 @@ hooks、grant store 和换窗服务由运行时持有。run 开始时原子捕�
 `provider.connections` 保存独立连接参数；`~/.cade/auth.json` 按 provider 保存
 API key 与 OAuth。配置发现只合并和校验配置，不读取认证、不根据登录状态改模型。
 编码产品的 `assembly/providers.py` 先展开模型角色，再解析所选 provider 的凭据，
-形成只用于运行时的 provider 配置。登录只写认证，setup 和配置编辑负责默认选择。
+形成只用于运行时的 `ProviderConfig`，角色与适配器共享这份配置，工厂按 transport 选择实现。
+登录只写认证，setup 和配置编辑负责默认选择。
 
 ## 输入、运行与结束
 

@@ -403,11 +403,11 @@ class OpenAIResponsesProvider:
         base_url = self.config.base_url or OPENAI_RESPONSES_DEFAULT_BASE_URL
         headers: dict[str, str] = {}
 
-        account_id = self.config.extra.get("account_id")
+        account_id = self.config.account_id
         if account_id:
             headers["chatgpt-account-id"] = str(account_id)
-        if self.config.extra.get("originator"):
-            headers["originator"] = str(self.config.extra["originator"])
+        if self.config.originator:
+            headers["originator"] = str(self.config.originator)
         else:
             headers["originator"] = "cade"
 
@@ -731,9 +731,9 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
             "Content-Type": "application/json",
             "OpenAI-Beta": "responses=experimental",
             "User-Agent": _codex_user_agent(),
-            "originator": str(self.config.extra.get("originator") or "cade"),
+            "originator": str(self.config.originator or "cade"),
         }
-        account_id = self.config.extra.get("account_id")
+        account_id = self.config.account_id
         if account_id:
             headers["chatgpt-account-id"] = str(account_id)
         return headers

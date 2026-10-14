@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from cade.ai.models import get_model_reasoning_efforts
-from cade.ai.providers.registry import ModelProfileConfig, get_environment_api_key
+from cade.ai.providers.registry import get_environment_api_key
 from cade.ai.resolver import PROVIDER_TRANSPORTS, ModelResolver
+from cade.ai.types import ProviderConfig
 from cade.harness.auth.manager import AuthManager
 from cade.harness.config import CadeRuntimeConfig
 
@@ -18,7 +19,7 @@ def resolve_model_profile(
     model: str,
     options: dict[str, Any],
     env_files: tuple[Path, ...],
-) -> ModelProfileConfig:
+) -> ProviderConfig:
     """认证只提供凭据，不改变已选择的 provider、模型或端点。"""
     selected = ModelResolver.normalize_provider(provider) or provider
     connection = config.provider.connections.get(selected)
@@ -63,10 +64,10 @@ def resolve_model_profile(
             f"Model '{resolved_model}' does not support effort '{effort}'; "
             f"use: {', '.join(supported)}"
         )
-    return ModelProfileConfig(
+    return ProviderConfig(
         provider=selected,
         transport=transport,
-        chat_model=resolved_model,
+        model=resolved_model,
         base_url=(connection.base_url if connection else "")
         or ModelResolver.get_default_base_url(transport),
         api_key=key,
@@ -77,7 +78,7 @@ def resolve_model_profile(
 
 def resolve_model_profiles(
     config: CadeRuntimeConfig, env_files: tuple[Path, ...]
-) -> dict[str, ModelProfileConfig]:
+) -> dict[str, ProviderConfig]:
     """展开角色覆盖，省略的角色继承主模型选择和请求选项。"""
     options = config.provider.options.model_dump()
     options["reasoning_effort"] = config.default_reasoning_effort

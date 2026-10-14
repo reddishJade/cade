@@ -9,9 +9,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 from dotenv import dotenv_values
 
@@ -37,25 +36,6 @@ PROVIDER_REGISTRY: dict[str, type] = {
     # custom：任意 OpenAI 协议网关（自定义 base_url + api_key）
     "custom": OpenAIChatProvider,
 }
-
-
-# ── 配置类型 ──
-
-
-@dataclass(frozen=True)
-class ModelProfileConfig:
-    provider: str = "openai"
-    transport: str = "openai_chat"
-    chat_model: str = ""
-    base_url: str = ""
-    api_key: str = ""
-    context_window: int | None = None
-    thinking: bool = True
-    reasoning_effort: str | None = None
-    clear_thinking: bool = False
-    tool_stream: bool = True
-    response_format: dict[str, Any] | None = None
-    account_id: str | None = None
 
 
 # ── 环境变量工具 ──
@@ -101,37 +81,18 @@ def get_environment_api_key(
     return None
 
 
-def build_provider(profile: ModelProfileConfig) -> ModelProvider:
-    """从已解析凭据与选项的模型配置构造单个 provider。"""
-    transport = profile.transport
-    if not profile.api_key:
+def build_provider(config: ProviderConfig) -> ModelProvider:
+    """从已解析配置直接构造适配器，不另建配置对象。"""
+    if not config.api_key:
         raise RuntimeError("Missing credentials for model profile")
-
-    provider_cls = PROVIDER_REGISTRY.get(transport)
+    provider_cls = PROVIDER_REGISTRY.get(config.transport)
     if provider_cls is None:
         raise ValueError(
-            f"Unknown transport '{profile.transport}'. "
+            f"Unknown transport '{config.transport}'. "
             f"Available: {', '.join(PROVIDER_REGISTRY)}"
         )
-
-    base_url = profile.base_url or ModelResolver.get_default_base_url(transport)
-
-    extra: dict[str, Any] = {
-        "clear_thinking": profile.clear_thinking,
-        "tool_stream": profile.tool_stream,
-    }
-    account_id = profile.account_id
-    if account_id:
-        extra["account_id"] = account_id
-
-    config = ProviderConfig(
-        api_key=profile.api_key,
-        model=profile.chat_model,
-        base_url=base_url,
-        context_window=profile.context_window,
-        thinking=profile.thinking,
-        reasoning_effort=profile.reasoning_effort,
-        response_format=profile.response_format,
-        extra=extra,
-    )
+    if not config.base_url:
+        config = replace(
+            config, base_url=ModelResolver.get_default_base_url(config.transport)
+        )
     return provider_cls(config)

@@ -16,9 +16,9 @@ from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, TextDelta
 from cade.ai.models import get_model_context_window
 from cade.ai.providers.registry import (
-    ModelProfileConfig,
     build_provider,
 )
+from cade.ai.types import ProviderConfig
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.harness.agent_runtime import (
@@ -44,20 +44,19 @@ if TYPE_CHECKING:
 
 
 def _bound_context_window(
-    profile: ModelProfileConfig, requested: int | None
-) -> ModelProfileConfig:
+    profile: ProviderConfig, requested: int | None
+) -> ProviderConfig:
     """窗口覆盖值不能超过模型已知的真实窗口。
 
     显式请求超限时报错；切换模型时沿用的旧覆盖值超限则丢弃，回到模型默认窗口。
     """
     window = profile.context_window
-    limit = get_model_context_window(profile.chat_model, transport=profile.transport)
+    limit = get_model_context_window(profile.model, transport=profile.transport)
     if window is None or limit is None or window <= limit:
         return profile
     if requested:
         raise ValueError(
-            f"context window {window} exceeds the {limit} supported by "
-            f"{profile.chat_model}"
+            f"context window {window} exceeds the {limit} supported by {profile.model}"
         )
     return replace(profile, context_window=None)
 
@@ -73,7 +72,7 @@ class CadeApp:
     mcp_runtime: McpRuntimeRegistry | None = None
     subagents: SubagentSessionManager | None = None
     session_recorder: SessionRecorder | None = None
-    _model_profiles: dict[str, ModelProfileConfig] | None = None
+    _model_profiles: dict[str, ProviderConfig] | None = None
     _runtime_config: CadeRuntimeConfig | None = None
     _env_files: tuple[Path, ...] = ()
     _closers: tuple[Callable[[], None], ...] = ()
@@ -102,7 +101,7 @@ class CadeApp:
             and self.agent.auto_approval_callback is not None
             and "reviewer" not in self._model_profiles
         )
-        current = self._model_profiles.get(profile) or ModelProfileConfig()
+        current = self._model_profiles[profile]
         resolution = ModelResolver.resolve(
             model_or_alias=model,
             transport=transport,
@@ -117,7 +116,7 @@ class CadeApp:
             "/" not in model
             and transport is None
             and (
-                resolution.model == current.chat_model
+                resolution.model == current.model
                 or ModelResolver.infer_provider(resolution.model) is None
             )
         ):
@@ -160,7 +159,7 @@ class CadeApp:
             config, selected, resolution.model, options, self._env_files
         )
         new_cfg = _bound_context_window(new_cfg, context_window)
-        resolved_model = new_cfg.chat_model
+        resolved_model = new_cfg.model
         new_provider = build_provider(new_cfg)
         new_reviewer = build_provider(new_cfg) if sync_reviewer else None
         if profile == "main":
@@ -184,7 +183,7 @@ class CadeApp:
             (
                 config
                 for config in (self._model_profiles or {}).values()
-                if config.chat_model == active.model
+                if config.model == active.model
                 and (
                     config.transport == active.transport
                     or config.transport == "custom"
@@ -192,14 +191,16 @@ class CadeApp:
                 )
                 and config.base_url == active.base_url
             ),
-            ModelProfileConfig(),
+            None,
         )
         info: dict[str, str] = {
             "model": active.model,
             "base_url": active.base_url,
             "transport": active.transport,
             "profile": "main",
-            "provider": active_profile.provider,
+            "provider": active_profile.provider
+            if active_profile is not None
+            else "openai",
         }
         if active.thinking:
             info["thinking"] = "on"

@@ -30,11 +30,11 @@ class ChatGLMProvider(OpenAICompatProvider):
 
     @property
     def _clear_thinking(self) -> bool:
-        return self.config.extra.get("clear_thinking", False)
+        return self.config.clear_thinking
 
     @property
     def _tool_stream(self) -> bool:
-        return self.config.extra.get("tool_stream", True)
+        return self.config.tool_stream
 
     def _build_chat_params(
         self,
