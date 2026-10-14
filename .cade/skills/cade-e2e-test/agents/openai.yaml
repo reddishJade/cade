@@ -1,4 +1,4 @@
 interface:
   display_name: "Cade E2E 验收"
-  short_description: "Run real Cade E2E tests with workspace-local evidence"
-  default_prompt: "Use $cade-e2e-test to run the E2E scenario selected under docs/testing.md. Before setup, identify the uncovered risk and observable failure; do not start E2E solely because a module changed. Keep all test workspaces and evidence inside the Cade workspace."
+  short_description: "执行已选定的 Cade 端到端验收"
+  default_prompt: "使用 $cade-e2e-test 执行按 docs/testing.md 选定的 E2E 验收。说明需要验证的风险，按预期结果检查，并将测试文件和证据保留在仓库内。"
