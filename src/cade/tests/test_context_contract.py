@@ -183,7 +183,7 @@ def test_special_token_literals_do_not_bypass_context_budget(marker: str) -> Non
     )
     assert block.get_token_count() == 106
     assembly = DefaultRequestAssembler(
-        context_collectors=SelectedContext([block]).freeze()
+        context_sections=SelectedContext([block]).sections()
     ).assemble(
         AgentContext(messages=[UserMessage(content="Task")], context_policy=policy(90)),
         current_step=1,

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from cade.agent.types import ToolOutput
+from cade.agent.types import AgentToolResult, tool_content_text
 from cade.coding_agent.tools.file_handlers import (
     edit_file_content,
     read_file_content,
@@ -106,9 +106,9 @@ def test_file_handlers_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
         encoding="utf-8"
     ) == "line 1\nline 2\nline 3\n"
     assert (
-        "wrote" in str(write_res).lower()
-        or "created" in str(write_res).lower()
-        or target_rel in str(write_res)
+        "wrote" in tool_content_text(write_res.content).lower()
+        or "created" in tool_content_text(write_res.content).lower()
+        or target_rel in tool_content_text(write_res.content)
     )
 
     # 2. edit_file_content 精确替换中间行
@@ -120,7 +120,7 @@ def test_file_handlers_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
     assert (tmp_path / target_rel).read_text(
         encoding="utf-8"
     ) == "line 1\nline TWO\nline 3\n"
-    assert "line TWO" in str(edit_res)
+    assert "line TWO" in tool_content_text(edit_res.content)
 
     # 3. read_file_content 分页读取（offset=2, limit=1）
     read_res = read_file_content(
@@ -128,8 +128,9 @@ def test_file_handlers_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
         fs,
         {"path": target_rel, "offset": 2, "limit": 1},
     )
-    assert "line TWO" in read_res
-    assert "line 1" not in read_res
+    assert isinstance(read_res, AgentToolResult)
+    assert "line TWO" in tool_content_text(read_res.content)
+    assert "line 1" not in tool_content_text(read_res.content)
 
 
 def test_file_handlers_error_rejections(tmp_path: Path) -> None:
@@ -160,6 +161,6 @@ def test_file_handlers_error_rejections(tmp_path: Path) -> None:
     binary_file = tmp_path / "blob.bin"
     binary_file.write_bytes(b"\x00\x01\x02\x03\xff\xfe")
     read_bin = read_file_content(tmp_path, fs, {"path": "blob.bin"})
-    assert isinstance(read_bin, ToolOutput)
+    assert isinstance(read_bin, AgentToolResult)
     assert read_bin.is_error
-    assert "Cannot read binary file" in read_bin
+    assert "Cannot read binary file" in tool_content_text(read_bin.content)
