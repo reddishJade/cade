@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from cade.ai.types import ProviderConfig, StreamOptions, ToolDefinition
+from cade.ai.types import StreamOptions, ToolDefinition
 
 from ._compat import OpenAICompatProvider
 
@@ -15,14 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 class OpenAIChatProvider(OpenAICompatProvider):
     """OpenAI Chat Completions provider（兼容所有 OpenAI API 兼容服务）。"""
 
-    def __init__(
-        self,
-        config: ProviderConfig,
-    ) -> None:
-        super().__init__(
-            config,
-            transport="openai_chat",
-        )
+    transport = "openai_chat"
 
     def _build_thinking_params(
         self,

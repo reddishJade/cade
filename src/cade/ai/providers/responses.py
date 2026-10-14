@@ -12,7 +12,7 @@ import platform
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cade.ai.cache import CacheUsage
 from cade.ai.events import (
@@ -345,22 +345,14 @@ def _unseen_reasoning_suffix(previous: str, complete: str) -> str:
 class OpenAIResponsesProvider:
     """OpenAI Responses API provider。"""
 
+    transport: ClassVar[str] = "openai_responses"
+
     def __init__(
         self,
         config: ProviderConfig,
     ) -> None:
         self.config = config
-        self.transport = "openai_responses"
         self._usage = UsageAccumulator(config.model)
-        self._metrics: dict[str, object] = {
-            "transport": self.transport,
-            "sent_messages": 0,
-            "cached_tokens": 0,
-            "cache_hit_rate": 0.0,
-            "prompt_cache_hit_tokens": 0,
-            "prompt_cache_miss_tokens": 0,
-            "reasoning_tokens": 0,
-        }
         self._last_response_id: str | None = None
 
     @property
@@ -382,10 +374,6 @@ class OpenAIResponsesProvider:
     @property
     def context_window(self) -> int | None:
         return self.config.context_window
-
-    @property
-    def metrics(self) -> dict[str, object]:
-        return self._metrics
 
     @property
     def usage_totals(self) -> UsageTotals:
@@ -502,8 +490,6 @@ class OpenAIResponsesProvider:
                 params["extra_headers"] = request_headers
 
             self._finalize_request_params(params)
-
-            self._metrics["sent_messages"] = len(input_messages)
 
             async with aclosing(
                 self._decode_responses_stream(client, params)
@@ -650,16 +636,6 @@ class OpenAIResponsesProvider:
                             cached_tokens = _response_int(
                                 input_details, "cached_tokens"
                             )
-                            output_details = _response_value(
-                                usage, "output_tokens_details"
-                            )
-                            reasoning_tokens = _response_int(
-                                output_details, "reasoning_tokens"
-                            )
-
-                            self._metrics["cached_tokens"] = cached_tokens
-                            self._metrics["reasoning_tokens"] = reasoning_tokens
-
                             cache_usage = CacheUsage(
                                 hit_tokens=cached_tokens,
                                 miss_tokens=max(0, prompt_tokens - cached_tokens),
@@ -700,13 +676,7 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
 
     supports_output_token_limit = False
 
-    def __init__(
-        self,
-        config: ProviderConfig,
-    ) -> None:
-        super().__init__(config)
-        self.transport = "openai_codex"
-        self._metrics["transport"] = self.transport
+    transport = "openai_codex"
 
     def _get_client_and_headers(self) -> tuple[AsyncOpenAI, dict[str, str]]:
         """构建与 pi 行为一致的 ChatGPT Codex SDK 客户端。"""

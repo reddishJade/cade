@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any
+from typing import Any, ClassVar
 
 from cade.ai.cache import extract_cache_usage
 from cade.ai.events import ProviderEvent
@@ -42,25 +42,19 @@ class OpenAICompatProvider:
     """OpenAI Chat Completions 兼容基类。
 
     子类必须设置:
-    - self.transport（在 super().__init__ 之前或通过 transport 参数）
+    - transport 类属性声明协议名称
     - _build_chat_params(messages, tools, options) 构建请求参数
 
     子类可覆写:
     - _build_thinking_params() 构建 provider 专有 thinking 参数
     - _clean_reasoning_content() 控制 reasoning_content 保留策略
-    - _record_usage() 记录 provider 专有指标
     """
 
-    def __init__(
-        self,
-        config: ProviderConfig,
-        *,
-        transport: str = "openai_chat",
-    ) -> None:
+    transport: ClassVar[str] = "openai_chat"
+
+    def __init__(self, config: ProviderConfig) -> None:
         self.config = config
         self._usage = UsageAccumulator(config.model)
-        self.transport = transport
-        self._metrics: dict[str, object] = self._init_metrics()
 
     @property
     def model(self) -> str:
@@ -84,10 +78,6 @@ class OpenAICompatProvider:
         return self.config.context_window
 
     @property
-    def metrics(self) -> dict[str, object]:
-        return self._metrics
-
-    @property
     def usage_totals(self) -> UsageTotals:
         """本 provider 实例的累计用量与成本。"""
         return self._usage.totals
@@ -96,17 +86,6 @@ class OpenAICompatProvider:
     def cache_hit_rate(self) -> float | None:
         """最近一次请求的缓存命中率；尚无 usage 记录时为 None。"""
         return self._usage.cache_hit_rate
-
-    def _init_metrics(self) -> dict[str, object]:
-        return {
-            "transport": self.transport,
-            "sent_messages": 0,
-            "cached_tokens": 0,
-            "cache_hit_rate": 0.0,
-            "prompt_cache_hit_tokens": 0,
-            "prompt_cache_miss_tokens": 0,
-            "reasoning_tokens": 0,
-        }
 
     async def stream(
         self,
@@ -140,7 +119,7 @@ class OpenAICompatProvider:
                 stream = await client.chat.completions.create(**params)
                 async with stream:
                     async for event in chat_stream_to_events(
-                        self._intercept_usage(stream, len(api_messages))
+                        self._intercept_usage(stream)
                     ):
                         yield event
         except APIError as exc:
@@ -184,44 +163,17 @@ class OpenAICompatProvider:
         if opts.response_extra_params:
             params.update(opts.response_extra_params)
 
-    # ── metrics 拦截 ──
-
-    async def _intercept_usage(
-        self,
-        chunks: AsyncIterator[Any],
-        message_count: int,
-    ) -> AsyncIterator[Any]:
-        """拦截流式响应，在遇到 usage 时记录指标。"""
+    async def _intercept_usage(self, chunks: AsyncIterator[Any]) -> AsyncIterator[Any]:
+        """在解码响应前累计实际用量，供模型统计与成本展示读取。"""
         async for chunk in chunks:
             usage = getattr(chunk, "usage", None)
             if usage:
-                self._record_usage(chunk, message_count)
+                self._usage.record(
+                    prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                    completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                    cache_usage=extract_cache_usage(chunk),
+                )
             yield chunk
-
-    def _record_usage(self, response: Any, sent_messages: int) -> None:
-        """记录 usage 指标。子类可覆写以添加 provider 专有字段。"""
-        self._metrics["sent_messages"] = sent_messages
-        usage = getattr(response, "usage", None)
-        if usage:
-            cache_usage = extract_cache_usage(response)
-            self._metrics["cached_tokens"] = cache_usage.hit_tokens
-            self._metrics["cache_hit_rate"] = cache_usage.hit_rate
-            self._metrics["prompt_cache_hit_tokens"] = cache_usage.hit_tokens
-            self._metrics["prompt_cache_miss_tokens"] = cache_usage.miss_tokens
-
-            self._usage.record(
-                prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
-                cache_usage=cache_usage,
-            )
-
-            completion_details = getattr(usage, "completion_tokens_details", None)
-            reasoning = (
-                getattr(completion_details, "reasoning_tokens", 0)
-                if completion_details
-                else 0
-            )
-            self._metrics["reasoning_tokens"] = reasoning or 0
 
     # ── thinking 参数构建 ──
 

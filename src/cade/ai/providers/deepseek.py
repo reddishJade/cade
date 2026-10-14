@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from cade.ai.types import ProviderConfig, StreamOptions, ToolDefinition
+from cade.ai.types import StreamOptions, ToolDefinition
 
 from ._codec import to_chat_tools
 from ._compat import OpenAICompatProvider
@@ -16,16 +16,7 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 class DeepSeekProvider(OpenAICompatProvider):
     """DeepSeek Chat API 适配。"""
 
-    def __init__(
-        self,
-        config: ProviderConfig,
-    ) -> None:
-        super().__init__(
-            config,
-            transport="deepseek_chat",
-        )
-        self._metrics["prompt_cache_hit_tokens"] = 0
-        self._metrics["prompt_cache_miss_tokens"] = 0
+    transport = "deepseek_chat"
 
     def _build_chat_params(
         self,
