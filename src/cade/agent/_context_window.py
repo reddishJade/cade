@@ -17,7 +17,8 @@ from cade.agent.messages import (
 def estimate_tokens(text: str) -> int:
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
-        return max(1, len(encoding.encode(text)))
+        # 消息正文中的特殊标记是普通文本，不应触发异常并退回字节估算。
+        return max(1, len(encoding.encode_ordinary(text)))
     except (KeyError, RuntimeError, TypeError, UnicodeError, ValueError):
         return max(1, len(text.encode("utf-8")) // 3)
 

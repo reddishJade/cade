@@ -4,6 +4,8 @@
 不模拟服务协议。文件场景在仓库 e2e-results 下创建独立目录，不修改真实 Memory。
 运行：uv run --locked pytest -q src/cade/tests/test_context_contract.py。
 真实宿主及服务验收另通过 cade exec 执行。
+特殊标记回归使用无外部服务的选定指令块（100 个「a 」及标记）和 90 token
+预算；已核对的 cl100k_base 普通文本计数为 106，必须拒绝发送。
 """
 
 from __future__ import annotations
@@ -165,6 +167,36 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
     assert assembly.mandatory_estimated_tokens >= sum(
         b.get_token_count() for b in blocks
     )
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "<|endoftext|>",
+        "<|fim_prefix|>",
+        "<|fim_middle|>",
+        "<|fim_suffix|>",
+        "<|endofprompt|>",
+    ],
+)
+def test_special_token_literals_do_not_bypass_context_budget(marker: str) -> None:
+    block = ContextBlock(
+        source=ContextBlockSource.INSTRUCTION,
+        priority=ContextPriority.INSTRUCTION,
+        content="a " * 100 + marker,
+    )
+    assert block.get_token_count() == 106
+    assembly = DefaultRequestAssembler(
+        context_collectors=SelectedContext([block]).freeze()
+    ).assemble(
+        AgentContext(messages=[UserMessage(content="Task")], context_policy=policy(90)),
+        current_step=1,
+        options=None,
+    )
+    assert assembly.mandatory_estimated_tokens > assembly.token_budget
+    assert not assembly.wire_messages
+    with pytest.raises(ContextAssemblyError, match="safe budget"):
+        assembly.require_sendable()
 
 
 def test_safe_budget_is_not_next_turn_soft_target() -> None:
