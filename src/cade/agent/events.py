@@ -1,135 +1,227 @@
-"""Agent 事件类型。"""
+"""循环、会话记录与宿主共享的运行事件。"""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from dataclasses import dataclass, field
+from typing import Literal
 
-from .messages import AgentMessage, ToolResultMessage
-from .types import AgentToolResult, ToolArguments
+from cade.ai.events import ToolCall
 
-
-class TurnStartEvent(BaseModel):
-    """单次 turn 开始事件（调用模型前）。"""
-
-    type: str = "turn_start"
-    model_config = ConfigDict(extra="forbid")
+from .messages import AgentMessage, AssistantMessage, ToolResultMessage
+from .types import TextContent, ToolArguments, ToolCallContent, ToolRenderIntent
 
 
-class TurnEndEvent(BaseModel):
-    """单次 turn 结束事件（模型返回并执行工具后）。"""
+@dataclass(frozen=True)
+class EventCorrelation:
+    """事件与请求、工具调用关联的不可变快照。"""
 
-    type: str = "turn_end"
-    message: AgentMessage | None = None
-    tool_results: list[ToolResultMessage] = Field(default_factory=list)
-    model_config = ConfigDict(extra="forbid")
-
-
-class MessageStartEvent(BaseModel):
-    """模型响应开始事件（首个 token 到达）。"""
-
-    type: str = "message_start"
-    message: AgentMessage | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class MessageUpdateEvent(BaseModel):
-    """模型响应增量更新事件（流式传输中）。"""
-
-    type: str = "message_update"
-    message: AgentMessage | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class MessageEndEvent(BaseModel):
-    """模型响应结束事件（流式传输完成）。"""
-
-    type: str = "message_end"
-    message: AgentMessage | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class ToolExecutionStartEvent(BaseModel):
-    """工具执行开始事件。"""
-
-    type: str = "tool_execution_start"
+    timestamp: str = ""
+    session_id: str = ""
+    turn_id: str = ""
+    request_id: str = ""
     tool_call_id: str = ""
-    tool_name: str = ""
-    args: ToolArguments = Field(default_factory=dict)
-    model_config = ConfigDict(extra="forbid")
 
 
-class ToolExecutionUpdateEvent(BaseModel):
-    """工具执行增量更新事件（支持进度报告的工具）。"""
-
-    type: str = "tool_execution_update"
-    tool_call_id: str = ""
-    tool_name: str = ""
-    args: ToolArguments = Field(default_factory=dict)
-    partial_result: AgentToolResult | None = None
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+@dataclass(frozen=True, kw_only=True)
+class TurnToolResultData:
+    tool_call_id: str
+    content: str
 
 
-class ToolExecutionEndEvent(BaseModel):
-    """工具执行结束事件，携带结果或错误。"""
-
-    type: str = "tool_execution_end"
-    tool_call_id: str = ""
-    tool_name: str = ""
-    result: ToolResultMessage | None = None
-    is_error: bool = False
-    model_config = ConfigDict(extra="forbid")
+@dataclass(frozen=True, kw_only=True)
+class TurnEndData:
+    tool_results: list[TurnToolResultData]
 
 
-class ThinkingUpdateEvent(BaseModel):
-    """思考内容增量更新事件（支持 reasoning_content 的模型）。"""
-
-    type: str = "thinking_update"
-    reasoning_content: str = ""
-    model_config = ConfigDict(extra="forbid")
-
-
-class UsageUpdateEvent(BaseModel):
-    """Provider 返回的当次请求 token 用量。"""
-
-    type: str = "usage_update"
-    input_tokens: int = 0
-    output_tokens: int = 0
-    model_config = ConfigDict(extra="forbid")
+@dataclass(frozen=True, kw_only=True)
+class TextDeltaEvent:
+    type: Literal["text_delta"] = "text_delta"
+    step: int = 0
+    data: str
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
 
 
-class ResponseMetricsEvent(BaseModel):
-    """单次模型请求的性能；首增量时更新 TTFT，流结束时更新 TPS。"""
-
-    type: str = "response_metrics"
-    ttft_seconds: float | None = None
-    tokens_per_second: float | None = None
-    completed: bool = False
-    model_config = ConfigDict(extra="forbid")
+@dataclass(frozen=True, kw_only=True)
+class ReasoningDeltaEvent:
+    type: Literal["reasoning_delta"] = "reasoning_delta"
+    step: int = 0
+    data: str
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
 
 
-class ContextWindowResetEvent(BaseModel):
-    """旧上下文窗口关闭、新窗口开始事件。"""
+@dataclass(frozen=True, kw_only=True)
+class UsageUpdateEvent:
+    type: Literal["usage_update"] = "usage_update"
+    step: int = 0
+    data: dict[str, int]
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
 
-    type: str = "context_window_reset"
-    window_id: str = ""
-    messages_removed: int = 0
-    messages_after: int = 0
-    trigger: str = "token_limit"
-    replacement: list[AgentMessage]
-    model_config = ConfigDict(extra="forbid")
+
+@dataclass(frozen=True, kw_only=True)
+class ResponseMetricsData:
+    """请求级性能；TTFT 至首文本或思考增量，TPS 使用服务端输出用量。"""
+
+    ttft_seconds: float | None
+    tokens_per_second: float | None
+    completed: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class ResponseMetricsEvent:
+    type: Literal["response_metrics"] = "response_metrics"
+    step: int = 0
+    data: ResponseMetricsData
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MessageStartEvent:
+    type: Literal["message_start"] = "message_start"
+    step: int = 0
+    data: AgentMessage | None
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class TurnEndEvent:
+    type: Literal["turn_end"] = "turn_end"
+    step: int = 0
+    data: TurnEndData
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class AssistantTextBlock:
+    text: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class AssistantToolUseBlock:
+    id: str
+    name: str
+    input: ToolArguments
+
+
+type AssistantEventBlock = AssistantTextBlock | AssistantToolUseBlock
+
+
+@dataclass(frozen=True, kw_only=True)
+class AssistantEvent:
+    type: Literal["assistant"] = "assistant"
+    step: int = 0
+    data: tuple[AssistantEventBlock, ...]
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ToolUseEvent:
+    type: Literal["tool_use"] = "tool_use"
+    step: int = 0
+    data: ToolCall
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ToolUpdateData:
+    tool_call_id: str
+    tool_name: str
+    partial_result: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ToolUpdateEvent:
+    type: Literal["tool_update"] = "tool_update"
+    step: int = 0
+    data: ToolUpdateData
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ToolResultBlock:
+    tool_use_id: str
+    content: str
+    status: Literal["ok", "error"] = "ok"
+    permission_notice: str | None = None
+    approval_denied: bool = False
+    exit_code: int | None = None
+    render_intent: ToolRenderIntent | None = None
+    type: str = "tool_result"
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ToolResultEvent:
+    type: Literal["tool_result"] = "tool_result"
+    step: int = 0
+    data: ToolResultBlock
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContextWindowResetData:
+    window_id: str
+    messages_removed: int
+    messages_after: int
+    trigger: str
+    replacement: tuple[AgentMessage, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContextWindowResetEvent:
+    type: Literal["context_window_reset"] = "context_window_reset"
+    step: int = 0
+    data: ContextWindowResetData
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
 
 
 type AgentEvent = (
-    TurnStartEvent
-    | TurnEndEvent
-    | MessageStartEvent
-    | MessageUpdateEvent
-    | MessageEndEvent
-    | ToolExecutionStartEvent
-    | ToolExecutionUpdateEvent
-    | ToolExecutionEndEvent
-    | ThinkingUpdateEvent
+    TextDeltaEvent
+    | ReasoningDeltaEvent
     | UsageUpdateEvent
     | ResponseMetricsEvent
+    | MessageStartEvent
+    | TurnEndEvent
+    | AssistantEvent
+    | ToolUseEvent
+    | ToolUpdateEvent
+    | ToolResultEvent
     | ContextWindowResetEvent
 )
+
+
+def assistant_event(message: AssistantMessage) -> AssistantEvent | None:
+    """只发布宿主和 transcript 所需的文本与工具调用。"""
+    blocks: list[AssistantEventBlock] = []
+    for block in message.content:
+        if isinstance(block, TextContent):
+            blocks.append(AssistantTextBlock(text=block.text))
+        elif isinstance(block, ToolCallContent):
+            blocks.append(
+                AssistantToolUseBlock(
+                    id=block.id,
+                    name=block.name,
+                    input=block.arguments or {},
+                )
+            )
+    return AssistantEvent(data=tuple(blocks)) if blocks else None
+
+
+def tool_result_event(result: ToolResultMessage) -> ToolResultEvent:
+    """发布工具结果，并投影宿主读取的权限与进程字段。"""
+    metadata = result.metadata or {}
+    notice = metadata.get("permission_notice")
+    exit_code = metadata.get("exit_code")
+    return ToolResultEvent(
+        data=ToolResultBlock(
+            tool_use_id=result.tool_call_id,
+            content=str(result.content),
+            status="error" if result.is_error else "ok",
+            permission_notice=notice if isinstance(notice, str) else None,
+            approval_denied=metadata.get("approval_denied") is True,
+            exit_code=exit_code
+            if isinstance(exit_code, int) and not isinstance(exit_code, bool)
+            else None,
+            render_intent=result.render_intent,
+            metadata=result.metadata,
+        )
+    )

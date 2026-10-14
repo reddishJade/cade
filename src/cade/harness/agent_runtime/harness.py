@@ -47,8 +47,6 @@ from .config import (
 )
 from .events import (
     AgentHarnessEvent,
-    _StreamTranslationState,
-    translate_event,
 )
 from .fallback import FallbackWithRetryPrimary
 from .result import (
@@ -639,7 +637,6 @@ class AgentHarness:
                 ),
             )
 
-            translation_state = _StreamTranslationState(correlation=self._correlation)
             context = AgentContext(
                 messages=self._context_manager.history_messages(),
                 request_prefix=context_messages,
@@ -662,12 +659,18 @@ class AgentHarness:
                 if isinstance(event, AgentLoopResult):
                     result = event
                     continue
-                translated = translate_event(event, translation_state)
-                if translated is not None:
-                    for te in (
-                        translated if isinstance(translated, list) else [translated]
-                    ):
-                        yield te
+                tool_call_id = (
+                    event.data.id
+                    if event.type == "tool_use"
+                    else event.data.tool_call_id
+                    if event.type == "tool_update"
+                    else event.data.tool_use_id
+                    if event.type == "tool_result"
+                    else ""
+                )
+                yield replace(
+                    event, correlation=self._correlation.snapshot(tool_call_id)
+                )
 
             if result is None:
                 raise RuntimeError("agent loop completed without a result")

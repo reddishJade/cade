@@ -34,7 +34,7 @@ Agent 层是 Cade 最内层的领域无关核心，专注于解决一个核心�
 
 ### 核心类型契约
 - **中性消息体 ([messages.py](messages.py))**：[`SystemMessage`](messages.py)、[`UserMessage`](messages.py)、[`AssistantMessage`](messages.py)、[`ToolResultMessage`](messages.py)。
-- **外部事件流 ([events.py](events.py))**：`TurnStart`、`TurnEnd`、`BeforeToolCall`、`AfterToolCall` 等。
+- **外部事件流 ([events.py](events.py))**：文本与思考增量、工具调用与结果、用量、step 结束和换窗事件；循环、Harness 与宿主消费同一套类型。
 - **工具与执行契约 ([types.py](types.py))**：[`AgentTool`](types.py)（声明 schema、只读性与并发安全等级）、[`CancellationSignal`](types.py)。
 - **上下文管线 ([context.py](context.py))**：[`ContextAssembler`](context.py)、[`ContextSection`](context.py) 与 `ContextPriority`（仅用于稳定排序）；请求组装器直接收集固定 section 集合，选定块完整注入，预算策略回收历史与工具证据，无法安全组装时明确失败。
 

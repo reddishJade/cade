@@ -41,6 +41,9 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import CheckboxList, RadioList, TextArea
 
+from cade.agent.events import (
+    ToolUseEvent,
+)
 from cade.agent.messages import UserMessage
 from cade.coding_agent.interaction.app_contract import InteractionApp
 from cade.coding_agent.interaction.approval import (
@@ -75,8 +78,7 @@ from cade.coding_agent.interaction.tools import (
 from cade.coding_agent.tools.question import CUSTOM_OPTION_LABEL
 from cade.harness.agent_runtime import AgentHarnessEvent, BusyMessageMode, SubmitStatus
 from cade.harness.agent_runtime.events import (
-    FinalStructuredEvent,
-    ToolUseStructuredEvent,
+    FinalEvent,
 )
 from cade.harness.snapshot import SnapshotStore, SnapshotUnsupportedError
 
@@ -1926,9 +1928,9 @@ class _CadeTui:
                 mode=self._interaction_state.mode,
                 display_question=display_text,
             ):
-                if isinstance(event, (FinalStructuredEvent,)):
+                if isinstance(event, (FinalEvent,)):
                     answer = event.data.answer
-                if isinstance(event, (ToolUseStructuredEvent,)):
+                if isinstance(event, (ToolUseEvent,)):
                     tool_names.append(event.data.name)
                 self._dispatch_agent_event(event)
         except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:

@@ -20,9 +20,10 @@ from cade.agent.config import (
 )
 from cade.agent.events import (
     AgentEvent,
-    ToolExecutionEndEvent,
-    ToolExecutionStartEvent,
-    ToolExecutionUpdateEvent,
+    ToolUpdateData,
+    ToolUpdateEvent,
+    ToolUseEvent,
+    tool_result_event,
 )
 from cade.agent.messages import (
     AssistantMessage,
@@ -40,6 +41,7 @@ from cade.agent.types import (
     ToolResultContentBlock,
     materialize_json_mapping,
 )
+from cade.ai.events import ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +174,12 @@ async def _execute_sequential(
     terminate_flags: list[bool] = []
     for tool_call in tool_calls:
         emit(
-            ToolExecutionStartEvent(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                args=tool_call.arguments or {},
+            ToolUseEvent(
+                data=ToolCall(
+                    id=tool_call.id,
+                    name=tool_call.name,
+                    input=tool_call.arguments or {},
+                )
             )
         )
         result, terminate = await _execute_one(
@@ -215,10 +219,12 @@ async def _execute_parallel(
     pending: dict[asyncio.Task[tuple[ToolResultMessage, bool]], ToolCallContent] = {}
     for tool_call in tool_calls:
         emit(
-            ToolExecutionStartEvent(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                args=tool_call.arguments or {},
+            ToolUseEvent(
+                data=ToolCall(
+                    id=tool_call.id,
+                    name=tool_call.name,
+                    input=tool_call.arguments or {},
+                )
             )
         )
         pending[asyncio.create_task(execute_limited(tool_call))] = tool_call
@@ -240,7 +246,7 @@ async def _execute_parallel(
                     tool_call, cancel_reason(signal)
                 )
                 completed[tool_call.id] = (interrupted, interrupted_terminate)
-                _emit_tool_end(tool_call, interrupted, True, emit)
+                emit(tool_result_event(interrupted))
             break
         done, pending_set = await asyncio.wait(
             pending, return_when=asyncio.FIRST_COMPLETED
@@ -292,7 +298,7 @@ async def _execute_one(
         return result_msg, terminate
     finally:
         if result_msg is not None:
-            _emit_tool_end(tool_call, result_msg, result_msg.is_error, emit)
+            emit(tool_result_event(result_msg))
 
 
 async def _execute_one_impl(
@@ -340,11 +346,15 @@ async def _execute_one_impl(
 
     def _on_update(partial: AgentToolResult) -> None:
         emit(
-            ToolExecutionUpdateEvent(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                args=args,
-                partial_result=partial,
+            ToolUpdateEvent(
+                data=ToolUpdateData(
+                    tool_call_id=tool_call.id,
+                    tool_name=tool_call.name,
+                    partial_result="".join(
+                        block.text if isinstance(block, TextContent) else str(block)
+                        for block in partial.content
+                    ),
+                )
             )
         )
 
@@ -550,22 +560,6 @@ def _tool_result_message(
         is_error=is_error,
         metadata=metadata if isinstance(metadata, dict) else None,
         render_intent=render_intent,
-    )
-
-
-def _emit_tool_end(
-    tool_call: ToolCallContent,
-    result_msg: ToolResultMessage,
-    is_error: bool,
-    emit: Callable[[AgentEvent], None],
-) -> None:
-    emit(
-        ToolExecutionEndEvent(
-            tool_call_id=tool_call.id,
-            tool_name=tool_call.name,
-            result=result_msg,
-            is_error=is_error,
-        )
     )
 
 

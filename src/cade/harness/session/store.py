@@ -968,7 +968,7 @@ _NOISY_EVENT_TYPES = frozenset(
         "message_stop",
         "reasoning_delta",
         "text_delta",
-        "assistant",  # AssistantStructuredEvent — block list，无用
+        "assistant",  # AssistantEvent — block list，无用
         "turn_end",  # 内部 bookkeeping
         "final",  # 同上
         "tool_update",  # 进度更新，无意义

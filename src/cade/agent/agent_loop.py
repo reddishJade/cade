@@ -21,6 +21,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 
 from cade.agent.types import CancellationSignal, TextContent, ToolCallContent
 from cade.ai.providers.base import StreamProvider
@@ -45,11 +46,13 @@ from .config import (
 from .context import ContextAssemblyError
 from .events import (
     AgentEvent,
+    ContextWindowResetData,
     ContextWindowResetEvent,
-    MessageEndEvent,
     MessageStartEvent,
+    TurnEndData,
     TurnEndEvent,
-    TurnStartEvent,
+    TurnToolResultData,
+    assistant_event,
 )
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 from .request import RequestAssembly
@@ -131,10 +134,8 @@ async def _run_agent_loop(
         ),
         context_policy=config.context_policy or context.context_policy,
     )
-    emit(TurnStartEvent())
     for prompt in prompts:
-        emit(MessageStartEvent(message=prompt))
-        emit(MessageEndEvent(message=prompt))
+        emit(MessageStartEvent(data=prompt, step=1))
     result = await _run_loop(
         current_context,
         new_messages,
@@ -156,7 +157,7 @@ async def _run_loop(
     initial_context: AgentContext,
     new_messages: list[AgentMessage],
     config: AgentLoopConfig,
-    emit: Callable[[AgentEvent], None],
+    emit_event: Callable[[AgentEvent], None],
     signal: CancellationSignal | None = None,
     steer_queue: Callable[[], list[AgentMessage]] | None = None,
     finish_steering: Callable[[], list[AgentMessage]] | None = None,
@@ -191,11 +192,8 @@ async def _run_loop(
         # ── 处理 steer 队列 ──
         _append_steering_messages(current_context, new_messages, steer_queue)
 
-        # ── 发出 turn 事件 ──
-        if not state.first_turn:
-            emit(TurnStartEvent())
-        else:
-            state.first_turn = False
+        def emit(event: AgentEvent, current_step: int = step) -> None:
+            emit_event(replace(event, step=current_step))
 
         # ── 上下文窗口切换检查 ──
         if state.active_provider is not None:
@@ -269,7 +267,7 @@ async def _run_loop(
 
         # ── 错误/中止 → 退出 ──
         if stop_reason in ("error", "aborted"):
-            emit(TurnEndEvent(message=message, tool_results=[]))
+            emit(TurnEndEvent(data=TurnEndData(tool_results=[])))
             result = AgentLoopResult(
                 messages=new_messages,
                 surface=list(current_context.messages),
@@ -291,7 +289,7 @@ async def _run_loop(
 
         if not tool_calls:
             # 模型没有请求工具 → 本轮结束
-            emit(TurnEndEvent(message=message, tool_results=[]))
+            emit(TurnEndEvent(data=TurnEndData(tool_results=[])))
 
             if config.completion_verifier is not None:
                 feedback = await config.completion_verifier(current_context.messages)
@@ -332,7 +330,19 @@ async def _run_loop(
         tool_results = executed.results
         _append_tool_results(current_context, new_messages, metrics, tool_results)
 
-        emit(TurnEndEvent(message=message, tool_results=tool_results or []))
+        emit(
+            TurnEndEvent(
+                data=TurnEndData(
+                    tool_results=[
+                        TurnToolResultData(
+                            tool_call_id=result.tool_call_id,
+                            content=str(result.content),
+                        )
+                        for result in tool_results
+                    ]
+                )
+            )
+        )
 
         # ── 重复工具看门狗 ──
         repeated_watchdog_reason = update_repeated_tool_watchdog(
@@ -573,11 +583,13 @@ def _rotate_context(
     metrics.context_window_resets += 1
     emit(
         ContextWindowResetEvent(
-            window_id=context_window_id(context.messages),
-            messages_removed=max(before - len(context.messages), 0),
-            messages_after=len(context.messages),
-            trigger=reason,
-            replacement=list(context.messages),
+            data=ContextWindowResetData(
+                window_id=context_window_id(context.messages),
+                messages_removed=max(before - len(context.messages), 0),
+                messages_after=len(context.messages),
+                trigger=reason,
+                replacement=tuple(context.messages),
+            )
         )
     )
 
@@ -633,8 +645,8 @@ async def _run_inner_loop(
                 content=[TextContent(text="No provider configured")],
                 stop_reason="end_turn",
             )
-            emit(MessageStartEvent(message=msg))
-            emit(MessageEndEvent(message=msg))
+            emit(MessageStartEvent(data=msg))
+            _emit_assistant(msg, emit)
             return msg, "end_turn", provider
 
         response = await call_provider(
@@ -650,7 +662,7 @@ async def _run_inner_loop(
         if response is None:
             # 模型流式生成期间被打断：中止在途请求并退出本轮。
             return _cancelled_message(signal), "aborted", provider
-        message = response.message
+        message = response
         stop_reason = response.stop_reason
 
         # ── 检查是否为 FinalMessage 的错误 ──
@@ -666,12 +678,12 @@ async def _run_inner_loop(
                 and config.rollover_context is not None
             ):
                 overflow_recovered = True
-                emit(MessageEndEvent(message=message))
+                _emit_assistant(message, emit)
                 _rotate_context(context, config, emit, metrics, provider, "token_limit")
                 prepared_assembly = None
                 continue
             if _is_context_overflow(message):
-                emit(MessageEndEvent(message=message))
+                _emit_assistant(message, emit)
                 return message, stop_reason, provider
             state.step_retries += 1
             should_retry, fallback_message = await _handle_provider_error(
@@ -682,7 +694,7 @@ async def _run_inner_loop(
             if fallback_message is not None:
                 context.messages.append(fallback_message)
                 return fallback_message, "error", provider
-            emit(MessageEndEvent(message=message))
+            _emit_assistant(message, emit)
             return message, stop_reason, provider
 
         # ── max_tokens 续写 ──
@@ -693,8 +705,8 @@ async def _run_inner_loop(
             if continuation_count is None:
                 fallback = _continuation_limit_message(config)
                 context.messages.append(fallback)
-                emit(MessageStartEvent(message=fallback))
-                emit(MessageEndEvent(message=fallback))
+                emit(MessageStartEvent(data=fallback))
+                _emit_assistant(fallback, emit)
                 return fallback, "error", provider
             state.consecutive_continuations = continuation_count
             _append_continuation_prompt(context, message)
@@ -703,7 +715,7 @@ async def _run_inner_loop(
 
         # ── 正常结束 ──
         context.messages.append(message)
-        emit(MessageEndEvent(message=message))
+        _emit_assistant(message, emit)
         state.step_retries = 0
         state.consecutive_continuations = 0
         return message, stop_reason, provider
@@ -728,8 +740,8 @@ async def _handle_provider_error(
             error_message=_assistant_error_detail(message),
             provider_failure=message.provider_failure,
         )
-        emit(MessageStartEvent(message=msg))
-        emit(MessageEndEvent(message=msg))
+        emit(MessageStartEvent(data=msg))
+        _emit_assistant(msg, emit)
         return False, msg
     return False, None
 
@@ -828,3 +840,12 @@ def _assistant_error_detail(message: AssistantMessage) -> str | None:
         block.text for block in message.content if isinstance(block, TextContent)
     ).strip()
     return text or None
+
+
+def _emit_assistant(
+    message: AssistantMessage, emit: Callable[[AgentEvent], None]
+) -> None:
+    """发布稳定响应，不向宿主发送内部消息元数据。"""
+    event = assistant_event(message)
+    if event is not None:
+        emit(event)

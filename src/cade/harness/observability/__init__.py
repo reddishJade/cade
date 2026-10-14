@@ -5,7 +5,6 @@
 
 from .audit import AuditLogger, AuditRecord, JsonlAuditLogger, redact_json, redact_text
 from .correlation import (
-    EventCorrelation,
     HookCorrelationFields,
     RuntimeCorrelation,
     hook_correlation_fields,
@@ -25,7 +24,6 @@ from .hooks import (
 __all__ = [
     "AuditLogger",
     "AuditRecord",
-    "EventCorrelation",
     "ExternalHookDiagnostic",
     "ExternalHookExecution",
     "ExternalHookFailure",

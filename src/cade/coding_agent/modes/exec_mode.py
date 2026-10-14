@@ -15,14 +15,16 @@ from pathlib import Path
 from typing import Any, TextIO
 from urllib.parse import urlparse
 
+from cade.agent.events import (
+    ToolResultEvent,
+    ToolUseEvent,
+)
 from cade.agent.results import TerminationReason
 from cade.agent.types import ApprovalRequest
 from cade.coding_agent.execution_modes import ExecutionModeState
 from cade.harness.agent_runtime.config import resolve_context_policy
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
-    ToolResultStructuredEvent,
-    ToolUseStructuredEvent,
 )
 from cade.harness.config import CadeRuntimeConfig
 from cade.harness.security import HITLResult
@@ -528,7 +530,7 @@ class _ValidationTracker:
         self._checks: dict[str, dict[str, object]] = {}
 
     def observe(self, event: AgentHarnessEvent) -> None:
-        if isinstance(event, ToolUseStructuredEvent):
+        if isinstance(event, ToolUseEvent):
             call = event.data
             if call.name == "bash" and call.input.get("purpose") == "validation":
                 self._checks[call.id] = {
@@ -537,7 +539,7 @@ class _ValidationTracker:
                     "exit_code": None,
                 }
             return
-        if not isinstance(event, ToolResultStructuredEvent):
+        if not isinstance(event, ToolResultEvent):
             return
         check = self._checks.get(event.data.tool_use_id)
         if check is None:

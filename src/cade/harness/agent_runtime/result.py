@@ -5,14 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from cade.agent.events import EventCorrelation
 from cade.agent.types import TextContent, ToolCallContent
 from cade.ai.events import ProviderFailure, ToolCall
 
 from ...agent.messages import AssistantMessage
 from ...agent.results import AgentLoopResult, TerminationReason
-from ..observability import EventCorrelation
 from .agent_helpers import text_from_blocks, to_dict
-from .events import FinalStructuredEvent
+from .events import FinalEvent
 
 
 @dataclass(frozen=True)
@@ -114,8 +114,8 @@ def final_event(
     step: int,
     result: AgentHarnessResult,
     correlation: EventCorrelation | None = None,
-) -> FinalStructuredEvent:
-    return FinalStructuredEvent(
+) -> FinalEvent:
+    return FinalEvent(
         "final",
         step,
         result,

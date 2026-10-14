@@ -69,8 +69,7 @@ session 标识持久会话及其当前分支；run 标识一次占有该 session
 用户轮次是一次任务输入及其响应过程，TUI 的文件快照按这一粒度记录。
 
 step 是 Agent 循环的一次迭代，包含模型输出、可选的工具执行和继续判断。重试或
-输出续写可使一个 step 产生多次 provider 请求。Agent 内部的 `TurnStart` 和
-`TurnEnd` 事件按循环 step 发出，计数时需区分它们与宿主记录的用户轮次。
+输出续写可使一个 step 产生多次 provider 请求。事件中的 `step` 与循环计数一致；`turn_end` 按 step 发出，需与宿主记录的用户轮次区分。
 
 ```mermaid
 flowchart TD
@@ -112,7 +111,8 @@ flowchart TD
 重复验收；不可完成、验收不可用和次数耗尽分别产生结束提示。普通运行的
 `completed` 表示循环正常结束，任务达成情况由可用证据与 Goal 验收结果表达。
 
-`CadeApp` 消费 harness 事件并交给 `SessionRecorder`，随后向宿主输出。直接使用
+循环直接发布统一的类型化事件；Harness 补充关联标识与最终结果，不另行翻译事件。
+`CadeApp` 将事件交给 `SessionRecorder`，随后向宿主输出。直接使用
 底层 harness 时，调用方承担稳定输出记录责任。应用关闭时先取消并等待子代理，
 释放子实例后关闭 MCP 等共享依赖；子代理等待超时会中断关闭，保留其依赖。
 

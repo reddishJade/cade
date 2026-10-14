@@ -7,21 +7,23 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from cade.agent.events import (
+    AssistantEvent,
+    AssistantEventBlock,
+    AssistantTextBlock,
+    ContextWindowResetEvent,
+    MessageStartEvent,
+    ReasoningDeltaEvent,
+    ResponseMetricsEvent,
+    TextDeltaEvent,
+    ToolResultEvent,
+    ToolUpdateEvent,
+    ToolUseEvent,
+    TurnEndEvent,
+    UsageUpdateEvent,
+)
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
-    AssistantEventBlock,
-    AssistantStructuredEvent,
-    AssistantTextBlock,
-    ContextWindowResetStructuredEvent,
-    MessageStartStructuredEvent,
-    ReasoningDeltaStructuredEvent,
-    ResponseMetricsStructuredEvent,
-    TextDeltaStructuredEvent,
-    ToolResultStructuredEvent,
-    ToolUpdateStructuredEvent,
-    ToolUseStructuredEvent,
-    TurnEndStructuredEvent,
-    UsageUpdateStructuredEvent,
 )
 from cade.harness.session.surface import encode_surface_messages
 
@@ -40,34 +42,34 @@ def encode_session_event(event: AgentHarnessEvent) -> dict[str, Any]:
 
 
 def _event_payload(event: AgentHarnessEvent) -> object:
-    if isinstance(event, (TextDeltaStructuredEvent, ReasoningDeltaStructuredEvent)):
+    if isinstance(event, (TextDeltaEvent, ReasoningDeltaEvent)):
         return event.data
-    if isinstance(event, MessageStartStructuredEvent):
+    if isinstance(event, MessageStartEvent):
         if isinstance(event.data, BaseModel):
             return event.data.model_dump()
         return None
-    if isinstance(event, TurnEndStructuredEvent):
+    if isinstance(event, TurnEndEvent):
         return {
             "tool_results": [
                 {"tool_call_id": result.tool_call_id, "content": result.content}
                 for result in event.data.tool_results
             ]
         }
-    if isinstance(event, AssistantStructuredEvent):
+    if isinstance(event, AssistantEvent):
         return [_assistant_block_payload(block) for block in event.data]
-    if isinstance(event, ToolUseStructuredEvent):
+    if isinstance(event, ToolUseEvent):
         return {
             "id": event.data.id,
             "name": event.data.name,
             "input": event.data.input,
         }
-    if isinstance(event, ToolUpdateStructuredEvent):
+    if isinstance(event, ToolUpdateEvent):
         return {
             "tool_call_id": event.data.tool_call_id,
             "tool_name": event.data.tool_name,
             "partial_result": event.data.partial_result,
         }
-    if isinstance(event, ToolResultStructuredEvent):
+    if isinstance(event, ToolResultEvent):
         return {
             "tool_use_id": event.data.tool_use_id,
             "content": event.data.content,
@@ -83,7 +85,7 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             ),
             "type": "tool_result",
         }
-    if isinstance(event, ContextWindowResetStructuredEvent):
+    if isinstance(event, ContextWindowResetEvent):
         return {
             "window_id": event.data.window_id,
             "messages_removed": event.data.messages_removed,
@@ -91,9 +93,9 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             "trigger": event.data.trigger,
             "replacement": encode_surface_messages(list(event.data.replacement)),
         }
-    if isinstance(event, UsageUpdateStructuredEvent):
+    if isinstance(event, UsageUpdateEvent):
         return dict(event.data)
-    if isinstance(event, ResponseMetricsStructuredEvent):
+    if isinstance(event, ResponseMetricsEvent):
         return asdict(event.data)
     return {
         "answer": event.data.answer,

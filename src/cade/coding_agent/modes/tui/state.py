@@ -40,7 +40,7 @@ _ANSI_RESET = "\x1b[0m"
 if TYPE_CHECKING:
     from cade.harness.agent_runtime.events import (
         AgentHarnessEvent,
-        FinalStructuredEvent,
+        FinalEvent,
     )
     from cade.harness.security import HITLResult
     from cade.harness.session import SessionEntry
@@ -860,7 +860,7 @@ class _TuiState:
 
     # ── 回合结束 ──
 
-    def _finish_answer(self, event: FinalStructuredEvent) -> None:
+    def _finish_answer(self, event: FinalEvent) -> None:
         self._finish_thinking()
 
         self._commit_streaming_answer()
