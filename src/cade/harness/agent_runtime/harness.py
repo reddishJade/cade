@@ -16,7 +16,7 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
-from cade.agent.config import AfterToolCallContext, AgentContext, BeforeToolCallContext
+from cade.agent.config import AgentContext, BeforeToolCallContext
 from cade.agent.messages import AssistantMessage
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, ToolInput
 from cade.ai.events import ToolCall
@@ -302,24 +302,8 @@ class AgentHarness:
                 content=[TextContent(text=f"{type(exc).__name__}: {exc}")],
                 is_error=True,
             )
-        after = self._gate.build_after_tool_hook()(
-            AfterToolCallContext(
-                assistant_message=assistant_message,
-                tool_call=tool_call,
-                args=arguments,
-                result=result,
-                is_error=result.is_error,
-                context=context,
-            ),
-            None,
-        )
-        if after is not None:
-            if after.content is not None:
-                result.content = after.content
-            if after.details is not None:
-                result.details = after.details
-            if after.is_error is not None:
-                result.is_error = after.is_error
+        if before is not None and before.on_result is not None:
+            before.on_result(result)
         return result
 
     def replace_primary_provider(self, provider: ModelProvider) -> str:

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...agent.config import AfterToolCallContext
-from ...agent.types import ToolCallContent
+from ...agent.types import AgentToolResult, ToolCallContent
 from ..observability import AuditLogger, AuditRecord, HookCorrelationFields, redact_text
 
 if TYPE_CHECKING:
@@ -15,7 +14,8 @@ if TYPE_CHECKING:
 def emit_audit(
     audit_logger: AuditLogger | None,
     session_id: str,
-    ctx: AfterToolCallContext,
+    tool_call: ToolCallContent,
+    result: AgentToolResult,
     action_input: str,
     result_text: str,
     perm_result: PermissionEngineResult | None = None,
@@ -27,10 +27,10 @@ def emit_audit(
     audit_logger(
         build_audit_record(
             session_id=session_id,
-            tool_call=ctx.tool_call,
+            tool_call=tool_call,
             action_input=action_input,
             result_text=result_text,
-            final_status="error" if ctx.is_error else "ok",
+            final_status="error" if result.is_error else "ok",
             perm_result=perm_result,
             correlation=correlation,
         )

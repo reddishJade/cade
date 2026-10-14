@@ -214,7 +214,8 @@ resolver，严格程度为 `deny > ask > allow`。
 `deny` 终止调用，`allow` 进入执行，`ask` 先查询已有 session/permanent grant，
 再按 approval policy 请求用户或自动 reviewer。`never` 策略拒绝新增审批请求。
 自动 reviewer 只授予本次调用，用户授权范围取决于动作允许的 once/session/
-permanent scope。执行完成后触发 post-tool hook，并关联权限、工具结果与审计。
+permanent scope。门控为该次调用绑定结果回调，直接关联权限裁决、工具结果与审计；
+执行完成后触发 post-tool hook。
 观测记录使用 session、turn、request 和 tool-call 标识定位循环与动作，请求同时
 保存 composition ID。
 

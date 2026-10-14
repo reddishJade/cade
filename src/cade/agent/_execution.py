@@ -11,7 +11,6 @@ from dataclasses import dataclass
 import jsonschema
 
 from cade.agent.config import (
-    AfterToolCallContext,
     AgentContext,
     AgentLoopConfig,
     BeforeToolCallContext,
@@ -37,8 +36,6 @@ from cade.agent.types import (
     TextContent,
     ToolArguments,
     ToolCallContent,
-    ToolRenderIntent,
-    ToolResultContentBlock,
     materialize_json_mapping,
 )
 from cade.ai.events import ToolCall
@@ -358,31 +355,13 @@ async def _execute_one_impl(
             )
         )
 
-    tool_result, content, is_error, terminate = await _run_tool_handler(
+    tool_result = await _run_tool_handler(
         tool, tool_call, args, signal, _on_update, config.tool_timeout_seconds
     )
 
-    content, is_error, terminate = _run_after_tool_hook(
-        current_context,
-        assistant_message,
-        tool_call,
-        args,
-        tool_result,
-        is_error,
-        terminate,
-        content,
-        config,
-        signal,
-    )
-
-    result_msg = _tool_result_message(
-        tool_call,
-        content,
-        is_error,
-        tool_result.details,
-        tool_result.render_intent,
-    )
-    return result_msg, terminate
+    if before_result is not None and before_result.on_result is not None:
+        before_result.on_result(tool_result)
+    return _tool_result_message(tool_call, tool_result), tool_result.terminate
 
 
 def _find_tool(
@@ -438,7 +417,7 @@ async def _run_tool_handler(
     signal: CancellationSignal | None,
     on_update: Callable[[AgentToolResult], None],
     timeout_seconds: float | None,
-) -> tuple[AgentToolResult, list[ToolResultContentBlock], bool, bool]:
+) -> AgentToolResult:
     execution = tool.execute(tool_call.id, args, signal, on_update=on_update)
     tool_task = asyncio.create_task(
         _await_tool_execution(execution, tool_call, timeout_seconds)
@@ -465,7 +444,7 @@ async def _run_tool_handler(
                 content=[TextContent(text=cancel_reason(signal))],
                 is_error=True,
             )
-            return interrupted, interrupted.content, True, False
+            return interrupted
     finally:
         cancel_waiter.cancel()
 
@@ -474,19 +453,14 @@ async def _await_tool_execution(
     execution: Awaitable[AgentToolResult],
     tool_call: ToolCallContent,
     timeout_seconds: float | None,
-) -> tuple[AgentToolResult, list[ToolResultContentBlock], bool, bool]:
+) -> AgentToolResult:
     """等待工具执行并按超时/异常约定转换为结果。"""
     try:
         if timeout_seconds is not None and timeout_seconds > 0:
             tool_result = await asyncio.wait_for(execution, timeout=timeout_seconds)
         else:
             tool_result = await execution
-        return (
-            tool_result,
-            tool_result.content,
-            tool_result.is_error,
-            tool_result.terminate,
-        )
+        return tool_result
     except TimeoutError:
         tool_result = AgentToolResult(
             content=[
@@ -495,55 +469,21 @@ async def _await_tool_execution(
                         f"Tool timed out after {timeout_seconds:g}s: {tool_call.name}"
                     )
                 )
-            ]
+            ],
+            is_error=True,
         )
-        return tool_result, tool_result.content, True, False
+        return tool_result
     except (LookupError, OSError, RuntimeError, TypeError, ValueError) as e:
-        tool_result = AgentToolResult(content=[TextContent(text=f"Tool error: {e}")])
-        return tool_result, tool_result.content, True, False
-
-
-def _run_after_tool_hook(
-    current_context: AgentContext,
-    assistant_message: AssistantMessage,
-    tool_call: ToolCallContent,
-    args: ToolArguments,
-    tool_result: AgentToolResult,
-    is_error: bool,
-    terminate: bool,
-    content: list[ToolResultContentBlock],
-    config: AgentLoopConfig,
-    signal: CancellationSignal | None,
-) -> tuple[list[ToolResultContentBlock], bool, bool]:
-    if not config.after_tool_call:
-        return content, is_error, terminate
-    after_ctx = AfterToolCallContext(
-        assistant_message=assistant_message,
-        tool_call=tool_call,
-        args=args,
-        result=tool_result,
-        is_error=is_error,
-        context=current_context,
-    )
-    after_result = config.after_tool_call(after_ctx, signal)
-    if after_result is None:
-        return content, is_error, terminate
-    if after_result.content is not None:
-        content = after_result.content
-    if after_result.is_error is not None:
-        is_error = after_result.is_error
-    if after_result.terminate is not None:
-        terminate = after_result.terminate
-    return content, is_error, terminate
+        return AgentToolResult(
+            content=[TextContent(text=f"Tool error: {e}")], is_error=True
+        )
 
 
 def _tool_result_message(
     tool_call: ToolCallContent,
-    content: list[ToolResultContentBlock],
-    is_error: bool,
-    metadata: object = None,
-    render_intent: ToolRenderIntent | None = None,
+    result: AgentToolResult,
 ) -> ToolResultMessage:
+    content = result.content
     result_content: ToolResultMessageContent
     if not content:
         result_content = ""
@@ -557,9 +497,9 @@ def _tool_result_message(
         tool_call_id=tool_call.id,
         tool_name=tool_call.name,
         content=result_content,
-        is_error=is_error,
-        metadata=metadata if isinstance(metadata, dict) else None,
-        render_intent=render_intent,
+        is_error=result.is_error,
+        metadata=result.details if isinstance(result.details, dict) else None,
+        render_intent=result.render_intent,
     )
 
 

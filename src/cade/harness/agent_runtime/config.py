@@ -404,7 +404,6 @@ def build_loop_config(
         completion_verifier=completion_verifier,
         is_tool_productive=gate.build_is_tool_productive_hook(),
         before_tool_call=gate.build_before_tool_hook(gate_snapshot),
-        after_tool_call=gate.build_after_tool_hook(),
         before_provider_request=_build_before_provider_request_closure(
             emit_hook,
             get_prompt_version,

@@ -16,8 +16,6 @@ from cade.agent.types import (
     ToolArguments,
     ToolCallContent,
     ToolExecutionMode,
-    ToolResultContentBlock,
-    ToolResultDetails,
 )
 from cade.ai.providers.base import StreamProvider
 from cade.ai.types import StreamOptions, ThinkingLevel
@@ -76,24 +74,7 @@ class BeforeToolCallResult(BaseModel):
     suggestion: str = ""
     approval_denied: bool = False
     args: ToolArguments | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class AfterToolCallContext(BaseModel):
-    assistant_message: AssistantMessage
-    tool_call: ToolCallContent
-    args: ToolArguments
-    result: AgentToolResult
-    is_error: bool
-    context: AgentContext
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-
-
-class AfterToolCallResult(BaseModel):
-    content: list[ToolResultContentBlock] | None = None
-    details: ToolResultDetails | None = None
-    is_error: bool | None = None
-    terminate: bool | None = None
+    on_result: Callable[[AgentToolResult], None] | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -116,9 +97,6 @@ class AgentLoopTurnUpdate(BaseModel):
 
 type BeforeToolCallHook = Callable[
     [BeforeToolCallContext, CancellationSignal | None], BeforeToolCallResult | None
-]
-type AfterToolCallHook = Callable[
-    [AfterToolCallContext, CancellationSignal | None], AfterToolCallResult | None
 ]
 type PrepareNextTurnHook = Callable[[], AgentLoopTurnUpdate | None]
 type ShouldStopAfterTurnHook = Callable[[ShouldStopAfterTurnContext], bool]
@@ -158,7 +136,6 @@ class AgentLoopConfig(BaseModel):
     )
 
     before_tool_call: BeforeToolCallHook | None = None
-    after_tool_call: AfterToolCallHook | None = None
     prepare_next_turn: PrepareNextTurnHook | None = None
     should_stop_after_turn: ShouldStopAfterTurnHook | None = None
     completion_verifier: CompletionVerifier | None = None
