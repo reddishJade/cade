@@ -293,7 +293,6 @@ def build_loop_config(
     completion_verifier: CompletionVerifier | None = None,
 ) -> AgentLoopConfig:
     active_correlation = correlation or RuntimeCorrelation("local")
-    gate_snapshot = gate.snapshot_for(registry)
 
     def rollover_decision_fn(
         loop_messages: list[AgentMessage],
@@ -403,7 +402,7 @@ def build_loop_config(
         rollover_context=rollover_fn if context_rollover is not None else None,
         completion_verifier=completion_verifier,
         is_tool_productive=gate.build_is_tool_productive_hook(),
-        before_tool_call=gate.build_before_tool_hook(gate_snapshot),
+        before_tool_call=gate.build_before_tool_hook(registry),
         before_provider_request=_build_before_provider_request_closure(
             emit_hook,
             get_prompt_version,

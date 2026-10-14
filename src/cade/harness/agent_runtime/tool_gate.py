@@ -198,31 +198,6 @@ class GateConfig:
     tool_path_extractors: Mapping[str, PathExtractor] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class ToolGateSnapshot:
-    """ToolGate 在单个 turn 中使用的冻结配置。"""
-
-    approval_callback: ApprovalCallback | None
-    approvals_reviewer: ApprovalsReviewer
-    permission_policy: PermissionPolicy | None
-    approval_policy: ApprovalPolicy
-    mode_name: str
-    tool_map: dict[str, ToolSpec]
-    restricted_dirs: tuple[str, ...] = ()
-    hook_constraint_providers: tuple[PolicyEvaluator, ...] = ()
-    project_root: Path | None = None
-    external_directories: tuple[ExternalDirectory, ...] = ()
-    sensitive_path_overrides: tuple[SensitivePathOverride, ...] = ()
-    session_grant_store: GrantStore | None = None
-    permanent_grant_store: GrantStore | None = None
-    mode_ruleset: tuple[Rule, ...] = ()
-    user_ruleset: tuple[Rule, ...] = ()
-    mode_fallback: PermissionDecision = "ask"
-    shell_unresolved_policy: PermissionDecision = "ask"
-    shell_mutation_policy: PermissionDecision = "ask"
-    tool_path_extractors: dict[str, PathExtractor] = field(default_factory=dict)
-
-
 class ToolGate:
     """工具执行门控：HITL 审批、权限检查、准入决策。"""
 
@@ -265,57 +240,12 @@ class ToolGate:
             return self._session_grant_store_provider()
         return self._session_grant_store
 
-    def _ruleset_for_mode(self, mode_name: str) -> tuple[Rule, ...]:
-        return self._config.user_rulesets.get(mode_name, ())
-
-    def _default_ruleset_for_mode(self, mode_name: str) -> tuple[Rule, ...]:
-        return self._config.default_mode_rulesets.get(mode_name, ())
-
-    def _fallback_for_mode(self, mode_name: str) -> PermissionDecision:
-        return self._config.mode_fallbacks.get(mode_name, "ask")
-
-    def _shell_unresolved_policy_for_mode(self, mode_name: str) -> PermissionDecision:
-        return self._config.shell_unresolved_policies.get(mode_name, "ask")
-
-    def _shell_mutation_policy_for_mode(self, mode_name: str) -> PermissionDecision:
-        return self._config.shell_mutation_policies.get(mode_name, "ask")
-
     def _approval_callback_for_mode(
         self, reviewer: ApprovalsReviewer
     ) -> ApprovalCallback | None:
         if reviewer == "auto_review":
             return self._auto_approval_callback
         return self._user_approval_callback
-
-    def snapshot_for(self, registry: tuple[ToolSpec, ...]) -> ToolGateSnapshot:
-        """为单个 turn 创建包含工具映射的门控快照。"""
-        mode_name = self._mode.current_mode
-        default_rules = self._default_ruleset_for_mode(mode_name)
-        fallback = self._fallback_for_mode(mode_name)
-        shell_unresolved_policy = self._shell_unresolved_policy_for_mode(mode_name)
-        shell_mutation_policy = self._shell_mutation_policy_for_mode(mode_name)
-        reviewer = self._mode.approvals_reviewer
-        return ToolGateSnapshot(
-            user_ruleset=self._ruleset_for_mode(mode_name),
-            approval_callback=self._approval_callback_for_mode(reviewer),
-            approvals_reviewer=reviewer,
-            permission_policy=self._config.permission_policy,
-            approval_policy=self._config.approval_policy,
-            mode_name=mode_name,
-            tool_map={tool.name: tool for tool in registry},
-            restricted_dirs=self._config.restricted_dirs,
-            hook_constraint_providers=self._config.hook_constraint_providers,
-            project_root=self._project_root,
-            external_directories=self._config.external_directories,
-            sensitive_path_overrides=self._config.sensitive_path_overrides,
-            session_grant_store=self._resolve_session_store(),
-            permanent_grant_store=self._permanent_grant_store,
-            mode_ruleset=default_rules,
-            mode_fallback=fallback,
-            shell_unresolved_policy=shell_unresolved_policy,
-            shell_mutation_policy=shell_mutation_policy,
-            tool_path_extractors=dict(self._config.tool_path_extractors),
-        )
 
     def adapt_tools(self, registry: tuple[ToolSpec, ...]) -> list[AgentTool]:
         missing_schema = [spec.name for spec in registry if spec.schema is None]
@@ -424,11 +354,51 @@ class ToolGate:
     # ── 钩子构建 ──
 
     def build_before_tool_hook(
-        self, snapshot: ToolGateSnapshot
+        self, registry: tuple[ToolSpec, ...]
     ) -> Callable[
         [BeforeToolCallContext, CancellationSignal | None],
         BeforeToolCallResult | None,
     ]:
+        """捕获本次运行的策略和工具，直接绑定权限引擎。"""
+        config = self._config
+        mode_name = self._mode.current_mode
+        reviewer = self._mode.approvals_reviewer
+        approval_callback = self._approval_callback_for_mode(reviewer)
+        tool_map = {spec.name: spec for spec in registry}
+        action_profiles: dict[str, tuple[str, str]] = {}
+        path_extractors = dict(config.tool_path_extractors)
+        for spec in registry:
+            profile = spec.action_profile or _TOOL_ACTION_PROFILES.get(spec.name)
+            if profile is not None:
+                action_profiles[spec.name] = profile
+            if spec.path_extractor is not None:
+                path_extractors.setdefault(spec.name, spec.path_extractor)
+        engine = PermissionEngine(
+            PermissionEngineConfig(
+                static_policy=config.permission_policy,
+                restricted_dirs=config.restricted_dirs,
+                hook_constraint_providers=config.hook_constraint_providers,
+                project_root=self._project_root,
+                external_directories=config.external_directories,
+                sensitive_path_overrides=config.sensitive_path_overrides,
+                session_grant_store=self._resolve_session_store(),
+                permanent_grant_store=self._permanent_grant_store,
+                tool_action_profiles=action_profiles,
+                tool_path_extractors=path_extractors,
+                mode_ruleset=config.default_mode_rulesets.get(mode_name, ()),
+                user_ruleset=config.user_rulesets.get(mode_name, ()),
+                mode_fallback=config.mode_fallbacks.get(mode_name, "ask"),
+                shell_unresolved_policy=config.shell_unresolved_policies.get(
+                    mode_name, "ask"
+                ),
+                shell_mutation_policy=config.shell_mutation_policies.get(
+                    mode_name, "ask"
+                ),
+                approval_policy=config.approval_policy,
+                execution_mode=mode_name,
+            )
+        )
+
         def before_tool(
             ctx: BeforeToolCallContext, _signal: CancellationSignal | None
         ) -> BeforeToolCallResult | None:
@@ -445,11 +415,13 @@ class ToolGate:
                 decision,
                 tool_call.id,
             )
-            permission = self._precheck_permission(
+            permission = engine.decide(
                 tool_call.name,
                 args,
-                decision,
-                snapshot,
+                execution_decision=decision,
+                tool_spec=tool_map.get(tool_call.name),
+                approval_callback=approval_callback,
+                approvals_reviewer=reviewer,
                 approval_transcript=_approval_transcript(ctx),
                 approval_turn_id=self._correlation.turn_id,
             )
@@ -593,59 +565,6 @@ class ToolGate:
                 correlation=correlation,
             )
         )
-
-    def _precheck_permission(
-        self,
-        tool_name: str,
-        args: dict[str, Any],
-        execution_decision: PermissionDecision,
-        snapshot: ToolGateSnapshot,
-        *,
-        approval_transcript: str = "",
-        approval_turn_id: str = "",
-    ) -> PermissionEngineResult:
-        action_profiles: dict[str, tuple[str, str]] = {}
-        path_extractors = dict(snapshot.tool_path_extractors)
-        for spec in snapshot.tool_map.values():
-            profile = spec.action_profile or _TOOL_ACTION_PROFILES.get(spec.name)
-            if profile is not None:
-                action_profiles[spec.name] = profile
-            if spec.path_extractor is not None:
-                path_extractors.setdefault(spec.name, spec.path_extractor)
-        engine = PermissionEngine(
-            PermissionEngineConfig(
-                static_policy=snapshot.permission_policy,
-                restricted_dirs=snapshot.restricted_dirs,
-                hook_constraint_providers=snapshot.hook_constraint_providers,
-                project_root=snapshot.project_root,
-                external_directories=snapshot.external_directories,
-                sensitive_path_overrides=snapshot.sensitive_path_overrides,
-                session_grant_store=snapshot.session_grant_store,
-                permanent_grant_store=snapshot.permanent_grant_store,
-                tool_action_profiles=action_profiles,
-                tool_path_extractors=path_extractors,
-                mode_ruleset=snapshot.mode_ruleset,
-                user_ruleset=snapshot.user_ruleset,
-                mode_fallback=snapshot.mode_fallback,
-                shell_unresolved_policy=snapshot.shell_unresolved_policy,
-                shell_mutation_policy=snapshot.shell_mutation_policy,
-                approval_policy=snapshot.approval_policy,
-                execution_mode=snapshot.mode_name,
-            )
-        )
-        return engine.decide(
-            tool_name,
-            args,
-            execution_decision=execution_decision,
-            tool_spec=snapshot.tool_map.get(tool_name),
-            approval_callback=snapshot.approval_callback,
-            approvals_reviewer=snapshot.approvals_reviewer,
-            approval_transcript=approval_transcript,
-            approval_turn_id=approval_turn_id,
-        )
-
-
-# ── 模块级辅助 ──
 
 
 def _approval_transcript(ctx: BeforeToolCallContext) -> str:

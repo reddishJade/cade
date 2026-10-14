@@ -274,8 +274,7 @@ class AgentHarness:
         )
         assistant_message = AssistantMessage(content=[tool_call])
         context = AgentContext(messages=deepcopy(self._history))
-        snapshot = self._gate.snapshot_for((tool,))
-        before = self._gate.build_before_tool_hook(snapshot)(
+        before = self._gate.build_before_tool_hook((tool,))(
             BeforeToolCallContext(
                 assistant_message=assistant_message,
                 tool_call=tool_call,

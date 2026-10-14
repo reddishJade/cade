@@ -332,9 +332,7 @@ class CodingAgentHarness(AgentHarness):
             arguments=arguments,
         )
         assistant_message = AssistantMessage(content=[tool_call])
-        before_hook = self._gate.build_before_tool_hook(
-            self._gate.snapshot_for((load_skill,))
-        )
+        before_hook = self._gate.build_before_tool_hook((load_skill,))
         before_result = before_hook(
             BeforeToolCallContext(
                 assistant_message=assistant_message,
