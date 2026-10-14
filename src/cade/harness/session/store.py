@@ -301,7 +301,8 @@ class SessionStore:
             if self.current_path.exists():
                 shutil.copy2(self.current_path, fork_path)
                 _secure_existing_file(fork_path)
-                with fork_path.open("rb") as stream:
+                # Windows 的 fsync 要求可写句柄；读写模式保留副本内容。
+                with fork_path.open("r+b") as stream:
                     os.fsync(stream.fileno())
                 _sync_directory(fork_path.parent)
             now = datetime.now(UTC).isoformat(timespec="seconds")

@@ -80,9 +80,12 @@ def test_session_fork_isolation_and_ancestor_immutability(tmp_path: Path) -> Non
 
     p1 = parent_store.append("event", {"step": 1})
     p2 = parent_store.append("event", {"step": 2})
+    original_log = parent_store.current_path.read_bytes()
 
     fork_store = parent_store.fork_into(title="Forked Branch")
     assert fork_store.session_id != parent_store.session_id
+    assert parent_store.current_path.read_bytes() == original_log
+    assert fork_store.current_path.read_bytes() == original_log
 
     # 在 fork 上追加写
     f3 = fork_store.append("event", {"step": 3, "branch": "fork"})
