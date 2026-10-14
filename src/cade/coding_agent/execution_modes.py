@@ -33,17 +33,14 @@ _PLAN_TOOLS = frozenset(
 
 
 class ExecutionModeState:
-    """管理当前执行模式和 plan 模式超时状态。实现 ToolGateMode 协议。"""
+    """管理显式选择的执行模式。实现 ToolGateMode 协议。"""
 
     def __init__(
         self,
-        max_plan_turns: int = 8,
         initial_mode: ExecutionMode = "act",
         approval_router: Literal["mode", "user", "auto"] = "mode",
     ) -> None:
         self._current_mode: ExecutionMode = initial_mode
-        self._plan_enter_step = 0
-        self._max_plan_turns = max_plan_turns
         self._approval_router = approval_router
 
     @property
@@ -62,19 +59,6 @@ class ExecutionModeState:
     def set_mode(self, mode: ExecutionMode) -> None:
         """设置当前执行模式。"""
         self._current_mode = mode
-        if mode == "plan":
-            self._plan_enter_step = 0
-
-    def check_plan_timeout(self) -> bool:
-        """检查 plan 模式是否超时，超时则自动切换到 build。"""
-        if self._current_mode != "plan":
-            return False
-        self._plan_enter_step += 1
-        if self._plan_enter_step < self._max_plan_turns:
-            return False
-        self._plan_enter_step = 0
-        self._current_mode = "build"
-        return True
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # 实际动作裁决由 gate 的 ruleset、路径边界与 shell analyzer 执行。

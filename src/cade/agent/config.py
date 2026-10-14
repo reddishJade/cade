@@ -18,7 +18,7 @@ from cade.agent.types import (
     ToolExecutionMode,
 )
 from cade.ai.providers.base import StreamProvider
-from cade.ai.types import StreamOptions, ThinkingLevel
+from cade.ai.types import StreamOptions
 
 from .context_manager import ContextManager
 from .context_policy import ContextPolicy
@@ -86,19 +86,12 @@ class ShouldStopAfterTurnContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class AgentLoopTurnUpdate(BaseModel):
-    context: AgentContext | None = None
-    thinking_level: ThinkingLevel = "off"
-    model_config = ConfigDict(extra="forbid")
-
-
 # ── Callable type aliases（引用本模块上下文类型）──
 
 
 type BeforeToolCallHook = Callable[
     [BeforeToolCallContext, CancellationSignal | None], BeforeToolCallResult | None
 ]
-type PrepareNextTurnHook = Callable[[], AgentLoopTurnUpdate | None]
 type ShouldStopAfterTurnHook = Callable[[ShouldStopAfterTurnContext], bool]
 type CompletionVerifier = Callable[[list[AgentMessage]], Awaitable[str | None]]
 
@@ -136,7 +129,6 @@ class AgentLoopConfig(BaseModel):
     )
 
     before_tool_call: BeforeToolCallHook | None = None
-    prepare_next_turn: PrepareNextTurnHook | None = None
     should_stop_after_turn: ShouldStopAfterTurnHook | None = None
     completion_verifier: CompletionVerifier | None = None
 

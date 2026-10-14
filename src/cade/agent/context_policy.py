@@ -431,7 +431,7 @@ def latest_task_message(messages: list[AgentMessage]) -> UserMessage | None:
         if not isinstance(message, UserMessage):
             continue
         if isinstance(message.content, str):
-            if message.content.lstrip().startswith(("<reminder>", "<plan-timeout>")):
+            if message.content.lstrip().startswith("<reminder>"):
                 continue
             if "<skill-activation-state>" in message.content:
                 continue

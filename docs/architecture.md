@@ -200,7 +200,8 @@ NOTE 由用户或模型维护，collector 读取当前文件；恢复时若当�
 
 [`ExecutionModeState`](../src/cade/coding_agent/execution_modes.py) 管理工具可见性、
 模式规则和审批路由；[`ToolGate`](../src/cade/harness/agent_runtime/tool_gate.py)
-将这些策略应用到实际调用。以下行为对应内置规则，配置规则和路径边界参与最终判定。
+将这些策略应用到实际调用。模式通过显式选择改变，Plan 不按工具调用次数自动退出。
+以下行为对应内置规则，配置规则和路径边界参与最终判定。
 
 | 模式 | 结构化文件写入 | Shell | 默认 ask 审批者 |
 |---|---|---|---|

@@ -12,7 +12,6 @@ from cade.ai.providers.base import ModelProvider
 
 from ...agent.config import (
     AgentLoopConfig,
-    AgentLoopTurnUpdate,
     CompletionVerifier,
     ContextWindowResetReason,
 )
@@ -38,7 +37,6 @@ from ..security.permission_model import (
     GrantStore,
 )
 from ..session.inbox import SessionInbox
-from ._mode_protocol import RuntimeModeState
 from .cancellation import CancellationToken
 from .context_window import (
     ContextWindowController,
@@ -288,7 +286,6 @@ def build_loop_config(
     correlation: RuntimeCorrelation | None = None,
     get_last_prompt_tokens: Callable[[], int | None] | None = None,
     # 领域扩展参数由上层装配后注入。
-    mode_state: RuntimeModeState | None = None,
     watchdog_repeated_tool_skip: frozenset[str] | None = None,
     completion_verifier: CompletionVerifier | None = None,
 ) -> AgentLoopConfig:
@@ -362,20 +359,6 @@ def build_loop_config(
             return True
         return False
 
-    def prepare_next_turn_fn() -> AgentLoopTurnUpdate | None:
-        if mode_state is not None and mode_state.check_plan_timeout():
-            steer(
-                SystemMessage(
-                    content=(
-                        "<plan-timeout>\n"
-                        "Plan Mode timed out after reaching the maximum number "
-                        "of investigation turns. Returning to Act Mode.\n"
-                        "</plan-timeout>"
-                    )
-                )
-            )
-        return None
-
     policy = resolve_context_policy(provider, composition.config)
     return AgentLoopConfig(
         provider=provider,
@@ -410,7 +393,6 @@ def build_loop_config(
             provider,
             composition.generation_id,
         ),
-        prepare_next_turn=prepare_next_turn_fn,
     )
 
 
