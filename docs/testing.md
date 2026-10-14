@@ -1,20 +1,23 @@
 # Validation Guidelines
 
-## Purpose and Primary Path
+## Purpose and Validation Choice
 
-Use the repository [cade-e2e-test skill](../.cade/skills/cade-e2e-test/SKILL.md)
-for the operational workflow and explicit provider configuration.
+Choose the smallest sufficient checks that directly verify the changed behavior
+and concrete failure risk. Prefer focused regression for local deterministic
+computation and policy changes, and integration checks for connected components.
+Do not infer a need for E2E from module ownership, patch size, or the mere presence
+of a behavior change.
 
-Validate the Cade workflows users actually run. Real tasks executed through
-`cade exec` are the primary acceptance path for changes to the coding-agent
-runtime. Use the installed entry point, real provider adapter and service,
-actual application assembly, session storage, tools, and configured approval
-and execution environment. Specify the task and environment before the run, and
-judge the outcome against acceptance criteria written before implementation.
+Select E2E when a material risk depends on host assembly, real provider/service
+behavior, cross-process recovery, or a complete user workflow and lower-level
+checks cannot cover it. Use the relevant public host (`cade exec`, TUI, or web)
+and independently check the outcome. Small changes can still require E2E when
+they affect such a boundary.
 
-Choose validation by the affected behavior and concrete failure risk. The
-breadth of a refactor determines how broadly to check references and startup;
-user-visible behavior changes determine which workflows to exercise.
+After selecting E2E, use the repository
+[cade-e2e-test skill](../.cade/skills/cade-e2e-test/SKILL.md) for the operational
+workflow and explicit provider configuration. The skill describes how to run an
+already-selected E2E check; it does not determine whether one is needed.
 
 ## Select the Smallest Sufficient Validation
 
@@ -22,10 +25,12 @@ user-visible behavior changes determine which workflows to exercise.
 |---|---|
 | Documentation | Readability, current facts, valid links and commands, clean diff |
 | Module moves, imports, interface cleanup with preserved behavior | Updated callers, static checks, affected entry-point startup; import checks for explicit dependency boundaries |
-| Runtime, context, tools, permissions, sessions | A real `cade exec` task with externally checked results and relevant failure or recovery steps |
-| Provider or MCP protocol | Real adapter and service execution, saved sanitized request/response evidence for the changed boundary |
-| TUI input, completion, shortcuts, approval or rendering | Actual TUI driven through terminal automation or recorded manual steps |
-| Web interaction, connection or session synchronization | Actual browser workflow against the running server |
+| Local deterministic computation or policy | Focused regression with independently checked expectations and relevant edge cases |
+| Connected runtime, context, tool, permission or session components | Integration through the real affected components; controlled external boundaries where appropriate |
+| Provider or MCP parsing and serialization | Protocol integration through the real adapter using sourced payloads; real service checks when captured examples cannot establish the affected semantics |
+| Host/service/workflow risk not covered by lower-level checks | Relevant E2E with externally checked results and failure or recovery steps |
+| TUI terminal input, focus or display behavior not covered by component checks | Actual TUI driven through terminal automation or recorded manual steps |
+| Browser interaction or connection behavior not covered by component checks | Actual browser workflow against the running server |
 | Precise crash, file corruption or security boundary | Isolated real files/processes, controlled fault injection, and externally observable recovery or protection outcomes |
 
 State the protected behavior and selected checks before validation. Keep the
@@ -33,16 +38,29 @@ checks proportional to that behavior. Reuse a suitable existing scenario when
 it covers the risk. Expand checks after relevant edits, failures, or new evidence.
 Handle unrelated findings as separate work items with reproduction details.
 
-## Design a Real Task
+Before preparing or running E2E, identify the concrete risk left uncovered, why
+it requires the real host or service, and which observable result will expose a
+failure. If no additional risk can be identified, do not add E2E as a ritual.
+For bug fixes, prefer a regression that fails with the defect and passes after
+the fix; a general smoke task that also passes with the defect is not evidence
+that the defect was corrected.
 
-Choose a task from actual usage, an observed defect, or a representative coding
-workflow. Include enough context and steps to expose the affected behavior.
+For example, token counting and budget admission can be verified
+deterministically; calibrating an estimate against a model's actual usage
+requires real provider usage. A model-driven file-copy task does not establish
+token-count accuracy.
+
+## Design a Selected Workflow Check
+
+For workflow acceptance, choose a task from actual usage, an observed defect,
+or a representative coding workflow. Include enough context and steps to expose
+the affected behavior.
 For session changes, continue the task through a new process and verify the
 restored history and subsequent results. For permissions, check both the
 permitted result and the denied action's effects. For context changes, inspect
 the persisted provider request and verify continued task execution.
 
-Before running, record:
+Before running a workflow acceptance check, record:
 
 1. The concrete user task and failure being exercised.
 2. Initial workspace contents, configuration, model, and required services.
@@ -70,31 +88,34 @@ record the precise prerequisite failure and report validation as blocked.
 
 ## Requirements for Reusable Test Code
 
-Adding or extending reusable test code requires a documented coverage gap and
-all five elements
-listed above. Explain how a realistic defect would fail its assertions and how
-a behavior-preserving refactor would keep them valid. Each test must protect a
-user outcome or an explicit public contract. Keep harness code small and preserve
+Adding or extending reusable test code requires a documented coverage gap,
+inputs and prerequisites, a reproduction command, expected results, and an
+independent verification method. Require workspaces, provider configuration and
+session evidence only when the check exercises those boundaries. Explain how a
+realistic defect would fail its assertions and how a behavior-preserving refactor
+would keep them valid. Each test must protect a user outcome or an explicit
+public contract. Keep harness code small and preserve
 production boundaries when arranging dependencies.
 
-Use real execution through the relevant host for workflow acceptance. Classify
+When E2E is selected, use real execution through the relevant host. Classify
 checks by the path they actually exercise:
 
 - E2E: public host entry point through the real provider/service, runtime,
   storage, tools, and relevant terminal or browser environment.
-- Integration: real connected components with controlled external protocol
-  responses, asserting a specific boundary. Drive real adapters and record the
-  source of protocol examples used for expectations.
+- Integration: real connected components, with controlled external boundaries
+  where needed, asserting an explicit component contract. For protocol checks,
+  drive real adapters and record the source of examples used for expectations.
 - Golden: small sanitized real payloads or visible output with independently
   reviewed expectations and a documented source.
-- Focused regression: controlled reproduction of a specific security,
-  persistence, crash, or corruption failure, with observable outcome assertions.
+- Focused regression: controlled reproduction of a specific defect or contract
+  violation, including deterministic computation, security, persistence, crash,
+  or corruption failures, with observable outcome assertions.
 
 A replacement for an entire Provider exercises the downstream application from
 Cade's internal events; record that coverage as application integration.
-Validate the provider protocol separately through its real adapter. Base
-assertions on behavior and contracts that users depend on. Treat widget labels,
-private fields, helper calls, and object layouts as implementation choices unless
+When the provider protocol is affected, validate it separately through its real
+adapter. Base assertions on behavior and contracts that users depend on. Treat
+widget labels, private fields, helper calls, and object layouts as implementation choices unless
 the task explicitly defines them as a contract.
 
 Review new test code against its coverage gap before retaining it. Keep each
@@ -105,17 +126,18 @@ is the appropriate validation method.
 
 ## Evidence and Reporting
 
-Save run commands, initial conditions, configuration/model identifiers, exit
-status, JSONL events, relevant session records, file changes, verification
-results, and key observations in ignored result directories such as
-`e2e-results/`. Record failed attempts and environment blockers alongside
-successful runs. Document any repeated model runs and judge each against the
-same acceptance criteria.
+For workflow acceptance, save run commands, initial conditions,
+configuration/model identifiers, exit status, JSONL events, relevant session
+records, file changes, verification results, and key observations in ignored
+result directories such as `e2e-results/`. Record failed attempts and environment
+blockers alongside successful runs. Document any repeated model runs and judge
+each against the same acceptance criteria.
 
 Commit reusable scenario sources, run instructions, and small sanitized fixtures.
 Store generated traces, logs, screenshots, recordings, and bulk captures locally
 or in CI artifact storage. Sanitize account data and credentials before sharing.
-Report exactly which behavior each check establishes and its remaining coverage.
+Report exactly which behavior each selected check establishes and the remaining
+uncovered risks. A check not required for the selected scope is not a blocker.
 
 ## Commands and Current Repository State
 
@@ -134,7 +156,7 @@ uv run pyright src/
 uv run cade --help
 ```
 
-For a runtime acceptance run, prepare an isolated workspace and a task-specific
+When exec E2E is selected, prepare an isolated workspace and a task-specific
 prompt, then use the public entry point:
 
 ```sh

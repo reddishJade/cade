@@ -5,11 +5,11 @@ description: Run and assess real Cade end-to-end acceptance tests through exec, 
 
 # Cade E2E 验收
 
-先阅读仓库的 `HUMAN.md` 和 `docs/testing.md`。后者定义验证层级、测试代码准入和证据要求；本 skill 补充实际运行步骤。文档修改和行为保持的整理按该指南选择检查，不必运行模型任务。OpenClaw 专项评测另用 `cade-openclaw-eval` 的任务边界；默认验收模型和工作路径遵循本 skill，用户明确指定的参数优先。
+先阅读仓库的 `HUMAN.md` 和 `docs/testing.md`。后者决定是否需要 E2E，并定义验证层级、测试代码准入和证据要求；本 skill 仅说明已选定的 E2E 如何执行。准备工作区、检查认证或调用模型之前，先按该指南说明具体风险、较低层检查的覆盖缺口，以及 E2E 可观察的失败结果；没有额外风险时不启动 E2E。OpenClaw 专项评测另用 `cade-openclaw-eval` 的任务边界；默认验收模型和工作路径遵循本 skill，用户明确指定的参数优先。
 
 ## 验收路径与工作目录
 
-- Agent、工具、权限、上下文和会话：通过公共 `cade exec` 入口，使用真实 provider、服务和会话存储。
+- 已选定的 exec E2E：通过公共 `cade exec` 入口，使用真实 provider、服务和会话存储。
 - TUI：驱动真实终端宿主；web：驱动实际服务器和浏览器。exec 成功不能证明 UI 行为。
 - 替换 provider 或直接调用内部组件属于集成验证，不标记为 E2E。
 - 所有由测试管理的工作区、Git worktree、会话、配置、prompt、日志、截图、缓存与结果必须位于当前 Cade 工作路径内。使用 `e2e-results/<unique-run>/`；不使用 `/tmp` 或其他工作路径外的位置。账号凭据仍由 Cade 从既有认证存储读取，不复制到测试目录。
@@ -43,7 +43,7 @@ description: Run and assess real Cade end-to-end acceptance tests through exec, 
 - 连接错误：先检查宿主网络限制、端点和授权条件。只有修正原因或有临时故障证据才进行有上限的重试。
 - 普通验收已知 provider 不可用时，可在既有授权内改用可用 provider；保留失败记录，另起一次运行并说明参数变化。针对特定 provider 的验收不能用换 provider 代替。
 - 模型遗漏步骤或错误实现：保留失败结果；重新提示或重复运行仍按原标准评估，报告次数。
-- 可复现的 Cade 缺陷：保留最小复现场景，在拥有该行为的层修复，运行相关检查及真实宿主验收。新增测试代码须符合 `docs/testing.md`，不加入任务专用 workaround。
+- 可复现的 Cade 缺陷：保留最小复现场景，在拥有该行为的层修复；按 `docs/testing.md` 选择相关回归与边界检查，不因发现缺陷自动追加真实宿主验收。已选定的 E2E 暴露的边界风险，修复后需重新验证。新增测试代码须符合该指南，不加入任务专用 workaround。
 
 ## 完成与交付
 

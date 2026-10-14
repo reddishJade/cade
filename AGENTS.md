@@ -30,7 +30,7 @@ Cade 是一个 Python 3.12+ 的 coding-agent harness。所有包代码位于 `sr
 
 在仓库根目录执行；先按[开发指南](docs/development.md#environment-setup)安装开发依赖。
 
-代码变更后运行 Lint、格式检查和类型检查。变更涉及 import 或入口时，追加受影响入口的启动检查。`src/cade/tests/` 中存在 `test_*.py` 时，运行回归测试。行为变更执行运行验收。仅修改文档时，检查内容、链接、命令和差异。
+代码变更后运行 Lint、格式检查和类型检查。变更涉及 import 或入口时，追加受影响入口的启动检查。`src/cade/tests/` 中存在 `test_*.py` 时，运行回归测试。行为变更按[验证准则](docs/testing.md)选择最小充分检查；是否执行 E2E 由具体风险和覆盖缺口决定，不由模块归属决定。仅修改文档时，检查内容、链接、命令和差异。
 
 - Lint：`uv run --locked ruff check src/`
 - 格式化：`uv run --locked ruff format src/`
@@ -38,7 +38,7 @@ Cade 是一个 Python 3.12+ 的 coding-agent harness。所有包代码位于 `sr
 - 类型检查：`uv run --locked pyright src/`
 - 回归测试：`uv run --locked pytest -q src/cade/tests`
 - 启动检查：`uv run --locked cade --help`
-- 运行验收：`uv run --locked cade exec "<任务>"`
+- exec E2E（按验证准则选定后执行）：`uv run --locked cade exec "<任务>"`
 
 ## 代码风格与命名
 
