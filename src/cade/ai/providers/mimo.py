@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from cade.ai.types import ProviderConfig
 
 from ._compat import OpenAICompatProvider
@@ -17,13 +15,10 @@ class MiMoProvider(OpenAICompatProvider):
     def __init__(
         self,
         config: ProviderConfig,
-        *,
-        client: Any | None = None,
     ) -> None:
         super().__init__(
             config,
             transport="mimo_chat",
-            client=client,
         )
 
     def _record_usage(self, response, sent_messages: int) -> None:

@@ -1,14 +1,13 @@
 """OpenAI Chat Completions 兼容 provider 基类。
 
 所有使用 OpenAI Chat Completions API 的 provider（OpenAI、DeepSeek、
-ChatGLM、MiMo）共享此基类。子类只需覆写 _stream_sync 以定制 API 调用。
+ChatGLM、MiMo）共享异步传输与资源生命周期；子类定制请求参数。
 """
 
 from __future__ import annotations
 
 import copy
-import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
 from cade.ai.cache import extract_cache_usage
@@ -23,8 +22,6 @@ from cade.ai.usage import UsageAccumulator, UsageTotals
 
 from ._codec import normalize_cross_provider_messages, to_chat_messages, to_chat_tools
 from ._stream import chat_stream_to_events
-
-logger = logging.getLogger(__name__)
 
 
 def _lookup_thinking_budget(budgets: ThinkingBudgets, level_name: str) -> int | None:
@@ -46,7 +43,7 @@ class OpenAICompatProvider:
 
     子类必须设置:
     - self.transport（在 super().__init__ 之前或通过 transport 参数）
-    - _stream_sync(messages, tools, ...) 实现
+    - _build_chat_params(messages, tools, options) 构建请求参数
 
     子类可覆写:
     - _build_thinking_params() 构建 provider 专有 thinking 参数
@@ -59,20 +56,11 @@ class OpenAICompatProvider:
         config: ProviderConfig,
         *,
         transport: str = "openai_chat",
-        client: Any | None = None,
     ) -> None:
-        if client is None:
-            from openai import OpenAI as _OpenAIClient
-
-            client = _OpenAIClient(api_key=config.api_key, base_url=config.base_url)
-        self.client = client
         self.config = config
         self._usage = UsageAccumulator(config.model)
         self.transport = transport
-        self._current_options: StreamOptions | None = None
         self._metrics: dict[str, object] = self._init_metrics()
-        self._active_stream: Any | None = None
-        self._abort_pending = False
 
     @property
     def model(self) -> str:
@@ -126,27 +114,37 @@ class OpenAICompatProvider:
         tools: list[ToolDefinition],
         options: StreamOptions | None = None,
         **kwargs: Any,
-    ) -> AsyncIterator[ProviderEvent]:
-        self._current_options = options
+    ) -> AsyncGenerator[ProviderEvent, None]:
+        from openai import APIError, AsyncOpenAI
+
         messages = self._normalize_messages(messages)
-        from openai import APIError
-
-        try:
-            for event in self._stream_sync(messages, tuple(tools)):
-                yield event
-        except APIError as exc:
-            raise RuntimeError(f"Provider request failed: {exc}") from exc
-
-    def _stream_sync(
-        self,
-        messages: list[dict[str, Any]],
-        tools: tuple[ToolDefinition, ...],
-    ) -> Iterator[ProviderEvent]:
-        self._warn_builtin_tools(tools)
+        self._warn_builtin_tools(tuple(tools))
         clean = self._clean_reasoning_content(messages)
         api_messages = to_chat_messages(clean)
-        params = self._build_chat_params(api_messages, tools)
-        yield from self._call_chat_api(params, len(api_messages))
+        params = self._build_chat_params(api_messages, tuple(tools), options)
+        if options:
+            if options.api_key:
+                params["api_key"] = options.api_key
+            headers: dict[str, str] = {}
+            if options.session_id:
+                headers["x-session-id"] = options.session_id
+            if options.headers:
+                headers.update(options.headers)
+            if headers:
+                params["extra_headers"] = headers
+        try:
+            async with AsyncOpenAI(
+                api_key=self.config.api_key,
+                base_url=self.config.base_url,
+            ) as client:
+                stream = await client.chat.completions.create(**params)
+                async with stream:
+                    async for event in chat_stream_to_events(
+                        self._intercept_usage(stream, len(api_messages))
+                    ):
+                        yield event
+        except APIError as exc:
+            raise RuntimeError(f"Provider request failed: {exc}") from exc
 
     def _warn_builtin_tools(self, tools: tuple[ToolDefinition, ...]) -> None:
         """子类可覆写以对不支持的 builtin 工具发出警告。"""
@@ -155,6 +153,7 @@ class OpenAICompatProvider:
         self,
         api_messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
+        options: StreamOptions | None,
     ) -> dict[str, Any]:
         """构建 Chat Completions 请求参数。子类可覆写添加专有字段。"""
         params: dict[str, Any] = {
@@ -164,13 +163,14 @@ class OpenAICompatProvider:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        self._build_thinking_params(params)
-        self._apply_stream_options(params)
+        self._build_thinking_params(params, options=options)
+        self._apply_stream_options(params, options)
         return params
 
-    def _apply_stream_options(self, params: dict[str, Any]) -> None:
+    def _apply_stream_options(
+        self, params: dict[str, Any], opts: StreamOptions | None
+    ) -> None:
         """把通用采样选项下发到 OpenAI-compatible 请求。"""
-        opts = self._current_options
         if opts is None:
             return
         if opts.temperature is not None:
@@ -184,68 +184,15 @@ class OpenAICompatProvider:
         if opts.response_extra_params:
             params.update(opts.response_extra_params)
 
-    def _call_chat_api(
-        self,
-        params: dict[str, Any],
-        message_count: int,
-    ) -> Iterator[ProviderEvent]:
-        """调用 OpenAI chat.completions.create 并流式返回事件。"""
-        opts = self._current_options
-
-        if opts:
-            if opts.api_key:
-                params["api_key"] = opts.api_key
-            extra_headers: dict[str, str] = {}
-            if opts.session_id:
-                extra_headers["x-session-id"] = opts.session_id
-            if opts.headers:
-                extra_headers.update(opts.headers)
-            if extra_headers:
-                params["extra_headers"] = extra_headers
-
-        self._abort_pending = False
-        stream = self.client.chat.completions.create(**params)
-        self._active_stream = stream
-        if self._abort_pending:
-            # 请求建立期间收到打断：立即关闭，避免阻塞读取。
-            self._close_stream(stream)
-        try:
-            intercepted = self._intercept_usage(stream, message_count)
-            yield from chat_stream_to_events(intercepted)
-        finally:
-            if self._active_stream is stream:
-                self._active_stream = None
-
-    def abort_active_stream(self) -> None:
-        """从任意线程中止在途流式请求，使阻塞的 chunk 读取立即失败。
-
-        interrupt 路径调用此方法以在模型生成期间真正停止响应；
-        底层连接被关闭后，读取会抛出异常，由消费端识别为取消。
-        """
-        self._abort_pending = True
-        self._close_stream(self._active_stream)
-
-    def _close_stream(self, stream: Any | None) -> None:
-        """尽力关闭流句柄；句柄缺失或不可关闭时静默忽略。"""
-        if stream is None:
-            return
-        close = getattr(stream, "close", None)
-        if not callable(close):
-            return
-        try:
-            close()
-        except (OSError, RuntimeError, TypeError, ValueError):
-            logger.debug("failed to close the provider stream", exc_info=True)
-
     # ── metrics 拦截 ──
 
-    def _intercept_usage(
+    async def _intercept_usage(
         self,
-        chunks: Iterator[Any],
+        chunks: AsyncIterator[Any],
         message_count: int,
-    ) -> Iterator[Any]:
+    ) -> AsyncIterator[Any]:
         """拦截流式响应，在遇到 usage 时记录指标。"""
-        for chunk in chunks:
+        async for chunk in chunks:
             usage = getattr(chunk, "usage", None)
             if usage:
                 self._record_usage(chunk, message_count)
@@ -293,6 +240,8 @@ class OpenAICompatProvider:
         self,
         params: dict[str, Any],
         thinking_override: bool | None = None,
+        *,
+        options: StreamOptions | None = None,
     ) -> None:
         """将 thinking 配置写入 params（extra_body 和 reasoning_effort）。"""
         effective = (
@@ -300,7 +249,7 @@ class OpenAICompatProvider:
         )
         extra = self._build_thinking_extra_body(thinking_override)
 
-        opts = self._current_options
+        opts = options
         if opts and opts.thinking_budgets and effective:
             level_name = opts.thinking_level
             if level_name and level_name != "off":

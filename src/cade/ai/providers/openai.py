@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from cade.ai.types import ProviderConfig, ToolDefinition
+from cade.ai.types import ProviderConfig, StreamOptions, ToolDefinition
 
 from ._compat import OpenAICompatProvider
 
@@ -18,19 +18,18 @@ class OpenAIChatProvider(OpenAICompatProvider):
     def __init__(
         self,
         config: ProviderConfig,
-        *,
-        client: Any | None = None,
     ) -> None:
         super().__init__(
             config,
             transport="openai_chat",
-            client=client,
         )
 
     def _build_thinking_params(
         self,
         params: dict[str, Any],
         thinking_override: bool | None = None,
+        *,
+        options: StreamOptions | None = None,
     ) -> None:
         effective = (
             self.config.thinking if thinking_override is None else thinking_override
@@ -44,8 +43,9 @@ class OpenAIChatProvider(OpenAICompatProvider):
         self,
         api_messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
+        options: StreamOptions | None,
     ) -> dict[str, Any]:
-        params = super()._build_chat_params(api_messages, tools)
+        params = super()._build_chat_params(api_messages, tools, options)
         if self.config.response_format:
             params["response_format"] = self.config.response_format
         return params

@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator
+from contextlib import aclosing
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -394,13 +395,7 @@ class AgentHarness:
         handle = self.active_run()
         if handle is None:
             return False
-        outcome = handle.interrupt(reason)
-        if outcome is None:
-            return False
-        abort = getattr(self._provider, "abort_active_stream", None)
-        if callable(abort):
-            abort()
-        return True
+        return handle.interrupt(reason) is not None
 
     def has_pending_input(self) -> bool:
         """返回 durable inbox 是否存在需要启动的新输入。"""
@@ -549,7 +544,7 @@ class AgentHarness:
         question: str | None,
         *,
         display_question: str | None = None,
-    ) -> AsyncIterator[AgentHarnessEvent]:
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
         if question is not None:
             self.followup(
                 UserMessage(content=question),
@@ -565,12 +560,15 @@ class AgentHarness:
             if not turn_messages:
                 return
             question_text = _turn_text(turn_messages)
-            async for event in self._arun_claimed_turn(
-                question_text,
-                turn_messages,
-                run_handle,
-            ):
-                yield event
+            async with aclosing(
+                self._arun_claimed_turn(
+                    question_text,
+                    turn_messages,
+                    run_handle,
+                )
+            ) as stream:
+                async for event in stream:
+                    yield event
         finally:
             if self._run_controller.active_run() is run_handle:
                 run_handle.begin_finishing()
@@ -581,7 +579,7 @@ class AgentHarness:
         question: str,
         turn_messages: list[AgentMessage],
         run_handle: ActiveRunHandle,
-    ) -> AsyncIterator[AgentHarnessEvent]:
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
         from .tool_hooks import emit_hook as _emit_hook
 
         with self._composition_lock:
@@ -647,30 +645,33 @@ class AgentHarness:
                 cwd=Path.cwd(),
             )
             result: AgentLoopResult | None = None
-            async for event in run_agent_loop(
-                turn_messages,
-                context,
-                loop_config,
-                signal=self.cancellation_token,
-                steer_queue=run_handle.claim_step_input,
-                finish_steering=run_handle.finish_step_input,
-                reopen_steering=run_handle.reopen_step_input,
-            ):
-                if isinstance(event, AgentLoopResult):
-                    result = event
-                    continue
-                tool_call_id = (
-                    event.data.id
-                    if event.type == "tool_use"
-                    else event.data.tool_call_id
-                    if event.type == "tool_update"
-                    else event.data.tool_use_id
-                    if event.type == "tool_result"
-                    else ""
+            async with aclosing(
+                run_agent_loop(
+                    turn_messages,
+                    context,
+                    loop_config,
+                    signal=self.cancellation_token,
+                    steer_queue=run_handle.claim_step_input,
+                    finish_steering=run_handle.finish_step_input,
+                    reopen_steering=run_handle.reopen_step_input,
                 )
-                yield replace(
-                    event, correlation=self._correlation.snapshot(tool_call_id)
-                )
+            ) as stream:
+                async for event in stream:
+                    if isinstance(event, AgentLoopResult):
+                        result = event
+                        continue
+                    tool_call_id = (
+                        event.data.id
+                        if event.type == "tool_use"
+                        else event.data.tool_call_id
+                        if event.type == "tool_update"
+                        else event.data.tool_use_id
+                        if event.type == "tool_result"
+                        else ""
+                    )
+                    yield replace(
+                        event, correlation=self._correlation.snapshot(tool_call_id)
+                    )
 
             if result is None:
                 raise RuntimeError("agent loop completed without a result")

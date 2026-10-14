@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Iterator
 from typing import Any
 
-from cade.ai.types import ProviderConfig, ToolDefinition
+from cade.ai.types import ProviderConfig, StreamOptions, ToolDefinition
 
-from ._codec import to_chat_messages, to_chat_tools
+from ._codec import to_chat_tools
 from ._compat import OpenAICompatProvider
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -20,25 +19,20 @@ class DeepSeekProvider(OpenAICompatProvider):
     def __init__(
         self,
         config: ProviderConfig,
-        *,
-        client: Any | None = None,
     ) -> None:
         super().__init__(
             config,
             transport="deepseek_chat",
-            client=client,
         )
         self._metrics["prompt_cache_hit_tokens"] = 0
         self._metrics["prompt_cache_miss_tokens"] = 0
 
-    def _stream_sync(
+    def _build_chat_params(
         self,
-        messages: list[dict[str, Any]],
+        api_messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
-    ) -> Iterator[Any]:
-        cleaned_messages = self._clean_reasoning_content(messages)
-        api_messages = to_chat_messages(cleaned_messages)
-
+        options: StreamOptions | None,
+    ) -> dict[str, Any]:
         strict_tools = self.config.extra.get("strict_tools", False)
         effective_format = self.config.response_format
         if effective_format and effective_format.get("type") == "json_object":
@@ -55,9 +49,9 @@ class DeepSeekProvider(OpenAICompatProvider):
         if effective_format:
             params["response_format"] = effective_format
 
-        self._build_thinking_params(params)
+        self._build_thinking_params(params, options=options)
 
-        yield from self._call_chat_api(params, len(api_messages))
+        return params
 
     def _clean_reasoning_content(
         self, messages: list[dict[str, Any]]

@@ -77,6 +77,7 @@ from cade.coding_agent.interaction.tools import (
 )
 from cade.coding_agent.tools.question import CUSTOM_OPTION_LABEL
 from cade.harness.agent_runtime import AgentHarnessEvent, BusyMessageMode, SubmitStatus
+from cade.harness.agent_runtime.async_worker import IsolatedAsyncWorker
 from cade.harness.agent_runtime.events import (
     FinalEvent,
 )
@@ -239,6 +240,7 @@ class _CadeTui:
         self._last_stream_refresh = 0.0
         self._stream_refresh_handle: TimerHandle | None = None
         self._working_refresh_handle: TimerHandle | None = None
+        self._agent_worker = IsolatedAsyncWorker(name="cade-tui-agent")
         self._agent_event_queue: Queue[AgentHarnessEvent] = Queue()
         self._agent_event_queue_lock = threading.Lock()
         self._agent_event_drain_lock = threading.Lock()
@@ -486,6 +488,14 @@ class _CadeTui:
         try:
             self._application.run()
         finally:
+            from cade.harness.security import HITLResult
+
+            if self._state.pending_hitl is not None:
+                self._complete_approval(HITLResult("deny", "once"))
+            if self._state.pending_question_choice is not None:
+                self._complete_question_choice([])
+            self._agent_app.agent.interrupt("TUI is closing")
+            self._agent_worker.close()
             print_exit_summary(
                 self._store,
                 perf_counter() - started_at,
@@ -929,12 +939,7 @@ class _CadeTui:
             if token is not None:
                 token.reset()
         self._refresh()
-        thread = threading.Thread(
-            target=self._run_turn,
-            args=(expanded_text, text),
-            daemon=True,
-        )
-        thread.start()
+        self._agent_worker.submit(self._run_turn(expanded_text, text))
 
     def _run_command(self, text: str, *, preserve_running: bool = False) -> None:
         """执行斜杠命令；实时命令不得结束正在运行的 agent 回合。"""
@@ -1879,11 +1884,7 @@ class _CadeTui:
         if self._state.running or not self._agent_app.agent.has_pending_input():
             return
         self._start_working()
-        threading.Thread(
-            target=self._run_turn,
-            args=(None, None),
-            daemon=True,
-        ).start()
+        self._agent_worker.submit(self._run_turn(None, None))
 
     def _accept_approval_choice(self) -> None:
         choice = self._approval_choices.current_value
@@ -1914,7 +1915,7 @@ class _CadeTui:
 
     # ── Turn 执行 ──
 
-    def _run_turn(self, text: str | None, display_text: str | None) -> None:
+    async def _run_turn(self, text: str | None, display_text: str | None) -> None:
         snapshot = self._snapshot_store
         _snapshot_ctx = _enter_snapshot_ctx(snapshot, self._store.session_id)
         turn_log_start = len(self._state.log)
@@ -1923,7 +1924,7 @@ class _CadeTui:
         tool_names: list[str] = []
         try:
             self._last_stream_refresh = 0.0
-            for event in self._agent_app.ask_stream(
+            async for event in self._agent_app.aask_stream(
                 text,
                 mode=self._interaction_state.mode,
                 display_question=display_text,

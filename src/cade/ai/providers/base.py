@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Protocol, runtime_checkable
 
 from cade.ai.events import Message, ProviderEvent
@@ -20,7 +20,7 @@ class StreamProvider(Protocol):
         tools: list[ToolDefinition],
         options: StreamOptions | None = None,
         **kwargs: object,
-    ) -> AsyncIterator[ProviderEvent]: ...
+    ) -> AsyncGenerator[ProviderEvent, None]: ...
 
 
 @runtime_checkable
@@ -93,10 +93,10 @@ class Provider(ABC):
         return self._context_window
 
     @abstractmethod
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         tools: list[ToolDefinition],
         options: StreamOptions | None = None,
         **kwargs: object,
-    ) -> AsyncIterator[ProviderEvent]: ...
+    ) -> AsyncGenerator[ProviderEvent, None]: ...

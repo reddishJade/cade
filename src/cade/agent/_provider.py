@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import cast
 
 from cade.agent.config import AgentContext, AgentLoopConfig
 from cade.agent.events import (
@@ -165,24 +164,10 @@ def _is_cancelled(signal: CancellationSignal | None) -> bool:
     return signal is not None and signal.is_cancelled()
 
 
-def _abort_inflight_stream(provider: StreamProvider) -> None:
-    """尽力中止在途 HTTP 流：关闭底层连接使阻塞读取立刻失败。"""
-    abort = getattr(provider, "abort_active_stream", None)
-    if not callable(abort):
-        return
+async def _aclose_stream(stream: AsyncGenerator[ProviderEvent, None]) -> None:
+    """取消后关闭原生生成器，并保留收尾失败的诊断。"""
     try:
-        abort()
-    except (OSError, RuntimeError, TypeError, ValueError):
-        logger.debug("failed to abort the active provider stream", exc_info=True)
-
-
-async def _aclose_stream(stream_iter: AsyncIterator[ProviderEvent]) -> None:
-    """尽快关闭异步流迭代器，让底层生成器的清理逻辑及时执行。"""
-    aclose = getattr(stream_iter, "aclose", None)
-    if not callable(aclose):
-        return
-    try:
-        await cast(Awaitable[None], aclose())
+        await stream.aclose()
     except (OSError, RuntimeError, TypeError, ValueError):
         logger.debug("failed to close the provider stream", exc_info=True)
 
@@ -218,7 +203,6 @@ async def _stream_response(
             nonlocal final_content, provider_failure
             async for event in stream_iter:
                 if _is_cancelled(signal):
-                    _abort_inflight_stream(provider)
                     await _aclose_stream(stream_iter)
                     return
                 if timing.observe(event):
@@ -261,7 +245,6 @@ async def _stream_response(
             while not pending.done():
                 if _is_cancelled(signal):
                     pending.cancel()
-                    _abort_inflight_stream(provider)
                     await asyncio.gather(pending, return_exceptions=True)
                     await _aclose_stream(stream_iter)
                     return None

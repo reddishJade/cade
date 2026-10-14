@@ -5,7 +5,8 @@ CadeApp 数据类和 build_app 编排函数。装配逻辑委托给 assembly 子
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
+from contextlib import aclosing
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -255,22 +256,39 @@ class CadeApp:
         *,
         display_question: str | None = None,
     ) -> Iterator[AgentHarnessEvent]:
+        from cade.harness.agent_runtime.agent_helpers import aiter_to_sync_iter
+
+        yield from aiter_to_sync_iter(
+            self.aask_stream(question, mode=mode, display_question=display_question),
+            self.agent.cancellation_token,
+        )
+
+    async def aask_stream(
+        self,
+        question: str | None,
+        mode: ExecutionMode | None = None,
+        *,
+        display_question: str | None = None,
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
+        """统一运行与记录入口；同步调用只在外层转换消费方式。"""
         recorder = self.session_recorder
         if recorder is None:
             raise RuntimeError("session recorder is not configured")
         recorder.bind_agent(self.agent)
         if question is not None:
             self.agent.followup(
-                UserMessage(content=question),
-                display_text=display_question,
+                UserMessage(content=question), display_text=display_question
             )
-        for event in self.agent.run_stream(
-            None,
-            mode=mode,
-            display_question=display_question,
-        ):
-            recorder.record_event(event)
-            yield event
+        async with aclosing(
+            self.agent.arun_stream(
+                None,
+                mode=mode,
+                display_question=display_question,
+            )
+        ) as stream:
+            async for event in stream:
+                recorder.record_event(event)
+                yield event
 
     def ask_side_question(self, question: str) -> Iterator[str]:
         """用独立 provider 回答旁支问题，主会话保留原运行状态。"""

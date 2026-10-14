@@ -7,7 +7,7 @@ import contextlib
 import json
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -44,8 +44,16 @@ def create_app(
     app_factory: AppFactory | None = None,
 ) -> FastAPI:
     """装配 FastAPI 应用（静态资源 + API + WebSocket）。"""
-    server = FastAPI(title="cade web", docs_url=None, redoc_url=None)
     hub = WebRunHub(app)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await hub.close()
+
+    server = FastAPI(title="cade web", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     server.state.cade_app = app
     server.state.hub = hub

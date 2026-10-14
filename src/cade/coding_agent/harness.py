@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncGenerator, Iterator, Mapping
+from contextlib import aclosing
 from dataclasses import replace
 from uuid import uuid4
 
@@ -267,14 +268,17 @@ class CodingAgentHarness(AgentHarness):
         mode: ExecutionMode | None = None,
         *,
         display_question: str | None = None,
-    ) -> AsyncIterator[AgentHarnessEvent]:
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
         if mode is not None:
             self._mode.set_mode(mode)
-        async for event in super().arun_stream(
-            question,
-            display_question=display_question,
-        ):
-            yield event
+        async with aclosing(
+            super().arun_stream(
+                question,
+                display_question=display_question,
+            )
+        ) as stream:
+            async for event in stream:
+                yield event
 
     # ── 技能激活内部 ──
 
