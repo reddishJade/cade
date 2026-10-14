@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 
@@ -249,9 +248,10 @@ def test_section_failure_does_not_send_partial_context() -> None:
     assert result.error_detail is not None and "environment" in result.error_detail
 
 
-def test_rollover_refreshes_catalog_and_preserves_latest_durable_state() -> None:
-    root = Path(__file__).resolve().parents[3]
-    workspace = root / "e2e-results" / f"context-regression-{uuid4().hex}"
+def test_rollover_refreshes_catalog_and_preserves_latest_durable_state(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path
     memory = workspace / ".cade" / "memory"
     memory.mkdir(parents=True)
     entry = memory / "lesson.md"
