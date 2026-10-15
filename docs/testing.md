@@ -14,10 +14,10 @@ checks cannot cover it. Use the relevant public host (`cade exec`, TUI, or web)
 and independently check the outcome. Small changes can still require E2E when
 they affect such a boundary.
 
-After selecting E2E, use the repository
-[cade-e2e-test skill](../.cade/skills/cade-e2e-test/SKILL.md) for the operational
-workflow and explicit provider configuration. The skill describes how to run an
-already-selected E2E check; it does not determine whether one is needed.
+After selecting a real-provider E2E check, use the internal acceptance tools and
+an explicit provider configuration. Account-driven runbooks and capability
+evaluation tasks live outside this repository. Their location does not determine
+whether E2E is needed; select it from the risk and coverage gap described here.
 
 ## Select the Smallest Sufficient Validation
 
@@ -133,9 +133,12 @@ result directories such as `e2e-results/`. Record failed attempts and environmen
 blockers alongside successful runs. Document any repeated model runs and judge
 each against the same acceptance criteria.
 
-Commit reusable scenario sources, run instructions, and small sanitized fixtures.
-Store generated traces, logs, screenshots, recordings, and bulk captures locally
-or in CI artifact storage. Sanitize account data and credentials before sharing.
+Commit deterministic product regression and integration tests with small
+sanitized fixtures here. Maintain account-driven acceptance scenarios, capability
+evaluation tasks, and their runbooks in the internal repository. Store generated
+traces, logs, screenshots, recordings, and bulk captures in local or access-controlled
+storage. Public CI artifacts are not private storage. Sanitize account data and
+credentials before sharing.
 Report exactly which behavior each selected check establishes and the remaining
 uncovered risks. A check not required for the selected scope is not a blocker.
 
@@ -147,14 +150,17 @@ workflow runs. CI runs pytest when it finds a `test_*.py` file under
 each command against available sources and report CI results according to the
 checks that actually executed.
 
-Static and startup checks:
+Product static checks, regression tests, and startup check:
 
 ```sh
-uv run ruff check src/
-uv run ruff format src/ --check
-uv run pyright src/
-uv run cade --help
+uv run --locked ruff check src/cade/
+uv run --locked ruff format --check src/cade/
+uv run --locked pyright src/cade/
+uv run --locked pytest -q src/cade/tests
+uv run --locked cade --help
 ```
+
+These checks do not depend on the internal evaluation repository.
 
 When exec E2E is selected, prepare an isolated workspace and a task-specific
 prompt, then use the public entry point:
@@ -173,8 +179,8 @@ uv run cade exec --project-root "$CADE_E2E_RUN/workspace" \
 
 Prepare the run directory, its `tmp/` and workspace subdirectories, prompt,
 and explicit provider configuration before this command. Preserve existing
-global API settings; ordinary acceptance runs use the available Codex login as
-described in the skill. Select approval and sandbox settings for the scenario, and run the independent
-verification commands after Cade finishes. For behavior-preserving import
+global API settings. Select the provider, model, reasoning settings, and auxiliary
+roles explicitly for the chosen scenario. Select approval and sandbox settings
+for the scenario. Run the independent verification commands after Cade finishes. For behavior-preserving import
 changes, check affected imports and startup directly. For documentation-only
 changes, review the documentation and diff.

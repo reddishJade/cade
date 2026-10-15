@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.tag.outputs.revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release source
+        id: tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = tag
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          revision="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
+          test "$revision" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$revision" origin/main
+          version="$(git show "$revision:pyproject.toml" | python3 -c \
+            'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["project"]["version"])')"
+          test "$RELEASE_TAG" = "v$version"
+          printf 'revision=%s\n' "$revision" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      revision: ${{ needs.validate.outputs.revision }}
+      upload-artifacts: true
+
+  publish:
+    needs: [validate, checks]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-distributions
+          path: dist
+      - name: Publish checked distributions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          REVISION: ${{ needs.validate.outputs.revision }}
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq '.sha')"
+          test "$current" = "$REVISION"
+          (cd dist && sha256sum --check SHA256SUMS)
+          gh release create "$RELEASE_TAG" dist/* \
+            --verify-tag --generate-notes --title "$RELEASE_TAG"
