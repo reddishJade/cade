@@ -3,11 +3,7 @@
 !/.agents/notes/
 !/.agents/notes/**
 /.antigravitycli/
-/.cade/*
-!/.cade/skills/
-/.cade/skills/*
-!/.cade/skills/cade-e2e-test/
-!/.cade/skills/cade-e2e-test/**
+/.cade/
 /.claude/
 /.codex/
 /.vscode/
@@ -35,7 +31,9 @@ build/
 dist/
 *.spec
 
-# 测试、E2E 与评测运行产物
+# 内部评估工具与运行产物
+/benchmarks/
+/evals/
 /data-gym-cache/
 .coverage
 .coverage.*
@@ -48,7 +46,6 @@ htmlcov/
 /benchmark-results/
 /e2e-results/
 /eval-results/
-/evals/private/
 /logs/
 /tmp/
 
