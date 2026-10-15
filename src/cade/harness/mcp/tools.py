@@ -72,7 +72,7 @@ class McpServerConfig(BaseModel):
 
 @dataclass(frozen=True)
 class McpToolMetadata:
-    """Metadata preserved on ToolSpec for MCP tools."""
+    """ToolSpec 中保留的 MCP 工具元数据。"""
 
     server_name: str
     server_slug: str
@@ -487,10 +487,9 @@ def _format_progress_update(
 def _detect_collisions(
     tools_by_server: dict[str, list[dict[str, Any]]],
 ) -> set[str]:
-    """Detect host_tool_id collisions and return set of (server, tool) to disable.
+    """检测 host_tool_id 冲突，返回需要禁用的工具集合。
 
-    Returns set of "server_name:original_tool_name" strings for all
-    tools involved in collisions.
+    集合元素为 “server_name:original_tool_name”，包含所有冲突工具。
     """
     host_ids: dict[str, list[tuple[str, str]]] = {}
     for server_name, tool_list in tools_by_server.items():

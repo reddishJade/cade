@@ -182,7 +182,7 @@ class ToolDefinition:
     builtin: dict[str, Any] | None = None
 
 
-# --- Context serialization ---
+# ── 上下文序列化 ──
 
 
 def dump_context(

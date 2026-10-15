@@ -1,29 +1,24 @@
-# 模型与 Provider 接入指南
+# Models and providers
 
-Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务商在 API 协议、分块流式传输、推理思考链以及工具调用格式上的异构性，原生支持前沿大模型与本地私有化部署服务。
+The AI adapter layer in `src/cade/ai/` handles differences in API protocols, streaming chunks, reasoning content, and tool call formats. It supports hosted providers and local services.
 
----
+## Providers and transports
 
-## 1. 支持的 Provider 与 Transport 协议
+Set the connection protocol with `provider.connections.<provider>.transport`. Select the default model separately with `default_provider` and `default_model`.
 
-在 `provider.connections.<provider>` 中，通过 `transport` 指定连接协议；
-默认模型通过独立的 `default_provider` 与 `default_model` 选择：
+| Transport | Adapter | Platforms and models |
+| --- | --- | --- |
+| `deepseek_chat` | `DeepSeekProvider` | DeepSeek API: `deepseek-flash` by default, or `deepseek-v4-pro` |
+| `openai_responses` | `OpenAIResponsesProvider` | OpenAI Responses API: `gpt-6-astra`, `gpt-5.6-luna`, `gpt-6-sol`, `gpt-6-luna`, and `gpt-5.6` families |
+| `openai_chat` | `OpenAIChatProvider` | OpenAI Chat Completions and compatible services |
+| `openai_codex` | `OpenAICodexResponsesProvider` | ChatGPT/Codex account sessions and models |
+| `chatglm_chat` | `ChatGLMProvider` | Zhipu AI: `glm-5.1`, `glm-5`, and `glm-4.7-flash` families |
+| `mimo_chat` | `MiMoProvider` | Xiaomi MiMo: `mimo-v2.5-pro` and `mimo-v2.5` |
+| `custom` | `OpenAIChatProvider` | Custom OpenAI-compatible gateways, vLLM, and local Ollama services |
 
-| Transport 协议 | 对应适配类 | 适用平台与典型模型 |
-| :--- | :--- | :--- |
-| **`deepseek_chat`** | `DeepSeekProvider` | DeepSeek 官方 API（`deepseek-flash` 默认模型、`deepseek-v4-pro` 旗舰推理） |
-| **`openai_responses`**| `OpenAIResponsesProvider` | OpenAI 最新 Responses 协议（`gpt-6-astra`、`gpt-5.6-luna`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6` 系列） |
-| **`openai_chat`** | `OpenAIChatProvider` | 标准 OpenAI 格式接口与兼容聚合服务 |
-| **`openai_codex`** | `OpenAICodexResponsesProvider` | ChatGPT / Codex 登录会话与模型通道 |
-| **`chatglm_chat`** | `ChatGLMProvider` | 智谱 AI（`glm-5.1`、`glm-5`、`glm-4.7-flash` 系列）官方 API |
-| **`mimo_chat`** | `MiMoProvider` | 小米 MiMo 平台大模型接口（`mimo-v2.5-pro`、`mimo-v2.5`） |
-| **`custom`** | `OpenAIChatProvider` | 任意自定义 OpenAI 兼容网关、vLLM、Ollama 本地私有服务 |
+## Defaults and connections
 
----
-
-## 2. 默认选择与连接
-
-账号和 API key 登录只保存凭据，默认选择独立写在 `settings.json` 或项目配置：
+Account login and API key login save credentials only. Store default selections independently in `settings.json` or project configuration:
 
 ```json
 {
@@ -33,9 +28,9 @@ Cade 拥有独立的 AI 适配层（`src/cade/ai/`），屏蔽各大底层服务
 }
 ```
 
-DeepSeek 可设 `default_provider: "deepseek"`、`default_model: "deepseek-flash"`。
-两者的认证都可保留在 `~/.cade/auth.json`，切换默认值不删除任何 provider 凭据。
-内置连接不必写 transport 或 base_url；自定义连接独立定义。例如 Ollama：
+For DeepSeek, use `default_provider: "deepseek"` and `default_model: "deepseek-flash"`. Credentials for both providers can coexist in `~/.cade/auth.json`. Changing defaults does not delete credentials.
+
+Built-in connections do not require a transport or base URL. Define custom connections separately. For example, to use Ollama:
 
 ```json
 {
@@ -55,11 +50,11 @@ DeepSeek 可设 `default_provider: "deepseek"`、`default_model: "deepseek-flash
 }
 ```
 
-设置 `OLLAMA_API_KEY=ollama` 作为本地无认证服务的占位值。真实凭据不写入连接配置。
+Set `OLLAMA_API_KEY=ollama` as a placeholder for a local service without authentication. Do not store real credentials in connection configuration.
 
-## 3. 辅助模型角色
+## Auxiliary model roles
 
-主模型来自三个默认字段。`provider.model_profiles` 仅保存辅助角色的覆盖：
+The main model uses the three default fields. `provider.model_profiles` stores only auxiliary role overrides:
 
 ```json
 {
@@ -72,29 +67,24 @@ DeepSeek 可设 `default_provider: "deepseek"`、`default_model: "deepseek-flash
 }
 ```
 
-`subagent` 执行委派任务；`fallback` 用于主模型容灾；`reviewer`、`judge`、`refiner`
-按服务用途选择。省略角色或字段时继承主模型，显式指定其他 provider 时解析其独立凭据。
-配置备用 provider 不代表它有余额；验收应使用可用服务，并检查有效配置。
+The `subagent` role runs delegated tasks. The `fallback` role provides main-model recovery. The `reviewer`, `judge`, and `refiner` roles serve their respective services. Omitted roles and fields inherit from the main model. An explicitly different provider uses its own credentials.
 
----
+Configuring a fallback provider does not establish that the account has credit. Use an available service and inspect the effective configuration during validation.
 
-## 4. 思考链（Thinking）与选择语法
+## Reasoning effort and selection syntax
 
-Cade 支持精确控制推理模型的思考深度，并提供统一的选择语法：
-
-### 模型选择语法：`provider/model:thinking_level`
-
-在终端中使用 `/model` 时，支持一步指定提供商、模型与思考深度：
+Use `/model` with `provider/model:thinking_level` to select a provider, model, and reasoning effort:
 
 ```bash
-/model gpt-6-sol                          # 切换模型，保留当前思考深度
-/model deepseek/deepseek-v4-pro:high      # 指定 DeepSeek 提供商、V4 Pro 模型与 high 思考深度
-/model openai/gpt-6-astra:max             # 开启 max 级别极限推理深度
-/model chatglm/glm-5.1:medium             # 切换至 GLM-5.1 并设定为 medium 思考
+/model gpt-6-sol                         # 切换模型，保留当前思考深度
+/model deepseek/deepseek-v4-pro:high     # 选择 DeepSeek V4 Pro 和 high 深度
+/model openai/gpt-6-astra:max            # 选择 max 深度
+/model chatglm/glm-5.1:medium            # 选择 GLM-5.1 和 medium 深度
 ```
 
-支持的思考深度阶梯（`thinking_level`）：
-- `off` / `none`：关闭思考流，仅输出最终代码与文本
-- `minimal` / `low`：轻度思考，适合常规语法与简单工具调用
-- `medium`：标准推理，适合日常功能模块实现与重构
-- `high` / `xhigh` / `max`：深度思考推演，适合复杂并发架构设计与疑难死锁排查
+Reasoning levels depend on model support:
+
+- `off` / `none`: disable the reasoning stream and return final text only.
+- `minimal` / `low`: light reasoning for routine syntax and simple tool calls.
+- `medium`: standard reasoning for everyday implementation and refactoring.
+- `high` / `xhigh` / `max`: deeper reasoning for complex architecture and difficult debugging.

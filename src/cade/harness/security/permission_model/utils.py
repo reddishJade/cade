@@ -195,7 +195,7 @@ def is_protected_workspace_metadata_write(
     tool: str,
     access: PermissionAccess,
 ) -> bool:
-    """Return whether a model-facing structured write targets protected metadata."""
+    """判断模型发起的结构化写入是否指向受保护元数据。"""
     if access not in {"write", "delete"}:
         return False
     parts = tuple(part for part in path.replace("\\", "/").split("/") if part)

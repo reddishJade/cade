@@ -137,7 +137,7 @@ class _SubagentContinueHandler:
 
 
 class _DelegateHandler:
-    """Single model-facing entry point for child creation and continuation."""
+    """面向模型的子会话创建与续接统一入口。"""
 
     def __init__(self, manager: SubagentSessionManager) -> None:
         self.manager = manager
@@ -221,7 +221,7 @@ def bind_subagent_runtime(
 def build_subagent_tools(
     manager: SubagentSessionManager,
 ) -> tuple[ToolSpec, ...]:
-    """Expose one delegate primitive over the child-session runtime."""
+    """通过一个 delegate 工具提供子会话运行时能力。"""
     return (_build_delegate_tool(manager),)
 
 

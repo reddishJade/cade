@@ -105,7 +105,7 @@ class TuiLoginFlow:
             return
         self._start_account_login(request.provider, request.method)
 
-    # ── API key ──
+    # ── API 密钥 ──
 
     def _choose_api_provider(self) -> None:
         self._open_choices(

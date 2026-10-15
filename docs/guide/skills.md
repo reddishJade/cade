@@ -1,52 +1,52 @@
-# Skills 技能扩展系统
+# Skills
 
-Skills 是针对特定工程领域（如大型重构、单测生成、API 接入、数据库迁移）编写的专业知识包与操作规范。
+Skills package instructions for specific tasks, such as refactoring, test generation, API integration, or database migration. Use them to share project practices with Cade.
 
-通过将团队的最佳实践沉淀为 Skill，可以让 Cade 在处理特定任务时具备专家级的代码规范和思维逻辑。
+## Skill locations
 
----
+Cade discovers skills at two levels:
 
-## 1. 技能存放路径
-
-Cade 会从以下两个层级自动扫描并发现可用技能：
-
-1. **项目专属技能**（随项目版本库共享）：
+1. Project skills, shared through the repository:
    ```text
-   <项目根目录>/.cade/skills/<skill_name>/SKILL.md
+   <PROJECT_ROOT>/.cade/skills/<skill_name>/SKILL.md
+   <PROJECT_ROOT>/.agents/skills/<skill_name>/SKILL.md
    ```
-2. **用户全局技能**（跨项目通用）：
+2. User skills, shared across projects:
    ```text
-   ~/.config/cade/skills/<skill_name>/SKILL.md
+   ~/.cade/skills/<skill_name>/SKILL.md
+   ~/.agents/skills/<skill_name>/SKILL.md
    ```
 
----
+Project skills are discovered only when `skills.trust_project_skills` is `true` (default: `false`). An explicit `paths.skills_dir` is trusted and has the highest search priority.
 
-## 2. 编写一个 Skill
+## Write a skill
 
-每个技能由一个独立的目录构成，核心文件必须命名为 `SKILL.md`，文件顶部包含 YAML 格式的元数据：
+Each skill has its own directory with a `SKILL.md` file. Include YAML metadata at the top:
 
 ```markdown
 ---
 name: react-refactor
-description: 专门用于执行大型 React 组件拆分、Hook 提取与性能优化的规范指南。当用户提出重构前端组件时加载此技能。
+description: Guidelines for splitting React components, extracting hooks, and improving performance. Load when the user asks to refactor frontend components.
 ---
 
-# React 重构核心规范
+# React refactoring guidelines
 
-在重构当前项目的组件时，请严格遵守以下约束：
+When refactoring this project's components:
 
-1. **单一职责**：单个 JSX 文件代码行数不得超过 150 行，超过必须将子视图拆分至 `components/` 子目录；
-2. **Hook 隔离**：所有带状态的网络请求必须封装在 `hooks/use*.ts` 中；
-3. **测试防守**：每次完成拆分后，必须运行 `npm run test` 确保无破坏性变动。
+1. Keep each JSX file under 150 lines. Move child views to `components/` when a file exceeds that limit.
+2. Encapsulate stateful network requests in `hooks/use*.ts`.
+3. After each split, run `npm run test` to check for regressions.
 ```
 
----
+## Load a skill
 
-## 3. 技能的加载与使用
+Cade includes summaries of discovered skills in the system prompt. When a task matches a skill's `description`, the model can load its full instructions through an internal tool.
 
-- **自动意图匹配（动态激活）**：Cade 会在系统提示词中自动注入所有已发现技能的摘要；当你的问题与某个技能的 `description` 描述高度吻合时，模型会自动调用内部工具加载对应的完整指令。
-- **手动显式激活**：你可以在终端通过 `/skill` 指令主动加载：
-  ```bash
-  /skill list             # 查看当前所有可用技能及其描述
-  /skill load react-refactor # 强制将指定技能加载进当前会话上下文
-  ```
+You can also activate a skill explicitly:
+
+```text
+/skill react-refactor
+/skill react-refactor Split the API client into smaller modules
+```
+
+The syntax is `/skill NAME [prompt]`. An optional prompt becomes a follow-up task. `list` and `load` are treated as skill names, not subcommands.

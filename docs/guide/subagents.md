@@ -1,31 +1,19 @@
-# Subagents 子代理协作机制
+# Subagents
 
-在处理大型工程任务时，如果主 Agent 将全库扫描、依赖搜索等冗长的中间过程都塞进主窗口，不仅浪费主模型的昂贵上下文，还会迅速挤爆窗口上限。
+Large tasks can fill the main agent's context with repository scans, dependency searches, and intermediate logs. Persistent subagents let the main agent delegate independent work without retaining all intermediate output in its own window.
 
-Cade 引入了 **一等公民持久化子代理（Subagents）**，用于安全分治复杂任务。
+## When to delegate
 
----
+- **Isolated context**: a subagent runs in an independent session branch and returns a summary to the main agent.
+- **Separate model selection**: use a reasoning model such as `deepseek-v4-pro` or `gpt-6-sol` for the main agent and a smaller model such as `deepseek-flash`, `gpt-6-luna`, or `glm-4.7-flash` for subagents.
+- **Independent investigation**: delegate goals such as comparing architecture options and running validation for each option.
 
-## 1. 为什么需要子代理？
+## Runtime behavior
 
-- **上下文污染隔离**：子代理在完全独立的会话分支中运行。它可以自由读取几十个文件、输出数万字中间日志，完成后仅向主 Agent 汇报高度提炼的关键结论；
-- **成本与速度优化**：主 Agent 可采用强大的高推理模型（如 `deepseek-v4-pro` 或 `gpt-6-sol`），而子代理可配置为更轻更快的小模型（如 `deepseek-flash`、`gpt-6-luna` 或 `glm-4.7-flash`）；
-- **任务分治**：适合执行诸如“调研多种架构方案的可行性并各自运行验证测试”这类可以独立探索的子目标。
+1. Each subagent creates a persistent session JSONL file in `.cade/sessions/`, recording `parent_session_id` for replay and tracing.
+2. Subagents inherit the parent session's sandbox and permissions, with stricter timeouts and tool call limits.
+3. On session shutdown or Ctrl+C interruption, Cade cleans up children first, terminating subagents and releasing their processes and temporary resources before their parents.
 
----
+## Observe delegated work
 
-## 2. 子代理的底层运行机制
-
-1. **谱系持久化（Durable Lineage）**：
-   每一个子代理启动时，都会在 `.cade/sessions/` 中生成自己的持久化 Session JSONL 文件，并明确记录其 `parent_session_id`。所有的执行过程皆可独立回放与溯源。
-2. **安全与资源约束**：
-   子代理继承主会话的沙箱与权限配置，但具有更严格的超时保护和最大工具调用次数限制，防止子任务失控。
-3. **干净生命周期回收**：
-   当会话结束或用户按下 `Ctrl+C` 中断时，Cade 采用**由底向上（Child-first）逆序回收机制**，先行终止所有子代理并释放其占用的沙箱进程与临时资源，杜绝孤儿进程与资源泄露。
-
----
-
-## 3. 使用场景与观察
-
-主 Agent 会在需要的时候自动调度 `subagent` 工具执行局部探索。在终端中，你可以清晰看到子代理的启动、分支出去的会话 ID 以及汇总回来的结果卡片。
-你也可以随时使用 `/tree` 指令查看当前项目下主会话与所有派生子代理的完整谱系树状图。
+The main agent delegates local investigations when needed. The terminal shows child startup, session IDs, and result summaries. Use `/tree` to inspect session history; see [Sessions](sessions.md) for its entry-tree semantics.

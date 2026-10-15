@@ -137,8 +137,8 @@
     els.scrollBottom.hidden = !next;
     if (next) els.empty?.remove();
     els.input.placeholder = next
-      ? "运行中…（可输入，当前回合结束后处理；■ 停止立即中断）"
-      : "描述任务…（Enter 发送，Shift+Enter 换行）";
+      ? "Running… Enter your next task; Stop interrupts the current run."
+      : "Describe a task… (Enter to send, Shift+Enter for a new line)";
   }
 
   /* ── 步骤/工具 DOM ── */
@@ -209,8 +209,8 @@
   }
 
   function syncThinkingBar(record) {
-    const label = record.thinkingCollapsed ? "▸ 展开" : "▾ 收起";
-    record.thinkingBar.textContent = "◌ 思考 · " + label;
+    const label = record.thinkingCollapsed ? "▸ Expand" : "▾ Collapse";
+    record.thinkingBar.textContent = "◌ Reasoning · " + label;
     record.thinkingText.hidden = record.thinkingTextHidden;
   }
 
@@ -267,7 +267,7 @@
     argsEl.textContent = JSON.stringify(args ?? {});
     const toggle = document.createElement("span");
     toggle.className = "tool-card__toggle";
-    toggle.textContent = "▸ 输出";
+    toggle.textContent = "▸ Output";
     head.append(status, nm, argsEl, toggle);
 
     const output = document.createElement("div");
@@ -286,7 +286,7 @@
 
     head.addEventListener("click", () => {
       output.hidden = !output.hidden;
-      toggle.textContent = output.hidden ? "▸ 输出" : "▾ 收起";
+      toggle.textContent = output.hidden ? "▸ Output" : "▾ Collapse";
     });
     return { card, status, argsEl, pre, output, notice };
   }
@@ -402,8 +402,8 @@
 
     if (type === "context_window_reset") {
       systemNote(
-        "换窗",
-        `已开启新上下文窗口 ${data.window_id || ""}：移除 ${data.messages_removed} 条消息，当前 ${data.messages_after} 条（触发：${data.trigger}）`
+        "Rollover",
+        `Opened context window ${data.window_id || ""}: removed ${data.messages_removed} messages, ${data.messages_after} remaining (trigger: ${data.trigger})`
       );
       return;
     }
@@ -434,11 +434,11 @@
     const metrics = data.metrics || {};
     const chips = [
       chip("steps", data.steps),
-      chip("工具", (data.tool_calls || []).length),
-      chip("结束", data.termination_reason || "completed"),
+      chip("tools", (data.tool_calls || []).length),
+      chip("termination", data.termination_reason || "completed"),
     ];
     if (metrics.llm_calls) chips.push(chip("llm", metrics.llm_calls));
-    if (metrics.tool_time_ms) chips.push(chip("工具耗时", (metrics.tool_time_ms / 1000).toFixed(1) + "s"));
+    if (metrics.tool_time_ms) chips.push(chip("tool time", (metrics.tool_time_ms / 1000).toFixed(1) + "s"));
     strip.innerHTML = chips.join("");
     els.stream.appendChild(strip);
     scrollToBottom();
@@ -448,7 +448,7 @@
 
   function showApproval(payload) {
     pendingApprovalId = payload.id;
-    els.approvalTool.textContent = payload.tool?.name || "未知工具";
+    els.approvalTool.textContent = payload.tool?.name || "Unknown tool";
     els.approvalArgs.textContent = JSON.stringify(payload.tool?.arguments ?? {}, null, 2);
     els.approvalReason.textContent = payload.reason || "";
     els.approvalTranscript.textContent = (payload.transcript || "").slice(0, 6000);
@@ -473,7 +473,7 @@
     hideApproval();
   });
 
-  /* ── WebSocket ── */
+  /* ── WebSocket 连接 ── */
 
   function send(payload) {
     if (ws && connected) ws.send(JSON.stringify(payload));
@@ -526,11 +526,11 @@
         refreshStats();
         break;
       case "run_cancelled":
-        systemNote("中断", "回合已取消");
+        systemNote("Interrupted", "Turn canceled");
         break;
       case "run_error":
         setRunning(false);
-        systemNote("错误", msg.message || "未知错误", "system-note--error");
+        systemNote("Error", msg.message || "Unknown error", "system-note--error");
         break;
       case "user_message":
         renderUser(msg.text || "", "ws", msg.mode || mode);
@@ -555,7 +555,7 @@
         refreshSessions();
         refreshWorkspaces();
         refreshStats();
-        systemNote("工作区", "已切换到 " + (msg.info?.project || ""));
+        systemNote("Workspace", "Switched to " + (msg.info?.project || ""));
         break;
       case "approval_request":
         showApproval(msg);
@@ -578,7 +578,7 @@
     if (viewedSessionId) {
       const resumed = await tryResumeSession(viewedSessionId);
       if (!resumed) {
-        toast("未能恢复该会话，已提交到当前服务端会话");
+        toast("Could not resume the session. Submitted to the current server session instead.");
       }
     }
     if (running) return; // 恢复期间可能被其他端的回合占用
@@ -627,11 +627,11 @@
         return;
       }
       applyModel(data);
-      toast(effort ? "已切换 effort " + effort : "已切换模型 " + next);
+      toast(effort ? "Reasoning effort set to " + effort : "Model set to " + next);
       refreshSessions();
       refreshStats();
     } catch (_err) {
-      toast("切换失败");
+      toast("Could not switch models");
     }
   }
 
@@ -699,7 +699,7 @@
       resetView(true);
       refreshInfo();
     } catch (_err) {
-      toast("新建会话失败");
+      toast("Could not create a session");
     }
   });
 
@@ -733,7 +733,7 @@
       const plus = document.createElement("button");
       plus.className = "drop-menu__plus";
       plus.textContent = "＋";
-      plus.title = "新建工作区";
+      plus.title = "Add workspace";
       plus.addEventListener("click", () => {
         closeDrops();
         els.workspaceModal.hidden = false;
@@ -748,7 +748,7 @@
 
   async function switchWorkspace(pathText) {
     const path = String(pathText || "").trim();
-    if (!path) return toast("请输入工作区路径");
+    if (!path) return toast("Enter a workspace path");
     try {
       const res = await fetch("/api/workspaces", {
         method: "POST",
@@ -766,9 +766,9 @@
       refreshSessions();
       refreshStats();
       refreshWorkspaces();
-      toast("已切换工作区 " + path);
+      toast("Switched workspace to " + path);
     } catch (_err) {
-      toast("切换工作区失败");
+      toast("Could not switch workspaces");
     }
   }
 
@@ -803,8 +803,8 @@
           els.branchMenu.appendChild(item);
         }
       };
-      section("本地分支", data.local);
-      section("远端分支", data.remote);
+      section("Local branches", data.local);
+      section("Remote branches", data.remote);
     } catch (_err) {
       /* 非 git 工作区时忽略 */
     }
@@ -822,11 +822,11 @@
         toast(data.error);
         return;
       }
-      toast("已切换到分支 " + name);
+      toast("Switched to branch " + name);
       refreshGitBranches();
       refreshInfo();
     } catch (_err) {
-      toast("切换分支失败");
+      toast("Could not switch branches");
     }
   }
 
@@ -879,8 +879,8 @@
     wrap.id = "empty";
     wrap.innerHTML =
       '<p class="empty__eyebrow">cade / web workbench</p>' +
-      '<p class="empty__title">选择执行模式，向工作台提出第一个任务。</p>' +
-      '<p class="empty__sub">事件流实时落盘为会话账本；刷新页面后可在左侧恢复最近会话。</p>';
+      '<p class="empty__title">Choose a mode and enter your first task.</p>' +
+      '<p class="empty__sub">Events are saved as they arrive. After refreshing, resume a recent session from the sidebar.</p>';
     els.stream.appendChild(wrap);
     els.empty = wrap;
   }
@@ -894,11 +894,11 @@
     live.className = "session-item is-current";
     const liveTitle = document.createElement("span");
     liveTitle.className = "session-item__title";
-    liveTitle.textContent = "● 新对话";
+    liveTitle.textContent = "● New conversation";
     live.appendChild(liveTitle);
     live.addEventListener("click", () => {
       resetView(true);
-      toast("已开始新对话（服务端会话不变）");
+      toast("Started a new view. The server session is unchanged.");
     });
     li.appendChild(live);
     els.sessionList.appendChild(li);
@@ -912,7 +912,7 @@
         "session-item" + (item.id === data.current ? " is-current" : "");
       const title = document.createElement("span");
       title.className = "session-item__title";
-      title.textContent = item.title || "未命名会话";
+      title.textContent = item.title || "Untitled session";
       btn.appendChild(title);
       btn.addEventListener("click", () => resumeSession(item.id));
       li2.appendChild(btn);
@@ -945,7 +945,7 @@
       return;
     }
     await loadSession(sessionId, "live");
-    toast("已恢复会话，可以继续对话");
+    toast("Session resumed. You can continue the conversation.");
   }
 
   async function loadSession(sessionId, mode) {
@@ -955,9 +955,9 @@
       if (data.error) return toast(data.error);
       resetView(false);
       renderTranscript(data, { live: mode === "live" });
-      if (mode !== "live") toast("已加载会话 " + sessionId);
+      if (mode !== "live") toast("Loaded session " + sessionId);
     } catch (_err) {
-      toast("加载会话失败");
+      toast("Could not load the session");
     }
   }
 
@@ -968,20 +968,20 @@
     banner.className = "system-note";
     banner.innerHTML =
       '<span class="system-note__tag">' +
-      (live ? "已恢复" : "历史") +
-      "</span><span>会话 " +
+      (live ? "Resumed" : "History") +
+      "</span><span>Session " +
       esc(data.id) +
       " · " +
       esc(data.title || "") +
-      (live ? " · 可继续对话" : " · 只读回放，不影响实时会话") +
+      (live ? " · Ready to continue" : " · Read-only replay; the live session is unchanged") +
       "</span>";
     const backBtn = document.createElement("button");
     backBtn.className = "btn btn--ghost";
     backBtn.style.cssText = "margin:2px 0 12px 78px;";
-    backBtn.textContent = live ? "清空视图" : "← 新对话";
+    backBtn.textContent = live ? "Clear view" : "← New conversation";
     backBtn.addEventListener("click", () => {
       resetView(true);
-      toast(live ? "已清空视图" : "已开始新对话（服务端会话不变）");
+      toast(live ? "View cleared" : "Started a new view. The server session is unchanged.");
     });
     els.stream.append(banner, backBtn);
 
@@ -1001,11 +1001,11 @@
         }
         if (text) renderAssistantReadonly(text, entry.id);
       } else if (inner.type === "tool_use") {
-        systemNote("工具", `${inner.data?.name || "tool"} — ${String(inner.data?.input ?? "")}`.slice(0, 300));
+        systemNote("Tool", `${inner.data?.name || "tool"} — ${String(inner.data?.input ?? "")}`.slice(0, 300));
       } else if (inner.type === "tool_result") {
-        systemNote("结果", `${inner.data?.status || "ok"} ${inner.data?.tool_use_id || ""}`.slice(0, 200));
+        systemNote("Result", `${inner.data?.status || "ok"} ${inner.data?.tool_use_id || ""}`.slice(0, 200));
       } else if (inner.type === "context_window_reset") {
-        systemNote("换窗", `窗口 ${inner.data?.window_id || "?"} · ${inner.data?.messages_after ?? "?"} 条消息`);
+        systemNote("Rollover", `Window ${inner.data?.window_id || "?"} · ${inner.data?.messages_after ?? "?"} messages`);
       }
     }
     scrollToBottom(true);
@@ -1113,7 +1113,7 @@
       const plus = document.createElement("button");
       plus.className = "drop-menu__plus";
       plus.textContent = "＋";
-      plus.title = "自定义模型";
+      plus.title = "Custom model";
       plus.addEventListener("click", () => {
         closeDrops();
         els.modelModal.hidden = false;

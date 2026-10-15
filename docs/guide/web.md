@@ -1,36 +1,30 @@
-# Web 浏览器工作台
+# Browser workspace
 
-除了终端 TUI 之外，Cade 还内置了现代化的 Web 浏览器工作台，适合习惯使用图形化界面、或希望在多显示器/远程服务器上进行协作开发的团队。
+Cade includes a browser interface in addition to the terminal TUI.
 
----
+## Start the workspace
 
-## 1. 启动 Web 工作台
-
-在项目根目录下运行：
+From the project root, run:
 
 ```bash
 cade web
 ```
 
-Cade 将在后台启动内置的异步 HTTP/WebSocket 服务，并在终端打印访问地址（默认 `http://127.0.0.1:8000`）。同时系统会自动在你的默认浏览器中打开该页面。
+Cade starts its HTTP/WebSocket service and prints the address, which defaults to `http://127.0.0.1:8787`.
 
-### 自定义主机与端口
+### Set the host and port
 
-如果你在远程开发机或容器中使用 Cade，希望在局域网内访问：
+To bind the service to a remote development machine's or container's network interfaces:
 
 ```bash
 cade web --host 0.0.0.0 --port 9000
 ```
 
----
+See the [web host reference](../web.md) for access and operational details before exposing the service.
 
-## 2. 核心界面特性
+## Interface features
 
-1. **可视化对话与思考流（Thinking Stream）**：
-   清晰折叠或展开模型的深度思考链（Reasoning Process），实时显示大模型的打字机流式输出。
-2. **富文本文件 Diff 审查**：
-   当 Agent 执行代码修改时，Web 界面提供并排（Side-by-side）或行内（Inline）的高亮 Diff 比较，增删变动一目了然。
-3. **历史会话与分支管理**：
-   无需敲击命令行即可在左侧抽屉中浏览历史会话、创建分支（Fork）或一键回滚代码快照。
-4. **交互式审批卡片**：
-   在 Act 模式下，写操作和 Shell 命令会渲染为直观的审批弹窗，支持一键点击“允许执行”或“拒绝并补充建议”。
+- Expand or collapse reasoning content and view streamed model output.
+- Review file diffs with highlighted additions and deletions.
+- Browse session history and manage branches and snapshots.
+- Approve or deny operations in approval cards, with optional feedback.

@@ -1,112 +1,63 @@
-# 请求上下文与预算策略
+# Request context and budget policy
 
-本文说明请求投影、证据准入、输入预测和换窗算法；运行生命周期与状态归属见
-[架构说明](architecture.md)，历史原文读取见 [会话指南](guide/sessions.md)。实现入口为
-[请求组装器](../src/cade/agent/request.py)、
-[上下文策略](../src/cade/agent/context_policy.py) 和
-[上下文管理器](../src/cade/agent/context_manager.py)。
+This page describes request projections, evidence admission, input prediction, and rollover. See the [architecture](architecture.md) for runtime and state ownership, and [Sessions](guide/sessions.md) for original history retrieval. Implementation entry points are the [request assembler](../src/cade/agent/request.py), [context policy](../src/cade/agent/context_policy.py), and [context manager](../src/cade/agent/context_manager.py).
 
-## 请求投影与预算
+## Request projection and budgets
 
-session 追加事件与外置 artifact 保存会话事实，`DefaultRequestAssembler` 为每次
-模型请求生成临时投影。`ContextBlock` 表示收集方已决定提供给模型的完整上下文。
-请求直接使用当前前缀，并重新收集各 section 的完整快照。
-规则、NOTE、验证事实和运行状态更新后替换旧投影，删除的状态退出下一次请求。
-每次请求的 trace 记录全部选定上下文块及收集方的截断诊断。
-`ContextPriority` 仅控制稳定排序：INSTRUCTION 在前，CONTEXT 随后；同档保留
-收集顺序。是否提供内容由 collector/section 决定，不由优先级或剩余预算决定。
+Session append events and external artifacts preserve facts. `DefaultRequestAssembler` creates a temporary projection for each model request. A `ContextBlock` is complete context that its collector has selected for the model. Requests use the current prefix and recollect each section's complete snapshot. Updated rules, NOTE, verification facts, and runtime state replace old projections. Deleted state leaves the next request. The trace records all selected blocks and collector truncation diagnostics.
 
-不可变 `ContextPolicy` 管理物理窗口、输出预留、额外余量、证据准入与换窗工作集。
-固定前缀、工具 schema、全部选定块、持久状态和活动消息共享输入预算。
-组装器不丢弃或再次截断 ContextBlock。收集失败会明确报告，不能跳过失败 section
-继续发送。收集方生成的有界目录或摘要仍通过 trace 标注截断与原文位置。
+`ContextPriority` controls stable ordering only: INSTRUCTION comes before CONTEXT, preserving collection order within each priority. Collectors and sections decide inclusion, not priority or remaining budget.
 
-预算参数及默认值见 [配置指南](guide/configuration.md)。物理窗口来自
-model/provider 元数据，用户可覆盖窗口大小；fallback 到较小模型时收紧预算。
-输入预算按 `physical_window = input_budget + output_reserve + headroom` 计算。
-增大单次输出上限时，先增加输出预留，再缩小输入预算。支持输出上限的 transport
-将预留下发；ChatGPT Codex 后端的预留用于运行时预算，审计记录
-`output_limit_supported=false`。
+Immutable `ContextPolicy` manages the physical window, output reserve, safety margin, evidence admission, and rollover working set. The fixed prefix, tool schemas, selected blocks, persistent state, and active messages share the input budget. The assembler neither drops nor trims `ContextBlock` content again. Collection failures are explicit; a failed section cannot be skipped to send a request. Collector-generated bounded catalogs and summaries still report truncation and source locations in the trace.
 
-新增输入预留 `next_input_allowance` 最多为触发预算的八分之一，准入目标为
-`rotation_threshold - next_input_allowance`。当前输入预测加上新增输入预留达到
-触发预算时提前换窗，比例阈值和显式 token 阈值提供触发上限。输出预留与额外余量
-在输入预算中各扣除一次，CLI 与运行时从同一个 policy 获取预算。
+See [Configuration](guide/configuration.md) for parameters and defaults. Model/provider metadata supplies the physical window; users can override it. Fallback to a smaller model tightens budgets:
 
-## 输入预测与证据准入
+```text
+physical_window = input_budget + output_reserve + headroom
+```
 
-整体输入预测以成功请求的 provider 用量为锚点，通过消息增减估算后续差额。原始
-历史、前缀和配置保持稳定时，NOTE 更新、状态替换与工具裁剪保留实测基线；原始
-历史被替换、前缀或配置改变时，预测回退到本地估算。锚点采用当前窗口中成功请求
-的正输入用量。本地预测用于准入与提前换窗，实际用量由 provider 返回。
+Increasing the output limit first increases output reserve, reducing input budget. Supported transports send that reserve as an output limit. For ChatGPT Codex, the reserve controls runtime budgeting only; audits record `output_limit_supported=false`.
 
-文本差额按解码后的消息正文和工具参数计量，结构化和多模态内容采用保守估算。
+`next_input_allowance` is capped at one-eighth of the trigger budget. The admission target is `rotation_threshold - next_input_allowance`. When predicted input plus this allowance reaches the trigger budget, rollover occurs early. Ratio and explicit token thresholds cap the trigger. Output reserve and headroom are each subtracted once. CLI and runtime read the same policy.
 
-工具正文从新到旧共享证据配额，受输入预算和 `agent.evidence_token_budget` 限制。
-裁剪投影包含 tool-call ID、执行状态和原文恢复提示，原始结果保留在会话事实中。技能正文和声明为 durable 的工具状态
-受保护，多模态结果保持原有内容。小正文比引用更短时保留原文，大正文按可用证据
-预算生成头尾预览，引用本身的 token 开销计入配额和完整请求。
+## Input prediction and evidence admission
 
-下一次 provider 请求在工具执行完成后组装，实际工具结果参与证据准入。尚未执行
-的调用使用有界的新增输入预留；当前工具契约缺少可靠的输出上限和历史分布，预留
-按统一额度计算。
+Overall prediction anchors to successful provider input usage and estimates later message differences. With stable raw history, prefix, and configuration, NOTE updates, state replacement, and tool trimming retain the measured baseline. Replacing raw history or changing the prefix or configuration invalidates it and returns prediction to local estimates. Anchors use positive input usage from successful requests in the current window. Local prediction controls admission and early rollover; providers report actual usage.
 
-`context_lifetime=durable` 的工具结果可通过 `context_key` 声明状态替换关系。
-同一键的最新成功版本受保护，旧版本改为 history 索引；混合并行组中需要保留的
-旧结果标记为过期。无键的持久结果作为独立事实保留。
+Text differences measure decoded message bodies and tool arguments. Structured and multimodal content use conservative estimates.
 
-准入以最终请求为依据。持久状态和新增证据使预测超预算时，先收紧旧证据投影，
-再将旧的完整工具交互替换为带调用 ID 的 history 索引，最后回收已结束轮次的
-普通消息和旧索引；近期完整组和持久组保留。
-释放空间后优先恢复近期证据原文，再判断是否换窗，各阶段调整最多三次。预算充足
-时，工具调用参数和结果保持原文；预算不足时，策略裁剪证据或回收完整旧交互。
-展示格式适配器负责消息格式转换，内容选择和保留由类型化策略处理。
+Tool bodies share an evidence quota newest first, bounded by input budget and `agent.evidence_token_budget`. Trimmed projections include tool-call IDs, execution status, and recovery references. Original results remain in session facts. Skill content and durable tool state are protected; multimodal content stays intact. Small bodies shorter than references stay as original text. Larger bodies use head/tail previews sized to the available evidence budget. Reference token overhead counts toward both quota and full request.
 
-准入目标包含下一轮预留，是回收和换窗的软目标；安全输入预算是发送硬边界。
-回收和可用换窗后仍超过安全输入预算时，`RequestAssembly.assembly_error` 提供
-诊断，`wire_messages` 为空。发送边界调用 `require_sendable()` 拒绝该投影，主循环
-以 `context_error` 结束并报告输入估算、预算和必需输入规模，不调用 provider。
+The next request is assembled after tools finish, so actual tool results participate in evidence admission. Calls not yet executed receive a bounded new-input allowance. Current tool contracts do not provide reliable output limits or historical distributions, so this uses a uniform allowance.
 
-## 换窗工作集
+A `context_lifetime=durable` result can declare state replacement with `context_key`. The latest successful value per key is protected. Older versions become history indexes; retained old results in mixed parallel groups are marked stale. Durable results without keys remain independent facts.
 
-自动换窗带走启动上下文、当前用户请求、持久工具状态和最近一组完整交互。近期
-交互受输入预算和 `agent.working_set_token_budget` 限制，可将该配额设为零。
-工具调用与结果整组保留，大正文改为历史引用；整组仍放不下时，使用有界操作索引和 history 恢复。
-新窗口重新加载当前 NOTE、验证事实和运行状态，换窗保留选定的消息与操作索引，
-旧窗口内容通过历史记录查询。
+Admission uses the final request. If persistent state and new evidence exceed the predicted budget, the policy first tightens old evidence, then replaces old complete tool interactions with history indexes containing call IDs, and finally reclaims ordinary messages and old indexes from completed turns. Recent complete groups and durable groups remain.
 
-自动 token 换窗要求必需输入能够容纳且存在可回收历史，手动或模型请求的换窗
-独立执行。`/compact` 与 `/rollover` 使用当前模型预算策略，替换历史后清除
-动态状态和旧 provider 用量锚点；下次请求重新收集目录与 section。
-明确的 provider 上下文超限最多尝试一次恢复，恢复路径随自动换窗配置
-启用。仍超限的请求保留 provider 错误。
+After freeing space, the policy restores recent original evidence before deciding on rollover. Each adjustment phase runs at most three times. With enough budget, arguments and results stay intact; otherwise, evidence is trimmed or complete old interactions reclaimed. Format adapters convert message formats; typed policies select and retain content.
 
-## 预算观测
+The admission target includes the next-turn allowance and is a soft reclamation and rollover target. The safe input budget is the hard send boundary. If reclamation and available rollover cannot fit the request, `RequestAssembly.assembly_error` supplies diagnostics and `wire_messages` is empty. The send boundary calls `require_sendable()` to reject it. The loop ends with `context_error`, reporting estimated input, budget, and required input without calling the provider.
 
-`RequestAssembly.context_snapshot` 提供
-物理与有效窗口、固定前缀、持久状态、工作消息、证据、输出预留、余量、剩余预算、
-新增输入预留、准入目标、下一轮输入预测、窗口编号与换窗原因。分项复用请求的
-本地计量函数，标记 `category_source=local`；其总量为 `category_total_tokens`，
-provider 锚定的输入预测为 `total_input_tokens`。
+## Rollover working set
 
-TUI `/context` 和 web 状态栏使用同一请求组装器的只读投影，显示当前预测和
-估算来源；`/context` 同时展示有效输入预算和生命周期分项。累计用量与费用来自 provider。
+Automatic rollover carries startup context, the current user request, durable tool state, and the latest complete interaction. The input budget and `agent.working_set_token_budget` constrain recent interaction content; setting the quota to zero disables that quota. Tool calls and results stay paired, with large bodies replaced by history references. If a group still does not fit, a bounded operation index supports history recovery.
 
-预算分项按注入位置归因：当前前缀中的混合运行状态计入 fixed prefix，NOTE、
-验证事实、当前用户意图与受保护工具组计入 durable。审计保存快照、选定块的
-来源、证据回收量，以及换窗条件未满足的原因。
+The new window reloads current NOTE, verification facts, and runtime state. Selected messages and operation indexes continue; original window content stays queryable through history.
 
-## 请求审计与换窗记录
+Automatic token rollover requires required input to fit and reclaimable history to exist. Manual or model-requested rollover runs independently. `/compact` and `/rollover` use the current model policy. Replacing history clears dynamic state and old provider usage anchors; the next request recollects catalogs and sections. Explicit provider context overflow permits at most one recovery attempt when automatic rollover is enabled. Continued overflow retains the provider error.
 
-普通 agent 请求发送前，`before_provider_request` hook 接收最终
-`RequestAssembly` 的 envelope，session 记录 BLAKE2b 请求指纹（32 字节摘要）、
-请求规模、provider 信息、options、composition ID 与组装 trace。该记录可用于
-关联实际请求与预算决策；完整 wire payload 由当次 assembly 持有。
+## Budget observations
 
-`context_window_reset` 保存完整、类型化的 surface replacement、来源 entry IDs
-和 generation。回放校验来源 IDs 与当前分支前缀的对应关系、generation 递增、
-消息结构和工具调用配对。replacement 内容采用上述来源与结构校验，现有记录
-提供的指纹针对 provider 请求。
+`RequestAssembly.context_snapshot` exposes physical and effective windows, fixed prefix, persistent state, working messages, evidence, output reserve, headroom, remaining budget, new-input allowance, admission target, next-turn prediction, window number, and rollover reason. Components reuse local request measurement and declare `category_source=local`. Their sum is `category_total_tokens`; provider-anchored prediction is `total_input_tokens`.
 
-请求审计实现见 [SessionRecorder](../src/cade/harness/session/recorder.py)，换窗回放
-实现见 [session surface](../src/cade/harness/session/surface.py)。
+TUI `/context` and the web status bar use a read-only projection from the same assembler. They show the current prediction and estimate source. `/context` also shows effective input budget and lifecycle components. Accumulated usage and costs come from providers.
+
+Components are attributed by injection location. Mixed runtime state in the current prefix counts as fixed prefix. NOTE, verification facts, current user intent, and protected tool groups count as durable. Audits record snapshots, selected-block sources, reclaimed evidence, and reasons rollover conditions were not met.
+
+## Request audits and rollover records
+
+Before a normal agent request, `before_provider_request` receives the final `RequestAssembly` envelope. Session records store a BLAKE2b request fingerprint (32-byte digest), request size, provider information, options, composition ID, and assembly trace. These correlate requests with budget decisions. The current assembly owns the full wire payload.
+
+`context_window_reset` stores the complete typed surface replacement, source entry IDs, and generation. Replay validates source IDs against the branch prefix, increasing generation, message structure, and tool pairing. Replacement validation uses these source and structure checks; existing fingerprints describe provider requests.
+
+See [SessionRecorder](../src/cade/harness/session/recorder.py) for request auditing and [session surface](../src/cade/harness/session/surface.py) for rollover replay.

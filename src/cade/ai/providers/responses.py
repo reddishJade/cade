@@ -364,7 +364,7 @@ def _unseen_reasoning_suffix(previous: str, complete: str) -> str:
 
 
 class OpenAIResponsesProvider:
-    """OpenAI Responses API provider。"""
+    """OpenAI Responses API 适配器。"""
 
     def __init__(
         self,

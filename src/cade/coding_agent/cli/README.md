@@ -1,12 +1,10 @@
-# Cade 命令行入口处理
+# CLI command handlers
 
-本目录处理编码产品的配置、认证与会话管理子命令。`src/cade/main.py` 负责解析参数、
-选择运行模式和管理入口生命周期。
+This directory handles configuration, authentication, and session subcommands. `src/cade/main.py` parses arguments, selects runtime modes, and manages entry-point lifecycles.
 
-- [auth_cmd.py](auth_cmd.py)：认证命令，用户选择与 API key 向导通过 TUI 呈现。
-- [config_cmd.py](config_cmd.py)：配置命令，调用终端配置浏览器。
-- [session_cmd.py](session_cmd.py)：持久会话的查询、导出和控制。
-- [session_control.py](session_control.py)：exec 与 session 命令使用的跨进程运行状态和中断请求。
+- [auth_cmd.py](auth_cmd.py): authentication commands with TUI selection and API key prompts.
+- [config_cmd.py](config_cmd.py): configuration commands using the terminal settings browser.
+- [session_cmd.py](session_cmd.py): persistent session queries, export, and control.
+- [session_control.py](session_control.py): cross-process run state and interruption for exec and session commands.
 
-运行模式在 [modes/](../modes/README.md)，公共应用操作在
-[interaction/](../interaction/README.md)，浏览器宿主在 [server/](../../server/)。
+See [modes/](../modes/README.md) for hosts, [interaction/](../interaction/README.md) for shared operations, and [server/](../../server/) for the browser host.

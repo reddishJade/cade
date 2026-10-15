@@ -98,7 +98,7 @@ def build_bash_tool(
     )
 
 
-# ── Schema ──
+# ── 参数定义 ──
 
 
 def _build_schema(shell_syntax: str) -> dict[str, Any]:
@@ -138,7 +138,7 @@ def _build_schema(shell_syntax: str) -> dict[str, Any]:
     }
 
 
-# ── Prompt ──
+# ── 提示词 ──
 
 
 def _build_prompt_guidelines(
@@ -162,7 +162,7 @@ def _build_prompt_guidelines(
                 ]
             )
         else:
-            # pwsh 7+
+            # PowerShell 7 及以上版本。
             guidelines.extend(
                 [
                     "PowerShell 7+ detected: use `&&` or `;` to chain commands.",

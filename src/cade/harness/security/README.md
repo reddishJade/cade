@@ -1,62 +1,32 @@
-# Cade Harness Security — 权限引擎与安全审查流水线
+# Permissions and review
 
-`security` 模块是 Cade 运行时的安全防护中枢，专注于解决：**如何根据当前执行模式与策略规则，精确判定工具调用权限；如何对高危 Shell 命令进行语法级语义分析；以及如何优雅协调人机审批（HITL）与模型自动审查。**
+`security` evaluates tools against execution modes, policies, and shell effects and coordinates user approval with automatic model review.
 
----
+## Decision flow
 
-## 1. 核心架构与决策流水线
-
-```
-                      ToolCall 参数与目标
-                               │
-                               ▼
-                        PermissionEngine
-                               │
-          ┌────────────────────┴────────────────────┐
-          ▼                                         ▼
-   静态与边界策略求值                         Shell 语法语义分析
-(PathBoundary / Sensitive)                  (shell_analyzer.py)
-          │                                         │
-          └────────────────────┬────────────────────┘
-                               ▼
-                    规则匹配器 (findLast 覆盖)
-                               │
-                               ▼
-        ┌──────────────────────────────────────────────┐
-        │  决策 Verdict (ALLOW / DENY / REVIEW)        │
-        └──────────────────────┬───────────────────────┘
-                               │ (遇 REVIEW 需审批)
-                               ▼
-            ┌──────────────────┴──────────────────┐
-            ▼ (Act 模式)                          ▼ (Build 模式)
-     HITL 交互式确认弹窗                   AutoApprovalReviewer
-     (Once / Always / Deny)                (独立模型安全审查)
-            │                                     │
-            └──────────────────┬──────────────────┘
-                               ▼
-                     授权记录落盘 (GrantStore)
+```text
+Tool arguments and targets
+  → PermissionEngine
+    → Static and path boundary policies
+    → Shell syntax and effect analysis
+    → Rule matching and constraint resolution
+  → Verdict: ALLOW / DENY / REVIEW
+    → Act: user approval
+    → Build: AutoApprovalReviewer
+  → GrantStore for supported authorization scopes
 ```
 
-### 核心模块与文件
-- **权限引擎核心 ([permissions.py](permissions.py))**：`PermissionEngine` 综合当前执行模式、已记录授权凭证与求值器流水线，给出最终裁决。
-- **Shell 语义分析器 ([shell_analyzer.py](shell_analyzer.py))**：
-  - 支持 POSIX Bash、PowerShell 与 CMD 命令语法树解析；
-  - 自动提取命令读写的具体文件、重定向目标及潜在危险动作（删除、环境变量篡改、网络外发等）。
-- **审批流水线 ([approval.py](approval.py) / [approval_reviewer.py](approval_reviewer.py))**：
-  - `HITLDecision` / `HITLResult`：人机协同审批回调；
-  - `AutoApprovalReviewer`：Build 模式下调动独立的大模型对越界或写操作执行非交互式自动审查。
-- **规则匹配引擎 ([rule_matcher.py](rule_matcher.py))**：支持 `findLast` 倒序命中语义，支持模式通配符与特定工具覆盖。
+### Files
 
----
+- [permissions.py](permissions.py): combine mode, grants, and evaluators into a permission decision.
+- [shell_analyzer.py](shell_analyzer.py): analyze POSIX, PowerShell, and CMD syntax; extract paths, redirections, and potentially destructive or external effects.
+- [approval.py](approval.py) and [approval_reviewer.py](approval_reviewer.py): `HITLDecision`, `HITLResult`, and independent automatic review.
+- [rule_matcher.py](rule_matcher.py): wildcard and tool-specific rule matching. See the [architecture](../../../../docs/architecture.md#modes-permissions-and-execution-environment) for effective rule ordering.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **无物理隔离假定**：权限分析旨在辅助用户认知潜在风险与拦截越界操作，不构成操作系统级的绝对沙箱隔离（隔离必须依赖外部环境或 `bwrap`）。
-- **规则覆盖确定性**：规则匹配严格按照“后定义优先（findLast）”原则执行，确保用户本地配置可以精确覆盖默认全局规则。
-- **正交依赖**：权限逻辑不依赖 `observability` 的实现细节；授权凭证存储由独立的 `GrantStore` 负责。
+Permission analysis authorizes actions and highlights risk; it is not OS isolation. Sandboxing belongs to the execution environment. Rule precedence must be deterministic so user overrides behave consistently. Permission logic does not depend on observability implementations. `GrantStore` owns grant persistence.
 
----
+## Submodules
 
-## 3. 子模块分工
-
-- **[permission_model/](permission_model/README.md)**：细粒度权限领域实体、求值器接口（`PolicyEvaluator`）与凭证存储实现。
+[permission_model/](permission_model/README.md) contains domain entities, `PolicyEvaluator` interfaces, and grant stores.

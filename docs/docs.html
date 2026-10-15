@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>cade — 开发者技术文档与参考手册</title>
-  <meta name="description" id="metaDesc" content="Cade 官方技术文档：统一内核架构、无损历史与动态投影、95% 无摘要换窗、按需 Memory、执行模式、内置工具体系、权限安全与三端工作台。">
+  <title>Cade — Developer documentation</title>
+  <meta name="description" id="metaDesc" content="Cade architecture, sessions, context rollover, workspace memory, execution modes, tools, permissions, and host interfaces.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23141413'/%3E%3Cpath d='M18 20 L30 32 L18 44' stroke='%23d97757' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='34' y='40' width='14' height='6' rx='3' fill='%23e8e6dc'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,19 +12,6 @@
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script>
     (function() {
-      try {
-        var l = localStorage.getItem('cade-lang');
-        if (!l) {
-          var nav = (navigator.language || '').toLowerCase();
-          if (nav.indexOf('zh') === 0) l = 'zh';
-          else if (nav.indexOf('en') === 0) l = 'en';
-          else l = 'zh';
-        }
-        if (l === 'zh' || l === 'en') {
-          document.documentElement.dataset.lang = l;
-          document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
-        }
-      } catch (e) {}
       try {
         var t = localStorage.getItem('cade-theme');
         if (t === 'light' || t === 'dark') {
@@ -119,12 +106,8 @@
     a { color: inherit; text-decoration: none; }
     h1, h2, h3, h4, p { margin: 0; }
 
-    .lz, .le { display: inline; }
-    p.lz, p.le, div.lz, div.le, section.lz, section.le, ul.lz, ul.le, ol.lz, ol.le, table.lz, table.le { display: block; }
-    html[data-lang="zh"] .le { display: none !important; }
-    html[data-lang="en"] .lz { display: none !important; }
 
-    /* ---- Navbar ---- */
+    /* 导航栏。 */
     .docs-navbar {
       position: sticky;
       top: 0;
@@ -224,11 +207,11 @@
       background: var(--paper-3);
     }
     .btn-small { padding: 5px 10px; font-size: 13px; height: 32px; }
-    .theme-toggle, .lang-toggle { font-family: var(--font-mono); padding: 0 10px; min-width: 32px; }
+    .theme-toggle { font-family: var(--font-mono); padding: 0 10px; min-width: 32px; }
     .theme-icon { width: 15px; height: 15px; display: none; }
     .theme-icon.active { display: block; }
 
-    /* ---- Layout Container ---- */
+    /* 布局容器。 */
     .docs-container {
       display: flex;
       max-width: 1440px;
@@ -236,7 +219,7 @@
       min-height: calc(100vh - var(--header-h));
     }
 
-    /* ---- Sidebar ---- */
+    /* 侧边栏。 */
     .docs-sidebar {
       width: var(--sidebar-w);
       flex-shrink: 0;
@@ -289,7 +272,7 @@
       font-weight: 500;
     }
 
-    /* ---- Main Content ---- */
+    /* 正文。 */
     .docs-content {
       flex: 1;
       min-width: 0;
@@ -307,7 +290,7 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* ---- Typography & Components ---- */
+    /* 排版和组件。 */
     .breadcrumb {
       font-family: var(--font-mono);
       font-size: 12px;
@@ -377,7 +360,7 @@
     .docs-content li { margin-bottom: 6px; }
     .docs-content strong { color: var(--ink); }
 
-    /* Cards */
+    /* 卡片。 */
     .card-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -413,7 +396,7 @@
       line-height: 1.6;
     }
 
-    /* Badge */
+    /* 徽章。 */
     .badge {
       font-family: var(--font-mono);
       font-size: 11px;
@@ -424,7 +407,7 @@
       border: 1px solid var(--line-soft);
     }
 
-    /* Callouts */
+    /* 提示框。 */
     .callout {
       border-left: 3px solid var(--clay);
       background: var(--paper-2);
@@ -449,7 +432,7 @@
     }
     .callout p { margin: 0; font-size: 14px; color: var(--ink-soft); }
 
-    /* Tables */
+    /* 表格。 */
     .table-container {
       overflow-x: auto;
       margin: 24px 0 32px;
@@ -481,7 +464,7 @@
     tr:last-child td { border-bottom: none; }
     td code { font-size: 12.5px; }
 
-    /* Code Blocks */
+    /* 代码块。 */
     code {
       font-family: var(--font-mono);
       font-size: 13px;
@@ -535,7 +518,7 @@
     }
     .comment { color: rgba(216,213,203,.42); }
 
-    /* Mermaid */
+    /* Mermaid 图表。 */
     .mermaid-container {
       background: var(--paper-2);
       border: 1px solid var(--line-soft);
@@ -572,7 +555,7 @@
     }
     script[type="text/mermaid"] { display: none !important; }
 
-    /* Page Navigation */
+    /* 页面导航。 */
     .page-nav {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -612,7 +595,7 @@
       color: var(--ink);
     }
 
-    /* Responsive */
+    /* 响应式布局。 */
     @media (max-width: 900px) {
       .docs-sidebar { display: none; }
       .docs-content { padding: 28px 20px 64px; }
@@ -622,7 +605,7 @@
 </head>
 <body>
 
-  <!-- Top Navbar -->
+  <!-- 顶部导航栏。 -->
   <header class="docs-navbar">
     <a href="index.html" class="nav-brand" aria-label="Cade Home">
       <span class="logo-mark">&gt;_</span>
@@ -632,7 +615,7 @@
     <div class="nav-actions">
       <div class="search-box">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="docSearch" placeholder="搜索文档 (如: /undo, memory)...">
+        <input type="text" id="docSearch" placeholder="Search docs (for example, /undo or memory)…">
         <span class="search-kbd">/</span>
       </div>
       <button class="btn btn-small theme-toggle" id="themeBtn" aria-label="Toggle theme" title="Theme: auto">
@@ -640,11 +623,9 @@
         <svg class="theme-icon theme-light" data-mode="light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
         <svg class="theme-icon theme-dark" data-mode="dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
-      <button class="btn btn-small lang-toggle" id="langToggle" aria-label="Switch language">
-        <span class="lz">EN</span><span class="le">中</span>
-      </button>
-      <a href="index.html" class="btn btn-small" id="homeLink" title="Home / 首页">
-        <span class="lz">首页</span><span class="le">Home</span>
+
+      <a href="index.html" class="btn btn-small" id="homeLink" title="Home">
+        Home
       </a>
       <a href="https://github.com/reddishJade/cade" class="btn btn-small" target="_blank" rel="noopener">
         <span>GitHub</span>
@@ -653,166 +634,159 @@
   </header>
 
   <div class="docs-container">
-    <!-- Sidebar Navigation -->
+    <!-- 侧边导航。 -->
     <aside class="docs-sidebar">
       <div class="sidebar-group">
-        <div class="sidebar-title"><span class="lz">开始使用</span><span class="le">Getting Started</span></div>
-        <a href="#overview" class="sidebar-link active"><span class="lz">设计哲学与核心机制</span><span class="le">Philosophy & Overview</span></a>
-        <a href="#install" class="sidebar-link"><span class="lz">安装与环境准备</span><span class="le">Installation</span></a>
-        <a href="#quickstart" class="sidebar-link"><span class="lz">5 分钟快速上手</span><span class="le">Quickstart</span></a>
-        <a href="#architecture" class="sidebar-link"><span class="lz">统一内核与三端架构</span><span class="le">Unified Architecture</span></a>
+        <div class="sidebar-title">Getting Started</div>
+        <a href="#overview" class="sidebar-link active">Philosophy & Overview</a>
+        <a href="#install" class="sidebar-link">Installation</a>
+        <a href="#quickstart" class="sidebar-link">Quickstart</a>
+        <a href="#architecture" class="sidebar-link">Unified Architecture</a>
       </div>
 
       <div class="sidebar-group">
-        <div class="sidebar-title"><span class="lz">三大核心支柱</span><span class="le">Core Pillars</span></div>
-        <a href="#sessions" class="sidebar-link"><span class="lz">无损历史与动态投影 (/undo)</span><span class="le">Lossless History & Projections</span></a>
-        <a href="#context" class="sidebar-link"><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Context Rollover</span></a>
-        <a href="#memory" class="sidebar-link"><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></a>
+        <div class="sidebar-title">Core Pillars</div>
+        <a href="#sessions" class="sidebar-link">Lossless History & Projections</a>
+        <a href="#context" class="sidebar-link">Context Rollover</a>
+        <a href="#memory" class="sidebar-link">Durable Memory</a>
       </div>
 
       <div class="sidebar-group">
-        <div class="sidebar-title"><span class="lz">运行与安全机制</span><span class="le">Mechanisms & Safety</span></div>
-        <a href="#modes" class="sidebar-link"><span class="lz">执行模式 (Plan / Build / Act)</span><span class="le">Execution Modes</span></a>
-        <a href="#slash-commands" class="sidebar-link"><span class="lz">Slash 命令完全手册</span><span class="le">Slash Commands</span></a>
-        <a href="#tools" class="sidebar-link"><span class="lz">内置工具体系与操作安全</span><span class="le">Tools & Safety</span></a>
-        <a href="#security" class="sidebar-link"><span class="lz">权限审查与沙箱安全</span><span class="le">Permissions & Sandbox</span></a>
+        <div class="sidebar-title">Mechanisms & Safety</div>
+        <a href="#modes" class="sidebar-link">Execution Modes</a>
+        <a href="#slash-commands" class="sidebar-link">Slash Commands</a>
+        <a href="#tools" class="sidebar-link">Tools & Safety</a>
+        <a href="#security" class="sidebar-link">Permissions & Sandbox</a>
       </div>
 
       <div class="sidebar-group">
-        <div class="sidebar-title"><span class="lz">配置与扩展生态</span><span class="le">Configuration & Ecosystem</span></div>
-        <a href="#configuration" class="sidebar-link"><span class="lz">配置手册与环境变量</span><span class="le">Configuration</span></a>
-        <a href="#providers" class="sidebar-link"><span class="lz">模型与 Provider 接入</span><span class="le">AI Providers</span></a>
-        <a href="#mcp" class="sidebar-link"><span class="lz">MCP 外部服务扩展</span><span class="le">MCP Integration</span></a>
-        <a href="#skills" class="sidebar-link"><span class="lz">Skills 技能包定制</span><span class="le">Skills Development</span></a>
-        <a href="#subagents" class="sidebar-link"><span class="lz">Subagents 子代理</span><span class="le">Subagents</span></a>
-        <a href="#hooks" class="sidebar-link"><span class="lz">生命周期 Hooks</span><span class="le">Lifecycle Hooks</span></a>
+        <div class="sidebar-title">Configuration & Ecosystem</div>
+        <a href="#configuration" class="sidebar-link">Configuration</a>
+        <a href="#providers" class="sidebar-link">AI Providers</a>
+        <a href="#mcp" class="sidebar-link">MCP Integration</a>
+        <a href="#skills" class="sidebar-link">Skills Development</a>
+        <a href="#subagents" class="sidebar-link">Subagents</a>
+        <a href="#hooks" class="sidebar-link">Lifecycle Hooks</a>
       </div>
 
       <div class="sidebar-group">
-        <div class="sidebar-title"><span class="lz">三端交互界面</span><span class="le">Workbenches</span></div>
-        <a href="#tui" class="sidebar-link"><span class="lz">TUI 终端全屏工作台 (默认)</span><span class="le">TUI Workbench (Default)</span></a>
-        <a href="#cli" class="sidebar-link"><span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span></a>
-        <a href="#web" class="sidebar-link"><span class="lz">Web 浏览器工作台</span><span class="le">Web Workbench</span></a>
+        <div class="sidebar-title">Workbenches</div>
+        <a href="#tui" class="sidebar-link">TUI Workbench (Default)</a>
+        <a href="#cli" class="sidebar-link">TUI & exec</a>
+        <a href="#web" class="sidebar-link">Web Workbench</a>
       </div>
     </aside>
 
     <main class="docs-content">
 
-      <!-- ================= 1. OVERVIEW ================= -->
-      
+      <!-- 概览。 -->
+
 <article id="overview" class="doc-page active">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">设计哲学与核心机制</span><span class="le">Philosophy & Overview</span></span>
+          <a href="#">Docs</a> / <span class="current">Philosophy & Overview</span>
         </div>
-        <h1><span class="lz">Cade 设计理念与核心架构</span><span class="le">Cade Philosophy & Architecture</span></h1>
-        <p class="lead-text"><span class="lz">彻底摒弃失真的模型自我递归摘要，以不可篡改的无损历史与动态投影为基石。在 95% 上下文容量平滑换窗，借持久记忆跨越会话，原生驱动 TUI、CLI 与 Web 三端工作台。</span><span class="le">Abandoning lossy recursive self-summaries. Grounded in lossless event history, dynamic projections, zero-loss 95% context rollover, and durable memory across native TUI, CLI, and Web workbenches.</span></p>
+        <h1>Cade design and architecture</h1>
+        <p class="lead-text">Abandoning lossy recursive self-summaries. Grounded in lossless event history, dynamic projections, budgeted context rollover, and durable memory across native TUI, CLI, and Web workbenches.</p>
 
-        <h2><span class="lz">三大核心技术支柱</span><span class="le">Three Core Architectural Pillars</span></h2>
-        <p><span class="lz">主流自治 Coding Agent 在面对长程复杂任务时，往往因周期性递归自我总结而遗失精细行号与堆栈细节，进而产生严重的幻觉累积。Cade 采用确定性状态机与事件流，确立了面向真实工业级代码库的三大核心支柱：</span><span class="le">Mainstream autonomous coding agents frequently lose precise line numbers and stack traces through periodic recursive self-summarization, compounding hallucinations over time. Cade establishes three deterministic pillars built for real-world engineering:</span></p>
+        <h2>Core architecture</h2>
+        <p>Mainstream autonomous coding agents frequently lose precise line numbers and stack traces through periodic recursive self-summarization, compounding hallucinations over time. Cade establishes three deterministic pillars built for real-world engineering:</p>
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span><span class="lz">无损历史与动态投影</span><span class="le">Lossless History & Projections</span></span> <span class="badge">Pillar 1</span></div>
-            <p><span class="lz">会话以不可篡改的追加型日志（Append-only Event Log）持久记录，任何历史状态均可投影视角，支持毫秒级原子撤销（/undo），决不静默截断。</span><span class="le">Sessions persist as append-only event logs with dynamic projections. Snapshot pooling enables atomic file reverts and window rewinds without silent truncation.</span></p>
+            <div class="card-title"><span>Lossless History & Projections</span> <span class="badge">Pillar 1</span></div>
+            <p>Sessions persist as append-only event logs with dynamic projections. Snapshots support per-file restoration; separate history commands change the active conversation branch.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">95% 无摘要平滑换窗</span><span class="le">95% Summary-Free Rollover</span></span> <span class="badge">Pillar 2</span></div>
-            <p><span class="lz">当上下文触达窗口阈值（默认 95%）时，系统自动对冲冗余并无损继承核心任务目标，彻底摆脱模型自我总结带来的信息衰减与幻觉蔓延。</span><span class="le">Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs, preventing degradation from heuristic summaries.</span></p>
+            <div class="card-title"><span>Budgeted Context Rollover</span> <span class="badge">Pillar 2</span></div>
+            <p>Uses an input budget with a default ratio cap of 95% of the context window. Rollover retains task state and references to original history.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">按需 Memory</span><span class="le">On-Demand Memory</span></span> <span class="badge">Pillar 3</span></div>
-            <p><span class="lz">昂贵经验保存为 workspace Markdown，按需使用既有工具搜索、沿原始 History 来源核验；正常 turn 和恢复不加载 Memory。</span><span class="le">Costly findings live in workspace Markdown, searched with existing tools and checked against original history. Normal turns and resume do not load Memory.</span></p>
+            <div class="card-title"><span>On-Demand Memory</span> <span class="badge">Pillar 3</span></div>
+            <p>Costly findings live in workspace Markdown, searched with existing tools and checked against original history. Each request includes a catalog of up to 4 KiB with paths, titles, and opening hints. Full bodies are read on demand.</p>
           </div>
         </div>
 
-        <h2><span class="lz">系统数据流与工作流模型</span><span class="le">System Data Flow & Workflow Model</span></h2>
-        <p><span class="lz">在 Cade 中，任何交互请求均流经统一的运行时内核。内核负责安全沙箱门禁、工具调用并发分区以及事件历史的原子追加：</span><span class="le">In Cade, every interaction flows through a single unified runtime kernel responsible for sandbox policy gating, tool concurrency partitioning, and atomic event append:</span></p>
+        <h2>Data flow and workflow</h2>
+        <p>In Cade, every interaction flows through a single unified runtime kernel responsible for sandbox policy gating, tool concurrency partitioning, and atomic event append:</p>
 
         <div class="mermaid-container">
-          <script type="text/mermaid" data-lang="zh">
-flowchart LR
-    A["用户输入与任务目标"] --> B["统一运行时内核"]
-    B --> C["无损事件流与动态投影"]
-    C --> D["95% 换窗对冲引擎"]
-    C -->|显式保存| E["Workspace Memory"]
-    B --> F["三端工作台: TUI / CLI / Web"]
-          </script>
+
           <script type="text/mermaid" data-lang="en">
 flowchart LR
     A["User Inputs & Objectives"] --> B["Unified Runtime Kernel"]
     B --> C["Lossless Event Stream"]
-    C --> D["95% Rollover Engine"]
+    C --> D["Context Rollover Engine"]
     C -->|Explicit save| E["Workspace Memory"]
     B --> F["Tri-Workbenches: TUI / CLI / Web"]
           </script>
           <div class="mermaid-output"></div>
         </div>
 
-        <h2><span class="lz">设计不变量 (Core Invariants)</span><span class="le">Core Invariants</span></h2>
+        <h2>Core invariants</h2>
         <ul>
-          <li><span class="lz"><strong>确定性高于启发式</strong>：关键状态决策（如换窗、权限审查与回滚）由确定性代码判定，绝不依赖大模型的不稳定推断；</span><span class="le"><strong>Determinism over Heuristics</strong>: Critical lifecycle decisions (rollover, policy gating, reverts) are governed by deterministic algorithms, never left to LLM hallucinations;</span></li>
-          <li><span class="lz"><strong>真实代码库安全隔离</strong>：严格限制文件读写边界于工作区内，高危操作强制触发人类在环（HITL）确认；</span><span class="le"><strong>Sandbox Path Jailing</strong>: Strict path boundaries jail read/write operations to the workspace, with high-risk operations gated by HITL approvals;</span></li>
-          <li><span class="lz"><strong>全终端对等契约</strong>：TUI、CLI 与 Web 端完全基于同一套事件模型与工具集，保证跨端行为 100% 一致。</span><span class="le"><strong>Interface Parity</strong>: TUI, CLI, and Web share identical event models and toolsets, guaranteeing 100% behavioral parity.</span></li>
+          <li><strong>Determinism over Heuristics</strong>: Critical lifecycle decisions (rollover, policy gating, reverts) are governed by deterministic algorithms, never left to LLM hallucinations;</li>
+          <li><strong>Sandbox Path Jailing</strong>: Strict path boundaries jail read/write operations to the workspace, with high-risk operations gated by HITL approvals;</li>
+          <li><strong>Interface Parity</strong>: TUI, CLI, and Web share identical event models and toolsets, guaranteeing 100% behavioral parity.</li>
         </ul>
 
         <div class="page-nav">
           <div></div>
           <a href="#install" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">安装与环境准备</span><span class="le">Installation</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Installation →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 2. INSTALL ================= -->
+
+      <!-- 安装。 -->
       <article id="install" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">安装与环境准备</span><span class="le">Installation</span></span>
+          <a href="#">Docs</a> / <span class="current">Installation</span>
         </div>
-        <h1><span class="lz">安装与环境准备</span><span class="le">Installation & Prerequisites</span></h1>
-        <p class="lead-text"><span class="lz">Cade 需要 Python 3.12 或更高版本。推荐使用现代化包管理工具 uv 进行隔离安装与极速执行。</span><span class="le">Cade requires Python 3.12 or newer. We strongly recommend using the modern uv package manager for isolated global installations and instant execution.</span></p>
+        <h1>Installation and prerequisites</h1>
+        <p class="lead-text">Cade requires Python 3.12 or newer. We strongly recommend using the modern uv package manager for isolated global installations and instant execution.</p>
 
-        <h2><span class="lz">环境依赖检查</span><span class="le">System Prerequisites</span></h2>
-        <p><span class="lz">在安装 Cade 前，请确保你的系统满足以下基础环境：</span><span class="le">Before installing Cade, ensure your operating system meets the following prerequisites:</span></p>
+        <h2>System prerequisites</h2>
+        <p>Before installing Cade, ensure your operating system meets the following prerequisites:</p>
         <ul>
-          <li><span class="lz"><strong>Python</strong>：3.12.0 或更高版本；</span><span class="le"><strong>Python</strong>: Version 3.12.0 or higher;</span></li>
-          <li><span class="lz"><strong>操作系统</strong>：Linux (Ubuntu 20.04+, Debian 11+, Arch, Fedora), macOS 12+, 或 Windows 10/11 (推荐 WSL2)；</span><span class="le"><strong>Operating System</strong>: Linux (Ubuntu 20.04+, Debian 11+, Arch, Fedora), macOS 12+, or Windows 10/11 (WSL2 recommended);</span></li>
-          <li><span class="lz"><strong>Git</strong>：用于代码仓库上下文感知与版本快照回溯；</span><span class="le"><strong>Git</strong>: Required for repository context awareness and snapshot tracing;</span></li>
-          <li><span class="lz"><strong>Bubblewrap (可选但推荐)</strong>：Linux 下若启用沙箱隔离，建议安装 <code>bubblewrap</code> (Ubuntu/Debian: <code>sudo apt install bubblewrap</code>)。</span><span class="le"><strong>Bubblewrap (Optional but Recommended)</strong>: On Linux, install <code>bubblewrap</code> for containerized sandbox isolation (Ubuntu/Debian: <code>sudo apt install bubblewrap</code>).</span></li>
+          <li><strong>Python</strong>: Version 3.12.0 or higher;</li>
+          <li><strong>Operating System</strong>: Linux (Ubuntu 20.04+, Debian 11+, Arch, Fedora), macOS 12+, or Windows 10/11 (WSL2 recommended);</li>
+          <li><strong>Git</strong>: Required for repository context awareness and snapshot tracing;</li>
+          <li><strong>Bubblewrap (Required by default on Linux)</strong>: Install <code>bubblewrap</code> (Ubuntu/Debian: <code>sudo apt install bubblewrap</code>). Startup fails if it is missing. Linux bypasses bubblewrap only when <code>security.sandbox.mode</code> is <code>danger-full-access</code> and <code>security.sandbox.network_access</code> is <code>allow</code>.</li>
         </ul>
 
-        <h2><span class="lz">推荐：使用 uv tool 全局安装</span><span class="le">Recommended: Install via uv tool</span></h2>
-        <p><span class="lz"><code>uv tool install</code> 会在一个独立的虚拟环境中安装 Cade 并将其二进制可执行文件注入到你的系统 PATH 中：</span><span class="le"><code>uv tool install</code> packages Cade into an isolated virtual environment and links the CLI binary into your PATH:</span></p>
+        <h2>Install with uv tool</h2>
+        <p><code>uv tool install</code> packages Cade into an isolated virtual environment and links the CLI binary into your PATH:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code><span class="comment"># <span class="lz">从 GitHub 官方仓库一键安装全局工具</span><span class="le">Install globally from GitHub repository</span></span>
+          <pre><code><span class="comment"># 从 GitHub 仓库安装全局工具</span>
 uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
 
-<span class="comment"># <span class="lz">验证安装与版本</span><span class="le">Verify installation and check version</span></span>
-cade --version</code></pre>
+<span class="comment"># 检查 CLI 是否可用</span>
+cade --help</code></pre>
         </div>
 
-        <h2><span class="lz">方式二：通过 pip 安装</span><span class="le">Alternative: Install via pip</span></h2>
-        <p><span class="lz">如果你习惯使用原生 pip，建议在专用的虚拟环境中进行安装：</span><span class="le">If you prefer standard pip, install inside a dedicated virtual environment:</span></p>
+        <h2>Install with pip</h2>
+        <p>If you prefer standard pip, install inside a dedicated virtual environment:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>python3.12 -m venv ~/.venvs/cade
 source ~/.venvs/cade/bin/activate
 pip install git+https://github.com/reddishJade/cade.git</code></pre>
         </div>
 
-        <h2><span class="lz">方式三：源码克隆与开发者模式</span><span class="le">Alternative: Editable Development Install</span></h2>
-        <p><span class="lz">如果你计划对 Cade 进行二次开发、编写扩展工具或贡献代码：</span><span class="le">If you plan to contribute to Cade or develop custom extensions:</span></p>
+        <h2>Install for development</h2>
+        <p>If you plan to contribute to Cade or develop custom extensions:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>git clone https://github.com/reddishJade/cade.git
 cd cade
@@ -820,55 +794,56 @@ uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-<span class="comment"># <span class="lz">运行静态类型与单元测试验证</span><span class="le">Run static checks and test suite</span></span>
+<span class="comment"># 运行静态类型与单元测试验证</span>
 uv run ruff check src/
 uv run pyright src/
 uv run pytest src/cade/tests -q</code></pre>
         </div>
 
-        <h2><span class="lz">配置自检命令</span><span class="le">Post-Install Health Check</span></h2>
-        <p><span class="lz">运行配置检查命令以确认本地运行环境、Provider 接入状态及沙箱可用性：</span><span class="le">Run the diagnostic command to check local runtime health, provider credentials, and sandbox availability:</span></p>
+        <h2>Check installation</h2>
+        <p>Check available commands, then inspect the configured authentication status:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>cade config --check</code></pre>
+          <pre><code>cade --help
+cade auth status</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#overview" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">设计哲学与概览</span><span class="le">Philosophy & Overview</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Philosophy & Overview</span>
           </a>
           <a href="#quickstart" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">5 分钟快速上手</span><span class="le">Quickstart</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Quickstart →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 3. QUICKSTART ================= -->
+
+      <!-- 快速上手。 -->
       <article id="quickstart" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">5 分钟快速上手</span><span class="le">Quickstart</span></span>
+          <a href="#">Docs</a> / <span class="current">Quickstart</span>
         </div>
-        <h1><span class="lz">5 分钟快速上手</span><span class="le">5-Minute Quickstart</span></h1>
-        <p class="lead-text"><span class="lz">配置大模型 API 密钥并在你的项目代码库中开启第一个 Agent 协作任务。</span><span class="le">Configure your LLM API keys and launch your first collaborative engineering session in minutes.</span></p>
+        <h1>Quickstart</h1>
+        <p class="lead-text">Configure your LLM API keys and launch your first collaborative engineering session in minutes.</p>
 
-        <h2><span class="lz">第 1 步：配置 Provider API 密钥</span><span class="le">Step 1: Configure Provider API Key</span></h2>
-        <p><span class="lz">Cade 原生支持 DeepSeek、OpenAI、智谱 AI (ChatGLM)、小米 MiMo 及任何兼容 OpenAI 协议的本地网关（如 Ollama、vLLM）：</span><span class="le">Cade natively supports DeepSeek, OpenAI, ChatGLM, Xiaomi MiMo, and any OpenAI-compatible endpoints (such as Ollama or vLLM):</span></p>
+        <h2>Configure a provider API key</h2>
+        <p>Cade natively supports DeepSeek, OpenAI, ChatGLM, Xiaomi MiMo, and any OpenAI-compatible endpoints (such as Ollama or vLLM):</p>
 
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code><span class="comment"># <span class="lz">方式 A：API key（DeepSeek 示例，向导会设置默认模型）</span><span class="le">Method A: API key (select the default model in setup)</span></span>
+          <pre><code><span class="comment"># 方式 A：API key（DeepSeek 示例，向导会设置默认模型）</span>
 export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
 cade setup
 
-<span class="comment"># <span class="lz">方式 B：创建全局配置文件 ~/.cade/settings.json</span><span class="le">Method B: Or write to global config ~/.cade/settings.json</span></span>
+<span class="comment"># 方式 B：创建全局配置文件 ~/.cade/settings.json</span>
 mkdir -p ~/.cade
 cade login
 cat << 'EOF' > ~/.cade/settings.json
@@ -880,139 +855,114 @@ cat << 'EOF' > ~/.cade/settings.json
 EOF</code></pre>
         </div>
 
-        <h2><span class="lz">第 2 步：进入项目目录并启动</span><span class="le">Step 2: Enter Project Directory & Launch</span></h2>
-        <p><span class="lz">切换到你正在开发的任何本地 Git 仓库根目录，执行 <code>cade</code> 即可启动交互：</span><span class="le">Navigate to your local repository and run <code>cade</code> to start interacting:</span></p>
+        <h2>Start in your project directory</h2>
+        <p>Navigate to your local repository and run <code>cade</code> to start interacting:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>cd /path/to/your/project
 
-<span class="comment"># <span class="lz">启动默认 TUI 全屏沉浸工作台 (分屏视图、实时 Diff 审查)</span><span class="le">Default: Full-screen split-pane TUI workbench</span></span>
+<span class="comment"># 启动默认 TUI 工作台</span>
 cade
 
-<span class="comment"># <span class="lz">启动终端工作台</span><span class="le">Launch the terminal workbench</span></span>
+<span class="comment"># 启动终端工作台</span>
 cade tui
 
-<span class="comment"># <span class="lz">启动现代 Web 浏览器可视化工作台</span><span class="le">Launch visual browser workbench</span></span>
+<span class="comment"># 启动浏览器工作台</span>
 cade web
 
-<span class="comment"># <span class="lz">续接上一次未完成的会话任务</span><span class="le">Quickly resume the latest active session</span></span>
+<span class="comment"># 续接上一次未完成的会话任务</span>
 cade -c</code></pre>
         </div>
 
-        <h2><span class="lz">第 3 步：体验核心开发工作流</span><span class="le">Step 3: Experience the Core Engineering Flow</span></h2>
-        <p><span class="lz">在终端输入提示词，体验规划模式与原子撤销能力：</span><span class="le">Prompt the agent in the terminal to explore planning and atomic rollback:</span></p>
+        <h2>Run a task</h2>
+        <p>Prompt the agent in the terminal to explore planning and file restoration:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Cade Session</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code><span class="comment"># 1. <span class="lz">只读规划：让 Agent 勘察当前目录架构并制定计划</span><span class="le">Read-only planning: survey codebase and produce plan</span></span>
-<span class="lz">> /mode plan
-> 梳理 src/ 目录下的模块依赖，并规划如何添加一个统一的日志脱敏器</span><span class="le">> /mode plan
-> Survey module dependencies under src/ and design a unified log sanitizer</span>
+          <pre><code><span class="comment"># 1. 只读规划：让 Agent 勘察当前目录架构并制定计划</span>
+> /mode plan
+> Survey module dependencies under src/ and design a unified log sanitizer
 
-<span class="comment"># 2. <span class="lz">切换到执行模式：实施落地代码修改</span><span class="le">Switch to execution mode: implement the code changes</span></span>
-<span class="lz">> /mode act
-> 根据上述规划，新建 src/security/redact.py 并添加单元测试</span><span class="le">> /mode act
-> Implement src/security/redact.py based on the plan and add unit tests</span>
+<span class="comment"># 2. 切换到执行模式：实施落地代码修改</span>
+> /mode act
+> Implement src/security/redact.py based on the plan and add unit tests
 
-<span class="comment"># 3. <span class="lz">安全撤销：如果修改不符合预期，单条指令物理回滚！</span><span class="le">Atomic undo: if changes are unsatisfactory, revert instantly!</span></span>
+<span class="comment"># 3. 撤销不符合预期的文件修改</span>
 > /undo</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#install" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">安装与环境准备</span><span class="le">Installation</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Installation</span>
           </a>
           <a href="#architecture" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">统一内核与三端架构</span><span class="le">Unified Architecture</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Unified Architecture →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 4. ARCHITECTURE ================= -->
+
+      <!-- 架构。 -->
       <article id="architecture" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">统一内核与三端架构</span><span class="le">Unified Architecture</span></span>
+          <a href="#">Docs</a> / <span class="current">Unified Architecture</span>
         </div>
-        <h1><span class="lz">统一内核与三端架构</span><span class="le">Unified Kernel & Tri-Interface Architecture</span></h1>
-        <p class="lead-text"><span class="lz">Cade 采用统一的事件驱动运行时，保证在不同交互端（TUI、CLI、Web）与不同大模型下具备完全一致的运行时保障与工具权限契约。</span><span class="le">Cade operates on a single event-driven runtime kernel, guaranteeing absolute consistency in state management, security policies, and tool contracts across TUI, CLI, and Web.</span></p>
+        <h1>Shared runtime and host architecture</h1>
+        <p class="lead-text">Cade operates on a single event-driven runtime kernel, guaranteeing absolute consistency in state management, security policies, and tool contracts across TUI, CLI, and Web.</p>
 
-        <h2><span class="lz">五大核心系统模块</span><span class="le">Five Core Architectural Modules</span></h2>
-        <p><span class="lz">代码库结构清晰划分为五个层次，杜绝循环依赖与职责泄露：</span><span class="le">The codebase is strictly structured into five layers, preventing circular dependencies and state leakage:</span></p>
+        <h2>Architecture layers</h2>
+        <p>The codebase is strictly structured into five layers, preventing circular dependencies and state leakage:</p>
 
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th><span class="lz">模块目录</span><span class="le">Module Directory</span></th>
-                <th><span class="lz">职责范畴</span><span class="le">Responsibilities</span></th>
-                <th><span class="lz">核心组件与功能</span><span class="le">Key Components</span></th>
+                <th>Module Directory</th>
+                <th>Responsibilities</th>
+                <th>Key Components</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>surfaces/</code></td>
-                <td><span class="lz">交互投影层</span><span class="le">Interface Surfaces</span></td>
-                <td><span class="lz">TUI 终端工作台、exec 自动化入口与 Web 浏览器工作台。共用运行时与持久会话。</span><span class="le">Terminal workbench, exec automation, and Web browser workbench share a runtime and persistent sessions.</span></td>
+                <td>Interface Surfaces</td>
+                <td>Terminal workbench, exec automation, and Web browser workbench share a runtime and persistent sessions.</td>
               </tr>
               <tr>
                 <td><code>harness/</code></td>
-                <td><span class="lz">运行时与策略装配</span><span class="le">Runtime & Harness</span></td>
-                <td><span class="lz">应用初始化、追加型无损会话存储（Session）、权限审查引擎（PermissionEngine）、脱敏审计日志、MCP 客户端与生命周期 Hooks。</span><span class="le">Bootstrap, append-only session storage, PermissionEngine gating, redaction audit logs, MCP client, and lifecycle hooks.</span></td>
+                <td>Runtime & Harness</td>
+                <td>Bootstrap, append-only session storage, PermissionEngine gating, redaction audit logs, MCP client, and lifecycle hooks.</td>
               </tr>
               <tr>
                 <td><code>agent/</code></td>
-                <td><span class="lz">循环与上下文调度</span><span class="le">Agent Loop & Context</span></td>
-                <td><span class="lz">确定性 Agent 主循环、Prompt 装配器、95% 水位线无摘要平滑换窗引擎、工具读写并发分区与动态历史投影。</span><span class="le">Deterministic agent loop, prompt assembler, 95% summary-free context rollover engine, tool concurrency, and projections.</span></td>
+                <td>Agent Loop & Context</td>
+                <td>Deterministic agent loop, prompt assembler, budgeted context rollover engine, tool concurrency, and projections.</td>
               </tr>
               <tr>
                 <td><code>coding_agent/</code></td>
-                <td><span class="lz">工程工具体系</span><span class="le">Engineering Tools</span></td>
-                <td><span class="lz">文件精准修补（view/replace/write）、代码检索（grep/glob）、Subagents 子代理编排与受限安全 Shell。</span><span class="le">Precision file patching, code search (grep/glob), subagent orchestration, and sandboxed safe shell.</span></td>
+                <td>Engineering Tools</td>
+                <td>Precision file patching, code search (grep/glob), subagent orchestration, and sandboxed safe shell.</td>
               </tr>
               <tr>
                 <td><code>ai/</code></td>
-                <td><span class="lz">模型 Provider 适配</span><span class="le">AI Providers</span></td>
-                <td><span class="lz">统一适配器基类，封装 DeepSeek、OpenAI、ChatGLM、MiMo 及本地网关，支持流式输出、Prompt 缓存与思考推理流。</span><span class="le">Unified base adapter for DeepSeek, OpenAI, ChatGLM, MiMo, and local endpoints with streaming, caching, and reasoning tokens.</span></td>
+                <td>AI Providers</td>
+                <td>Unified base adapter for DeepSeek, OpenAI, ChatGLM, MiMo, and local endpoints with streaming, caching, and reasoning tokens.</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h2><span class="lz">端到端执行流程时序</span><span class="le">End-to-End Execution Sequence</span></h2>
-        <p><span class="lz">从接收用户指令到完成代码落地落盘的完整生命周期：</span><span class="le">The complete lifecycle from user prompt submission to persisted disk modifications:</span></p>
+        <h2>End-to-end execution</h2>
+        <p>The complete lifecycle from user prompt submission to persisted disk modifications:</p>
 
         <div class="mermaid-container mermaid-wide">
-          <script type="text/mermaid" data-lang="zh">
-sequenceDiagram
-    participant User as 开发者
-    participant Surface as 交互端 (TUI/CLI/Web)
-    participant Kernel as 运行时内核 (Harness/Agent)
-    participant AI as 模型 Provider
-    participant Policy as 安全策略与审查
-    participant Tools as 工程工具系统
 
-    User->>Surface: 输入需求或 Slash 指令
-    Surface->>Kernel: 派发用户事件 (UserEvent)
-    Kernel->>Kernel: 上下文装配与 95% 换窗检查
-    Kernel->>AI: 流式请求推理与思考流
-    AI-->>Kernel: 返回 ToolCall (如 edit_file)
-    Kernel->>Policy: 权限审查 (Check Path & Mode)
-    alt 需要人工确认 (HITL)
-        Policy-->>User: 终端弹出审查确认请求
-        User->>Policy: 批准执行操作
-    end
-    Kernel->>Tools: 执行工具并保存快照
-    Tools-->>Kernel: 返回 ToolResult
-    Kernel->>Kernel: 追加不可变事件日志
-    Kernel-->>Surface: 动态投影更新界面与 Diff 视图
-          </script>
           <script type="text/mermaid" data-lang="en">
 sequenceDiagram
     participant User as Developer
@@ -1024,15 +974,15 @@ sequenceDiagram
 
     User->>Surface: Submit Prompt or Slash Command
     Surface->>Kernel: Dispatch UserEvent
-    Kernel->>Kernel: Prompt Assembly & 95% Rollover Check
+    Kernel->>Kernel: Prompt Assembly & Budget Check
     Kernel->>AI: Stream Request (Prompt + Tools)
-    AI-->>Kernel: Return ToolCall (e.g. edit_file)
+    AI-->>Kernel: Return ToolCall (e.g. edit)
     Kernel->>Policy: Policy Gating (Path & Mode)
     alt Requires Confirmation (HITL)
         Policy-->>User: HITL Confirmation Prompt
         User->>Policy: Approve Execution
     end
-    Kernel->>Tools: Execute Tool & Capture Snapshot
+    Kernel->>Tools: Execute Tool
     Tools-->>Kernel: Return ToolResult
     Kernel->>Kernel: Append Immutable Event Log
     Kernel-->>Surface: Project State & Live Diff Preview
@@ -1042,53 +992,46 @@ sequenceDiagram
 
         <div class="page-nav">
           <a href="#quickstart" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">5 分钟快速上手</span><span class="le">Quickstart</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Quickstart</span>
           </a>
           <a href="#sessions" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">无损历史与动态投影</span><span class="le">Lossless History</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Lossless History →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 5. SESSIONS ================= -->
-      
+
+      <!-- 会话。 -->
+
 <article id="sessions" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">无损历史与动态投影</span><span class="le">Lossless History</span></span>
+          <a href="#">Docs</a> / <span class="current">Lossless History</span>
         </div>
-        <h1><span class="lz">核心支柱 1：无损历史与动态投影 (/undo)</span><span class="le">Core Pillar 1: Lossless History & Dynamic Projections</span></h1>
-        <p class="lead-text"><span class="lz">拒绝破坏性文件覆盖与上下文静默截断。Cade 采用追加型不可篡改日志持久记录全量事件，配合磁盘快照池实现毫秒级原子回退。</span><span class="le">Rejecting destructive file overwrites and silent context truncation. Cade records full events into append-only immutable logs, backed by snapshot pooling for instant atomic reverts.</span></p>
+        <h1>History and dynamic projections</h1>
+        <p class="lead-text">Rejecting destructive file overwrites and silent context truncation. Cade records full events into append-only immutable logs, with host-managed snapshots for per-file restoration.</p>
 
-        <h2><span class="lz">传统 AI 助手的撤销硬伤</span><span class="le">The Fatal Flaws of Legacy Undo Mechanisms</span></h2>
-        <p><span class="lz">在现有许多编码助手或编辑器插件中，“撤销”往往只是在后续对话中告诉大模型“请撤销上一轮改动”。这种模式存在严重隐患：</span><span class="le">In many existing coding assistants, undo is merely an extra prompt asking the LLM to revert previous changes. This approach has critical drawbacks:</span></p>
+        <h2>Risks of model-generated undo</h2>
+        <p>In many existing coding assistants, undo is merely an extra prompt asking the LLM to revert previous changes. This approach has critical drawbacks:</p>
         <ul>
-          <li><span class="lz"><strong>二次幻觉风险</strong>：大模型撤销时可能写出与原代码略微不同的新代码，甚至破坏未保存的上下文；</span><span class="le"><strong>Secondary Hallucinations</strong>: The model often generates slightly different code when attempting to undo, frequently breaking surrounding untouched code;</span></li>
-          <li><span class="lz"><strong>Token 巨额浪费</strong>：把撤销代码与解释再完整输出一遍，凭空浪费数百上千 Token；</span><span class="le"><strong>Token Waste</strong>: Generating revert code and explanations burns hundreds of unnecessary tokens;</span></li>
-          <li><span class="lz"><strong>磁盘脏数据残留</strong>：如果在工具运行中被强制中断，未完成的文件改动可能遗留在工程中，导致语法报错。</span><span class="le"><strong>Dirty State Residuals</strong>: Aborted file operations leave corrupted files on disk that break compilers and linters.</span></li>
+          <li><strong>Secondary Hallucinations</strong>: The model often generates slightly different code when attempting to undo, frequently breaking surrounding untouched code;</li>
+          <li><strong>Token Waste</strong>: Generating revert code and explanations burns hundreds of unnecessary tokens;</li>
+          <li><strong>Dirty State Residuals</strong>: Aborted file operations leave corrupted files on disk that break compilers and linters.</li>
         </ul>
 
-        <h2><span class="lz">Cade 的无损快照与物理原子回退</span><span class="le">Deterministic Snapshot Pooling & Atomic Rollback</span></h2>
-        <p><span class="lz">Cade 的设计核心在于<strong>物理确证性</strong>。当 Agent 调用任何写入类工具（如 <code>replace_file_content</code>、<code>write_to_file</code>）时：</span><span class="le">Cade enforces <strong>deterministic physical certainty</strong>. Whenever the agent calls any write tool (e.g. <code>replace_file_content</code>, <code>write_to_file</code>):</span></p>
-        <ol>
-          <li><span class="lz"><strong>写前捕获（Pre-write Capture）</strong>：内核自动读取目标文件在修改前的完整字节流，压入不可变快照池（Snapshot Pool）；如果是新建文件，则标记其创建状态；</span><span class="le"><strong>Pre-write Capture</strong>: The runtime automatically records the unmodified file bytes into an immutable snapshot pool before touching the disk. Newly created files are flagged for deletion upon undo;</span></li>
-          <li><span class="lz"><strong>原子落盘</strong>：修改以原子事务方式写入文件系统；</span><span class="le"><strong>Atomic Write</strong>: Modifications are committed atomically to disk;</span></li>
-          <li><span class="lz"><strong>物理恢复 (/undo)</strong>：当开发者触发 <code>/undo</code> 时，系统直接从快照池恢复磁盘字节流，新建的文件被彻底物理删除，耗时仅需数毫秒；</span><span class="le"><strong>Physical Revert (/undo)</strong>: When triggering <code>/undo</code>, the system restores pristine bytes from the snapshot pool and unlinks new files in milliseconds;</span></li>
-          <li><span class="lz"><strong>视窗指针回拨</strong>：运行时内核将活动对话历史的事件指针拨回上一轮，被撤销的交互不再输入给大模型。</span><span class="le"><strong>Window Pointer Rewind</strong>: The runtime rewinds the active event stream pointer, ensuring reverted turns never clutter future model contexts.</span></li>
-        </ol>
+        <h2>Snapshots and file restoration</h2>
+        <p>The TUI captures workspace snapshots before and after each user task turn. Snapshot coverage depends on the host and excludes some paths, file types, and large files.</p>
+        <ul>
+          <li><code>/undo [N]</code> restores files from the most recent N undoable turns, defaulting to one. It checks conflicts and permissions per file and reports restored, skipped, and failed items. A turn can be partially restored.</li>
+          <li><code>/rewind [N]</code> removes recent task turns from active conversation history and trims the snapshot index. It leaves workspace files unchanged.</li>
+        </ul>
+        <p>See <a href="guide/sessions.md#file-undo">Sessions</a> for snapshot coverage and restoration rules.</p>
 
-        <h2><span class="lz">动态投影机制 (Dynamic Projections)</span><span class="le">Dynamic Projections Architecture</span></h2>
-        <p><span class="lz">在 Cade 中，对话历史不是一个随意可编辑的列表，而是一个<strong>不可变追加型事件流（Append-only Event Log）</strong>。当前发送给模型的 Prompt、TUI 的对话视窗以及 Web 看板，仅仅是该事件流的<strong>不同投影视角（Projections）</strong>：</span><span class="le">In Cade, conversation history is not a mutable array, but an <strong>append-only immutable event stream</strong>. The model prompt, TUI split-panes, and Web views are purely <strong>deterministic projections</strong> derived from this stream:</span></p>
+        <h2>Dynamic projections</h2>
+        <p>In Cade, conversation history is not a mutable array, but an <strong>append-only immutable event stream</strong>. The model prompt, TUI transcript, and Web views are purely <strong>deterministic projections</strong> derived from this stream:</p>
 
         <div class="mermaid-container">
-          <script type="text/mermaid" data-lang="zh">
-flowchart TD
-    LOG["不可变追加型事件日志 (Event Stream)<br>UserEvent → ToolCall → ToolResult → Snapshot"]
-    LOG -->|上下文视窗投影| P1["大模型上下文视窗 (Prompt View)"]
-    LOG -->|原子快照恢复| P2["/undo 物理状态恢复 (Disk Snapshot)"]
-    LOG -->|多端界面同步| P3["三端工作台 (TUI / CLI / Web)"]
-          </script>
+
           <script type="text/mermaid" data-lang="en">
 flowchart TD
     LOG["Append-Only Immutable Event Stream<br>UserEvent → ToolCall → ToolResult → Snapshot"]
@@ -1099,297 +1042,282 @@ flowchart TD
           <div class="mermaid-output"></div>
         </div>
 
-        <h2><span class="lz">会话分支能力 (/fork)</span><span class="le">Session Branching (/fork)</span></h2>
-        <p><span class="lz">得益于无损事件流，你可以随时使用 <code>/fork</code> 基于历史中的某一个特定节点创建一条新的探索分支，原会话的历史与快照树不受任何污染，便于进行平行技术方案对比。</span><span class="le">Thanks to lossless event logging, you can run <code>/fork</code> at any turn to create an independent exploration branch without corrupting the parent timeline, ideal for testing alternative architectural approaches.</span></p>
+        <h2>Session branching with /fork</h2>
+        <p>Thanks to lossless event logging, you can run <code>/fork</code> at any turn to create an independent exploration branch without corrupting the parent timeline, ideal for testing alternative architectural approaches.</p>
 
         <div class="page-nav">
           <a href="#architecture" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">统一内核与三端架构</span><span class="le">Unified Architecture</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Unified Architecture</span>
           </a>
           <a href="#context" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Rollover</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Context Rollover →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 6. CONTEXT ================= -->
+
+      <!-- 上下文。 -->
       <article id="context" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Context Rollover</span></span>
+          <a href="#">Docs</a> / <span class="current">Context Rollover</span>
         </div>
-        <h1><span class="lz">核心支柱 2：95% 无摘要换窗机制</span><span class="le">Core Pillar 2: 95% Summary-Free Context Rollover</span></h1>
-        <p class="lead-text"><span class="lz">告别递归自我总结带来的严重失真。在 95% 模型上下文容量阈值自动平滑重开窗口，继承任务目标与约束，中间工具冗余安全对冲。</span><span class="le">Eliminating compounding distortions from heuristic recursive summaries. Smoothly rolls over context at 95% capacity, inheriting task goals while pruning intermediate tool dumps.</span></p>
+        <h1>Context rollover without summaries</h1>
+        <p class="lead-text">Eliminating compounding distortions from heuristic recursive summaries. Uses an effective input budget and predicted usage, with a default ratio cap of 95% of the physical window.</p>
 
-        <h2><span class="lz">为什么递归总结（Recursive Summary）是代码工程的毒药？</span><span class="le">Why Heuristic Recursive Summarization Destroys Codebases</span></h2>
-        <p><span class="lz">主流 AI 编程工具在上下文即将填满时，通常命令模型“将前面的消息总结为一段摘要”。然而在真实软件工程中，这会导致灾难性的信息坍塌：</span><span class="le">When context fills up, most AI tools prompt the LLM to summarize previous messages. In real-world software engineering, this causes catastrophic degradation:</span></p>
+        <h2>Risks of recursive summarization</h2>
+        <p>When context fills up, most AI tools prompt the LLM to summarize previous messages. In real-world software engineering, this causes catastrophic degradation:</p>
         <ul>
-          <li><span class="lz"><strong>精密坐标彻底丢失</strong>：行号范围（如 <code>Line 142-188</code>）、正则捕获组、精确类型签名在摘要中必定被高度概括，后续工具调用精准度归零；</span><span class="le"><strong>Loss of Precision Coordinates</strong>: Exact line numbers, regex groups, and strict type signatures are lost in summaries, crippling subsequent patch accuracy;</span></li>
-          <li><span class="lz"><strong>幻觉自我强化循环</strong>：一旦某次总结中模型微调了对业务逻辑的推测，该推测就会在后续窗口中被当作“铁定事实”继续衍生，导致越改越偏；</span><span class="le"><strong>Compounding Hallucinations</strong>: If the model makes a minor incorrect assumption during summarization, that assumption becomes ground truth in future windows, driving refactors further off track;</span></li>
-          <li><span class="lz"><strong>严重的 Token 与时间损耗</strong>：生成数千 Token 的摘要耗时极长，且消耗大量昂贵的输出配额。</span><span class="le"><strong>Latency & Cost Spikes</strong>: Generating multi-thousand token summaries introduces major latency and burns expensive generation quotas.</span></li>
+          <li><strong>Loss of Precision Coordinates</strong>: Exact line numbers, regex groups, and strict type signatures are lost in summaries, crippling subsequent patch accuracy;</li>
+          <li><strong>Compounding Hallucinations</strong>: If the model makes a minor incorrect assumption during summarization, that assumption becomes ground truth in future windows, driving refactors further off track;</li>
+          <li><strong>Latency & Cost Spikes</strong>: Generating multi-thousand token summaries introduces major latency and burns expensive generation quotas.</li>
         </ul>
 
-        <h2><span class="lz">Cade 95% 平滑换窗的数学与执行模型</span><span class="le">Cade 95% Rollover: Mathematical & Algorithmic Model</span></h2>
-        <p><span class="lz">Cade 采用严格的上下文预算监控器。内核在每一次模型推理前精确统计当前 Token 占用：</span><span class="le">Cade applies a strict context budget monitor that recalculates total tokens before each inference cycle:</span></p>
+        <h2>Rollover budgets and triggers</h2>
+        <p>The default <code>agent.rollover_trigger_ratio</code> of 0.95 caps the trigger at 95% of the physical window. Output reserve, safety headroom, an explicit token threshold, and the next-turn input allowance can cause earlier rollover.</p>
+        <p>The policy subtracts output reserve and headroom to calculate the input budget, caps the rotation threshold by the ratio and any positive explicit threshold, then subtracts the bounded next-turn input allowance to calculate the admission target. Predicted usage drives reclamation and rollover; the input budget is the hard send boundary. See the <a href="context-policy.md#request-projection-and-budgets">context policy</a> for the algorithm, including unknown-window behavior.</p>
 
-        <div class="code-block">
-          <div class="code-header">
-            <span>Formula</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
-          </div>
-          <pre><code>CurrentRatio = (PromptTokens + SystemPromptTokens) / ModelContextWindowLimit
-
-if CurrentRatio >= 0.95:
-    trigger_context_rollover()</code></pre>
-        </div>
-
-        <h3><span class="lz">换窗时的四步确定性对冲流程</span><span class="le">Four-Step Deterministic Rollover Lifecycle</span></h3>
+        <h3>Rollover lifecycle</h3>
         <ol>
-          <li><span class="lz"><strong>目标与约束完整继承（Target Retention）</strong>：保留最初的用户核心需求指令、当前目标与关键约束；</span><span class="le"><strong>Goal & Constraint Retention</strong>: The original user objective, current goal, and key constraints carry over completely;</span></li>
-          <li><span class="lz"><strong>中间工具冗余安全对冲（Tool Output Pruning）</strong>：已执行完成的巨量中间输出（如搜索返回的 800 行代码片段、长文本目录树）被剥离活动视窗，仅保留执行结论；</span><span class="le"><strong>Intermediate Output Pruning</strong>: Bulky intermediate payloads (e.g. 800-line search dumps and directory scans) are purged from active view, retaining only operation statuses;</span></li>
-          <li><span class="lz"><strong>按需读取原始历史</strong>：新窗口可通过 history 工具定位原始证据；Memory 不随换窗自动保存或加载；</span><span class="le"><strong>History on Demand</strong>: The new window can use history tools to locate original evidence; rollover does not automatically save or load Memory;</span></li>
-          <li><span class="lz"><strong>新视窗平滑接力</strong>：开发者无感继续交互，模型拥有充沛的新窗口容量推进复杂工程重构。</span><span class="le"><strong>Seamless Window Handoff</strong>: The developer continues the conversation without interruption, while the LLM gains fresh token headspace.</span></li>
+          <li><strong>Goal & Constraint Retention</strong>: The original user objective, current goal, and key constraints carry over completely;</li>
+          <li><strong>Intermediate Output Pruning</strong>: Bulky intermediate payloads (e.g. 800-line search dumps and directory scans) are purged from active view, retaining only operation statuses;</li>
+          <li><strong>History on Demand</strong>: The new window can use history tools to locate original evidence; rollover regenerates the Memory catalog, with full bodies available on demand;</li>
+          <li><strong>Seamless Window Handoff</strong>: The developer continues the conversation without interruption, while the LLM gains fresh token headspace.</li>
         </ol>
 
-        <h2><span class="lz">换窗参数配置 (Configuration)</span><span class="le">Rollover Configuration</span></h2>
-        <p><span class="lz">你可以在项目 <code>cade.config.json</code> 或全局 <code>~/.cade/settings.json</code> 中调整换窗阈值：</span><span class="le">Tune the rollover threshold in <code>cade.config.json</code> or <code>~/.cade/settings.json</code>:</span></p>
+        <h2>Rollover configuration</h2>
+        <p>Tune the rollover threshold in <code>cade.config.json</code> or <code>~/.cade/settings.json</code>:</p>
         <div class="code-block">
           <div class="code-header">
             <span>JSON</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>{
   "agent": {
-    "rollover_trigger_ratio": 0.95,  <span class="comment">// <span class="lz">默认 95% 水位线触发换窗</span><span class="le">Default: 95% capacity triggers rollover</span></span>
-    "reserve_tokens": 16384          <span class="comment">// <span class="lz">预留给生成与工具调用的安全 Token 空间</span><span class="le">Reserve token budget for generation</span></span>
+    "rollover_trigger_ratio": 0.95,
+    "reserve_tokens": 16384
   }
 }</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#sessions" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">无损历史与动态投影</span><span class="le">Lossless History</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Lossless History</span>
           </a>
           <a href="#memory" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">按需 Memory</span><span class="le">Durable Memory</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Durable Memory →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 7. MEMORY ================= -->
+
+      <!-- 记忆。 -->
       <article id="memory" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></span>
+          <a href="#">Docs</a> / <span class="current">Durable Memory</span>
         </div>
-        <h1><span class="lz">核心支柱 3：按需 Memory</span><span class="le">Core Pillar 3: On-Demand Memory</span></h1>
-        <p class="lead-text"><span class="lz">保存昂贵才获得、可能再次有用的少量 workspace 知识。每条 Memory 是 .cade/memory/ 内一个可编辑 Markdown 文件。</span><span class="le">Keep a few costly, reusable workspace findings. Each Memory is an editable Markdown file in .cade/memory/.</span></p>
+        <h1>On-demand memory</h1>
+        <p class="lead-text">Keep a few costly, reusable workspace findings. Each Memory is an editable Markdown file in .cade/memory/.</p>
 
-        <h2><span class="lz">范围与职责</span><span class="le">Scope and Responsibilities</span></h2>
-        <p><span class="lz">只保存当前 workspace 的经验。Repository/Git/Tests 判定当前事实，Event History 保存完整历史，NOTE.md 保存任务状态，Skills 保存可复用方法。</span><span class="le">Memory is scoped to the current workspace. Repository/Git/Tests establish current facts, Event History preserves history, NOTE.md holds task state, and Skills hold reusable methods.</span></p>
+        <h2>Scope and responsibilities</h2>
+        <p>Memory is scoped to the current workspace. Repository/Git/Tests establish current facts, Event History preserves history, NOTE.md holds task state, and Skills hold reusable methods.</p>
 
-        <h2><span class="lz">显式保存与来源</span><span class="le">Explicit Saves and Sources</span></h2>
-        <p><span class="lz"><code>save_memory(path, markdown, sources)</code> 校验 Agent 显式提供的 Session/entry 引用并原子写入。覆盖需完整旧文本 <code>expected_content</code>。Host 只替换保留标记内的末尾来源 footer，不解析正文；来源存在不证明结论正确。</span><span class="le"><code>save_memory(path, markdown, sources)</code> validates explicit Session/entry references and writes atomically. Replacements require the full previous <code>expected_content</code>. The Host replaces only the marked source footer and does not parse the body; existing sources do not prove conclusions.</span></p>
-        <p><span class="lz">Memory 自身不发起模型调用、后台整理或额外推理；工具结果后的正常 Agent loop 由现有运行时决定。</span><span class="le">Memory initiates no model calls, background organization, or extra inference. The existing runtime governs the normal Agent loop after a tool result.</span></p>
+        <h2>Explicit saves and sources</h2>
+        <p><code>save_memory(path, markdown, sources)</code> validates explicit Session/entry references and writes atomically. Replacements require the full previous <code>expected_content</code>. The Host replaces only the marked source footer and does not parse the body; existing sources do not prove conclusions.</p>
+        <p>Memory initiates no model calls, background organization, or extra inference. The existing runtime governs the normal Agent loop after a tool result.</p>
 
-        <h2><span class="lz">按需读取与核验</span><span class="le">Read and Revalidate on Demand</span></h2>
-        <p><span class="lz">普通任务、恢复及换窗不扫描或加载 Memory。出现明确历史需求或昂贵的重复排查时，用既有 <code>bash</code> 执行 <code>rg "timeout" .cade/memory</code>，再读取具体文件、按 <code>session_id + entry_id</code> 读取原始 History，并检查当前代码和验证结果。Memory 不改变默认 tool surface。</span><span class="le">Normal turns, resume, and rollover do not scan or load Memory. For explicit historical needs or costly repeated investigation, use existing <code>bash</code> with <code>rg "timeout" .cade/memory</code>, read a file, follow <code>session_id + entry_id</code> into original History, and check current code and validation results. Memory does not expand the default tool surface.</span></p>
-        <p><span class="lz">精确 History 读取不依赖导航 cache。默认本地目录以当前物理位置为归属边界，忽略旧 project_path，支持 workspace 移动或改名；共享或自定义目录才使用日志首条记录的 workspace 绑定。跨 Session 的 <code>around</code> 只沿祖先支持 <code>before</code>，不切换当前 Session/head。读取结果服从 ContextPolicy；Git SHA 不代表未提交 workspace。</span><span class="le">Exact History reads do not depend on the navigation cache. The default local store trusts its current physical location, ignoring old project_path after workspace moves or renames; shared or custom stores require the first log record's workspace binding. Cross-session <code>around</code> supports ancestor <code>before</code> only, without switching Session/head. Read evidence follows ContextPolicy; Git SHA does not capture an uncommitted workspace.</span></p>
+        <h2>Read and verify on demand</h2>
+        <p>Each provider request collects a Memory catalog of at most 4 KiB containing paths, first H1 titles, and opening paragraph hints. Recovery and rollover regenerate the catalog. Full bodies and source footers are read on demand. See <a href="guide/memory.md#retrieve-read-and-verify">Memory collection limits</a>. For explicit historical needs or costly repeated investigation, use existing <code>bash</code> with <code>rg "timeout" .cade/memory</code>, read a file, follow <code>session_id + entry_id</code> into original History, and check current code and validation results. Memory does not expand the default tool surface.</p>
+        <p>Exact History reads do not depend on the navigation cache. The default local store trusts its current physical location, ignoring old project_path after workspace moves or renames; shared or custom stores require the first log record's workspace binding. Cross-session <code>around</code> supports ancestor <code>before</code> only, without switching Session/head. Read evidence follows ContextPolicy; Git SHA does not capture an uncommitted workspace.</p>
 
-        <h2><span class="lz">查看与修订</span><span class="le">Inspect and Edit</span></h2>
-        <p><span class="lz"><code>/memory</code> 只显示目录位置。用户可用编辑器修改或删除文件；Agent 用 <code>save_memory</code> 修订，不增加状态机、索引或后台维护。</span><span class="le"><code>/memory</code> only shows the directory. Users may edit or delete files in an editor; the Agent revises through <code>save_memory</code>, with no state machine, index, or background maintenance.</span></p>
-        <p><a href="memory.md"><span class="lz">完整参数与示例</span><span class="le">Full parameters and examples</span></a></p>
+        <h2>Inspect and edit</h2>
+        <p><code>/memory</code> only shows the directory. Users may edit or delete files in an editor; the Agent revises through <code>save_memory</code>, with no state machine, index, or background maintenance.</p>
+        <p><a href="guide/memory.md">Full parameters and examples</a></p>
 
         <div class="page-nav">
           <a href="#context" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">95% 无摘要换窗机制</span><span class="le">95% Rollover</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Context Rollover</span>
           </a>
           <a href="#modes" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">执行模式 (Plan / Build / Act)</span><span class="le">Execution Modes</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Execution Modes →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 8. MODES ================= -->
-      
+
+      <!-- 执行模式。 -->
+
 <article id="modes" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">执行模式</span><span class="le">Execution Modes</span></span>
+          <a href="#">Docs</a> / <span class="current">Execution Modes</span>
         </div>
-        <h1><span class="lz">执行模式：Plan、Build 与 Act</span><span class="le">Execution Modes: Plan, Build, and Act</span></h1>
-        <p class="lead-text"><span class="lz">根据不同研发阶段设定安全边界与自动化程度。一条指令即时切换，无须重启或中断当前会话。</span><span class="le">Configure safety boundaries and automation levels for different engineering stages. Switch instantly with a single command without restarting your session.</span></p>
+        <h1>Execution modes: Plan, Build, and Act</h1>
+        <p class="lead-text">Configure safety boundaries and automation levels for different engineering stages. Switch instantly with a single command without restarting your session.</p>
 
-        <h2><span class="lz">三模式核心权限与工具矩阵</span><span class="le">Mode Permission & Tool Access Matrix</span></h2>
-        <p><span class="lz">Cade 明确区分了三种模式下的文件写入权限与 Shell 执行权限：</span><span class="le">Cade strictly partitions file write access and shell execution across three operating modes:</span></p>
+        <h2>Mode permissions and tools</h2>
+        <p>Cade strictly partitions file write access and shell execution across three operating modes:</p>
 
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th><span class="lz">执行模式</span><span class="le">Execution Mode</span></th>
-                <th><span class="lz">只读工具 (view/search)</span><span class="le">Read Tools</span></th>
-                <th><span class="lz">写入工具 (replace/write)</span><span class="le">Write Tools</span></th>
-                <th><span class="lz">命令执行 (run_command)</span><span class="le">Command Execution</span></th>
-                <th><span class="lz">适用场景与安全目标</span><span class="le">Target Use Cases & Safety Goals</span></th>
+                <th>Execution Mode</th>
+                <th>Read Tools</th>
+                <th>Write Tools</th>
+                <th>Command Execution</th>
+                <th>Target Use Cases & Safety Goals</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><strong>Plan <span class="lz">模式</span><span class="le">Mode</span></strong></td>
-                <td><span class="lz">全自动允许</span><span class="le">Always Allowed</span></td>
-                <td><span style="color:#d97757"><span class="lz">严格禁用 (只读锁定)</span><span class="le">Strictly Disabled</span></span></td>
-                <td><span class="lz">仅限只读检查</span><span class="le">Read-only Inspections</span></td>
-                <td><span class="lz">大型项目代码勘察、依赖梳理、生成重构规划，100% 杜绝误修改。</span><span class="le">Exploring large codebases, mapping dependencies, and producing plans with zero modification side-effects.</span></td>
+                <td><strong>Plan Mode</strong></td>
+                <td>Allowed within policy boundaries</td>
+                <td><code>NOTE.md</code> and plan notes under <code>.cade/plans/*.md</code></td>
+                <td>Read-only commands run directly; known mutations are blocked; unresolved effects go to the automatic reviewer</td>
+                <td>Explore code and produce plan notes without changing project code.</td>
               </tr>
               <tr>
-                <td><strong>Build <span class="lz">模式 (默认)</span><span class="le">Mode (Default)</span></strong></td>
-                <td><span class="lz">全自动允许</span><span class="le">Always Allowed</span></td>
-                <td><span class="lz">允许执行 (生成快照)</span><span class="le">Allowed (Snapshotted)</span></td>
-                <td><span class="lz">交互式确认 (HITL 审批)</span><span class="le">Interactive HITL Prompt</span></td>
-                <td><span class="lz">日常主干编码。Agent 提出精准修改建议，开发者审查并确认高危操作。</span><span class="le">Standard development workflow. Agent drafts precision patches; developer approves risky operations.</span></td>
+                <td><strong>Build Mode</strong></td>
+                <td>Allowed within policy boundaries</td>
+                <td>Execute directly</td>
+                <td>Read-only commands run directly; operations requiring review go to the automatic reviewer</td>
+                <td>Implement and validate changes with automatic shell review.</td>
               </tr>
               <tr>
-                <td><strong>Act <span class="lz">模式</span><span class="le">Mode</span></strong></td>
-                <td><span class="lz">全自动允许</span><span class="le">Always Allowed</span></td>
-                <td><span class="lz">全自动执行</span><span class="le">Automated Execution</span></td>
-                <td><span class="lz">白名单自动执行</span><span class="le">Whitelisted Auto-Run</span></td>
-                <td><span class="lz">自动化单元测试补全、批量脚本重构、已知安全环境下的极速推进。</span><span class="le">Automated test suite generation, bulk refactors, and rapid execution in trusted environments.</span></td>
+                <td><strong>Act Mode (Default)</strong></td>
+                <td>Allowed within policy boundaries</td>
+                <td>User approval</td>
+                <td>Read-only commands run directly; operations requiring review go to the user</td>
+                <td>Review structured writes and shell mutations interactively.</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h2><span class="lz">人类在环审批 (HITL) 与规则引擎</span><span class="le">Human-in-the-Loop Gating & Rule Engine</span></h2>
-        <p><span class="lz">在 <code>Build</code> 或 <code>Plan</code> 模式下，权限判定引擎（PermissionEngine）遵循 <code>findLast</code> 逆序规则匹配：</span><span class="le">In <code>Build</code> or <code>Plan</code> modes, the PermissionEngine evaluates security policies using <code>findLast</code> reverse matching:</span></p>
-        <ul>
-          <li><span class="lz"><strong>默认策略</strong>：所有文件修改在落地前均向开发者展示精准 Diff 并记录快照；</span><span class="le"><strong>Default Policy</strong>: All file writes display a concise diff and record snapshot checkpoints before disk write;</span></li>
-          <li><span class="lz"><strong>敏感拦截</strong>：涉及删除操作（<code>rm</code>）、系统环境变量修改、网络连接的命令，强制弹出终端审批菜单；</span><span class="le"><strong>Sensitive Commands</strong>: Destruction commands (<code>rm</code>), environment mutations, and socket requests trigger mandatory confirmation;</span></li>
-          <li><span class="lz"><strong>一键放行/拒绝</strong>：按 <code>y</code> 批准执行，按 <code>n</code> 拒绝并可附带说明原因反馈给模型。</span><span class="le"><strong>Approval Controls</strong>: Press <code>y</code> to approve, <code>n</code> to reject with an optional feedback note sent back to the agent.</span></li>
-        </ul>
+        <h2>Approval and rules</h2>
+        <p>This table describes the default mode rules and <code>security.approval_router="mode"</code>. Path restrictions, permission rules, grants, and explicit approval settings still apply. Setting the approval router to <code>user</code> or <code>auto</code> fixes the review route independently of the mode.</p>
 
-        <p><span class="lz">空闲时按 Shift+Tab，按 act → build → plan 循环切换。</span><span class="le">Press Shift+Tab while idle to cycle act → build → plan.</span></p>
-        <h2><span class="lz">模式切换快捷命令</span><span class="le">Mode Switching Commands</span></h2>
+        <p>Press Shift+Tab while idle to cycle act → build → plan.</p>
+        <h2>Switch modes</h2>
         <div class="code-block">
           <div class="code-header">
             <span>Terminal</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>/mode plan   <span class="comment"># <span class="lz">进入只读规划模式</span><span class="le">Enter read-only planning mode</span></span>
-/mode build  <span class="comment"># <span class="lz">进入自动实施与验证模式</span><span class="le">Enter automatic implementation and validation mode</span></span>
-/mode act    <span class="comment"># <span class="lz">进入人工审批模式 (默认)</span><span class="le">Enter user approval mode (default)</span></span>
-/mode   <span class="comment"># <span class="lz">查看或交互式选择模式</span><span class="le">Inspect or interactively pick mode</span></span></code></pre>
+          <pre><code>/mode plan   <span class="comment"># 进入只读规划模式</span>
+/mode build  <span class="comment"># 进入自动实施与验证模式</span>
+/mode act    <span class="comment"># 进入人工审批模式（默认）</span>
+/mode   <span class="comment"># 查看或交互式选择模式</span></code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#memory" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">按需 Memory</span><span class="le">Durable Memory</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Durable Memory</span>
           </a>
           <a href="#slash-commands" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">Slash 命令完全手册</span><span class="le">Slash Commands</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Slash Commands →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 9. SLASH COMMANDS ================= -->
+
+      <!-- 斜杠命令。 -->
       <article id="slash-commands" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">Slash 命令完全手册</span><span class="le">Slash Commands</span></span>
+          <a href="#">Docs</a> / <span class="current">Slash Commands</span>
         </div>
-        <h1><span class="lz">Slash 命令完全参考手册</span><span class="le">Slash Commands Reference Manual</span></h1>
-        <p class="lead-text"><span class="lz">控制 Cade 运行时行为、模式切换与会话状态的统一指令系统。在 TUI、CLI 与 Web 端具备 100% 对等体验。</span><span class="le">Unified command system governing Cade runtime behavior, execution modes, and session lifecycles across TUI, CLI, and Web.</span></p>
+        <h1>Slash commands</h1>
+        <p class="lead-text">Unified command system governing Cade runtime behavior, execution modes, and session lifecycles across TUI, CLI, and Web.</p>
 
-        <h2><span class="lz">完整指令清单分类</span><span class="le">Comprehensive Command Index</span></h2>
+        <h2>Command index</h2>
 
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th><span class="lz">指令</span><span class="le">Command</span></th>
-                <th><span class="lz">参数语法</span><span class="le">Syntax / Arguments</span></th>
-                <th><span class="lz">行为与功能描述</span><span class="le">Behavior & Specifications</span></th>
+                <th>Command</th>
+                <th>Syntax / Arguments</th>
+                <th>Behavior & Specifications</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>/undo</code></td>
-                <td>-</td>
-                <td><span class="lz"><strong>无损原子撤销</strong>：从磁盘快照池瞬时恢复上一步修改的文件，并将上下文视窗回退一轮。</span><span class="le"><strong>Lossless Undo</strong>: Restores pre-edit snapshots to disk and rewinds the context window by one turn.</span></td>
+                <td><code>[N]</code></td>
+                <td>Restore files from task snapshots with per-file conflict and permission checks. Use <code>/rewind</code> to change conversation history.</td>
+              </tr>
+              <tr>
+                <td><code>/rewind</code></td>
+                <td><code>[N]</code></td>
+                <td>Remove recent task turns from active history and trim the snapshot index. Workspace files remain unchanged.</td>
               </tr>
               <tr>
                 <td><code>/mode plan</code></td>
                 <td>-</td>
-                <td><span class="lz">切换到 Plan 模式，锁定只读，仅进行代码推演与方案分析。</span><span class="le">Switch to Plan mode; locks out file write tools for zero side-effects.</span></td>
+                <td>Switch to Plan mode; structured writes are limited to <code>NOTE.md</code> and plan notes.</td>
               </tr>
               <tr>
                 <td><code>/mode build</code></td>
                 <td>-</td>
-                <td><span class="lz">切换到 Build 模式，开启代码修改，高危操作交互确认。</span><span class="le">Switch to Build mode; enables snapshotted file editing with HITL approvals.</span></td>
+                <td>Switch to Build mode; structured writes execute directly and shell operations requiring review use the automatic reviewer.</td>
               </tr>
               <tr>
                 <td><code>/mode act</code></td>
                 <td>-</td>
-                <td><span class="lz">切换到 Act 模式，副作用操作交用户审批。</span><span class="le">Switch to Act mode with user approval for mutations.</span></td>
+                <td>Switch to Act mode with user approval for mutations.</td>
               </tr>
               <tr>
                 <td><code>/context</code></td>
                 <td>-</td>
-                <td><span class="lz">查看当前窗口 Token 使用量、分布明细与 95% 换窗水位线状态。</span><span class="le">Display current token breakdown, distribution, and 95% rollover threshold.</span></td>
+                <td>Display token usage, the effective input budget, and the current rollover threshold.</td>
               </tr>
               <tr>
                 <td><code>/memory</code></td>
                 <td>-</td>
-                <td><span class="lz">只显示当前 workspace 的 Memory 目录位置，不扫描或加载文件。</span><span class="le">Show the workspace Memory directory without scanning or loading files.</span></td>
+                <td>Show the workspace Memory directory without scanning or loading files.</td>
               </tr>
               <tr>
                 <td><code>/model</code></td>
                 <td><code>[provider/model:level]</code></td>
-                <td><span class="lz">查看当前模型或热切换（如 <code>/model gpt-6-sol</code> 或 <code>/model deepseek/deepseek-v4-pro:high</code>）。</span><span class="le">Inspect or hot-switch active LLM (e.g. <code>/model gpt-6-sol</code> or <code>/model deepseek/deepseek-v4-pro:high</code>).</span></td>
+                <td>Inspect or hot-switch active LLM (e.g. <code>/model gpt-6-sol</code> or <code>/model deepseek/deepseek-v4-pro:high</code>).</td>
               </tr>
               <tr>
                 <td><code>/fork</code></td>
                 <td><code>[turn_id]</code></td>
-                <td><span class="lz">从指定历史轮次派生一条独立分支会话进行技术方案对比。</span><span class="le">Branch an independent session fork from a historic turn.</span></td>
+                <td>Branch an independent session fork from a historic turn.</td>
               </tr>
               <tr>
                 <td><code>/resume</code></td>
                 <td><code>[session_id]</code></td>
-                <td><span class="lz">交互式浏览并断点续接历史保存的会话。</span><span class="le">Browse and resume past persistent sessions.</span></td>
+                <td>Browse and resume past persistent sessions.</td>
               </tr>
               <tr>
-                <td><code>/tools</code></td>
+                <td><code>/tool</code></td>
                 <td>-</td>
-                <td><span class="lz">列出当前已挂载的所有内置工具与 MCP 外部服务工具。</span><span class="le">List all mounted built-in tools and connected MCP server tools.</span></td>
-              </tr>
-              <tr>
-                <td><code>/diff</code></td>
-                <td>-</td>
-                <td><span class="lz">在终端打开当前会话所产生的所有修改的完整 Diff 视图。</span><span class="le">Inspect full consolidated diff view of all changes in active session.</span></td>
+                <td>Use <code>/tool list</code> to list tools available in the current mode, including connected MCP tools.</td>
               </tr>
               <tr>
                 <td><code>/skill</code></td>
-                <td><code>[list|load &lt;name&gt;]</code></td>
-                <td><span class="lz">浏览或手动激活专门的 SKILL 规范包。</span><span class="le">Inspect or manually activate specialized SKILL packages.</span></td>
+                <td><code>NAME [prompt]</code></td>
+                <td>Activate a skill; an optional prompt becomes a follow-up task.</td>
               </tr>
               <tr>
                 <td><code>/clear</code></td>
                 <td>-</td>
-                <td><span class="lz">清空当前活动上下文视窗，不自动保存或加载 Memory。</span><span class="le">Reset the active context window without automatically saving or loading Memory.</span></td>
+                <td>Create and switch to a new session, as with <code>/new</code>.</td>
               </tr>
               <tr>
                 <td><code>/help</code></td>
                 <td>-</td>
-                <td><span class="lz">显示当前可用指令的帮助摘要与快捷键速查。</span><span class="le">Show command cheat sheet and shortcut bindings.</span></td>
+                <td>Show command cheat sheet and shortcut bindings.</td>
               </tr>
               <tr>
                 <td><code>/exit</code></td>
                 <td>-</td>
-                <td><span class="lz">安全归档持久化日志并退出 Cade。</span><span class="le">Flush persistent logs and exit Cade safely.</span></td>
+                <td>Flush persistent logs and exit Cade safely.</td>
               </tr>
             </tbody>
           </table>
@@ -1397,72 +1325,64 @@ if CurrentRatio >= 0.95:
 
         <div class="page-nav">
           <a href="#modes" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">执行模式</span><span class="le">Execution Modes</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Execution Modes</span>
           </a>
           <a href="#tools" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">内置工具体系与操作安全</span><span class="le">Tools & Safety</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Tools & Safety →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 10. TOOLS ================= -->
+
+      <!-- 工具。 -->
       <article id="tools" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">内置工具体系</span><span class="le">Built-in Tools</span></span>
+          <a href="#">Docs</a> / <span class="current">Built-in Tools</span>
         </div>
-        <h1><span class="lz">内置工具体系与操作安全</span><span class="le">Built-in Tool Architecture & Safety</span></h1>
-        <p class="lead-text"><span class="lz">精细区分只读并发与写操作串行屏障。每个工具均具备严格的入参类型校验与越界保护。</span><span class="le">Strictly partitioning read-only concurrency from serial write barriers. Every tool enforces type validation and path boundary checks.</span></p>
+        <h1>Built-in tools and safety</h1>
+        <p class="lead-text">Strictly partitioning read-only concurrency from serial write barriers. Every tool enforces type validation and path boundary checks.</p>
 
-        <h2><span class="lz">核心内置工具规格详解</span><span class="le">Core Built-in Tool Specifications</span></h2>
+        <h2>Tool specifications</h2>
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span><code>view_file</code></span> <span class="badge"><span class="lz">只读</span><span class="le">Read</span></span></div>
-            <p><span class="lz">查看文本或二进制文件。强制支持 <code>StartLine</code> 与 <code>EndLine</code> 切片查看，单次最多读取 800 行，有效杜绝大文件爆冲上下文。</span><span class="le">Views text or binary files with mandatory <code>StartLine</code> and <code>EndLine</code> window slicing (max 800 lines per call) to prevent context flooding.</span></p>
+            <div class="card-title"><span><code>read</code></span> <span class="badge">Read</span></div>
+            <p>Reads file content with <code>path</code> and optional <code>offset</code> and <code>limit</code> for pagination.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>replace_file_content</code></span> <span class="badge"><span class="lz">写入</span><span class="le">Write</span></span></div>
-            <p><span class="lz">高精度连续代码块替换。强制要求 <code>TargetContent</code> 在目标行范围内唯一精确匹配（包括缩进与空白字符），执行前自动保存无损快照。</span><span class="le">High-precision continuous chunk replacement. Requires exact unique match of <code>TargetContent</code> with indentation, capturing pre-edit snapshots.</span></p>
+            <div class="card-title"><span><code>edit</code></span> <span class="badge">Write</span></div>
+            <p>Replaces <code>old_text</code> with <code>new_text</code> in <code>path</code>. Supports <code>replace_all</code> and rejects stale edits.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>write_to_file</code></span> <span class="badge"><span class="lz">写入</span><span class="le">Write</span></span></div>
-            <p><span class="lz">新建文件或整体覆写已有文件。若目标文件已存在，必须显式声明 <code>Overwrite: true</code>，严防意外覆盖已有业务代码。</span><span class="le">Creates new files or fully overwrites existing ones. Requires explicit <code>Overwrite: true</code> when replacing files, preventing accidental data loss.</span></p>
+            <div class="card-title"><span><code>write</code></span> <span class="badge">Write</span></div>
+            <p>Creates or replaces a file using <code>path</code> and <code>content</code>.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>run_command</code></span> <span class="badge"><span class="lz">执行</span><span class="le">Execute</span></span></div>
-            <p><span class="lz">在受限工作区或 Linux 沙箱中运行 Shell 脚本。敏感危险指令（如 <code>rm -rf /</code>, <code>mkfs</code>, <code>dd</code>）自动拦截触发强制确认。</span><span class="le">Executes bash commands in a jailed workspace or Linux container sandbox. Dangerous patterns (e.g. <code>rm -rf /</code>) are blocked for mandatory approval.</span></p>
+            <div class="card-title"><span><code>bash</code></span> <span class="badge">Execute</span></div>
+            <p>Runs <code>command</code> with optional <code>timeout_ms</code>, <code>workdir</code>, and <code>purpose</code>. Permissions, review, and sandbox policy apply.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>search_web</code></span> <span class="badge"><span class="lz">检索</span><span class="le">Search</span></span></div>
-            <p><span class="lz">进行实时网络搜索引擎检索，获取开源库最新版本 API 变动、技术博客或 Issue 解决方案。</span><span class="le">Performs real-time web search for modern framework API updates, technical articles, and GitHub issue solutions.</span></p>
+            <div class="card-title"><span><code>websearch</code></span> <span class="badge">Search</span></div>
+            <p>Searches with <code>query</code>; optional parameters include <code>numResults</code>, <code>livecrawl</code>, <code>type</code>, and <code>timeout</code>. Runs sequentially.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>read_url_content</code></span> <span class="badge"><span class="lz">抓取</span><span class="le">Scrape</span></span></div>
-            <p><span class="lz">HTTP 抓取外部技术网页并自动转换为干净规范的 Markdown 文本，剥离杂乱无用的 HTML 导航与广告。</span><span class="le">Fetches external documentation URLs and converts HTML into clean, token-efficient Markdown representations.</span></p>
+            <div class="card-title"><span><code>webfetch</code></span> <span class="badge">Scrape</span></div>
+            <p>Fetches <code>url</code> with optional <code>format</code> (markdown, text, or html) and <code>timeout</code>. Runs sequentially.</p>
           </div>
         </div>
 
-        <h2><span class="lz">并发读池与串行写屏障 (Concurrency Partition)</span><span class="le">Parallel Read Pool & Serial Write Barrier</span></h2>
-        <p><span class="lz">为了兼顾极致的推理效率与工程写入安全，Cade 内核采用读写分离并发模型：</span><span class="le">To optimize inference latency while safeguarding codebase consistency, Cade enforces read-write concurrency separation:</span></p>
+        <h2>Parallel reads and serial write barriers</h2>
+        <p>Only tools that declare parallel execution enter the read pool: <code>read</code> and optional <code>grep</code>, <code>glob</code>, <code>find</code>, and <code>ls</code>. Other tools run sequentially. The <code>question</code> tool takes a top-level <code>questions</code> array; each item has <code>question</code> and optional <code>header</code>, <code>multiple</code>, and <code>options</code>. See <a href="guide/tools.md">Tools and execution scheduling</a>.</p>
 
         <div class="mermaid-container">
-          <script type="text/mermaid" data-lang="zh">
-flowchart TD
-    BATCH["大模型下发并发工具调用 (ToolCalls)"]
-    BATCH --> CHECK{"工具读写属性判定"}
-    CHECK -->|只读工具: view_file, grep, web| POOL["并发只读线程池 (Parallel Read Pool)<br>多任务并行极速完成"]
-    CHECK -->|写入与执行: replace, write, bash| BARRIER["串行写屏障 (Serial Barrier)<br>写前快照 → 权限校验 → 串行落盘"]
-    POOL --> MERGE["汇总结果并组装下一个事件轮次"]
-    BARRIER --> MERGE
-          </script>
+
           <script type="text/mermaid" data-lang="en">
 flowchart TD
     BATCH["Parallel Model ToolCalls"]
-    BATCH --> CHECK{"Tool Read/Write Attribute Check"}
-    CHECK -->|Read Tools: view_file, grep, web| POOL["Parallel Read Pool<br>Fast Concurrent Execution"]
-    CHECK -->|Write/Execute: replace, write, bash| BARRIER["Serial Write Barrier<br>Pre-Snapshot → Policy Check → Disk Write"]
+    BATCH --> CHECK{"ToolSpec execution_mode Check"}
+    CHECK -->|parallel: read, optional search tools| POOL["Parallel Read Pool<br>Fast Concurrent Execution"]
+    CHECK -->|sequential: edit, write, bash, web, question| BARRIER["Sequential Execution<br>Permission Checks → Tool Handler"]
     POOL --> MERGE["Merge Results into Next Event Turn"]
     BARRIER --> MERGE
           </script>
@@ -1471,105 +1391,103 @@ flowchart TD
 
         <div class="page-nav">
           <a href="#slash-commands" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">Slash 命令完全手册</span><span class="le">Slash Commands</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Slash Commands</span>
           </a>
           <a href="#security" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">权限审查与沙箱安全</span><span class="le">Security</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Security →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 11. SECURITY ================= -->
+
+      <!-- 安全。 -->
       <article id="security" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">权限审查与沙箱安全</span><span class="le">Security</span></span>
+          <a href="#">Docs</a> / <span class="current">Security</span>
         </div>
-        <h1><span class="lz">权限审查与沙箱安全体系</span><span class="le">Permissions, Security & Sandboxing</span></h1>
-        <p class="lead-text"><span class="lz">面向开发机环境的多道防线防御。最小权限原则、工作区路径边界隔离与敏感凭据脱敏审计。</span><span class="le">Defense-in-depth architecture protecting developer machines. Principle of least privilege, workspace path jailing, and audited credential redaction.</span></p>
+        <h1>Permissions, security, and sandboxing</h1>
+        <p class="lead-text">Defense-in-depth architecture protecting developer machines. Principle of least privilege, workspace path jailing, and audited credential redaction.</p>
 
-        <h2><span class="lz">四层深度防御体系</span><span class="le">Four Layers of Defense-in-Depth</span></h2>
+        <h2>Security controls</h2>
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span><span class="lz">防线 1：工作区路径隔离</span><span class="le">Layer 1: Path Jailing</span></span> <span class="badge">Path Jail</span></div>
-            <p><span class="lz">严格限定 Agent 仅能在当前工程工作区及其明确指定的子目录下进行读写。任何尝试向上穿越（如 <code>../../etc/passwd</code>）或访问 <code>~/.ssh/</code> 的调用直接被内核硬阻断。</span><span class="le">Restricts the agent exclusively to the active repository workspace. Path traversal attempts (e.g. <code>../../etc/passwd</code>) and sensitive targets (<code>~/.ssh/</code>) are hard-blocked.</span></p>
+            <div class="card-title"><span>Layer 1: Path Jailing</span> <span class="badge">Path Jail</span></div>
+            <p>Restricts the agent exclusively to the active repository workspace. Path traversal attempts (e.g. <code>../../etc/passwd</code>) and sensitive targets (<code>~/.ssh/</code>) are hard-blocked.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">防线 2：策略引擎动态匹配</span><span class="le">Layer 2: Policy Gating</span></span> <span class="badge">PermissionEngine</span></div>
-            <p><span class="lz">内核维护细粒度的权限规则表。可根据工具名称、文件模式、Shell 命令内容动态判定：直接放行（Allow）、直接拒绝（Deny）或必须经过人工确认（Prompt）。</span><span class="le">Maintains fine-grained policy rules evaluating tool names, file patterns, and shell commands: auto-allow, auto-deny, or mandatory human confirmation.</span></p>
+            <div class="card-title"><span>Layer 2: Policy Gating</span> <span class="badge">PermissionEngine</span></div>
+            <p>Maintains fine-grained policy rules evaluating tool names, file patterns, and shell commands: auto-allow, auto-deny, or mandatory human confirmation.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">防线 3：Linux 容器沙箱</span><span class="le">Layer 3: Bubblewrap Sandbox</span></span> <span class="badge">Linux Sandbox</span></div>
-            <p><span class="lz">在 Linux 环境下，Agent 的 Shell 子进程默认在轻量级 <code>bubblewrap</code> 容器沙箱中运行：隔离宿主根目录只读挂载、独立网络命名空间、只允许工作区与临时目录读写。</span><span class="le">On Linux, agent shell commands run inside a lightweight <code>bubblewrap</code> sandbox: read-only host mount, network namespace isolation, and ephemeral scratch areas.</span></p>
+            <div class="card-title"><span>Layer 3: Bubblewrap Sandbox</span> <span class="badge">Linux Sandbox</span></div>
+            <p>On Linux, agent shell commands run inside a lightweight <code>bubblewrap</code> sandbox: read-only host mount, network namespace isolation, and ephemeral scratch areas.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">防线 4：脱敏审计持久化</span><span class="le">Layer 4: Redacted Audit Logs</span></span> <span class="badge">Audit Trail</span></div>
-            <p><span class="lz">所有操作与工具输出持久化记录在 <code>audit.jsonl</code> 中。内核自动对 API Key、Bearer Token、密码和敏感凭据进行正则脱敏，防止凭据泄露。</span><span class="le">All interactions persist to <code>audit.jsonl</code>. Credential patterns (API keys, passwords, bearer tokens) are automatically redacted before logging.</span></p>
+            <div class="card-title"><span>Layer 4: Redacted Audit Logs</span> <span class="badge">Audit Trail</span></div>
+            <p>Additional tool audit logging is disabled by default (<code>observability.audit_path</code> is <code>null</code>). When enabled, audit input and output use pattern-based credential redaction. Session records and tool artifacts are saved separately and can contain raw content; this redaction does not make them safe to share. Review and sanitize them before sharing.</p>
           </div>
         </div>
 
-        <h2><span class="lz">配置安全策略规则 (Security Policies)</span><span class="le">Configuring Security Policies</span></h2>
-        <p><span class="lz">在 <code>cade.config.json</code> 或 <code>~/.cade/settings.json</code> 中自定义你的安全规则：</span><span class="le">Customize security and permission rules in <code>cade.config.json</code> or <code>~/.cade/settings.json</code>:</span></p>
+        <h2>Configure security policies</h2>
+        <p>Customize security and permission rules in <code>cade.config.json</code> or <code>~/.cade/settings.json</code>:</p>
         <div class="code-block">
           <div class="code-header">
             <span>JSON</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>{
   "security": {
-    "workspace_only": true,
-    "allow_network_commands": false
+    "approval_policy": "on-request",
+    "approval_router": "mode",
+    "sandbox": {
+      "mode": "workspace-write",
+      "network_access": "deny"
+    }
   },
   "execution_modes": {
-    "rules": {
-      "build": [
-        { "action": "run_command", "command": "rm", "effect": "deny" },
-        { "action": "run_command", "command": "git", "subcommand": "push", "effect": "ask" }
-      ]
-    }
+    "default_mode": "act"
   }
 }</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#tools" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">内置工具体系与操作安全</span><span class="le">Built-in Tools</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Built-in Tools</span>
           </a>
           <a href="#configuration" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">配置手册与环境变量</span><span class="le">Configuration</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Configuration →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 12. CONFIGURATION ================= -->
-      
+
+      <!-- 配置。 -->
+
 <article id="configuration" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">配置手册与环境变量</span><span class="le">Configuration</span></span>
+          <a href="#">Docs</a> / <span class="current">Configuration</span>
         </div>
-        <h1><span class="lz">配置手册与环境变量体系</span><span class="le">Configuration Manual & Environment System</span></h1>
-        <p class="lead-text"><span class="lz">支持用户全局（~/.cade/settings.json）、项目工程（cade.config.json）与本地覆盖（.cade/settings.json）三层配置，配合命令行参数与环境变量实现灵活覆盖。</span><span class="le">Supports hierarchical configuration across global (~/.cade/settings.json), project-level (cade.config.json), and local (.cade/settings.json) tiers with CLI and environment overrides.</span></p>
+        <h1>Configuration and environment variables</h1>
+        <p class="lead-text">Supports hierarchical configuration across global (~/.cade/settings.json), project-level (cade.config.json), and local (.cade/settings.json) tiers with CLI and environment overrides.</p>
 
-        <h2><span class="lz">配置优先级判定链</span><span class="le">Configuration Precedence Order</span></h2>
-        <p><span class="lz">当同一参数在多处定义时，Cade 依照如下从高到低的优先级进行解析合并：</span><span class="le">When the same setting is defined in multiple locations, Cade resolves values in the following order of precedence:</span></p>
+        <h2>Configuration precedence</h2>
+        <p>When the same setting is defined in multiple locations, Cade resolves values in the following order of precedence:</p>
         <ol>
-          <li><span class="lz"><strong>CLI 显式参数</strong>（如 <code>cade --model gpt-6-sol</code>）；</span><span class="le"><strong>Explicit CLI Flags</strong> (e.g. <code>cade --model gpt-6-sol</code>);</span></li>
-          <li><span class="lz"><strong>系统环境变量</strong>（如 <code>DEEPSEEK_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>CADE_MODE</code>）；</span><span class="le"><strong>Environment Variables</strong> (e.g. <code>DEEPSEEK_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>CADE_MODE</code>);</span></li>
-          <li><span class="lz"><strong>工作区本地配置</strong>（<code>&lt;project_root&gt;/.cade/settings.json</code>）；</span><span class="le"><strong>Local Workspace Configuration</strong> (<code>&lt;project_root&gt;/.cade/settings.json</code>);</span></li>
-          <li><span class="lz"><strong>项目工程配置</strong>（<code>&lt;project_root&gt;/cade.config.json</code>）；</span><span class="le"><strong>Project Configuration</strong> (<code>&lt;project_root&gt;/cade.config.json</code>);</span></li>
-          <li><span class="lz"><strong>用户全局配置</strong>（<code>~/.cade/settings.json</code>）；</span><span class="le"><strong>Global User Configuration</strong> (<code>~/.cade/settings.json</code>);</span></li>
-          <li><span class="lz"><strong>Cade 内置默认值</strong>（默认模型：<code>gpt-5.6-luna</code>，effort：<code>high</code>，默认模式：<code>act</code>）。</span><span class="le"><strong>Built-in Framework Defaults</strong> (Default model: <code>gpt-5.6-luna</code>, effort: <code>high</code>, mode: <code>act</code>).</span></li>
+          <li>Global user settings: <code>~/.cade/settings.json</code>.</li>
+          <li>Project settings: <code>cade.config.json</code>, replaced by the file selected with <code>cade --config PATH</code>.</li>
+          <li>Local workspace settings: <code>.cade/settings.json</code>.</li>
+          <li><code>CADE_APPROVAL_POLICY</code> overrides <code>security.approval_policy</code>.</li>
         </ol>
+        <p>Later explicit fields override earlier values. Nested objects merge recursively; arrays are replaced. Omitted fields use built-in defaults. API key environment variables supply credentials separately. Use <code>cade exec --model provider/model</code> for a temporary exec model override or <code>/model</code> in the TUI. See <a href="guide/configuration.md">Configuration</a>.</p>
 
-        <h2><span class="lz">完整 JSON 配置参数结构</span><span class="le">Complete JSON Configuration Reference</span></h2>
+        <h2>JSON configuration example</h2>
         <div class="code-block">
           <div class="code-header">
-            <span><span class="lz">JSON 完整配置样例</span><span class="le">Complete JSON Configuration</span></span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <span>JSON configuration overrides</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>{
   "default_provider": "openai-codex",
@@ -1582,114 +1500,107 @@ flowchart TD
     }
   },
   "agent": {
-    "rollover_trigger_ratio": 0.95,     <span class="comment">// <span class="lz">95% 水位线触发无摘要平滑换窗</span><span class="le">95% capacity triggers rollover</span></span>
-    "reserve_tokens": 16384,            <span class="comment">// <span class="lz">预留生成安全空间</span><span class="le">Reserved generation budget</span></span>
-    "max_steps": 30,                    <span class="comment">// <span class="lz">单个任务最大自主步数</span><span class="le">Max autonomous steps per task</span></span>
-    "tool_workers": 4,                  <span class="comment">// <span class="lz">只读工具并发线程数</span><span class="le">Parallel workers for read tools</span></span>
-    "tool_timeout_seconds": 120.0       <span class="comment">// <span class="lz">工具执行超时限制 (秒)</span><span class="le">Tool execution timeout (s)</span></span>
+    "rollover_trigger_ratio": 0.95,
+    "reserve_tokens": 16384,
+    "max_steps": 30,
+    "tool_workers": 4,
+    "tool_timeout_seconds": 120.0
   },
   "security": {
-    "workspace_only": true              <span class="comment">// <span class="lz">工作区严格路径隔离</span><span class="le">Strict workspace path jailing</span></span>
+    "sandbox": {
+      "mode": "workspace-write",
+      "network_access": "deny"
+    }
   },
   "execution_modes": {
-    "default_mode": "build"             <span class="comment">// <span class="lz">默认模式: plan | build | act</span><span class="le">Default mode: plan | build | act</span></span>
+    "default_mode": "act"
   }
 }</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#security" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">权限审查与沙箱安全</span><span class="le">Security</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Security</span>
           </a>
           <a href="#providers" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">模型与 Provider 接入</span><span class="le">AI Providers</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">AI Providers →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 13. PROVIDERS ================= -->
+
+      <!-- 模型适配。 -->
       <article id="providers" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">模型与 Provider 接入</span><span class="le">AI Providers</span></span>
+          <a href="#">Docs</a> / <span class="current">AI Providers</span>
         </div>
-        <h1><span class="lz">大模型与 Provider 深度接入指南</span><span class="le">AI Provider Integration Guide</span></h1>
-        <p class="lead-text"><span class="lz">开箱即用适配主流商业模型与本地开源网关，原生支持流式输出、Prompt 缓存与深度推理思考流。</span><span class="le">Out-of-the-box support for industry-leading foundation models and local OpenAI-compatible endpoints with streaming, prompt caching, and reasoning tokens.</span></p>
+        <h1>AI provider integration</h1>
+        <p class="lead-text">Out-of-the-box support for industry-leading foundation models and local OpenAI-compatible endpoints with streaming, prompt caching, and reasoning tokens.</p>
 
-        <h2><span class="lz">主流大模型接入配置</span><span class="le">Leading Provider Configurations</span></h2>
+        <h2>Provider configurations</h2>
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span>DeepSeek</span> <span class="badge"><span class="lz">官方推荐 / 默认</span><span class="le">Recommended</span></span></div>
-            <p><span class="lz">原生适配 <code>deepseek-v4-pro</code> 与内置默认的 <code>deepseek-flash</code> (V4.1)。百万级超长上下文（1,000,000 Token），384k 最大输出，原生思考流实时折叠展开与分时计费支持。</span><span class="le">Native support for <code>deepseek-v4-pro</code> and default <code>deepseek-flash</code> (V4.1). 1M token context, 384k max output, streaming reasoning, and peak-hour rate support.</span></p>
+            <div class="card-title"><span>DeepSeek</span> <span class="badge">Recommended</span></div>
+            <p>Native support for <code>deepseek-v4-pro</code> and default <code>deepseek-flash</code> (V4.1). 1M token context, 384k max output, streaming reasoning, and peak-hour rate support.</p>
           </div>
           <div class="card">
             <div class="card-title"><span>OpenAI</span> <span class="badge">GPT-6.1, GPT-6 & GPT-5.6</span></div>
-            <p><span class="lz">支持 <code>gpt-6-astra</code>（最高推理阶梯）、<code>gpt-6.1-sol</code>、<code>gpt-6-sol</code>、<code>gpt-6-luna</code> 及 <code>gpt-5.6-sol</code> 等前沿大模型。提供 1,050,000 超大上下文，支持 Responses 与 Codex 双重协议。</span><span class="le">Full integration for <code>gpt-6-astra</code>, <code>gpt-6.1-sol</code>, <code>gpt-6-sol</code>, <code>gpt-6-luna</code>, and <code>gpt-5.6</code> family. 1.05M context window with Responses and Codex protocols.</span></p>
+            <p>Full integration for <code>gpt-6-astra</code>, <code>gpt-6.1-sol</code>, <code>gpt-6-sol</code>, <code>gpt-6-luna</code>, and <code>gpt-5.6</code> family. 1.05M context window with Responses and Codex protocols.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">智谱 ChatGLM</span><span class="le">ChatGLM</span></span> <span class="badge">GLM-5.1</span></div>
-            <p><span class="lz">原生支持智谱 <code>glm-5.1</code>、<code>glm-5</code>、<code>glm-5-turbo</code> 与 <code>glm-4.7-flash</code>。提供 200,000 上下文与 131k 输出，深度优化代码推理与工程任务生成。</span><span class="le">Native integration for <code>glm-5.1</code>, <code>glm-5</code>, <code>glm-5-turbo</code>, and <code>glm-4.7-flash</code>. 200k context with 131k output optimized for code reasoning.</span></p>
+            <div class="card-title"><span>ChatGLM</span> <span class="badge">GLM-5.1</span></div>
+            <p>Native integration for <code>glm-5.1</code>, <code>glm-5</code>, <code>glm-5-turbo</code>, and <code>glm-4.7-flash</code>. 200k context with 131k output optimized for code reasoning.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">小米 MiMo</span><span class="le">Xiaomi MiMo</span></span> <span class="badge">MiMo V2.5 Pro</span></div>
-            <p><span class="lz">接入 <code>mimo-v2.5-pro</code>（1,048,576 上下文）与 <code>mimo-v2.5</code>（262,144 上下文）。具备极高的长文本吞吐性价比与微秒级首字响应能力。</span><span class="le">Integrated with <code>mimo-v2.5-pro</code> (1.05M context) and <code>mimo-v2.5</code> (262k context), delivering high-throughput and cost-efficient completions.</span></p>
+            <div class="card-title"><span>Xiaomi MiMo</span> <span class="badge">MiMo V2.5 Pro</span></div>
+            <p>Integrated with <code>mimo-v2.5-pro</code> (1.05M context) and <code>mimo-v2.5</code> (262k context), delivering high-throughput and cost-efficient completions.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">本地与自建兼容网关</span><span class="le">Local & Self-Hosted</span></span> <span class="badge">Ollama / vLLM</span></div>
-            <p><span class="lz">配置 <code>transport = "custom"</code> 与 <code>base_url = "http://localhost:11434/v1"</code>，无缝接入本地 Ollama、vLLM 或企业私有化模型，实现 100% 离线安全研发。</span><span class="le">Point <code>transport = "custom"</code> to local Ollama or vLLM deployments for completely private, air-gapped code engineering.</span></p>
+            <div class="card-title"><span>Local & Self-Hosted</span> <span class="badge">Ollama / vLLM</span></div>
+            <p>Point <code>transport = "custom"</code> to local Ollama or vLLM deployments for completely private, air-gapped code engineering.</p>
           </div>
         </div>
 
-        <h2><span class="lz">即时热切换模型 (/model)</span><span class="le">Hot-Switching Models Live</span></h2>
-        <p><span class="lz">在任何交互过程中，你可以通过 <code>/model</code> 命令热切换当前执行模型与思考深度（<code>provider/model:thinking_level</code>）：</span><span class="le">Switch models and reasoning depth live via <code>/model [provider/]model[:thinking_level]</code>:</span></p>
+        <h2>Switch models</h2>
+        <p>Switch models and reasoning depth live via <code>/model [provider/]model[:thinking_level]</code>:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Terminal</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>/model gpt-6-sol                          <span class="comment"># <span class="lz">切换至 GPT-6 Sol 主力执行代码生成</span><span class="le">Switch to GPT-6 Sol for implementation</span></span>
-/model deepseek/deepseek-v4-pro:high      <span class="comment"># <span class="lz">切换至 DeepSeek V4 Pro 并开启高思考深度推演</span><span class="le">Use DeepSeek V4 Pro with high reasoning depth</span></span>
-/model openai/gpt-6-astra:max             <span class="comment"># <span class="lz">切换至 GPT-6 Astra 极高推理深度解决疑难架构</span><span class="le">Use GPT-6 Astra with max reasoning effort</span></span>
-/model chatglm/glm-5.1:medium             <span class="comment"># <span class="lz">切换至 GLM-5.1 执行快速重构审查</span><span class="le">Use GLM-5.1 for fast refactor review</span></span></code></pre>
+          <pre><code>/model gpt-6-sol                          <span class="comment"># 选择 GPT-6 Sol</span>
+/model deepseek/deepseek-v4-pro:high      <span class="comment"># 选择 DeepSeek V4 Pro 和 high 推理深度</span>
+/model openai/gpt-6-astra:max             <span class="comment"># 选择 GPT-6 Astra 和 max 推理深度</span>
+/model chatglm/glm-5.1:medium             <span class="comment"># 选择 GLM-5.1</span></code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#configuration" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">配置手册与环境变量</span><span class="le">Configuration</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Configuration</span>
           </a>
           <a href="#mcp" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">MCP 外部服务扩展</span><span class="le">MCP Integration</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">MCP Integration →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 14. MCP ================= -->
+
+      <!-- MCP 集成。 -->
       <article id="mcp" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">MCP 外部服务扩展</span><span class="le">MCP Integration</span></span>
+          <a href="#">Docs</a> / <span class="current">MCP Integration</span>
         </div>
-        <h1><span class="lz">MCP (Model Context Protocol) 外部服务集成</span><span class="le">Model Context Protocol (MCP) Integration</span></h1>
-        <p class="lead-text"><span class="lz">接入业界通用的标准 MCP 生态，无缝挂载本地数据库、GitHub 仓库、Sentry 告警等专业第三方工具能力。</span><span class="le">Seamlessly integrate with the open Model Context Protocol ecosystem, mounting databases, issue trackers, and third-party services directly into Cade.</span></p>
+        <h1>Model Context Protocol (MCP) integration</h1>
+        <p class="lead-text">Seamlessly integrate with the open Model Context Protocol ecosystem, mounting databases, issue trackers, and third-party services directly into Cade.</p>
 
-        <h2><span class="lz">MCP 工作原理与通信传输</span><span class="le">MCP Architecture & Transports</span></h2>
-        <p><span class="lz">Cade 支持通过 <strong>stdio（子进程标准输入输出）</strong> 与 <strong>SSE（HTTP Server-Sent Events）</strong> 与任何合规的 MCP 服务器进行通信。启动时自动握手、检索 Tool 架构并动态注入模型上下文中：</span><span class="le">Cade natively communicates via <strong>stdio</strong> and <strong>SSE</strong> transports. Upon startup, it performs automatic capability discovery and injects schemas dynamically:</span></p>
+        <h2>MCP architecture and transports</h2>
+        <p>Cade launches MCP servers as subprocesses and communicates through <strong>stdio</strong>. Upon startup, it performs automatic capability discovery and injects schemas dynamically:</p>
 
         <div class="mermaid-container">
-          <script type="text/mermaid" data-lang="zh">
-flowchart LR
-    CADE["Cade 统一运行时内核"]
-    MCP1["SQLite / Postgres MCP<br>(查询业务数据表结构)"]
-    MCP2["GitHub MCP Server<br>(读取 Issue 与 PR 详情)"]
-    MCP3["企业自定义微服务 MCP<br>(执行部署与日志拉取)"]
 
-    CADE ---|JSON-RPC via stdio| MCP1
-    CADE ---|JSON-RPC via stdio| MCP2
-    CADE ---|JSON-RPC via SSE| MCP3
-          </script>
           <script type="text/mermaid" data-lang="en">
 flowchart LR
     CADE["Cade Runtime Kernel"]
@@ -1699,16 +1610,16 @@ flowchart LR
 
     CADE ---|JSON-RPC via stdio| MCP1
     CADE ---|JSON-RPC via stdio| MCP2
-    CADE ---|JSON-RPC via SSE| MCP3
+    CADE ---|JSON-RPC via stdio| MCP3
           </script>
           <div class="mermaid-output"></div>
         </div>
 
-        <h2><span class="lz">配置示例 (.cade/mcp_config.json)</span><span class="le">Configuration Example (.cade/mcp_config.json)</span></h2>
+        <h2>Configure .cade/mcp_config.json</h2>
         <div class="code-block">
           <div class="code-header">
             <span>JSON</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>{
   "mcpServers": {
@@ -1725,120 +1636,105 @@ flowchart LR
 }</code></pre>
         </div>
 
-        <h2><span class="lz">在会话中使用 MCP 工具</span><span class="le">Using MCP Tools in Sessions</span></h2>
-        <p><span class="lz">配置后启动 Cade，输入 <code>/tools</code> 即可看到以 <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> 命名的已发现工具。你可以直接通过自然语言指示 Agent 调用：</span><span class="le">After configuring servers, run <code>/tools</code> to view registered tools under <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> namespaces. Prompt the agent naturally to utilize them:</span></p>
+        <h2>Use MCP tools in sessions</h2>
+        <p>Restart Cade after changing MCP configuration. Use <code>/mcp [status]</code> to inspect connectivity; live reload is not supported. Run <code>/tool list</code> to view registered tools under <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> namespaces. Prompt the agent naturally to utilize them:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Prompt</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code><span class="lz">> 请通过 sqlite MCP 工具查看 users 表的建表语句，并为当前项目编写对应的 SQLAlchemy 映射模型。</span><span class="le">> Inspect the users table schema via sqlite MCP tool and draft the SQLAlchemy model for it.</span></code></pre>
+          <pre><code>> Inspect the users table schema via sqlite MCP tool and draft the SQLAlchemy model for it.</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#providers" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">模型与 Provider 接入</span><span class="le">AI Providers</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← AI Providers</span>
           </a>
           <a href="#skills" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">Skills 技能包定制</span><span class="le">Skills</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Skills →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 15. SKILLS ================= -->
+
+      <!-- 技能。 -->
       <article id="skills" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">Skills 技能包定制</span><span class="le">Skills</span></span>
+          <a href="#">Docs</a> / <span class="current">Skills</span>
         </div>
-        <h1><span class="lz">Skills 技能包与领域专精规范</span><span class="le">Skills Development & Domain Specialization</span></h1>
-        <p class="lead-text"><span class="lz">通过模块化的 SKILL 规范封装领域编码标准、多步重构工作流与复杂测试约束。可跨团队与跨仓库无缝复用。</span><span class="le">Encapsulate domain-specific engineering guidelines, complex refactoring protocols, and test rules into modular SKILL packages reusable across teams.</span></p>
+        <h1>Skills and domain instructions</h1>
+        <p class="lead-text">Encapsulate domain-specific engineering guidelines, complex refactoring protocols, and test rules into modular SKILL packages reusable across teams.</p>
 
-        <h2><span class="lz">Skill 目录结构与规范文件</span><span class="le">Skill Directory Layout & Specification</span></h2>
-        <p><span class="lz">Cade 支持从全局 <code>~/.cade/skills/</code> 或项目级 <code>.cade/skills/</code> 自动发现技能包：</span><span class="le">Cade automatically discovers skills from both global (<code>~/.cade/skills/</code>) and project-local (<code>.cade/skills/</code>) directories:</span></p>
+        <h2>Skill directory layout</h2>
+        <p>Cade discovers user skills in <code>~/.cade/skills/</code> and <code>~/.agents/skills/</code>. Project directories <code>.cade/skills/</code> and <code>.agents/skills/</code> are included only when <code>skills.trust_project_skills</code> is <code>true</code> (default: <code>false</code>). An explicit <code>paths.skills_dir</code> is trusted and has highest priority:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Directory Tree</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>.cade/skills/
 └── refactor-clean-code/
-    ├── SKILL.md          <span class="comment"># <span class="lz">必须：主规范说明与 YAML 元数据</span><span class="le">Required: Main specification and YAML frontmatter</span></span>
-    ├── examples/         <span class="comment"># <span class="lz">可选：优秀与错误代码范式对照</span><span class="le">Optional: Positive and negative code examples</span></span>
-    └── checklists/       <span class="comment"># <span class="lz">可选：重构验收检查清单</span><span class="le">Optional: Verification checklists</span></span></code></pre>
+    ├── SKILL.md          <span class="comment"># 必须：主规范说明与 YAML 元数据</span>
+    ├── examples/         <span class="comment"># 可选：优秀与错误代码范式对照</span>
+    └── checklists/       <span class="comment"># 可选：重构验收检查清单</span></code></pre>
         </div>
 
-        <h2><span class="lz">编写一个 SKILL.md</span><span class="le">Authoring a SKILL.md</span></h2>
+        <h2>Write a SKILL.md file</h2>
         <div class="code-block">
           <div class="code-header">
             <span>SKILL.md Template</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>---
 name: refactor-clean-code
-<span class="lz">description: 专门用于业务模块分层解耦与单测补全的工程规范指南。</span><span class="le">description: Specialized engineering guidelines for module decoupling and unit tests.</span>
-tools_allowed: [view_file, replace_file_content, run_command]
-version: 1.0.0
+description: Specialized engineering guidelines for module decoupling and unit tests.
 ---
 
-<span class="lz"># 核心重构不变量
-1. 单个 Python 文件函数不得超过 40 行，模块不得超过 300 行；
-2. 严禁出现未标注类型的函数入参和返回值；
-3. 任何重构修改落地后，必须调用 run_command 执行 `pytest tests/` 确保零回归；
-4. 业务代码与 I/O 隔离，禁止在领域实体中直接发起网络请求。</span><span class="le"># Core Refactoring Invariants
+# Core Refactoring Invariants
 1. Functions must not exceed 40 lines; modules must not exceed 300 lines;
 2. All function parameters and return types must have explicit type annotations;
-3. Always execute `pytest tests/` via run_command to verify zero regressions;
-4. Enforce strict I/O separation; never issue network requests within domain entities.</span></code></pre>
+3. Always execute `pytest tests/` via bash to verify zero regressions;
+4. Enforce strict I/O separation; never issue network requests within domain entities.</code></pre>
         </div>
 
-        <h2><span class="lz">管理与加载指令</span><span class="le">Skill Management Commands</span></h2>
+        <h2>Skill commands</h2>
         <ul>
-          <li><span class="lz"><code>/skill list</code>：列出当前项目检测到的所有可用技能及其简要描述；</span><span class="le"><code>/skill list</code>: List all detected skills available in the current project;</span></li>
-          <li><span class="lz"><code>/skill load &lt;name&gt;</code>：将指定技能规范手动强制装配入当前会话的上下文提示词中；</span><span class="le"><code>/skill load &lt;name&gt;</code>: Force-load a skill into the active session prompt;</span></li>
-          <li><span class="lz"><strong>自动触发机制</strong>：当用户提出的需求与 Skill 的 <code>description</code> 语义高度匹配时，Agent 会自主识别并激活相应规范。</span><span class="le"><strong>Autonomous Activation</strong>: When user instructions semantically match a skill description, Cade activates guidelines automatically.</span></li>
+          <li><code>/skill NAME [prompt]</code>: Activate a discovered skill. An optional prompt becomes a follow-up task.</li>
+          <li>Discovered skill summaries appear in the system prompt. The model can load full instructions through the internal skill tool when the task matches.</li>
         </ul>
 
         <div class="page-nav">
           <a href="#mcp" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">MCP 外部服务扩展</span><span class="le">MCP Integration</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← MCP Integration</span>
           </a>
           <a href="#subagents" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">Subagents 子代理</span><span class="le">Subagents</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Subagents →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 16. SUBAGENTS ================= -->
+
+      <!-- 子代理。 -->
       <article id="subagents" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">Subagents 子代理</span><span class="le">Subagents</span></span>
+          <a href="#">Docs</a> / <span class="current">Subagents</span>
         </div>
-        <h1><span class="lz">Subagents 多代理并行编排</span><span class="le">Subagents Parallel Orchestration</span></h1>
-        <p class="lead-text"><span class="lz">将庞大复杂的长程研发任务拆解。在独立且干净的上下文视窗中派生子代理并行推进，极大保护主干上下文预算。</span><span class="le">Deconstruct complex engineering tasks into isolated sub-tasks. Spawn autonomous subagents with clean context windows to protect the primary context budget.</span></p>
+        <h1>Subagent orchestration</h1>
+        <p class="lead-text">Deconstruct complex engineering tasks into isolated sub-tasks. Spawn autonomous subagents with clean context windows to protect the primary context budget.</p>
 
-        <h2><span class="lz">为什么需要子代理编排？</span><span class="le">Why Subagent Orchestration Matters</span></h2>
-        <p><span class="lz">在重构大型工程时，主 Agent 如果直接对全库数十个文件进行搜索与扫描，会瞬间把宝贵的上下文窗口塞满代码噪声。通过派生专属的子代理（Subagents）：</span><span class="le">Scanning dozens of files in a massive repository quickly exhausts context budgets with inspection noise. Delegating to specialized subagents solves this fundamentally:</span></p>
+        <h2>When to delegate</h2>
+        <p>Scanning dozens of files in a massive repository quickly exhausts context budgets with inspection noise. Delegating to specialized subagents solves this fundamentally:</p>
         <ul>
-          <li><span class="lz"><strong>干净的上下文隔离</strong>：子代理在独立进程中运行自己的推理循环，拥有独立的 Prompt 预算；</span><span class="le"><strong>Isolated Context Sandboxes</strong>: Subagents execute within independent loops, consuming their own fresh token budgets;</span></li>
-          <li><span class="lz"><strong>成果精简归纳回传</strong>：子代理完成深度勘察或密集测试后，仅向主规划 Agent 返回精炼的结论字典，主干上下文消耗趋近于零；</span><span class="le"><strong>Synthesized Return Payloads</strong>: After extensive exploration, subagents return structured summaries, saving thousands of tokens for the parent agent;</span></li>
-          <li><span class="lz"><strong>角色专精</strong>：可针对调研（Research）、测试（Testing）、文档生成分别配置最适宜的轻量模型或大模型。</span><span class="le"><strong>Specialized Roles</strong>: Configure specialized subagents (researchers, test runners, reviewers) with distinct prompts and cost-efficient models.</span></li>
+          <li><strong>Isolated Context Sandboxes</strong>: Subagents execute within independent loops, consuming their own fresh token budgets;</li>
+          <li><strong>Synthesized Return Payloads</strong>: After extensive exploration, subagents return structured summaries, saving thousands of tokens for the parent agent;</li>
+          <li><strong>Specialized Roles</strong>: Configure specialized subagents (researchers, test runners, reviewers) with distinct prompts and cost-efficient models.</li>
         </ul>
 
-        <h2><span class="lz">多代理协作拓扑</span><span class="le">Multi-Agent Collaboration Topology</span></h2>
+        <h2>Collaboration topology</h2>
         <div class="mermaid-container">
-          <script type="text/mermaid" data-lang="zh">
-flowchart TD
-    PARENT["主编排 Agent (Planning & Orchestrator)<br>把控长程规划与全局进度"]
-    PARENT -->|分发调研任务| SUB_R["Research 调研子代理<br>(全局符号扫描与依赖拓扑分析)"]
-    PARENT -->|分发单测任务| SUB_T["Test 生成子代理<br>(针对改动编写并运行 pytest)"]
-    SUB_R -->|精简结构化结论回传| AGGR["成果汇总与上下文注入"]
-    SUB_T -->|测试通过矩阵与失败堆栈| AGGR
-    AGGR --> PERSIST["主 Agent 执行最终落地与快照落盘"]
-          </script>
+
           <script type="text/mermaid" data-lang="en">
 flowchart TD
     PARENT["Orchestrator Agent (Planning & Coordination)<br>Oversees Task Goals & Timeline"]
@@ -1853,165 +1749,157 @@ flowchart TD
 
         <div class="page-nav">
           <a href="#skills" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">Skills 技能包定制</span><span class="le">Skills</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Skills</span>
           </a>
           <a href="#hooks" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">生命周期 Hooks</span><span class="le">Lifecycle Hooks</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Lifecycle Hooks →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 17. HOOKS ================= -->
+
+      <!-- 生命周期钩子。 -->
       <article id="hooks" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">生命周期 Hooks</span><span class="le">Lifecycle Hooks</span></span>
+          <a href="#">Docs</a> / <span class="current">Lifecycle Hooks</span>
         </div>
-        <h1><span class="lz">生命周期 Hooks 拦截机制</span><span class="le">Lifecycle Hooks & Event Interceptors</span></h1>
-        <p class="lead-text"><span class="lz">在会话启动、工具调用前后与模型响应周期中挂载确定性的自定义 Python 钩子脚本，实现格式化、安全核验与审计集成。</span><span class="le">Attach deterministic Python hooks at session bootstrap, before/after tool runs, and during inference cycles for linting, security gating, and telemetry.</span></p>
+        <h1>Lifecycle hooks</h1>
+        <p class="lead-text">Run configured external commands for tool constraints and lifecycle notifications. Commands exchange JSON through stdin and stdout.</p>
 
-        <h2><span class="lz">可用的生命周期钩子事件</span><span class="le">Supported Lifecycle Hook Events</span></h2>
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th><span class="lz">Hook 事件名称</span><span class="le">Hook Event</span></th>
-                <th><span class="lz">触发时机与调用参数</span><span class="le">Trigger Timing & Parameters</span></th>
-                <th><span class="lz">典型用途与拦截行为</span><span class="le">Typical Use Cases & Action</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>on_session_start</code></td>
-                <td><span class="lz">会话创建或断点续接时触发。传入 <code>session_id</code>, <code>cwd</code>。</span><span class="le">Triggered when a session is initialized or resumed. Receives <code>session_id</code>, <code>cwd</code>.</span></td>
-                <td><span class="lz">环境健全性检查、拉取 Git 分支最新状态、清理陈旧临时文件。</span><span class="le">Verify environment health, git sync check, clean up stale temporary files.</span></td>
-              </tr>
-              <tr>
-                <td><code>pre_tool_call</code></td>
-                <td><span class="lz">任何工具执行前触发。传入 <code>tool_name</code>, <code>arguments</code>。</span><span class="le">Triggered right before executing a tool. Receives <code>tool_name</code>, <code>arguments</code>.</span></td>
-                <td><span class="lz">动态参数校验与敏感路径二次阻断。抛出异常或返回非零状态码可直接中止工具执行。</span><span class="le">Validate parameters and block sensitive file paths. Returning non-zero aborts tool execution.</span></td>
-              </tr>
-              <tr>
-                <td><code>post_tool_call</code></td>
-                <td><span class="lz">工具执行完毕后触发。传入 <code>tool_name</code>, <code>result</code>。</span><span class="le">Triggered immediately after a tool finishes. Receives <code>tool_name</code>, <code>result</code>.</span></td>
-                <td><span class="lz">代码修改后自动运行 <code>ruff format</code> / <code>eslint</code> 格式化，或触发测试套件。</span><span class="le">Auto-run <code>ruff format</code> after edits, execute linting, or run unit tests.</span></td>
-              </tr>
-              <tr>
-                <td><code>on_session_end</code></td>
-                <td><span class="lz">开发者退出会话时触发。传入 <code>summary</code>, <code>event_count</code>。</span><span class="le">Triggered when exiting Cade. Receives <code>summary</code>, <code>event_count</code>.</span></td>
-                <td><span class="lz">自动生成会话归档报告、发送 Slack/钉钉团队进度通知。</span><span class="le">Generate session report, notify team chat channels, clean sandbox containers.</span></td>
-              </tr>
-            </tbody>
-          </table>
+        <h2>Supported hook events</h2>
+        <ul>
+          <li><code>pre_tool</code>: A synchronous constraint hook before tool execution.</li>
+          <li><code>post_tool</code>: A background notification after a tool returns.</li>
+          <li><code>before_agent_start</code>: A background notification before a user instruction runs.</li>
+          <li><code>before_provider_request</code>: A background notification after request assembly.</li>
+          <li><code>on_context_window_reset</code>: A background notification during context rollover.</li>
+          <li><code>on_error</code>: A background error notification.</li>
+        </ul>
+
+        <h2>Configure a hook</h2>
+        <p>Add a hook entry to <code>cade.config.json</code>. Commands are nonempty argv arrays and run directly without a shell. Each command receives a redacted JSON object on stdin with <code>event</code>, <code>tool</code>, <code>input</code>, <code>output</code>, <code>error</code>, <code>metadata</code>, and correlation IDs. Stdout must be empty or a JSON object; send diagnostic text to stderr.</p>
+        <div class="code-block">
+          <div class="code-header">
+            <span>JSON</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+          </div>
+          <pre><code>{
+  "hooks": {
+    "entries": [
+      {
+        "event": "post_tool",
+        "matcher": "edit",
+        "command": ["python3", ".cade/hooks/post_edit.py"],
+        "failure_policy": "warn"
+      }
+    ]
+  }
+}</code></pre>
         </div>
-
-        <h2><span class="lz">编写一个实战 Hook (.cade/hooks/post_edit.py)</span><span class="le">Writing a Custom Hook</span></h2>
-        <p><span class="lz">在项目中创建 <code>.cade/hooks/post_edit.py</code> 脚本：</span><span class="le">Create a custom hook script at <code>.cade/hooks/post_edit.py</code>:</span></p>
+        <p>Create <code>.cade/hooks/post_edit.py</code>:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Python</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>import subprocess, sys
+          <pre><code>import json
+import sys
 
-def post_tool_call(tool_name: str, args: dict, result: dict):
-    # <span class="lz">当执行文件写入工具时，自动格式化修改过的文件</span><span class="le">Auto-format files modified by write tools</span>
-    if tool_name in ("replace_file_content", "write_to_file"):
-        path = args.get("TargetFile")
-        if path and path.endswith(".py"):
-            subprocess.run(["ruff", "format", path], check=False)
-            print(f"[Hook] Auto-formatted {path} via ruff")</code></pre>
+record = json.load(sys.stdin)
+print(f"Tool finished: {record['tool']}", file=sys.stderr)
+print("{}")</code></pre>
         </div>
+        <p>A synchronous <code>pre_tool</code> hook can return <code>decision</code> (allow, ask, or deny) and an <code>arguments</code> object. Its decision can only tighten permissions. <code>failure_policy="fail"</code> raises an error to its caller and stops the tool attempt. The other configured events run through a background queue: exceptions are logged and do not propagate to the active tool or instruction. See <a href="guide/hooks.md">Lifecycle hooks</a> for failure policies and <code>/hooks</code> for diagnostics.</p>
 
         <div class="page-nav">
           <a href="#subagents" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">Subagents 子代理</span><span class="le">Subagents</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Subagents</span>
           </a>
           <a href="#tui" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">TUI 终端全屏工作台</span><span class="le">TUI Workbench</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">TUI Workbench →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 18. TUI ================= -->
-      
+
+      <!-- 终端工作台。 -->
+
 <article id="tui" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">TUI 终端全屏工作台</span><span class="le">TUI Workbench</span></span>
+          <a href="#">Docs</a> / <span class="current">TUI Workbench</span>
         </div>
-        <h1><span class="lz">TUI 终端全屏沉浸式工作台 (默认)</span><span class="le">TUI Full-Screen Terminal Workbench (Default)</span></h1>
-        <p class="lead-text"><span class="lz">Cade 默认启动的终端交互界面。分屏布局、实时代码 Diff 审查视窗与极速键盘导航。</span><span class="le">The default interface for Cade. Split-pane layout, live diff preview pane, and keyboard navigation.</span></p>
+        <h1>Terminal workspace</h1>
+        <p class="lead-text">The default interface for Cade. An inline transcript with embedded pickers, approval forms, and keyboard navigation.</p>
 
-        <h2><span class="lz">启动与视窗布局</span><span class="le">Startup & Split-Pane Architecture</span></h2>
-        <p><span class="lz">在任何项目目录下直接运行 <code>cade</code>，系统将自动进入全屏 TUI 终端工作台：</span><span class="le">Run <code>cade</code> directly in any project folder to enter the full-screen TUI workbench:</span></p>
+        <h2>Startup and layout</h2>
+        <p>Run <code>cade</code> directly in any project folder to start the inline terminal workspace:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>cade              <span class="comment"># <span class="lz">默认：启动 TUI 沉浸工作台</span><span class="le">Default: Launch TUI full-screen workbench</span></span>
-cade -c           <span class="comment"># <span class="lz">启动并自动续接最近会话</span><span class="le">Launch and resume latest session</span></span>
-cade --resume     <span class="comment"># <span class="lz">交互式选择历史会话启动</span><span class="le">Interactively browse and pick session</span></span></code></pre>
+          <pre><code>cade              <span class="comment"># 启动默认 TUI 工作台</span>
+cade -c           <span class="comment"># 启动并自动续接最近会话</span>
+cade --resume     <span class="comment"># 交互式选择历史会话启动</span></code></pre>
         </div>
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span><span class="lz">对话主视窗</span><span class="le">Conversation Stream</span></span> <span class="badge">Main Pane</span></div>
-            <p><span class="lz">左侧主视窗展示模型流式推理文本、工具调用状态与输出日志。支持深度思考推理流（Reasoning tokens）折叠展开与富文本高亮。</span><span class="le">Displays streaming text, tool execution logs, and reasoning thinking tokens with collapsible blocks and rich Markdown styling.</span></p>
+            <div class="card-title"><span>Conversation Stream</span> <span class="badge">Transcript</span></div>
+            <p>Displays streaming text, tool execution logs, and reasoning thinking tokens with collapsible blocks and rich Markdown styling.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">代码 Diff 审查看板</span><span class="le">Live Diff Inspector</span></span> <span class="badge">Diff Viewer</span></div>
-            <p><span class="lz">右侧视窗即时以红绿并排或统一行级对比展示代码修改。工具执行 <code>replace_file_content</code> 时即时联动，支持全屏展开与逐段审查。</span><span class="le">Renders live color-coded diffs as the agent modifies files. Synchronized with <code>replace_file_content</code> for precision code review.</span></p>
+            <div class="card-title"><span>Input and approvals</span> <span class="badge">Inline forms</span></div>
+            <p>Input, completion menus, pickers, and approval previews share the transcript layout. The terminal owns scrollback; Cade does not use an alternate screen or capture the mouse.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">运行状态</span><span class="le">Runtime Status</span></span> <span class="badge">Status Bar</span></div>
-            <p><span class="lz">顶部状态栏显示当前执行模式（Plan/Build/Act）、Provider 模型与 Token 消耗水位。</span><span class="le">The header status bar shows the active mode (Plan/Build/Act), provider, and context watermarks.</span></p>
+            <div class="card-title"><span>Runtime Status</span> <span class="badge">Status Bar</span></div>
+            <p>Two status lines below the input show the project, branch, context usage, execution mode, model, and effort.</p>
           </div>
         </div>
 
-        <h2><span class="lz">快捷键与导航速查 (Keybindings)</span><span class="le">Complete Keybindings Reference</span></h2>
+        <h2>Keyboard shortcuts</h2>
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th><span class="lz">快捷键</span><span class="le">Keybinding</span></th>
-                <th><span class="lz">作用视窗</span><span class="le">Context / Scope</span></th>
-                <th><span class="lz">功能与行为描述</span><span class="le">Action & Description</span></th>
+                <th>Keybinding</th>
+                <th>Context / Scope</th>
+                <th>Action & Description</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>Tab</code> / <code>Shift+Tab</code></td>
-                <td><span class="lz">全局</span><span class="le">Global</span></td>
-                <td><span class="lz">在输入区、对话流列表与 Diff 审查窗之间循环切换焦点。</span><span class="le">Cycle active focus between input box, conversation list, and diff pane.</span></td>
+                <td>Input / idle</td>
+                <td>Tab completes input. Shift+Tab cycles act → build → plan while idle with no pending interaction.</td>
               </tr>
               <tr>
                 <td><code>Ctrl+C</code></td>
-                <td><span class="lz">全局</span><span class="le">Global</span></td>
-                <td><span class="lz">单次按下中断当前正在进行的推理流或 Shell 命令；连续按两次安全退出。</span><span class="le">Interrupt active model streaming or running shell command; press twice to quit.</span></td>
+                <td>Global</td>
+                <td>Interrupt active model streaming or running shell command; press twice to quit.</td>
               </tr>
               <tr>
                 <td><code>Ctrl+O</code></td>
-                <td><span class="lz">Diff 视窗</span><span class="le">Diff Pane</span></td>
-                <td><span class="lz">全屏展开/还原当前代码 Diff 审查视窗，便于在大显示器上对比大文件改动。</span><span class="le">Toggle full-screen expansion for the live diff viewer.</span></td>
+                <td>Global</td>
+                <td>Fold or expand tool details.</td>
               </tr>
               <tr>
                 <td><code>↑</code> / <code>↓</code></td>
-                <td><span class="lz">输入区</span><span class="le">Input</span></td>
-                <td><span class="lz">遍历历史输入指令，或在自动补全候选列表中上下移动。</span><span class="le">Browse command history or navigate autocomplete candidate items.</span></td>
+                <td>Input</td>
+                <td>Browse command history or navigate autocomplete candidate items.</td>
               </tr>
               <tr>
                 <td><code>/</code></td>
-                <td><span class="lz">输入区</span><span class="le">Input</span></td>
-                <td><span class="lz">在空行键入 <code>/</code> 快速唤出 Slash 常用命令交互补全菜单。</span><span class="le">Type <code>/</code> on empty line to invoke slash command autocomplete popup.</span></td>
+                <td>Input</td>
+                <td>Type <code>/</code> on empty line to invoke slash command autocomplete popup.</td>
               </tr>
               <tr>
                 <td><code>Esc</code></td>
-                <td><span class="lz">全局</span><span class="le">Global</span></td>
-                <td><span class="lz">关闭当前弹出层、退出全屏视窗或将焦点快速归位至主输入区。</span><span class="le">Dismiss modal, exit expanded diff view, or return focus to prompt input.</span></td>
+                <td>Global</td>
+                <td>Cancel an input form or completion menu. Use Ctrl+C to cancel a picker.</td>
               </tr>
             </tbody>
           </table>
@@ -2019,136 +1907,138 @@ cade --resume     <span class="comment"># <span class="lz">交互式选择历史
 
         <div class="page-nav">
           <a href="#hooks" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">生命周期 Hooks</span><span class="le">Lifecycle Hooks</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← Lifecycle Hooks</span>
           </a>
           <a href="#cli" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">TUI & exec →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 19. CLI ================= -->
+
+      <!-- 命令行。 -->
       <article id="cli" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span></span>
+          <a href="#">Docs</a> / <span class="current">TUI & exec</span>
         </div>
-        <h1><span class="lz">TUI 交互与 exec 自动化</span><span class="le">TUI & exec Guide</span></h1>
-        <p class="lead-text"><span class="lz">TUI 提供终端交互，exec 提供自动化协议。两者共用会话、权限与运行时事件。</span><span class="le">TUI provides terminal interaction; exec provides automation. Both share sessions, permissions, and runtime events.</span></p>
+        <h1>TUI and exec</h1>
+        <p class="lead-text">TUI provides terminal interaction; exec provides automation. Both share sessions, permissions, and runtime events.</p>
 
-        <h2><span class="lz">启动终端工作台</span><span class="le">Launching the terminal workbench</span></h2>
+        <h2>Launching the terminal workbench</h2>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>cade tui                  <span class="comment"># <span class="lz">进入终端工作台</span><span class="le">Enter the terminal workbench</span></span>
-cade exec --model deepseek "检查当前项目" <span class="comment"># <span class="lz">指定初始模型启动</span><span class="le">Specify initial model</span></span></code></pre>
+          <pre><code>cade tui                  <span class="comment"># 进入终端工作台</span>
+cade exec --approval never --model deepseek/deepseek-flash "Review the current project" <span class="comment"># 指定初始模型启动</span></code></pre>
         </div>
 
-        <h2><span class="lz">高效特殊指令语法</span><span class="le">Special Command Syntax & Shortcuts</span></h2>
-        <p><span class="lz">CLI 模式支持多项加速日常输入的快捷前缀：</span><span class="le">The CLI interface provides powerful input prefixes for daily speed:</span></p>
+        <h2>Input syntax and shortcuts</h2>
+        <p>The CLI interface provides powerful input prefixes for daily speed:</p>
         <ul>
-          <li><span class="lz"><strong>@ 引用精准文件</strong>：在输入中加入 <code>@src/cade/main.py</code>，内核会自动读取并将其精准嵌入提示词，无需模型进行额外探测；</span><span class="le"><strong>@ File Ingestion</strong>: Mentioning <code>@src/cade/main.py</code> reads and embeds file bytes directly into prompt context;</span></li>
-          <li><span class="lz"><strong>! 原生 Shell 直达</strong>：以感叹号开头（如 <code>!git status</code> 或 <code>!pytest</code>）直接在本地 Shell 执行命令并展示输出，不消耗大模型 Token；</span><span class="le"><strong>! Raw Shell Escape</strong>: Starting with an exclamation mark (e.g. <code>!git status</code>) executes commands directly on host without consuming LLM tokens;</span></li>
-          <li><span class="lz"><strong>/ Slash 指令执行</strong>：直接键入 <code>/undo</code>、<code>/mode plan</code>、<code>/mode act</code> 操控会话；</span><span class="le"><strong>/ Slash Commands</strong>: Execute <code>/undo</code>, <code>/mode plan</code>, <code>/mode act</code> directly;</span></li>
-          <li><span class="lz"><strong>Shift+Enter 多行换行</strong>：输入多行长需求或粘贴代码段时保持完整排版。</span><span class="le"><strong>Shift+Enter Multi-line</strong>: Input multi-line requirements or paste code blocks without premature submission.</span></li>
+          <li><strong>@ File Ingestion</strong>: Mentioning <code>@src/cade/main.py</code> reads and embeds file bytes directly into prompt context;</li>
+          <li><strong>! Raw Shell Escape</strong>: Starting with an exclamation mark (e.g. <code>!git status</code>) executes commands directly on host without consuming LLM tokens;</li>
+          <li><strong>/ Slash Commands</strong>: Execute <code>/undo</code>, <code>/mode plan</code>, <code>/mode act</code> directly;</li>
+          <li><strong>Multi-line input</strong>: Ctrl+J inserts a new line. Alt+Enter inserts a new line while idle and steers an active run; Shift+Enter support depends on the terminal.</li>
         </ul>
 
-        <h2><span class="lz">非交互式批处理与管道调用 (Headless Mode)</span><span class="le">Headless & Pipeline Automation</span></h2>
-        <p><span class="lz">Cade 支持通过 <code>-p</code> 参数在脚本与 CI/CD 流水线中进行非交互批处理：</span><span class="le">Integrate Cade into automated shell pipelines using headless <code>-p</code> mode:</span></p>
+        <h2>Noninteractive execution and pipelines</h2>
+        <p>Use <code>cade exec</code> for noninteractive runs. A positional prompt does not consume stdin; use <code>--prompt-file -</code> to read the complete prompt from stdin. These examples use <code>--approval never</code> to deny approval requests without requiring a TTY:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Shell Pipeline</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code><span class="comment"># <span class="lz">单次问答输出结果并退出</span><span class="le">Single query execution and exit</span></span>
-<span class="lz">cade exec "分析当前目录 pyproject.toml 中的所有依赖并输出一份 Markdown 报告"</span><span class="le">cade exec "Analyze dependencies in pyproject.toml and produce a markdown report"</span>
+          <pre><code><span class="comment"># 单次问答输出结果并退出</span>
+cade exec --approval never "Analyze dependencies in pyproject.toml and produce a markdown report"
 
-<span class="comment"># <span class="lz">通过管道输入 Diff 并进行代码审查</span><span class="le">Pipe git diff into Cade for automated code review</span></span>
-<span class="lz">git diff | cade exec "请审查上述 Git 改动中是否存在潜在的并发死锁风险"</span><span class="le">git diff | cade exec "Review the git diff for potential concurrency deadlock risks"</span></code></pre>
+<span class="comment"># 通过管道输入 Diff 并进行代码审查</span>
+{
+  printf '%s\n\n' 'Review the following git diff for potential concurrency deadlock risks:'
+  git diff
+} | cade exec --approval never --prompt-file -</code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#tui" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">TUI 终端全屏工作台</span><span class="le">TUI Workbench</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← TUI Workbench</span>
           </a>
           <a href="#web" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">下一篇</span><span class="le">Next</span></span>
-            <span class="page-nav-title"><span class="lz">Web 浏览器工作台</span><span class="le">Web Workbench</span> →</span>
+            <span class="page-nav-label">Next</span>
+            <span class="page-nav-title">Web Workbench →</span>
           </a>
         </div>
       </article>
-    
-      <!-- ================= 20. WEB ================= -->
+
+      <!-- 浏览器工作台。 -->
       <article id="web" class="doc-page">
         <div class="breadcrumb">
-          <a href="#"><span class="lz">文档</span><span class="le">Docs</span></a> / <span class="current"><span class="lz">Web 浏览器工作台</span><span class="le">Web Workbench</span></span>
+          <a href="#">Docs</a> / <span class="current">Web Workbench</span>
         </div>
-        <h1><span class="lz">Web 浏览器图形化工作台</span><span class="le">Web Visual Workbench Architecture</span></h1>
-        <p class="lead-text"><span class="lz">内置现代响应式可视化工作台。提供多会话历史侧边栏、Monaco 并排代码 Diff 审查看板与实时任务进度追踪。</span><span class="le">Built-in modern responsive visual workbench. Features multi-session management, Monaco side-by-side diff review, and live task execution kanban.</span></p>
+        <h1>Browser workspace</h1>
+        <p class="lead-text">Use the browser workspace to review streamed output, manage sessions, and respond to tool approval requests.</p>
 
-        <h2><span class="lz">启动与网络参数配置</span><span class="le">Starting & Network Configuration</span></h2>
-        <p><span class="lz">运行 <code>cade web</code> 命令，内核会在后台启动嵌入式服务并在默认浏览器中自动打开工作台：</span><span class="le">Running <code>cade web</code> boots an embedded web service and opens the dashboard in your default browser:</span></p>
+        <h2>Startup and network configuration</h2>
+        <p>Run <code>cade web</code> to start the local HTTP and WebSocket service. Use <code>--open</code> to open the browser:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>cade web                              <span class="comment"># <span class="lz">默认绑定 127.0.0.1:8000</span><span class="le">Binds to 127.0.0.1:8000 by default</span></span>
-cade web --port 9000                  <span class="comment"># <span class="lz">自定义监听端口</span><span class="le">Custom port binding</span></span>
-cade web --host 0.0.0.0 --token mysecret <span class="comment"># <span class="lz">局域网远程共享访问与 Token 鉴权保护</span><span class="le">LAN remote access with bearer token auth</span></span>
-cade web --no-open                    <span class="comment"># <span class="lz">仅启动服务，不自动唤起本地浏览器</span><span class="le">Start service without spawning browser</span></span></code></pre>
+          <pre><code>cade web                              <span class="comment"># 默认绑定 127.0.0.1:8787</span>
+cade web --port 9000                  <span class="comment"># 自定义监听端口</span>
+cade web --open                       <span class="comment"># 启动服务并打开浏览器</span></code></pre>
         </div>
 
-        <h2><span class="lz">核心功能组件设计</span><span class="le">Core Web Architecture Features</span></h2>
+        <h2>Browser features</h2>
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span><span class="lz">多会话管理抽屉</span><span class="le">Multi-Session Drawer</span></span> <span class="badge">Session Drawer</span></div>
-            <p><span class="lz">左侧抽屉式会话面板列出所有历史工程任务。支持重命名会话、查看 Token 统计、一键分支（Fork）与断点无缝续接。</span><span class="le">Browse all historic engineering tasks, rename sessions, inspect token metrics, fork branches, and resume state seamlessly.</span></p>
+            <div class="card-title"><span>Multi-Session Drawer</span> <span class="badge">Session Drawer</span></div>
+            <p>Browse all historic engineering tasks, rename sessions, inspect token metrics, fork branches, and resume state seamlessly.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">Monaco 并排 Diff 审查</span><span class="le">Monaco Side-by-Side Diff</span></span> <span class="badge">Visual Diff</span></div>
-            <p><span class="lz">集成 Monaco Editor（VS Code 核心编辑器）。Agent 执行文件修改时，以高对比度红绿并排高亮呈现精确差异，支持逐行审查与一键撤销。</span><span class="le">Powered by Monaco Editor. Renders high-contrast side-by-side diff highlights for inspection, with one-click patch approvals and reverts.</span></p>
+            <div class="card-title"><span>File changes</span> <span class="badge">Visual Diff</span></div>
+            <p>Review tool output and highlighted file changes in the event stream. Approval cards let you approve or deny pending operations.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><span class="lz">WebSocket 实时流式管道</span><span class="le">WebSocket Event Stream</span></span> <span class="badge">Low Latency</span></div>
-            <p><span class="lz">前端与统一内核通过低延迟 WebSocket 保持全双工通信，推理思考流、工具调用事件与状态换窗通知毫秒级推送到浏览器。</span><span class="le">Maintains full-duplex WebSocket connections with the kernel for millisecond-latency streaming of thinking tokens and tool events.</span></p>
+            <div class="card-title"><span>WebSocket Event Stream</span> <span class="badge">Low Latency</span></div>
+            <p>The browser receives model output and tool events through a WebSocket connection.</p>
           </div>
         </div>
 
-        <h2><span class="lz">远程开发环境端口映射 (Remote Dev via SSH)</span><span class="le">Remote Development via SSH Tunnel</span></h2>
-        <p><span class="lz">在无桌面界面的远程 Linux 服务器上开发时，可通过 SSH 本地端口转发在本地浏览器中畅快使用 Cade Web：</span><span class="le">When working on a remote headless server, forward the port via SSH to access Cade Web locally:</span></p>
+        <h2>Remote development through SSH</h2>
+        <p>Keep the service bound to loopback. For remote access, forward the port through SSH. The web host has no built-in authentication:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Local Shell</span>
-            <button class="copy-btn" onclick="copySnippet(this)"><span class="lz">复制</span><span class="le">Copy</span></button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code><span class="comment"># <span class="lz">将远程服务器的 8000 端口映射到本地</span><span class="le">Forward remote 8000 to local machine</span></span>
-ssh -N -L 8000:localhost:8000 user@remote-gpu-server
+          <pre><code><span class="comment"># 将远程服务端口转发到本机</span>
+ssh -N -L 8787:127.0.0.1:8787 user@remote-host
 
-<span class="comment"># <span class="lz">然后在本地浏览器访问 http://localhost:8000 即可进入图形化工作台</span><span class="le">Access http://localhost:8000 in your local browser</span></span></code></pre>
+<span class="comment"># 在本机浏览器打开 http://127.0.0.1:8787</span></code></pre>
         </div>
 
         <div class="page-nav">
           <a href="#cli" class="page-nav-btn">
-            <span class="page-nav-label"><span class="lz">上一篇</span><span class="le">Previous</span></span>
-            <span class="page-nav-title">← <span class="lz">CLI 命令行与快捷键</span><span class="le">TUI & exec</span></span>
+            <span class="page-nav-label">Previous</span>
+            <span class="page-nav-title">← TUI & exec</span>
           </a>
           <a href="#overview" class="page-nav-btn next">
-            <span class="page-nav-label"><span class="lz">回到首页</span><span class="le">Back to Top</span></span>
-            <span class="page-nav-title"><span class="lz">设计哲学与核心机制</span><span class="le">Philosophy & Overview</span> →</span>
+            <span class="page-nav-label">Back to Top</span>
+            <span class="page-nav-title">Philosophy & Overview →</span>
           </a>
         </div>
       </article>
-    
+
     </main>
   </div>
 
   <script>
-    // Tab Switching Logic
+    // 切换文档页面。
     var sidebarLinks = document.querySelectorAll('.sidebar-link');
     var pages = document.querySelectorAll('.doc-page');
 
@@ -2176,20 +2066,20 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
       }
     }
 
-    // Handle hash change
+    // 处理锚点变化。
     window.addEventListener('hashchange', function() {
       var h = window.location.hash.replace('#', '');
       if (h) showPage(h);
     });
 
-    // Handle initial hash
+    // 读取初始锚点。
     if (window.location.hash) {
       showPage(window.location.hash.replace('#', ''));
     } else {
       setTimeout(reRenderAllVisibleDiagrams, 50);
     }
 
-    // Handle link clicks
+    // 处理链接点击。
     document.addEventListener('click', function(e) {
       var a = e.target.closest('a[href^="#"]');
       if (a) {
@@ -2202,17 +2092,14 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
       }
     });
 
-    // Mermaid Rendering Engine (Tab-aware & Language-aware)
+    // 按当前页面和主题渲染 Mermaid 图表。
     async function renderDiagram(container) {
       if (!window.mermaid) return;
-      var lang = document.documentElement.dataset.lang || 'zh';
-      var isDark = document.documentElement.dataset.theme === 'dark' || 
+      var isDark = document.documentElement.dataset.theme === 'dark' ||
                    (!document.documentElement.dataset.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
       var currentTheme = isDark ? 'dark' : 'default';
 
-      var script = container.querySelector('script[data-lang="' + lang + '"]') ||
-                   container.querySelector('script[data-lang="zh"]') ||
-                   container.querySelector('script');
+      var script = container.querySelector('script[type="text/mermaid"]');
       if (!script) return;
 
       var code = script.textContent.trim();
@@ -2223,7 +2110,7 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
         container.appendChild(output);
       }
 
-      var cacheKey = lang + ':' + currentTheme + ':' + code;
+      var cacheKey = currentTheme + ':' + code;
       if (container.dataset.rendered === cacheKey) {
         return;
       }
@@ -2270,7 +2157,7 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
       }
     }
 
-    // Theme Toggle with Auto/Light/Dark
+    // 切换自动、浅色和深色主题。
     var themeBtn = document.getElementById('themeBtn');
     var themeIcons = themeBtn.querySelectorAll('.theme-icon');
     function applyTheme(mode) {
@@ -2292,39 +2179,13 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
     });
     applyTheme(document.documentElement.dataset.theme || 'auto');
 
-    // Language Toggle
-    var langBtn = document.getElementById('langToggle');
-    function setLang(lang) {
-      document.documentElement.dataset.lang = lang;
-      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-      try { localStorage.setItem('cade-lang', lang); } catch (e) {}
-      document.title = lang === 'zh'
-        ? 'cade — 开发者技术文档与参考手册'
-        : 'cade — Technical Documentation & Reference Manual';
-      var searchInput = document.getElementById('docSearch');
-      if (searchInput) {
-        searchInput.placeholder = lang === 'zh' ? '搜索文档 (如: /undo, memory)...' : 'Search docs (e.g. /undo, memory)...';
-      }
-      var metaDesc = document.querySelector('meta[name="description"]');
-      if (metaDesc) {
-        metaDesc.content = lang === 'zh'
-          ? 'Cade 官方技术文档：统一内核架构、无损历史与动态投影、95% 无摘要换窗、按需 Memory、执行模式、内置工具体系、权限安全与三端工作台。'
-          : 'Cade Official Technical Documentation: Unified runtime architecture, lossless history & projections, 95% summary-free context rollover, on-demand workspace memory, execution modes, tools, and workbenches.';
-      }
-      reRenderAllVisibleDiagrams();
-    }
-    langBtn.addEventListener('click', function() {
-      setLang(document.documentElement.dataset.lang === 'zh' ? 'en' : 'zh');
-    });
-
-    // Copy Code Snippet
+    // 复制代码片段。
     function copySnippet(btn) {
       var pre = btn.closest('.code-block').querySelector('pre code');
       if (pre) {
         navigator.clipboard.writeText(pre.innerText).then(function() {
           var orig = btn.innerText;
-          var isZh = document.documentElement.dataset.lang !== 'en';
-          btn.innerText = isZh ? '已复制!' : 'Copied!';
+          btn.innerText = 'Copied';
           btn.style.color = 'var(--olive)';
           setTimeout(function() {
             btn.innerText = orig;
@@ -2334,7 +2195,7 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
       }
     }
 
-    // Search Filtering
+    // 按搜索词筛选。
     var searchInput = document.getElementById('docSearch');
     searchInput.addEventListener('input', function(e) {
       var q = e.target.value.toLowerCase().trim();
@@ -2351,7 +2212,7 @@ ssh -N -L 8000:localhost:8000 user@remote-gpu-server
       });
     });
 
-    // Keyboard shortcut: '/' to focus search
+    // 按 / 聚焦搜索框。
     window.addEventListener('keydown', function(e) {
       if (e.key === '/' && document.activeElement !== searchInput) {
         e.preventDefault();

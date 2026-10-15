@@ -1,27 +1,27 @@
-# 更新日志
+# Changelog
 
-按版本记录主要功能与兼容性变更。
+Major features and compatibility changes by version.
 
 ## 0.3.0
 
-### 新增与改进
+### Added and improved
 
-- 支持通过 Shift+Tab 和 `/mode` 切换执行模式，统一工具与操作权限规则。
-- 改进账户登录、provider 默认配置，以及模型与推理强度选择。
-- 增加项目记忆目录和 `/context-window` 运行时配置。
-- 显示逐条回复的首字延迟（TTFT）与生成速度（TPS）。
-- 简化 Agent 结果流、上下文装配和会话接口。
+- Switch execution modes with Shift+Tab or `/mode`, with consistent tool and operation permission rules.
+- Improved account login, default provider configuration, and model and reasoning effort selection.
+- Added a project memory directory and runtime configuration through `/context-window`.
+- Show time to first token (TTFT) and generation speed in tokens per second (TPS) for each response.
+- Simplified agent result streaming, context assembly, and session interfaces.
 
 ## 0.2.0
 
-### 新增与改进
+### Added and improved
 
-- 项目更名为 Cade，提供 `cade-agent` 安装包和 `cade` 命令。
-- 增加浏览器工作台、会话恢复和可供自动化调用的 `exec` 命令。
-- 改进终端界面、上下文窗口管理和会话状态保存。
-- 增加 Linux bubblewrap 沙箱与操作审批能力。
-- 建立版本发布流程、依赖锁定和持续集成检查。
+- Renamed the project to Cade, with the `cade-agent` package and `cade` command.
+- Added a browser workspace, session recovery, and an `exec` command for automation.
+- Improved the terminal interface, context window management, and session persistence.
+- Added a Linux bubblewrap sandbox and operation approval.
+- Established a release workflow, dependency locking, and continuous integration checks.
 
-### 兼容性
+### Compatibility
 
-- 原 `xcode-agent` 安装包和 `xcode` 命令已更名；使用新命令前需要安装 Cade。
+- The `xcode-agent` package and `xcode` command have been renamed. Install Cade before using the new command.

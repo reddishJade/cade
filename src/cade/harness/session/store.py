@@ -626,7 +626,7 @@ class SessionStore:
         result: list[TreeNode] = []
         seen: set[str] = set()
 
-        # ponytail: iterative stack avoids RecursionError on deep chains
+        # 使用显式栈遍历，避免深层会话树触发 RecursionError。
         stack: list[tuple[SessionEntry, int]] = []
         if heads:
             stack.append((heads[0], 0))  # 只推根节点，子节点靠 children walk 展开
@@ -655,7 +655,7 @@ class SessionStore:
                     is_leaf=child_count == 0,
                 )
             )
-            # push children in reverse so they process in created_at order
+            # 子节点逆序入栈，出栈时按 created_at 升序处理。
             for child in sorted(
                 children.get(e.id, []), key=lambda x: x.created_at, reverse=True
             ):

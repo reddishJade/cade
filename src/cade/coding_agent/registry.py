@@ -1,7 +1,6 @@
-"""Coding product tool registry builder.
+"""编码产品工具注册表构建器。
 
-The product layer owns tool composition decisions: which tools belong to each
-group, how they are constructed, and which runtime values they receive.
+产品层决定工具分组、构建方式和所需的运行时参数。
 """
 
 from __future__ import annotations

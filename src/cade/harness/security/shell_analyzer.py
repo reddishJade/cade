@@ -425,7 +425,7 @@ def _dynamic_effect(
 
 
 def _has_unquoted_glob(command: str) -> bool:
-    """Return whether the shell itself may expand a glob in the command text."""
+    """判断 Shell 是否可能展开命令中的 glob 模式。"""
     quote: str | None = None
     escaped = False
     for char in command:
