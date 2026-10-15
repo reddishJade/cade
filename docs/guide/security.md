@@ -4,7 +4,11 @@ Cade can execute shell commands and modify local files. It combines permission d
 
 ## Linux bubblewrap sandbox
 
-On Linux, the `bash` tool uses bubblewrap when available to launch an isolated process:
+On Linux, the default configuration requires bubblewrap (`bwrap`) to launch an isolated process. If it is missing, application assembly fails instead of falling back to unsandboxed execution. Install it before starting Cade, for example with `sudo apt install bubblewrap` on Debian or Ubuntu.
+
+Linux bypasses bubblewrap only when `security.sandbox.mode` is `danger-full-access` and `security.sandbox.network_access` is `allow`. Other combinations still require bubblewrap. Non-Linux platforms use local subprocess execution.
+
+The default sandbox has these boundaries:
 
 ```mermaid
 graph TD

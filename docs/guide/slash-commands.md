@@ -71,7 +71,7 @@ In the terminal interface, input starting with `/` is treated as an internal com
 | `/tool` | `/tool list` or `/tool NAME INPUT` | List current-mode tools or execute one through runtime permission checks; INPUT accepts a JSON object or shorthand for one required argument |
 | `/skill` | `/skill NAME [prompt]` | Activate a skill; an optional prompt becomes a follow-up task |
 | `/memory` | `/memory` | Show the workspace's `.cade/memory/` location |
-| `/mcp` | `/mcp [status\|reload]` | Inspect external MCP connectivity or reload connections |
+| `/mcp` | `/mcp [status]` | Inspect external MCP connectivity; restart Cade after configuration changes |
 
 ## Interaction and output
 

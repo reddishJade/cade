@@ -756,7 +756,7 @@
         </div>
         <div class="stats reveal" style="transition-delay:.32s">
           <span>Tri-Workbenches</span>
-          <span>95% Rollover</span>
+          <span>Context Rollover</span>
           <span>/undo Revert</span>
           <span>Durable Memory</span>
         </div>
@@ -802,17 +802,17 @@
         <article class="feature reveal">
           <span class="feature-num">02</span>
           <h3>History and projections</h3>
-          <p>Sessions persist as append-only event logs with dynamic projections. Snapshot pooling enables atomic file reverts and window rewinds without silent truncation.</p>
+          <p>Sessions persist as append-only event logs with dynamic projections. Snapshots support per-file restoration; separate history commands change the active conversation branch.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">03</span>
           <h3>Context rollover without summaries</h3>
-          <p>Eliminates lossy self-summaries. Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs.</p>
+          <p>Eliminates lossy self-summaries. Uses an effective input budget with a default ratio cap of 95% of the physical window. Rollover retains task state and references to original history.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">04</span>
           <h3>On-demand memory</h3>
-          <p>A few costly findings live in editable workspace Markdown. Search on demand, follow history sources, and revalidate current code; ordinary turns and resume do not load Memory.</p>
+          <p>A few costly findings live in editable workspace Markdown. Search on demand, follow history sources, and revalidate current code; each request includes a catalog of up to 4 KiB with paths, titles, and opening hints. Full bodies are read on demand.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">05</span>
@@ -822,7 +822,7 @@
         <article class="feature reveal">
           <span class="feature-num">06</span>
           <h3>Hosts and extensions</h3>
-          <p>Seamlessly switch between split-pane TUI (default), CLI streams, and Web interfaces; with native MCP protocol integration and lifecycle hooks.</p>
+          <p>Seamlessly switch between inline transcript TUI (default), CLI streams, and Web interfaces; with native MCP protocol integration and lifecycle hooks.</p>
         </article>
       </div>
     </div>
@@ -918,7 +918,7 @@ cade -c             <span class="code-comment"># 继续最近的任务</span></c
         <div class="workflow-card reveal">
           <div class="workflow-icon">⎇</div>
           <h3>Branching and snapshot undo</h3>
-          <p>Explore refactors freely; use /fork to branch off a previous turn, or /undo to atomically restore modified files.</p>
+          <p>Explore refactors freely; use /fork to branch off a previous turn, /undo to restore files with per-file checks, or /rewind to adjust conversation history.</p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⬡</div>
@@ -1019,7 +1019,7 @@ cade -c             <span class="code-comment"># 继续最近的任务</span></c
           <div class="arch-name">agent/</div>
           <div class="arch-desc">
             <h4>Agent loop and context</h4>
-            <p>Event-driven loop, prompt assembly, 95% summary-free context rollover engine, tool concurrency, and dynamic projection.</p>
+            <p>Event-driven loop, prompt assembly, budgeted context rollover engine, tool concurrency, and dynamic projection.</p>
           </div>
         </div>
         <div class="arch-row">
@@ -1066,7 +1066,7 @@ cade -c             <span class="code-comment"># 继续最近的任务</span></c
           </h3>
           <p>
 
-            Comprehensive reference covering unified kernel architecture, lossless history & projections (/undo), 95% summary-free context rollover, durable memory, tri-workbenches (TUI/CLI/Web), and full slash commands.
+            Comprehensive reference covering unified kernel architecture, lossless history & projections (/undo), budgeted context rollover, durable memory, tri-workbenches (TUI/CLI/Web), and full slash commands.
           </p>
           <div class="docs-hero-cta">
             <a class="btn btn-primary" style="padding:12px 28px; font-size:15px; border-radius:10px;" href="docs.html">
@@ -1079,7 +1079,7 @@ cade -c             <span class="code-comment"># 继续最近的任务</span></c
         <div class="docs-hero-topics">
           <div class="topic-chip"><span class="chip-dot"></span>Philosophy & Overview</div>
           <div class="topic-chip"><span class="chip-dot"></span>Lossless History</div>
-          <div class="topic-chip"><span class="chip-dot"></span>95% Rollover</div>
+          <div class="topic-chip"><span class="chip-dot"></span>Context Rollover</div>
           <div class="topic-chip"><span class="chip-dot"></span>Durable Memory</div>
           <div class="topic-chip"><span class="chip-dot"></span>Tri-Workbenches</div>
           <div class="topic-chip"><span class="chip-dot"></span>Execution Modes</div>

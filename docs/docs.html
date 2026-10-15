@@ -647,7 +647,7 @@
       <div class="sidebar-group">
         <div class="sidebar-title">Core Pillars</div>
         <a href="#sessions" class="sidebar-link">Lossless History & Projections</a>
-        <a href="#context" class="sidebar-link">95% Context Rollover</a>
+        <a href="#context" class="sidebar-link">Context Rollover</a>
         <a href="#memory" class="sidebar-link">Durable Memory</a>
       </div>
 
@@ -686,7 +686,7 @@
           <a href="#">Docs</a> / <span class="current">Philosophy & Overview</span>
         </div>
         <h1>Cade design and architecture</h1>
-        <p class="lead-text">Abandoning lossy recursive self-summaries. Grounded in lossless event history, dynamic projections, zero-loss 95% context rollover, and durable memory across native TUI, CLI, and Web workbenches.</p>
+        <p class="lead-text">Abandoning lossy recursive self-summaries. Grounded in lossless event history, dynamic projections, budgeted context rollover, and durable memory across native TUI, CLI, and Web workbenches.</p>
 
         <h2>Core architecture</h2>
         <p>Mainstream autonomous coding agents frequently lose precise line numbers and stack traces through periodic recursive self-summarization, compounding hallucinations over time. Cade establishes three deterministic pillars built for real-world engineering:</p>
@@ -694,15 +694,15 @@
         <div class="card-grid">
           <div class="card">
             <div class="card-title"><span>Lossless History & Projections</span> <span class="badge">Pillar 1</span></div>
-            <p>Sessions persist as append-only event logs with dynamic projections. Snapshot pooling enables atomic file reverts and window rewinds without silent truncation.</p>
+            <p>Sessions persist as append-only event logs with dynamic projections. Snapshots support per-file restoration; separate history commands change the active conversation branch.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span>95% Summary-Free Rollover</span> <span class="badge">Pillar 2</span></div>
-            <p>Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs, preventing degradation from heuristic summaries.</p>
+            <div class="card-title"><span>Budgeted Context Rollover</span> <span class="badge">Pillar 2</span></div>
+            <p>Uses an input budget with a default ratio cap of 95% of the context window. Rollover retains task state and references to original history.</p>
           </div>
           <div class="card">
             <div class="card-title"><span>On-Demand Memory</span> <span class="badge">Pillar 3</span></div>
-            <p>Costly findings live in workspace Markdown, searched with existing tools and checked against original history. Normal turns and resume do not load Memory.</p>
+            <p>Costly findings live in workspace Markdown, searched with existing tools and checked against original history. Each request includes a catalog of up to 4 KiB with paths, titles, and opening hints. Full bodies are read on demand.</p>
           </div>
         </div>
 
@@ -715,7 +715,7 @@
 flowchart LR
     A["User Inputs & Objectives"] --> B["Unified Runtime Kernel"]
     B --> C["Lossless Event Stream"]
-    C --> D["95% Rollover Engine"]
+    C --> D["Context Rollover Engine"]
     C -->|Explicit save| E["Workspace Memory"]
     B --> F["Tri-Workbenches: TUI / CLI / Web"]
           </script>
@@ -752,7 +752,7 @@ flowchart LR
           <li><strong>Python</strong>: Version 3.12.0 or higher;</li>
           <li><strong>Operating System</strong>: Linux (Ubuntu 20.04+, Debian 11+, Arch, Fedora), macOS 12+, or Windows 10/11 (WSL2 recommended);</li>
           <li><strong>Git</strong>: Required for repository context awareness and snapshot tracing;</li>
-          <li><strong>Bubblewrap (Optional but Recommended)</strong>: On Linux, install <code>bubblewrap</code> for containerized sandbox isolation (Ubuntu/Debian: <code>sudo apt install bubblewrap</code>).</li>
+          <li><strong>Bubblewrap (Required by default on Linux)</strong>: Install <code>bubblewrap</code> (Ubuntu/Debian: <code>sudo apt install bubblewrap</code>). Startup fails if it is missing. Linux bypasses bubblewrap only when <code>security.sandbox.mode</code> is <code>danger-full-access</code> and <code>security.sandbox.network_access</code> is <code>allow</code>.</li>
         </ul>
 
         <h2>Install with uv tool</h2>
@@ -765,8 +765,8 @@ flowchart LR
           <pre><code><span class="comment"># 从 GitHub 仓库安装全局工具</span>
 uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
 
-<span class="comment"># 验证安装与版本</span>
-cade --version</code></pre>
+<span class="comment"># 检查 CLI 是否可用</span>
+cade --help</code></pre>
         </div>
 
         <h2>Install with pip</h2>
@@ -801,13 +801,14 @@ uv run pytest src/cade/tests -q</code></pre>
         </div>
 
         <h2>Check installation</h2>
-        <p>Run the diagnostic command to check local runtime health, provider credentials, and sandbox availability:</p>
+        <p>Check available commands, then inspect the configured authentication status:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
             <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>cade config --check</code></pre>
+          <pre><code>cade --help
+cade auth status</code></pre>
         </div>
 
         <div class="page-nav">
@@ -877,7 +878,7 @@ cade -c</code></pre>
         </div>
 
         <h2>Run a task</h2>
-        <p>Prompt the agent in the terminal to explore planning and atomic rollback:</p>
+        <p>Prompt the agent in the terminal to explore planning and file restoration:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Cade Session</span>
@@ -941,7 +942,7 @@ cade -c</code></pre>
               <tr>
                 <td><code>agent/</code></td>
                 <td>Agent Loop & Context</td>
-                <td>Deterministic agent loop, prompt assembler, 95% summary-free context rollover engine, tool concurrency, and projections.</td>
+                <td>Deterministic agent loop, prompt assembler, budgeted context rollover engine, tool concurrency, and projections.</td>
               </tr>
               <tr>
                 <td><code>coding_agent/</code></td>
@@ -973,15 +974,15 @@ sequenceDiagram
 
     User->>Surface: Submit Prompt or Slash Command
     Surface->>Kernel: Dispatch UserEvent
-    Kernel->>Kernel: Prompt Assembly & 95% Rollover Check
+    Kernel->>Kernel: Prompt Assembly & Budget Check
     Kernel->>AI: Stream Request (Prompt + Tools)
-    AI-->>Kernel: Return ToolCall (e.g. edit_file)
+    AI-->>Kernel: Return ToolCall (e.g. edit)
     Kernel->>Policy: Policy Gating (Path & Mode)
     alt Requires Confirmation (HITL)
         Policy-->>User: HITL Confirmation Prompt
         User->>Policy: Approve Execution
     end
-    Kernel->>Tools: Execute Tool & Capture Snapshot
+    Kernel->>Tools: Execute Tool
     Tools-->>Kernel: Return ToolResult
     Kernel->>Kernel: Append Immutable Event Log
     Kernel-->>Surface: Project State & Live Diff Preview
@@ -1008,7 +1009,7 @@ sequenceDiagram
           <a href="#">Docs</a> / <span class="current">Lossless History</span>
         </div>
         <h1>History and dynamic projections</h1>
-        <p class="lead-text">Rejecting destructive file overwrites and silent context truncation. Cade records full events into append-only immutable logs, backed by snapshot pooling for instant atomic reverts.</p>
+        <p class="lead-text">Rejecting destructive file overwrites and silent context truncation. Cade records full events into append-only immutable logs, with host-managed snapshots for per-file restoration.</p>
 
         <h2>Risks of model-generated undo</h2>
         <p>In many existing coding assistants, undo is merely an extra prompt asking the LLM to revert previous changes. This approach has critical drawbacks:</p>
@@ -1019,16 +1020,15 @@ sequenceDiagram
         </ul>
 
         <h2>Snapshots and file restoration</h2>
-        <p>Cade enforces <strong>deterministic physical certainty</strong>. Whenever the agent calls any write tool (e.g. <code>replace_file_content</code>, <code>write_to_file</code>):</p>
-        <ol>
-          <li><strong>Pre-write Capture</strong>: The runtime automatically records the unmodified file bytes into an immutable snapshot pool before touching the disk. Newly created files are flagged for deletion upon undo;</li>
-          <li><strong>Atomic Write</strong>: Modifications are committed atomically to disk;</li>
-          <li><strong>Physical Revert (/undo)</strong>: When triggering <code>/undo</code>, the system restores pristine bytes from the snapshot pool and unlinks new files in milliseconds;</li>
-          <li><strong>Window Pointer Rewind</strong>: The runtime rewinds the active event stream pointer, ensuring reverted turns never clutter future model contexts.</li>
-        </ol>
+        <p>The TUI captures workspace snapshots before and after each user task turn. Snapshot coverage depends on the host and excludes some paths, file types, and large files.</p>
+        <ul>
+          <li><code>/undo [N]</code> restores files from the most recent N undoable turns, defaulting to one. It checks conflicts and permissions per file and reports restored, skipped, and failed items. A turn can be partially restored.</li>
+          <li><code>/rewind [N]</code> removes recent task turns from active conversation history and trims the snapshot index. It leaves workspace files unchanged.</li>
+        </ul>
+        <p>See <a href="guide/sessions.md#file-undo">Sessions</a> for snapshot coverage and restoration rules.</p>
 
         <h2>Dynamic projections</h2>
-        <p>In Cade, conversation history is not a mutable array, but an <strong>append-only immutable event stream</strong>. The model prompt, TUI split-panes, and Web views are purely <strong>deterministic projections</strong> derived from this stream:</p>
+        <p>In Cade, conversation history is not a mutable array, but an <strong>append-only immutable event stream</strong>. The model prompt, TUI transcript, and Web views are purely <strong>deterministic projections</strong> derived from this stream:</p>
 
         <div class="mermaid-container">
 
@@ -1052,7 +1052,7 @@ flowchart TD
           </a>
           <a href="#context" class="page-nav-btn next">
             <span class="page-nav-label">Next</span>
-            <span class="page-nav-title">95% Rollover →</span>
+            <span class="page-nav-title">Context Rollover →</span>
           </a>
         </div>
       </article>
@@ -1060,10 +1060,10 @@ flowchart TD
       <!-- 上下文。 -->
       <article id="context" class="doc-page">
         <div class="breadcrumb">
-          <a href="#">Docs</a> / <span class="current">95% Context Rollover</span>
+          <a href="#">Docs</a> / <span class="current">Context Rollover</span>
         </div>
         <h1>Context rollover without summaries</h1>
-        <p class="lead-text">Eliminating compounding distortions from heuristic recursive summaries. Smoothly rolls over context at 95% capacity, inheriting task goals while pruning intermediate tool dumps.</p>
+        <p class="lead-text">Eliminating compounding distortions from heuristic recursive summaries. Uses an effective input budget and predicted usage, with a default ratio cap of 95% of the physical window.</p>
 
         <h2>Risks of recursive summarization</h2>
         <p>When context fills up, most AI tools prompt the LLM to summarize previous messages. In real-world software engineering, this causes catastrophic degradation:</p>
@@ -1074,24 +1074,14 @@ flowchart TD
         </ul>
 
         <h2>Rollover budgets and triggers</h2>
-        <p>Cade applies a strict context budget monitor that recalculates total tokens before each inference cycle:</p>
-
-        <div class="code-block">
-          <div class="code-header">
-            <span>Formula</span>
-            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
-          </div>
-          <pre><code>CurrentRatio = (PromptTokens + SystemPromptTokens) / ModelContextWindowLimit
-
-if CurrentRatio >= 0.95:
-    trigger_context_rollover()</code></pre>
-        </div>
+        <p>The default <code>agent.rollover_trigger_ratio</code> of 0.95 caps the trigger at 95% of the physical window. Output reserve, safety headroom, an explicit token threshold, and the next-turn input allowance can cause earlier rollover.</p>
+        <p>The policy subtracts output reserve and headroom to calculate the input budget, caps the rotation threshold by the ratio and any positive explicit threshold, then subtracts the bounded next-turn input allowance to calculate the admission target. Predicted usage drives reclamation and rollover; the input budget is the hard send boundary. See the <a href="context-policy.md#request-projection-and-budgets">context policy</a> for the algorithm, including unknown-window behavior.</p>
 
         <h3>Rollover lifecycle</h3>
         <ol>
           <li><strong>Goal & Constraint Retention</strong>: The original user objective, current goal, and key constraints carry over completely;</li>
           <li><strong>Intermediate Output Pruning</strong>: Bulky intermediate payloads (e.g. 800-line search dumps and directory scans) are purged from active view, retaining only operation statuses;</li>
-          <li><strong>History on Demand</strong>: The new window can use history tools to locate original evidence; rollover does not automatically save or load Memory;</li>
+          <li><strong>History on Demand</strong>: The new window can use history tools to locate original evidence; rollover regenerates the Memory catalog, with full bodies available on demand;</li>
           <li><strong>Seamless Window Handoff</strong>: The developer continues the conversation without interruption, while the LLM gains fresh token headspace.</li>
         </ol>
 
@@ -1104,8 +1094,8 @@ if CurrentRatio >= 0.95:
           </div>
           <pre><code>{
   "agent": {
-    "rollover_trigger_ratio": 0.95,  <span class="comment">// 默认 95% 水位线触发换窗</span>
-    "reserve_tokens": 16384          <span class="comment">// 预留给生成与工具调用的安全 Token 空间</span>
+    "rollover_trigger_ratio": 0.95,
+    "reserve_tokens": 16384
   }
 }</code></pre>
         </div>
@@ -1138,7 +1128,7 @@ if CurrentRatio >= 0.95:
         <p>Memory initiates no model calls, background organization, or extra inference. The existing runtime governs the normal Agent loop after a tool result.</p>
 
         <h2>Read and verify on demand</h2>
-        <p>Normal turns, resume, and rollover do not scan or load Memory. For explicit historical needs or costly repeated investigation, use existing <code>bash</code> with <code>rg "timeout" .cade/memory</code>, read a file, follow <code>session_id + entry_id</code> into original History, and check current code and validation results. Memory does not expand the default tool surface.</p>
+        <p>Each provider request collects a Memory catalog of at most 4 KiB containing paths, first H1 titles, and opening paragraph hints. Recovery and rollover regenerate the catalog. Full bodies and source footers are read on demand. See <a href="guide/memory.md#retrieve-read-and-verify">Memory collection limits</a>. For explicit historical needs or costly repeated investigation, use existing <code>bash</code> with <code>rg "timeout" .cade/memory</code>, read a file, follow <code>session_id + entry_id</code> into original History, and check current code and validation results. Memory does not expand the default tool surface.</p>
         <p>Exact History reads do not depend on the navigation cache. The default local store trusts its current physical location, ignoring old project_path after workspace moves or renames; shared or custom stores require the first log record's workspace binding. Cross-session <code>around</code> supports ancestor <code>before</code> only, without switching Session/head. Read evidence follows ContextPolicy; Git SHA does not capture an uncommitted workspace.</p>
 
         <h2>Inspect and edit</h2>
@@ -1148,7 +1138,7 @@ if CurrentRatio >= 0.95:
         <div class="page-nav">
           <a href="#context" class="page-nav-btn">
             <span class="page-nav-label">Previous</span>
-            <span class="page-nav-title">← 95% Rollover</span>
+            <span class="page-nav-title">← Context Rollover</span>
           </a>
           <a href="#modes" class="page-nav-btn next">
             <span class="page-nav-label">Next</span>
@@ -1183,36 +1173,31 @@ if CurrentRatio >= 0.95:
             <tbody>
               <tr>
                 <td><strong>Plan Mode</strong></td>
-                <td>Always Allowed</td>
-                <td><span style="color:#d97757">Strictly Disabled</span></td>
-                <td>Read-only Inspections</td>
-                <td>Exploring large codebases, mapping dependencies, and producing plans with zero modification side-effects.</td>
+                <td>Allowed within policy boundaries</td>
+                <td><code>NOTE.md</code> and plan notes under <code>.cade/plans/*.md</code></td>
+                <td>Read-only commands run directly; known mutations are blocked; unresolved effects go to the automatic reviewer</td>
+                <td>Explore code and produce plan notes without changing project code.</td>
               </tr>
               <tr>
-                <td><strong>Build Mode (Default)</strong></td>
-                <td>Always Allowed</td>
-                <td>Allowed (Snapshotted)</td>
-                <td>Interactive HITL Prompt</td>
-                <td>Standard development workflow. Agent drafts precision patches; developer approves risky operations.</td>
+                <td><strong>Build Mode</strong></td>
+                <td>Allowed within policy boundaries</td>
+                <td>Execute directly</td>
+                <td>Read-only commands run directly; operations requiring review go to the automatic reviewer</td>
+                <td>Implement and validate changes with automatic shell review.</td>
               </tr>
               <tr>
-                <td><strong>Act Mode</strong></td>
-                <td>Always Allowed</td>
-                <td>Automated Execution</td>
-                <td>Whitelisted Auto-Run</td>
-                <td>Automated test suite generation, bulk refactors, and rapid execution in trusted environments.</td>
+                <td><strong>Act Mode (Default)</strong></td>
+                <td>Allowed within policy boundaries</td>
+                <td>User approval</td>
+                <td>Read-only commands run directly; operations requiring review go to the user</td>
+                <td>Review structured writes and shell mutations interactively.</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <h2>Approval and rules</h2>
-        <p>In <code>Build</code> or <code>Plan</code> modes, the PermissionEngine evaluates security policies using <code>findLast</code> reverse matching:</p>
-        <ul>
-          <li><strong>Default Policy</strong>: All file writes display a concise diff and record snapshot checkpoints before disk write;</li>
-          <li><strong>Sensitive Commands</strong>: Destruction commands (<code>rm</code>), environment mutations, and socket requests trigger mandatory confirmation;</li>
-          <li><strong>Approval Controls</strong>: Press <code>y</code> to approve, <code>n</code> to reject with an optional feedback note sent back to the agent.</li>
-        </ul>
+        <p>This table describes the default mode rules and <code>security.approval_router="mode"</code>. Path restrictions, permission rules, grants, and explicit approval settings still apply. Setting the approval router to <code>user</code> or <code>auto</code> fixes the review route independently of the mode.</p>
 
         <p>Press Shift+Tab while idle to cycle act → build → plan.</p>
         <h2>Switch modes</h2>
@@ -1261,18 +1246,23 @@ if CurrentRatio >= 0.95:
             <tbody>
               <tr>
                 <td><code>/undo</code></td>
-                <td>-</td>
-                <td><strong>Lossless Undo</strong>: Restores pre-edit snapshots to disk and rewinds the context window by one turn.</td>
+                <td><code>[N]</code></td>
+                <td>Restore files from task snapshots with per-file conflict and permission checks. Use <code>/rewind</code> to change conversation history.</td>
+              </tr>
+              <tr>
+                <td><code>/rewind</code></td>
+                <td><code>[N]</code></td>
+                <td>Remove recent task turns from active history and trim the snapshot index. Workspace files remain unchanged.</td>
               </tr>
               <tr>
                 <td><code>/mode plan</code></td>
                 <td>-</td>
-                <td>Switch to Plan mode; locks out file write tools for zero side-effects.</td>
+                <td>Switch to Plan mode; structured writes are limited to <code>NOTE.md</code> and plan notes.</td>
               </tr>
               <tr>
                 <td><code>/mode build</code></td>
                 <td>-</td>
-                <td>Switch to Build mode; enables snapshotted file editing with HITL approvals.</td>
+                <td>Switch to Build mode; structured writes execute directly and shell operations requiring review use the automatic reviewer.</td>
               </tr>
               <tr>
                 <td><code>/mode act</code></td>
@@ -1282,7 +1272,7 @@ if CurrentRatio >= 0.95:
               <tr>
                 <td><code>/context</code></td>
                 <td>-</td>
-                <td>Display current token breakdown, distribution, and 95% rollover threshold.</td>
+                <td>Display token usage, the effective input budget, and the current rollover threshold.</td>
               </tr>
               <tr>
                 <td><code>/memory</code></td>
@@ -1305,24 +1295,19 @@ if CurrentRatio >= 0.95:
                 <td>Browse and resume past persistent sessions.</td>
               </tr>
               <tr>
-                <td><code>/tools</code></td>
+                <td><code>/tool</code></td>
                 <td>-</td>
-                <td>List all mounted built-in tools and connected MCP server tools.</td>
-              </tr>
-              <tr>
-                <td><code>/diff</code></td>
-                <td>-</td>
-                <td>Inspect full consolidated diff view of all changes in active session.</td>
+                <td>Use <code>/tool list</code> to list tools available in the current mode, including connected MCP tools.</td>
               </tr>
               <tr>
                 <td><code>/skill</code></td>
-                <td><code>[list|load &lt;name&gt;]</code></td>
-                <td>Inspect or manually activate specialized SKILL packages.</td>
+                <td><code>NAME [prompt]</code></td>
+                <td>Activate a skill; an optional prompt becomes a follow-up task.</td>
               </tr>
               <tr>
                 <td><code>/clear</code></td>
                 <td>-</td>
-                <td>Reset the active context window without automatically saving or loading Memory.</td>
+                <td>Create and switch to a new session, as with <code>/new</code>.</td>
               </tr>
               <tr>
                 <td><code>/help</code></td>
@@ -1362,42 +1347,42 @@ if CurrentRatio >= 0.95:
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span><code>view_file</code></span> <span class="badge">Read</span></div>
-            <p>Views text or binary files with mandatory <code>StartLine</code> and <code>EndLine</code> window slicing (max 800 lines per call) to prevent context flooding.</p>
+            <div class="card-title"><span><code>read</code></span> <span class="badge">Read</span></div>
+            <p>Reads file content with <code>path</code> and optional <code>offset</code> and <code>limit</code> for pagination.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>replace_file_content</code></span> <span class="badge">Write</span></div>
-            <p>High-precision continuous chunk replacement. Requires exact unique match of <code>TargetContent</code> with indentation, capturing pre-edit snapshots.</p>
+            <div class="card-title"><span><code>edit</code></span> <span class="badge">Write</span></div>
+            <p>Replaces <code>old_text</code> with <code>new_text</code> in <code>path</code>. Supports <code>replace_all</code> and rejects stale edits.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>write_to_file</code></span> <span class="badge">Write</span></div>
-            <p>Creates new files or fully overwrites existing ones. Requires explicit <code>Overwrite: true</code> when replacing files, preventing accidental data loss.</p>
+            <div class="card-title"><span><code>write</code></span> <span class="badge">Write</span></div>
+            <p>Creates or replaces a file using <code>path</code> and <code>content</code>.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>run_command</code></span> <span class="badge">Execute</span></div>
-            <p>Executes bash commands in a jailed workspace or Linux container sandbox. Dangerous patterns (e.g. <code>rm -rf /</code>) are blocked for mandatory approval.</p>
+            <div class="card-title"><span><code>bash</code></span> <span class="badge">Execute</span></div>
+            <p>Runs <code>command</code> with optional <code>timeout_ms</code>, <code>workdir</code>, and <code>purpose</code>. Permissions, review, and sandbox policy apply.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>search_web</code></span> <span class="badge">Search</span></div>
-            <p>Performs real-time web search for modern framework API updates, technical articles, and GitHub issue solutions.</p>
+            <div class="card-title"><span><code>websearch</code></span> <span class="badge">Search</span></div>
+            <p>Searches with <code>query</code>; optional parameters include <code>numResults</code>, <code>livecrawl</code>, <code>type</code>, and <code>timeout</code>. Runs sequentially.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span><code>read_url_content</code></span> <span class="badge">Scrape</span></div>
-            <p>Fetches external documentation URLs and converts HTML into clean, token-efficient Markdown representations.</p>
+            <div class="card-title"><span><code>webfetch</code></span> <span class="badge">Scrape</span></div>
+            <p>Fetches <code>url</code> with optional <code>format</code> (markdown, text, or html) and <code>timeout</code>. Runs sequentially.</p>
           </div>
         </div>
 
         <h2>Parallel reads and serial write barriers</h2>
-        <p>To optimize inference latency while safeguarding codebase consistency, Cade enforces read-write concurrency separation:</p>
+        <p>Only tools that declare parallel execution enter the read pool: <code>read</code> and optional <code>grep</code>, <code>glob</code>, <code>find</code>, and <code>ls</code>. Other tools run sequentially. The <code>question</code> tool takes a top-level <code>questions</code> array; each item has <code>question</code> and optional <code>header</code>, <code>multiple</code>, and <code>options</code>. See <a href="guide/tools.md">Tools and execution scheduling</a>.</p>
 
         <div class="mermaid-container">
 
           <script type="text/mermaid" data-lang="en">
 flowchart TD
     BATCH["Parallel Model ToolCalls"]
-    BATCH --> CHECK{"Tool Read/Write Attribute Check"}
-    CHECK -->|Read Tools: view_file, grep, web| POOL["Parallel Read Pool<br>Fast Concurrent Execution"]
-    CHECK -->|Write/Execute: replace, write, bash| BARRIER["Serial Write Barrier<br>Pre-Snapshot → Policy Check → Disk Write"]
+    BATCH --> CHECK{"ToolSpec execution_mode Check"}
+    CHECK -->|parallel: read, optional search tools| POOL["Parallel Read Pool<br>Fast Concurrent Execution"]
+    CHECK -->|sequential: edit, write, bash, web, question| BARRIER["Sequential Execution<br>Permission Checks → Tool Handler"]
     POOL --> MERGE["Merge Results into Next Event Turn"]
     BARRIER --> MERGE
           </script>
@@ -1441,7 +1426,7 @@ flowchart TD
           </div>
           <div class="card">
             <div class="card-title"><span>Layer 4: Redacted Audit Logs</span> <span class="badge">Audit Trail</span></div>
-            <p>All interactions persist to <code>audit.jsonl</code>. Credential patterns (API keys, passwords, bearer tokens) are automatically redacted before logging.</p>
+            <p>Additional tool audit logging is disabled by default (<code>observability.audit_path</code> is <code>null</code>). When enabled, audit input and output use pattern-based credential redaction. Session records and tool artifacts are saved separately and can contain raw content; this redaction does not make them safe to share. Review and sanitize them before sharing.</p>
           </div>
         </div>
 
@@ -1454,16 +1439,15 @@ flowchart TD
           </div>
           <pre><code>{
   "security": {
-    "workspace_only": true,
-    "allow_network_commands": false
+    "approval_policy": "on-request",
+    "approval_router": "mode",
+    "sandbox": {
+      "mode": "workspace-write",
+      "network_access": "deny"
+    }
   },
   "execution_modes": {
-    "rules": {
-      "build": [
-        { "action": "run_command", "command": "rm", "effect": "deny" },
-        { "action": "run_command", "command": "git", "subcommand": "push", "effect": "ask" }
-      ]
-    }
+    "default_mode": "act"
   }
 }</code></pre>
         </div>
@@ -1492,18 +1476,17 @@ flowchart TD
         <h2>Configuration precedence</h2>
         <p>When the same setting is defined in multiple locations, Cade resolves values in the following order of precedence:</p>
         <ol>
-          <li><strong>Explicit CLI Flags</strong> (e.g. <code>cade --model gpt-6-sol</code>);</li>
-          <li><strong>Environment Variables</strong> (e.g. <code>DEEPSEEK_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>CADE_MODE</code>);</li>
-          <li><strong>Local Workspace Configuration</strong> (<code>&lt;project_root&gt;/.cade/settings.json</code>);</li>
-          <li><strong>Project Configuration</strong> (<code>&lt;project_root&gt;/cade.config.json</code>);</li>
-          <li><strong>Global User Configuration</strong> (<code>~/.cade/settings.json</code>);</li>
-          <li><strong>Built-in Framework Defaults</strong> (Default model: <code>gpt-5.6-luna</code>, effort: <code>high</code>, mode: <code>act</code>).</li>
+          <li>Global user settings: <code>~/.cade/settings.json</code>.</li>
+          <li>Project settings: <code>cade.config.json</code>, replaced by the file selected with <code>cade --config PATH</code>.</li>
+          <li>Local workspace settings: <code>.cade/settings.json</code>.</li>
+          <li><code>CADE_APPROVAL_POLICY</code> overrides <code>security.approval_policy</code>.</li>
         </ol>
+        <p>Later explicit fields override earlier values. Nested objects merge recursively; arrays are replaced. Omitted fields use built-in defaults. API key environment variables supply credentials separately. Use <code>cade exec --model provider/model</code> for a temporary exec model override or <code>/model</code> in the TUI. See <a href="guide/configuration.md">Configuration</a>.</p>
 
         <h2>JSON configuration example</h2>
         <div class="code-block">
           <div class="code-header">
-            <span>Complete JSON Configuration</span>
+            <span>JSON configuration overrides</span>
             <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>{
@@ -1517,17 +1500,20 @@ flowchart TD
     }
   },
   "agent": {
-    "rollover_trigger_ratio": 0.95,     <span class="comment">// 95% 水位线触发无摘要平滑换窗</span>
-    "reserve_tokens": 16384,            <span class="comment">// 预留生成安全空间</span>
-    "max_steps": 30,                    <span class="comment">// 单个任务最大自主步数</span>
-    "tool_workers": 4,                  <span class="comment">// 只读工具并发线程数</span>
-    "tool_timeout_seconds": 120.0       <span class="comment">// 工具执行超时，单位为秒</span>
+    "rollover_trigger_ratio": 0.95,
+    "reserve_tokens": 16384,
+    "max_steps": 30,
+    "tool_workers": 4,
+    "tool_timeout_seconds": 120.0
   },
   "security": {
-    "workspace_only": true              <span class="comment">// 工作区严格路径隔离</span>
+    "sandbox": {
+      "mode": "workspace-write",
+      "network_access": "deny"
+    }
   },
   "execution_modes": {
-    "default_mode": "build"             <span class="comment">// 默认模式：plan、build 或 act</span>
+    "default_mode": "act"
   }
 }</code></pre>
         </div>
@@ -1611,7 +1597,7 @@ flowchart TD
         <p class="lead-text">Seamlessly integrate with the open Model Context Protocol ecosystem, mounting databases, issue trackers, and third-party services directly into Cade.</p>
 
         <h2>MCP architecture and transports</h2>
-        <p>Cade natively communicates via <strong>stdio</strong> and <strong>SSE</strong> transports. Upon startup, it performs automatic capability discovery and injects schemas dynamically:</p>
+        <p>Cade launches MCP servers as subprocesses and communicates through <strong>stdio</strong>. Upon startup, it performs automatic capability discovery and injects schemas dynamically:</p>
 
         <div class="mermaid-container">
 
@@ -1624,7 +1610,7 @@ flowchart LR
 
     CADE ---|JSON-RPC via stdio| MCP1
     CADE ---|JSON-RPC via stdio| MCP2
-    CADE ---|JSON-RPC via SSE| MCP3
+    CADE ---|JSON-RPC via stdio| MCP3
           </script>
           <div class="mermaid-output"></div>
         </div>
@@ -1651,7 +1637,7 @@ flowchart LR
         </div>
 
         <h2>Use MCP tools in sessions</h2>
-        <p>After configuring servers, run <code>/tools</code> to view registered tools under <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> namespaces. Prompt the agent naturally to utilize them:</p>
+        <p>Restart Cade after changing MCP configuration. Use <code>/mcp [status]</code> to inspect connectivity; live reload is not supported. Run <code>/tool list</code> to view registered tools under <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> namespaces. Prompt the agent naturally to utilize them:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Prompt</span>
@@ -1681,7 +1667,7 @@ flowchart LR
         <p class="lead-text">Encapsulate domain-specific engineering guidelines, complex refactoring protocols, and test rules into modular SKILL packages reusable across teams.</p>
 
         <h2>Skill directory layout</h2>
-        <p>Cade automatically discovers skills from both global (<code>~/.cade/skills/</code>) and project-local (<code>.cade/skills/</code>) directories:</p>
+        <p>Cade discovers user skills in <code>~/.cade/skills/</code> and <code>~/.agents/skills/</code>. Project directories <code>.cade/skills/</code> and <code>.agents/skills/</code> are included only when <code>skills.trust_project_skills</code> is <code>true</code> (default: <code>false</code>). An explicit <code>paths.skills_dir</code> is trusted and has highest priority:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Directory Tree</span>
@@ -1703,22 +1689,19 @@ flowchart LR
           <pre><code>---
 name: refactor-clean-code
 description: Specialized engineering guidelines for module decoupling and unit tests.
-tools_allowed: [view_file, replace_file_content, run_command]
-version: 1.0.0
 ---
 
 # Core Refactoring Invariants
 1. Functions must not exceed 40 lines; modules must not exceed 300 lines;
 2. All function parameters and return types must have explicit type annotations;
-3. Always execute `pytest tests/` via run_command to verify zero regressions;
+3. Always execute `pytest tests/` via bash to verify zero regressions;
 4. Enforce strict I/O separation; never issue network requests within domain entities.</code></pre>
         </div>
 
         <h2>Skill commands</h2>
         <ul>
-          <li><code>/skill list</code>: List all detected skills available in the current project;</li>
-          <li><code>/skill load &lt;name&gt;</code>: Force-load a skill into the active session prompt;</li>
-          <li><strong>Autonomous Activation</strong>: When user instructions semantically match a skill description, Cade activates guidelines automatically.</li>
+          <li><code>/skill NAME [prompt]</code>: Activate a discovered skill. An optional prompt becomes a follow-up task.</li>
+          <li>Discovered skill summaries appear in the system prompt. The model can load full instructions through the internal skill tool when the task matches.</li>
         </ul>
 
         <div class="page-nav">
@@ -1782,60 +1765,52 @@ flowchart TD
           <a href="#">Docs</a> / <span class="current">Lifecycle Hooks</span>
         </div>
         <h1>Lifecycle hooks</h1>
-        <p class="lead-text">Attach deterministic Python hooks at session bootstrap, before/after tool runs, and during inference cycles for linting, security gating, and telemetry.</p>
+        <p class="lead-text">Run configured external commands for tool constraints and lifecycle notifications. Commands exchange JSON through stdin and stdout.</p>
 
         <h2>Supported hook events</h2>
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Hook Event</th>
-                <th>Trigger Timing & Parameters</th>
-                <th>Typical Use Cases & Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>on_session_start</code></td>
-                <td>Triggered when a session is initialized or resumed. Receives <code>session_id</code>, <code>cwd</code>.</td>
-                <td>Verify environment health, git sync check, clean up stale temporary files.</td>
-              </tr>
-              <tr>
-                <td><code>pre_tool_call</code></td>
-                <td>Triggered right before executing a tool. Receives <code>tool_name</code>, <code>arguments</code>.</td>
-                <td>Validate parameters and block sensitive file paths. Returning non-zero aborts tool execution.</td>
-              </tr>
-              <tr>
-                <td><code>post_tool_call</code></td>
-                <td>Triggered immediately after a tool finishes. Receives <code>tool_name</code>, <code>result</code>.</td>
-                <td>Auto-run <code>ruff format</code> after edits, execute linting, or run unit tests.</td>
-              </tr>
-              <tr>
-                <td><code>on_session_end</code></td>
-                <td>Triggered when exiting Cade. Receives <code>summary</code>, <code>event_count</code>.</td>
-                <td>Generate session report, notify team chat channels, clean sandbox containers.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ul>
+          <li><code>pre_tool</code>: A synchronous constraint hook before tool execution.</li>
+          <li><code>post_tool</code>: A background notification after a tool returns.</li>
+          <li><code>before_agent_start</code>: A background notification before a user instruction runs.</li>
+          <li><code>before_provider_request</code>: A background notification after request assembly.</li>
+          <li><code>on_context_window_reset</code>: A background notification during context rollover.</li>
+          <li><code>on_error</code>: A background error notification.</li>
+        </ul>
 
-        <h2>Write a custom hook</h2>
-        <p>Create a custom hook script at <code>.cade/hooks/post_edit.py</code>:</p>
+        <h2>Configure a hook</h2>
+        <p>Add a hook entry to <code>cade.config.json</code>. Commands are nonempty argv arrays and run directly without a shell. Each command receives a redacted JSON object on stdin with <code>event</code>, <code>tool</code>, <code>input</code>, <code>output</code>, <code>error</code>, <code>metadata</code>, and correlation IDs. Stdout must be empty or a JSON object; send diagnostic text to stderr.</p>
+        <div class="code-block">
+          <div class="code-header">
+            <span>JSON</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+          </div>
+          <pre><code>{
+  "hooks": {
+    "entries": [
+      {
+        "event": "post_tool",
+        "matcher": "edit",
+        "command": ["python3", ".cade/hooks/post_edit.py"],
+        "failure_policy": "warn"
+      }
+    ]
+  }
+}</code></pre>
+        </div>
+        <p>Create <code>.cade/hooks/post_edit.py</code>:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Python</span>
             <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
-          <pre><code>import subprocess, sys
+          <pre><code>import json
+import sys
 
-def post_tool_call(tool_name: str, args: dict, result: dict):
-    # 格式化写入工具修改的文件。
-    if tool_name in ("replace_file_content", "write_to_file"):
-        path = args.get("TargetFile")
-        if path and path.endswith(".py"):
-            subprocess.run(["ruff", "format", path], check=False)
-            print(f"[Hook] Auto-formatted {path} via ruff")</code></pre>
+record = json.load(sys.stdin)
+print(f"Tool finished: {record['tool']}", file=sys.stderr)
+print("{}")</code></pre>
         </div>
+        <p>A synchronous <code>pre_tool</code> hook can return <code>decision</code> (allow, ask, or deny) and an <code>arguments</code> object. Its decision can only tighten permissions. <code>failure_policy="fail"</code> raises an error to its caller and stops the tool attempt. The other configured events run through a background queue: exceptions are logged and do not propagate to the active tool or instruction. See <a href="guide/hooks.md">Lifecycle hooks</a> for failure policies and <code>/hooks</code> for diagnostics.</p>
 
         <div class="page-nav">
           <a href="#subagents" class="page-nav-btn">
@@ -1856,10 +1831,10 @@ def post_tool_call(tool_name: str, args: dict, result: dict):
           <a href="#">Docs</a> / <span class="current">TUI Workbench</span>
         </div>
         <h1>Terminal workspace</h1>
-        <p class="lead-text">The default interface for Cade. Split-pane layout, live diff preview pane, and keyboard navigation.</p>
+        <p class="lead-text">The default interface for Cade. An inline transcript with embedded pickers, approval forms, and keyboard navigation.</p>
 
         <h2>Startup and layout</h2>
-        <p>Run <code>cade</code> directly in any project folder to enter the full-screen TUI workbench:</p>
+        <p>Run <code>cade</code> directly in any project folder to start the inline terminal workspace:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Bash</span>
@@ -1872,16 +1847,16 @@ cade --resume     <span class="comment"># 交互式选择历史会话启动</spa
 
         <div class="card-grid">
           <div class="card">
-            <div class="card-title"><span>Conversation Stream</span> <span class="badge">Main Pane</span></div>
+            <div class="card-title"><span>Conversation Stream</span> <span class="badge">Transcript</span></div>
             <p>Displays streaming text, tool execution logs, and reasoning thinking tokens with collapsible blocks and rich Markdown styling.</p>
           </div>
           <div class="card">
-            <div class="card-title"><span>Live Diff Inspector</span> <span class="badge">Diff Viewer</span></div>
-            <p>Renders live color-coded diffs as the agent modifies files. Synchronized with <code>replace_file_content</code> for precision code review.</p>
+            <div class="card-title"><span>Input and approvals</span> <span class="badge">Inline forms</span></div>
+            <p>Input, completion menus, pickers, and approval previews share the transcript layout. The terminal owns scrollback; Cade does not use an alternate screen or capture the mouse.</p>
           </div>
           <div class="card">
             <div class="card-title"><span>Runtime Status</span> <span class="badge">Status Bar</span></div>
-            <p>The header status bar shows the active mode (Plan/Build/Act), provider, and context watermarks.</p>
+            <p>Two status lines below the input show the project, branch, context usage, execution mode, model, and effort.</p>
           </div>
         </div>
 
@@ -1898,8 +1873,8 @@ cade --resume     <span class="comment"># 交互式选择历史会话启动</spa
             <tbody>
               <tr>
                 <td><code>Tab</code> / <code>Shift+Tab</code></td>
-                <td>Global</td>
-                <td>Cycle active focus between input box, conversation list, and diff pane.</td>
+                <td>Input / idle</td>
+                <td>Tab completes input. Shift+Tab cycles act → build → plan while idle with no pending interaction.</td>
               </tr>
               <tr>
                 <td><code>Ctrl+C</code></td>
@@ -1908,8 +1883,8 @@ cade --resume     <span class="comment"># 交互式选择历史会话启动</spa
               </tr>
               <tr>
                 <td><code>Ctrl+O</code></td>
-                <td>Diff Pane</td>
-                <td>Toggle full-screen expansion for the live diff viewer.</td>
+                <td>Global</td>
+                <td>Fold or expand tool details.</td>
               </tr>
               <tr>
                 <td><code>↑</code> / <code>↓</code></td>
@@ -1924,7 +1899,7 @@ cade --resume     <span class="comment"># 交互式选择历史会话启动</spa
               <tr>
                 <td><code>Esc</code></td>
                 <td>Global</td>
-                <td>Dismiss modal, exit expanded diff view, or return focus to prompt input.</td>
+                <td>Cancel an input form or completion menu. Use Ctrl+C to cancel a picker.</td>
               </tr>
             </tbody>
           </table>
@@ -1957,7 +1932,7 @@ cade --resume     <span class="comment"># 交互式选择历史会话启动</spa
             <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code>cade tui                  <span class="comment"># 进入终端工作台</span>
-cade exec --model deepseek "Review the current project" <span class="comment"># 指定初始模型启动</span></code></pre>
+cade exec --approval never --model deepseek/deepseek-flash "Review the current project" <span class="comment"># 指定初始模型启动</span></code></pre>
         </div>
 
         <h2>Input syntax and shortcuts</h2>
@@ -1966,21 +1941,24 @@ cade exec --model deepseek "Review the current project" <span class="comment"># 
           <li><strong>@ File Ingestion</strong>: Mentioning <code>@src/cade/main.py</code> reads and embeds file bytes directly into prompt context;</li>
           <li><strong>! Raw Shell Escape</strong>: Starting with an exclamation mark (e.g. <code>!git status</code>) executes commands directly on host without consuming LLM tokens;</li>
           <li><strong>/ Slash Commands</strong>: Execute <code>/undo</code>, <code>/mode plan</code>, <code>/mode act</code> directly;</li>
-          <li><strong>Shift+Enter Multi-line</strong>: Input multi-line requirements or paste code blocks without premature submission.</li>
+          <li><strong>Multi-line input</strong>: Ctrl+J inserts a new line. Alt+Enter inserts a new line while idle and steers an active run; Shift+Enter support depends on the terminal.</li>
         </ul>
 
         <h2>Noninteractive execution and pipelines</h2>
-        <p>Integrate Cade into automated shell pipelines using headless <code>-p</code> mode:</p>
+        <p>Use <code>cade exec</code> for noninteractive runs. A positional prompt does not consume stdin; use <code>--prompt-file -</code> to read the complete prompt from stdin. These examples use <code>--approval never</code> to deny approval requests without requiring a TTY:</p>
         <div class="code-block">
           <div class="code-header">
             <span>Shell Pipeline</span>
             <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <pre><code><span class="comment"># 单次问答输出结果并退出</span>
-cade exec "Analyze dependencies in pyproject.toml and produce a markdown report"
+cade exec --approval never "Analyze dependencies in pyproject.toml and produce a markdown report"
 
 <span class="comment"># 通过管道输入 Diff 并进行代码审查</span>
-git diff | cade exec "Review the git diff for potential concurrency deadlock risks"</code></pre>
+{
+  printf '%s\n\n' 'Review the following git diff for potential concurrency deadlock risks:'
+  git diff
+} | cade exec --approval never --prompt-file -</code></pre>
         </div>
 
         <div class="page-nav">

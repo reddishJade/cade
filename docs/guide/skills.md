@@ -9,11 +9,15 @@ Cade discovers skills at two levels:
 1. Project skills, shared through the repository:
    ```text
    <PROJECT_ROOT>/.cade/skills/<skill_name>/SKILL.md
+   <PROJECT_ROOT>/.agents/skills/<skill_name>/SKILL.md
    ```
 2. User skills, shared across projects:
    ```text
-   ~/.config/cade/skills/<skill_name>/SKILL.md
+   ~/.cade/skills/<skill_name>/SKILL.md
+   ~/.agents/skills/<skill_name>/SKILL.md
    ```
+
+Project skills are discovered only when `skills.trust_project_skills` is `true` (default: `false`). An explicit `paths.skills_dir` is trusted and has the highest search priority.
 
 ## Write a skill
 
@@ -40,7 +44,9 @@ Cade includes summaries of discovered skills in the system prompt. When a task m
 
 You can also activate a skill explicitly:
 
-```bash
-/skill list                 # 查看可用技能及其描述
-/skill load react-refactor  # 将指定技能加载到当前会话上下文
+```text
+/skill react-refactor
+/skill react-refactor Split the API client into smaller modules
 ```
+
+The syntax is `/skill NAME [prompt]`. An optional prompt becomes a follow-up task. `list` and `load` are treated as skill names, not subcommands.

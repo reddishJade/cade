@@ -14,9 +14,9 @@ Cade's coding tools declare execution behavior explicitly. The scheduler batches
 | `find` | Optional parallel read tool | `pattern`, `path`, `max_results` | Find project files by partial filename |
 | `ls` | Optional parallel read tool | `path`, `limit` | List files and directories |
 | `bash` | Serial | `command`, `timeout_ms`, `workdir`, `purpose` | Run shell commands in the Linux sandbox or local environment |
-| `webfetch` | Read pool | `url`, `selector` | Fetch a web page and extract text or Markdown |
-| `websearch` | Read pool | `query` | Search external documentation and solutions |
-| `question` | Interactive gate | `question`, `options` | Ask the user a structured question |
+| `webfetch` | Serial | `url`, `format`, `timeout` | Fetch a web page and extract text or Markdown |
+| `websearch` | Serial | `query`, `numResults`, `livecrawl`, `type`, `timeout` | Search external documentation and solutions |
+| `question` | Interactive gate | `questions` array of objects with `question` and optional `header`, `multiple`, `options` | Ask the user a structured question |
 | `delegate` | Delegation | `description`, `prompt`, `mode` / `session_id` / `tasks` | Create, continue, or batch session-backed child agents |
 | `history` | Serial read | `operation`, `entry_id`, `session_id`, `offset`, `max_chars` | Search the current branch; read explicit session/entry references and ancestor context without moving the head |
 | `save_memory` | Serial write barrier | `path`, `markdown`, `sources`, `expected_content` | Validate explicit history sources and atomically save Markdown in `.cade/memory/`; valid sources do not prove a conclusion |

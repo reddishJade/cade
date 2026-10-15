@@ -24,7 +24,7 @@ Add a `hooks` block to the project configuration:
       {
         "event": "post_tool",
         "matcher": "edit",
-        "command": ["ruff", "format", "src/"],
+        "command": ["ruff", "format", "--quiet", "src/"],
         "failure_policy": "warn"
       },
       {
@@ -37,11 +37,17 @@ Add a `hooks` block to the project configuration:
 }
 ```
 
-`command` is a nonempty argv array. Hooks run directly, not through a shell. `failure_policy` controls failures:
+`command` is a nonempty argv array. Hooks run directly, not through a shell. Each process receives a redacted JSON object on stdin with `event`, `tool`, `input`, `output`, `error`, `metadata`, a timestamp, and correlation IDs. Stdout must be empty or a JSON object. Send diagnostic text to stderr.
+
+`pre_tool` runs synchronously. It can return `decision` (`allow`, `ask`, or `deny`) and an `arguments` object; decisions can only tighten permissions. The other configured events run through a background notification queue.
+
+`failure_policy` controls how the runner handles failures:
 
 - `ignore`: ignore the error and continue.
-- `warn`: print a terminal warning and continue.
-- `fail`: treat the failure as an error and stop the current tool or instruction.
+- `warn`: log a warning and continue.
+- `fail`: raise an error to the caller. For synchronous `pre_tool` hooks, this stops the tool attempt. For background notifications, the queue logs the exception without propagating it to the active tool or instruction.
+
+Background notifications cannot enforce synchronous constraints or guarantee that formatting finishes before the next tool runs. Use `pre_tool` for constraints that must run before tool execution.
 
 ## Inspect hooks
 
