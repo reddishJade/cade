@@ -1,16 +1,13 @@
-# 事故复盘
+# Incident reviews
 
-此目录保存影响真实用户路径、破坏核心不变量或暴露系统性验证缺口的正式复盘。
-目标是改进系统，不归责个人。
+This directory contains reviews of incidents affecting real user paths, violating core invariants, or exposing systemic validation gaps. The purpose is to improve the system, not assign personal blame.
 
-## 触发条件
+## When to write a review
 
-- 数据丢失、历史被改写或无法恢复；
-- 权限、审批或本地执行边界被绕过；
-- 模型看到未记录、错误或无法重建的上下文；
-- 单测通过但真实 `build_app`、进程或 UI 路径失败；
-- 同类问题重复出现，说明缺少系统性约束。
+- Data is lost, history is rewritten, or recovery fails.
+- Permissions, approval, or local execution boundaries are bypassed.
+- Models receive unrecorded, incorrect, or unreconstructable context.
+- Unit tests pass but the real `build_app`, process, or UI path fails.
+- A recurring defect reveals a missing systemic constraint.
 
-文件名使用 `NNNN-short-title.md`。从 `TEMPLATE.md` 复制，记录可验证事实、时间线、
-违反的不变量、为何现有测试未发现，以及带 owner/status 的修复项。至少一个修复项
-应是 assembled regression test。
+Use filenames in the form `NNNN-short-title.md`. Copy [TEMPLATE.md](TEMPLATE.md) and record verifiable facts, a timeline, violated invariants, why tests missed the defect, and corrective actions with owners and status. At least one action should add a regression test through the assembled components.

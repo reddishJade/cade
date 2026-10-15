@@ -305,7 +305,7 @@ class ToolGate:
         self,
         registry: tuple[ToolSpec, ...],
     ) -> tuple[ToolSpec, ...]:
-        """Project the registry through the current execution mode."""
+        """按当前执行模式投影工具注册表。"""
         filter_tools = getattr(self._mode, "filter_tools", None)
         if filter_tools is None:
             return registry

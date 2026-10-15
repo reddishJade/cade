@@ -1,15 +1,15 @@
-# 开发指南
+# Development guide
 
-仓库由 `reddishJade` 一人维护。PR 由你自己创建和合并；产品 PR 用来触发 CI，不需要等别人审批。
+`reddishJade` maintains this repository alone. Create and merge your own PRs. Product PRs trigger CI and do not require another person's review.
 
-| 仓库 | 内容 | 分支 |
-|---|---|---|
-| `cade`（公开） | 产品代码、回归测试、用户文档 | `dev` 集成，`main` 交付 |
-| `cade-internal`（私有） | 能力评估、A/B、真实验收工具和任务 | `main` 保存可用工具 |
+| Repository | Content | Branches |
+| --- | --- | --- |
+| `cade` (public) | Product code, regression tests, and user documentation | Integrate on `dev`; deliver on `main` |
+| `cade-internal` (private) | Capability evaluations, A/B experiments, and real-provider acceptance tools and tasks | Keep working tools on `main` |
 
-## 环境准备
+## Environment setup
 
-现有目录是 `~/workspace/cade` 和 `~/workspace/cade-internal`。重建产品环境或更新推送钩子时运行：
+The existing checkouts are `~/workspace/cade` and `~/workspace/cade-internal`. To recreate the product environment or update the push hook:
 
 ```sh
 cd ~/workspace/cade
@@ -17,9 +17,9 @@ uv sync --locked --extra dev
 install -m 755 .githooks/pre-push "$(git rev-parse --git-path hooks/pre-push)"
 ```
 
-## 日常产品开发
+## Daily product development
 
-从最新 `dev` 开一个短期分支，完成一件事：
+Create a short-lived branch from the latest `dev` for one task:
 
 ```sh
 cd ~/workspace/cade
@@ -28,7 +28,7 @@ git pull --ff-only origin dev
 git switch -c fix/short-description
 ```
 
-修改后检查：
+After editing, run the checks:
 
 ```sh
 uv run --locked ruff check src/cade/
@@ -38,7 +38,7 @@ uv run --locked pytest -q src/cade/tests
 uv run --locked cade --help
 ```
 
-检查通过后提交。`git add -p` 处理已跟踪文件，新文件用 `git add -- 路径`：
+Commit after checks pass. Use `git add -p` for tracked files and `git add -- PATH` for new files:
 
 ```sh
 git add -p
@@ -49,15 +49,15 @@ gh pr create --base dev --fill
 gh pr checks --watch
 ```
 
-CI 通过后自己合并，并删除短期分支：
+After CI passes, merge the PR and delete the short-lived branch:
 
 ```sh
 gh pr merge --squash --delete-branch
 ```
 
-## 内部评估与真实验收
+## Internal evaluation and acceptance
 
-内部工具也从短期分支修改：
+Use a short-lived branch for internal tools too:
 
 ```sh
 cd ~/workspace/cade-internal
@@ -66,13 +66,11 @@ git pull --ff-only origin main
 git switch -c chore/short-description
 ```
 
-按内部 `README.md` 检查，再提交、推送。创建 PR 时改用 `gh pr create --base main --fill`，然后自己 Squash 合并。
-内部仓库没有产品 CI，不自动跑模型。实验前固定 Cade 提交、任务、模型和预算。
+Run checks from the internal `README.md`, then commit and push. Create the PR with `gh pr create --base main --fill` and squash-merge it yourself. The internal repository has no product CI and does not run models automatically. Fix the Cade commit, task, model, and budget before each experiment.
 
-## 提升到 main 与发版
+## Promote to main and release
 
-需要递增版本时，先在工作分支运行 `uv version --bump patch`，把版本和锁文件一起通过 PR 合入 `dev`。
-确认 `dev` 的 CI 通过后，提升同一提交到 `main`：
+When a version increment is needed, run `uv version --bump patch` on the working branch. Merge the version and lockfile into `dev` through a PR. After `dev` CI passes, promote the same commit to `main`:
 
 ```sh
 cd ~/workspace/cade
@@ -83,7 +81,7 @@ git merge-base --is-ancestor origin/main HEAD
 git push origin HEAD:main
 ```
 
-正式发版时才打标签。当前版本尚未发布时可以直接使用，否则先递增版本：
+Create a tag only for a release. Use the current version if it has not been published; otherwise, increment it first:
 
 ```sh
 VERSION="$(uv version --short)"
@@ -91,7 +89,6 @@ git tag -a "v$VERSION" -m "Release v$VERSION"
 git push origin "v$VERSION"
 ```
 
-标签触发检查和构建。通过后，你在 GitHub 的 `release` environment 批准发布。
-已发布的标签不移动，修复发新版本。完整发布规则见[版本与发布](guide/releases.md)。
+The tag triggers checks and builds. After they pass, approve publication in GitHub's `release` environment. Do not move published tags; release fixes under new versions. See [Versions and releases](guide/releases.md) for the full policy.
 
-不要强推 `main` 或 `dev`，不要使用 `git push --all`。内部工具不推到公开库，凭据和原始运行记录不进 Git。
+Do not force-push `main` or `dev`. Do not use `git push --all`. Keep internal tools out of the public repository. Do not commit credentials or raw run records.

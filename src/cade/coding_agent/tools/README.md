@@ -1,51 +1,30 @@
-# Cade Coding Agent Tools — 核心工程工具集
+# Coding tools
 
-本目录包含 Coding Agent 执行真实软件工程任务的全套内置工具，专注于解决：**如何为 Agent 提供具备并发控制、副作用感知与沙箱保护的高可用代码读写与执行环境。**
+This directory implements code reads, writes, searches, shell execution, and related tools with explicit concurrency and side-effect contracts.
 
----
+## Tool groups
 
-## 1. 工具矩阵与职责分类
+The normal model-facing coding primitives are `read`, `write`, `edit`, and `bash`. Structured `grep`, `glob`, `find`, and `ls` remain optional. Normal exploration combines native `rg`, `fd`, and `git` commands through `bash`. Product features independently register interaction, web, and runtime tools such as `question`, `webfetch`, `websearch`, and `delegate`.
 
-日常 model-facing coding surface 保持为四个 primitive：
+### Files
 
-```
-read / write / edit / bash
-```
+- `read_file.py`: file reads, slices, and line ranges.
+- `write_file.py`: file creation and replacement.
+- `file_handlers.py`: reads, writes, and model-facing `edit` using exact `old_text` matching.
+- `text_edit.py`: exact replacement and newline handling.
+- `file_image.py`: multimodal image support and Base64 extraction.
+- `glob_search.py`: optional `glob`, `find`, and `ls`; prefer `fd`, with `rg` or Python fallback.
+- `grep_search.py`: optional ripgrep-based content search.
+- `file_index.py` / `_search_utils.py`: directory indexes and filtering.
+- `bash.py`: sandbox or native shell execution, timeouts, process-group cleanup, and full-log recovery paths for truncated output.
+- `shell_adapter.py`: connect permissions to shell execution.
+- `subagent.py`: delegation, concurrent batches, and result collection.
+- `question.py`: user questions and choices.
+- `webfetch.py`: fetch pages and convert content to Markdown.
+- `websearch.py`: external documentation and web search.
+- `truncate.py`: bounded output previews.
+- `file_mutation_queue.py`: mutation queues and file locks.
 
-`grep / glob / find / ls` 保留为可选结构化搜索实现，默认搜索通过 `bash`；
-正常 Plan / Build / Act 代码探索由 `bash` 组合 `rg`、`fd`、`git` 等原生命令。
-交互、Web 与运行时能力（如 `question`、`webfetch`、`websearch`、`delegate`）
-按产品功能独立注册。
+## Invariants
 
-### 工具文件明细
-- **代码读写与精准编辑**：
-  - `read_file.py`：安全读取文件内容，支持分片与行范围。
-  - `write_file.py`：创建新文件或覆写已有文件。
-  - `file_handlers.py`：实现文件读写与 model-facing `edit`，按 `old_text` 精确匹配当前文件内容。
-  - `text_edit.py`：精确文本替换与换行格式处理。
-  - `file_image.py`：多模态图片文件支持与 Base64 提取。
-- **文件检索与代码搜索**：
-  - `glob_search.py`：文件树通配符检索（model-facing `glob`、`find`、`ls`）；文件发现优先使用 `fd`，回退到 `rg` 或 Python。
-  - `grep_search.py`：基于 Ripgrep 的代码内容搜索（model-facing `grep`）。
-  - `file_index.py` / `_search_utils.py`：工程目录索引构建与过滤支持。
-- **环境交互与进程执行**：
-  - `bash.py`：执行终端命令。自动对接底层 Bubblewrap 沙箱或系统原生 Shell，控制超时与进程组清理。
-  - `shell_adapter.py`：命令适配器，连接权限判定与 Shell 执行引擎。
-- **协同与任务流**：
-  - `subagent.py`：子代理派发工具，支持多子任务批量并发执行并归集结果。
-  - `question.py`：人机交互工具，向用户主动提出选择题或确认事项。
-- **外部网络能力**：
-  - `webfetch.py`：抓取指定 URL 页面并转为精简 Markdown。
-  - `websearch.py`：调用搜索引擎获取外部开发文档与最新技术方案。
-- **输出截断与安全护栏**：
-  - `truncate.py`：限制工具输出预览；`bash.py` 在超限时保存完整日志并返回恢复路径。
-  - `file_mutation_queue.py`：并发写冲突队列与文件锁防护。
-
----
-
-## 2. 架构不变量与设计禁忌
-
-- **并发与副作用分区**：
-  - 只读工具（`read` 及可选 `grep/glob/find/ls`）声明并发安全，由调度器并行触发。
-  - 具有文件写（`write`、`edit`）或 Shell 执行副作用的工具严格保持单线程串行互斥。
-- **统一异常契约**：工具发生 IO 错误、找不到路径或语法错误时，必须返回清晰的文本错误说明，严禁直接抛出未捕获的 Python 异常导致循环终结。
+Read tools explicitly declare parallel safety. Writes and shell tools remain sequential and form execution barriers. I/O failures, missing paths, and syntax errors must return clear tool errors rather than uncaught exceptions that terminate the loop.

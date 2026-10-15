@@ -1,21 +1,15 @@
-# Cade AI Auth — Provider 认证领域层
+# Provider authentication
 
-本模块定义模型 Provider 的认证契约，并实现 Provider 专有的登录、Token
-交换、刷新和请求前凭据解析。
+This module defines provider authentication contracts and implements provider-specific login, token exchange, refresh, and pre-request credential resolution.
 
-## 边界
+## Boundaries
 
-- `types.py`：`AuthCredential`、`AuthProvider` 与宿主实现的
-  `CredentialStore` 协议。
-- `openai_codex.py`：OpenAI Codex OAuth、PKCE、Device Code 和 Token 刷新。
-- `registry.py`：Provider ID 到认证实现的注册表。
-- `resolver.py`：读取凭据、判断有效期并调用对应 Provider 刷新。
+- `types.py`: `AuthCredential`, `AuthProvider`, and the host-implemented `CredentialStore` protocol.
+- `openai_codex.py`: OpenAI Codex OAuth, PKCE, device authorization, and token refresh.
+- `registry.py`: provider ID to authentication implementation.
+- `resolver.py`: read credentials, check expiration, and invoke provider refresh.
 
-本模块不决定凭据保存路径，不读写 `~/.cade/auth.json`，也不依赖 CLI 或
-Harness。文件持久化由 `cade.harness.auth.store.AuthStore` 实现，登录界面由
-CLI 提供，`cade.harness.auth.manager.AuthManager` 只负责组装和编排。
-
-依赖方向：
+This module does not choose storage paths, read `~/.cade/auth.json`, or depend on CLI or Harness. `cade.harness.auth.store.AuthStore` owns file persistence. CLI owns login presentation. `cade.harness.auth.manager.AuthManager` assembles and orchestrates authentication.
 
 ```text
 cli -> harness.auth -> ai.auth

@@ -1,44 +1,24 @@
-# Cade Harness MCP — Model Context Protocol 扩展系统
+# MCP integration
 
-本目录实现对 Model Context Protocol (MCP) 开放标准的支持，专注于解决：**如何将本地或远程独立运行的 MCP 工具服务器，安全、惰性、无缝地挂载为 Agent 可直接调用的标准化工具。**
+This package connects independent Model Context Protocol servers as standard Agent tools with discovery, lazy connections, and shared permissions.
 
----
+## Registration flow
 
-## 1. 核心架构与工具挂载
-
-```
-                     .cade/mcp_config.json
-                               │
-                               ▼
-                      McpRuntimeRegistry
-                               │ (读取配置并注册服务)
-                               ▼
-        ┌──────────────────────────────────────────────┐
-        │  McpClient (基于官方 Python SDK stdio 进程)   │
-        │  - 采用 LazyClientRef 惰性启动连接           │
-        └──────────────────────┬───────────────────────┘
-                               │
-                               ▼
-                        build_mcp_tools()
-                               │
-                               ▼
-           生成以 mcp__{server}__{tool} 命名的标准 ToolSpec
-                               │
-                               ▼
-                    接入 ToolGate 统一权限校验
+```text
+.cade/mcp_config.json
+  → McpRuntimeRegistry
+  → McpClient / LazyClientRef: SDK stdio transport
+  → build_mcp_tools()
+  → ToolSpec: mcp__{server}__{tool}
+  → ToolGate
 ```
 
-### 核心文件与职责
-- **客户端与生命周期 ([client.py](client.py))**：`McpClient` 与 `LazyClientRef`。管理子进程 stdio 管道、JSON-RPC 会话初始化、断线重连与优雅销毁。
-- **工具注册与元数据 ([tools.py](tools.py))**：
-  - `McpRuntimeRegistry`：管理所有配置的 MCP Server 状态（CONNECTED, ERROR, DISABLED）。
-  - `build_mcp_tools`：拉取 Server 的工具定义（Tool Schema）并转化为 Cade 的 `ToolSpec`。
-- **结果归一化 ([results.py](results.py))**：解析 MCP 协议中的文本块、内嵌资源（EmbeddedResource）与图像数据，转为 Cade 统一的工具返回格式。
+### Files
 
----
+- [client.py](client.py): `McpClient` and `LazyClientRef`, subprocess stdio, JSON-RPC initialization, reconnection, and shutdown.
+- [tools.py](tools.py): `McpRuntimeRegistry` server states and `build_mcp_tools` schema conversion.
+- [results.py](results.py): normalize text, embedded resources, and image data into tool results.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **工具命名隔离**：所有 MCP 动态工具必须严格遵循 `mcp__{server}__{tool}` 命名空间规范，严禁覆盖内置核心工具。
-- **异常故障隔离**：单个 MCP Server 的崩溃或响应超时不得拖垮主 Agent 循环；连接故障必须作为局部工具错误返回。
-- **受权限引擎管辖**：MCP 工具绝非安全盲区，其执行同样必须经过 `PermissionEngine` 与审计日志记录。
+Use the `mcp__{server}__{tool}` namespace; never override built-in tools. A server crash or timeout must return a local tool error rather than fail the main loop. MCP calls must pass through permissions and auditing.

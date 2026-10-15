@@ -1,38 +1,34 @@
-# 安装与环境准备
+# Installation and environment setup
 
-Cade 是一个运行在本地工作区的轻量 Python Coding Agent。在开始使用前，请确保系统已安装必要的运行依赖。
+Cade is a Python coding agent that runs in a local workspace. Install the runtime dependencies before you start.
 
----
+## Requirements
 
-## 1. 系统要求与环境依赖
+- Python 3.12 or later.
+- A package manager. [uv](https://github.com/astral-sh/uv) is recommended for installation and virtual environments.
+- Optional system tools:
+  - `fd` (`fdfind`): the preferred file discovery backend for `glob` and `find`. Without it, Cade uses `rg` or Python.
+  - ripgrep (`rg`): the preferred content search backend for `grep` and a fallback for file discovery. Python is available as a fallback.
+  - bubblewrap (`bwrap`): required for the default Linux shell sandbox. Cade fails during assembly if `bwrap` is missing; it does not fall back to unsandboxed execution.
 
-- **Python**：`>= 3.12`
-- **包管理器（推荐）**：[`uv`](https://github.com/astral-sh/uv)（极速安装与虚拟环境管理）
-- **推荐系统工具**：
-  - `fd` (`fdfind`)：可选的 `glob`/`find` 工具优先用它发现文件；未安装时回退到 `rg` 或 Python。
-  - `ripgrep` (`rg`)：可选的 `grep` 工具优先用它搜索内容，也是文件发现的回退后端；未安装时可使用 Python 实现。
-  - `bubblewrap` (`bwrap`)：仅在 Linux 下生效。用于提供命名空间级的 Shell 执行沙箱隔离。未安装时系统将以无沙箱的直接执行模式运行。
-
-### 在各系统安装系统依赖
+### Install system tools
 
 ```bash
-# Ubuntu / Debian
+# 在 Ubuntu 或 Debian 上安装
 sudo apt-get update && sudo apt-get install -y fd-find ripgrep bubblewrap
 
-# macOS (Homebrew)
+# 在 macOS 上使用 Homebrew 安装
 brew install fd ripgrep
 
-# Arch Linux
+# 在 Arch Linux 上安装
 sudo pacman -S fd ripgrep bubblewrap
 ```
 
----
+## Install Cade
 
-## 2. 安装 Cade
+### Install from source
 
-### 方式 A：源码克隆与开发安装（推荐）
-
-如果你需要基于最新代码进行开发或体验最新特性：
+Use a source checkout to develop Cade or use the latest code:
 
 ```bash
 git clone https://github.com/reddishJade/cade.git
@@ -43,25 +39,22 @@ uv venv
 source .venv/bin/activate
 uv pip install -e .
 
-# 若需要运行测试与代码静态检查，可安装 dev 依赖
+# 安装测试和静态检查所需的开发依赖
 uv pip install -e ".[dev]"
 ```
 
-### 方式 B：使用 pip 直接安装
+### Install with pip
 
 ```bash
 pip install cade-agent
 ```
 
----
+## Verify installation
 
-## 3. 验证安装
-
-在终端运行以下命令，验证命令行工具已正确安装并处于 PATH 中：
+Run the following command to check that the CLI is installed and available on `PATH`:
 
 ```bash
 cade --help
 ```
 
-如果看到包含 `--mode`、`--provider`、`--model` 等启动选项的帮助界面，说明安装成功。
-下一步请参考 [快速上手指南](quickstart.md) 配置模型并开启你的第一个开发任务。
+The command displays help with startup options such as `--mode`, `--provider`, and `--model`. Next, follow the [quickstart](quickstart.md) to configure a model and start a task.

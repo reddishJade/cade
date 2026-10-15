@@ -1,13 +1,7 @@
-# 运行时阅读入口
+# Runtime reading guide
 
-[Cade 架构](../architecture.md) 统一说明组件、任务生命周期、状态归属、权限边界
-和代码入口。TUI、exec、浏览器工作台与 Python 调用共享应用和 harness，用户
-输入、运行事件、会话记录和宿主操作的关系在该文档中展开。
+The [Cade architecture](../architecture.md) describes components, task lifecycle, state ownership, permission boundaries, and code entry points. TUI, exec, browser, and Python hosts share the application and harness. The architecture explains how user input, runtime events, session records, and host operations relate to each other.
 
-日常操作按主题查阅 [执行模式](modes.md)、[会话与撤销](sessions.md)、
-[配置](configuration.md) 和 [命令参考](slash-commands.md)。预算算法与请求审计
-见 [上下文策略](../context-policy.md)，Memory 的证据与存储规则见
-[Cade's Memory](../memory.md)。
+For daily use, see [Execution modes](modes.md), [Sessions and undo](sessions.md), [Configuration](configuration.md), and [Slash commands](slash-commands.md). For budgeting and request auditing, see the [context policy](../context-policy.md). For memory evidence and storage rules, see [Cade's Memory](memory.md).
 
-修改实现前可从 [代码入口表](../architecture.md#修改代码的入口) 定位职责层，
-行为验证要求见 [测试指南](../testing.md)。
+Before changing the implementation, use the [code entry points](../architecture.md#code-entry-points) to locate the responsible layer. See the [validation guidelines](../testing.md) for behavior checks.

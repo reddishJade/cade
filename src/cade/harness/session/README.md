@@ -1,53 +1,28 @@
-# Cade Harness Session — 会话树与可回放事实账本
+# Session trees and replayable records
 
-`session` 模块是 Cade 最核心的持久化系统，专注于解决：**如何将多轮对话、工具意图、换窗边界、子代理衍生以纯粹追加写（Append-only）的事件树形式无损存储，保证整个系统的完全可重放性与可审计性。**
+`session` persists conversations, tool intent, rollover boundaries, and child lineage in append-only event trees for replay and auditing.
 
----
+## Data flow
 
-## 1. 核心架构与事件树模型
-
-```
-                      Agent / User 交互事件
-                               │
-                               ▼
-                        SessionRecorder
-                               │ (原子追加写)
-                               ▼
-        ┌─────────────────────────────────────────────┐
-        │               SessionStore                  │
-        │                                             │
-        │    Node 0 (Root)                            │
-        │       │                                     │
-        │    Node 1 ───► Node 2 (Branch A: Plan)      │
-        │       │                                     │
-        │       └──────► Node 3 (Branch B: Build)     │
-        └──────────────────────┬──────────────────────┘
-                               │
-            ┌──────────────────┼──────────────────┐
-            ▼                  ▼                  ▼
-     replay_session()   SessionHistory       SessionSurface
-    (事件重放还原消息)    (history 检索工具)   (投影至 UI/TUI 视口)
+```text
+Agent / user events
+  → SessionRecorder
+  → SessionStore
+    → Root → Node 1 → Node 2: branch A
+                    → Node 3: branch B
+  → replay_session() / SessionHistory / SessionSurface
 ```
 
-### 核心能力与组件
-- **不可变事实账本 ([recorder.py](recorder.py) / [store.py](store.py))**：
-  - `SessionStore`：统一管理会话事件树、日志分支和展示索引，默认保存在本地 `.cade/sessions/` 目录；
-  - 每一个交互步骤作为不可变节点（`TreeNode`）持久化，天然支持基于任意历史节点的会话分叉（Fork）。
-- **无损事件重放 ([replay.py](replay.py))**：从磁盘文件中按顺序流式重播事件，精确重构消息序列与工具调用历史。
-- **无损历史工具 ([history.py](history.py))**：
-  - 导出 `history` 工具供 Agent 自行调用：
-    - `list_windows`：列出所有换窗重置点；
-    - `search`：关键词定位过往对话片段；
-    - `read`：按 `entry_id` 分页读取完整记录，可显式指定 `session_id` 跨 Session 定位；
-    - `around`：查看当前 branch 的前后邻域；显式 Session 仅支持沿锚点祖先的 `before`，拒绝 `after`。
-  - 精确读取不依赖 `session_index.json` 导航 cache。默认目录以当前物理位置为归属边界，忽略旧 `project_path`，支持 workspace 移动/改名；共享/自定义目录才校验 JSONL 首条记录随事实提交的 `project_path`。指向外部的目录链接也按外部存储验证。
-- **输入排队管道 ([inbox.py](inbox.py))**：`SessionInbox` 处理执行期间进入的并发消息（Busy message queue）。
-- **视图投影 ([surface.py](surface.py))**：将复杂的树形结构投影为终端/Web 易于呈现的线性折叠状态。
+### Components
 
----
+- [recorder.py](recorder.py) and [store.py](store.py): immutable facts, event trees, branches, and display indexes, stored in `.cade/sessions/` by default. Persisted `TreeNode` entries support forks from history.
+- [replay.py](replay.py): ordered replay reconstructs messages and tool history.
+- [history.py](history.py): the `history` tool provides `list_windows`, `search`, paginated `read`, and `around`. Explicit `session_id` locates original entries across sessions. Explicit-session `around` follows ancestors with `before` and rejects `after`; active-branch queries support both directions.
+- [inbox.py](inbox.py): `SessionInbox` persists input arriving during execution.
+- [surface.py](surface.py): derives active model-visible messages and applies rollover replacements.
 
-## 2. 架构不变量与设计禁忌
+Exact reads do not depend on the `session_index.json` navigation cache. Default local storage uses physical location for ownership, allowing workspace moves without changing old `project_path` values. Shared/custom storage validates the first JSONL record's workspace binding. Directory links resolving outside the workspace use external-storage validation.
 
-- **追加写（Append-only）与不可变性**：已持久化的事件节点严禁原地修改或覆写；任何“撤销”（undo）或“回退”（rewind）操作在底层均表达为分支切换或新增事件。
-- **事实源唯一性**：会话账本是系统执行状态的最终裁判；严禁在外部维护无法从 Session 账本中重构出的隐式内部状态。
-- **容灾与断电安全**：单条事件写入必须具备原子性，即使进程突然终止也不会导致现有日志文件损坏。
+## Invariants
+
+Do not overwrite persisted event nodes. Undo and rewind use branch changes or new events. Session records are authoritative for recoverable execution state; do not maintain hidden persistent state that cannot be reconstructed from them. Event appends must protect existing records when a process exits unexpectedly.

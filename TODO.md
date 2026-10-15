@@ -1,15 +1,14 @@
 /permission
 
-/config只能设置provider
+/config only configures the provider
 
-上下文组装与压缩
+Context assembly and compaction
 
-## `/clone` 当前行为
+## Current `/clone` behavior
 
-`/clone` 创建独立会话，完整复制会话日志及快照仓库，然后切换到副本。
-副本元数据记录父会话 ID，成功提示显示副本标题与 ID。
-TUI 从副本恢复历史、模式和上下文统计；后续输入、重命名与撤销均作用于副本。
-父会话保留克隆时刻的历史与快照记录。两个会话使用同一工作区文件。
+`/clone` creates an independent session, copies the complete session log and snapshot repository, and switches to the copy.
+The copy's metadata records the parent session ID. The success message shows the copy's title and ID.
+The TUI restores history, mode, and context statistics from the copy. Subsequent input, renaming, and undo operations affect the copy.
+The parent retains the history and snapshots from the time of cloning. Both sessions use the same workspace files.
 
-验收使用隔离 Git 工程：先产生三轮真实文件修改，再克隆，核对两个 ID、
-父子元数据、双方三条快照、副本中的重命名与后续输入，以及退出后的恢复结果。
+Validate this behavior in an isolated Git project. Make three rounds of real file changes, then clone the session. Check both IDs, parent-child metadata, three snapshots in each session, renaming and subsequent input in the copy, and recovery after exit.

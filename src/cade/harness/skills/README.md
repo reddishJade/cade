@@ -1,40 +1,24 @@
-# Cade Harness Skills — 技能发现与两阶段激活
+# Skill discovery and activation
 
-本目录负责技能（Skills）系统的全生命周期管理，专注于解决：**如何将特定的领域专长（如工作流指导、代码规范手册）以极低的初始 Token 开销引入系统，并在模型确有需要时按需精确激活。**
+Skills provide domain instructions through a small initial catalog followed by on-demand full activation.
 
----
+## Two-stage loading
 
-## 1. 核心架构与两阶段激活机制
-
-```
-                      扫描候选目录
-          (./.cade/skills/ 与 ~/.cade/skills/)
-                            │
-                            ▼
-                     SkillRegistry
-                            │
-            ┌───────────────┴───────────────┐
-            ▼ (Phase 1: 轻量索引注入)         ▼ (Phase 2: 按需动态激活)
-  SkillIndexCollector                Agent 判定命中任务
-            │                               │
-            ▼                               ▼
-   向 System Prompt 注入              主动调用 load_skill 工具
-   技能名称与单行简述 (极低 Token)                  │
-                                            ▼
-                                     载入完整 SKILL.md
-                                     指令、资源与参考文档
+```text
+Candidate project and user directories
+  → SkillRegistry
+    → Phase 1: SkillIndexCollector publishes names and summaries
+    → Phase 2: Agent calls load_skill for full SKILL.md instructions
 ```
 
-### 核心模块职责
-- **目录发现 ([discovery.py](discovery.py))**：扫描项目级与用户级目录，按优先级去重覆盖（项目级优先于用户级同名技能）。
-- **文件解析 ([parsing.py](parsing.py))**：一次识别 `SKILL.md` 的 frontmatter 分界，规范化字段并保留其后的 Markdown 正文。
-- **实体定义 ([models.py](models.py))**：定义完整技能快照 `SkillDef`、目录摘要 `SkillSummary` 与资源元数据。
-- **注册表 ([registry.py](registry.py))**：`SkillRegistry` 在发现时捕获完整定义，维护资源索引与会话激活状态；发现错误写入日志。
-- **激活工具 ([tools.py](tools.py))**：提供 `load_skill` 工具，执行第二阶段的完整加载。
+### Files
 
----
+- [discovery.py](discovery.py): scan directories and deduplicate by priority; trusted project definitions precede user definitions with the same name.
+- [parsing.py](parsing.py): parse SKILL.md frontmatter, normalize fields, and retain the Markdown body.
+- [models.py](models.py): `SkillDef`, `SkillSummary`, and resource metadata.
+- [registry.py](registry.py): capture definitions, resource indexes, and session activation state; log discovery errors.
+- [tools.py](tools.py): `load_skill` activation.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **两阶段加载约束**：严禁在 Agent 启动阶段无差别将所有技能的完整 Markdown 内容注入系统提示词；必须遵循“首阶段注入摘要，次阶段按需加载正文”的规则。
-- **只读纯文本安全性**：技能仅包含文本指南与模式说明，不包含任意可执行二进制代码，自身不破坏沙箱边界。
+Do not inject all skill bodies at startup. Publish summaries first and load selected bodies on demand. Loading instructions does not execute bundled resources or bypass tool and sandbox boundaries.

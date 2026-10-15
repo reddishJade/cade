@@ -17,7 +17,7 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def rendered_markdown_lines(text: str, width: int | None = None) -> list[str]:
-    """Render markdown to plain text lines (for scroll counting)."""
+    """将 Markdown 渲染为纯文本行，用于计算滚动位置。"""
     buffer = StringIO()
     Console(
         file=buffer,
@@ -30,7 +30,7 @@ def rendered_markdown_lines(text: str, width: int | None = None) -> list[str]:
 
 
 def markdown_ansi_lines(text: str, width: int | None = None) -> list[str]:
-    """Render markdown to ANSI-colored lines for fragment rendering."""
+    """将 Markdown 渲染为带 ANSI 颜色的文本行，供片段渲染使用。"""
     buffer = StringIO()
     Console(
         file=buffer,
@@ -99,10 +99,10 @@ def _wrap_ansi_line(line: str, width: int) -> list[str]:
 
 
 def render_line_fragments(line: str) -> StyleAndTextTuples:
-    """Convert a single text line to styled fragments.
+    """将单行文本转换为样式片段。
 
-    If the line contains ANSI escape codes, parse them into
-    prompt_toolkit style fragments.  Otherwise use simple prefix-based style.
+    存在 ANSI 转义码时，解析为 prompt_toolkit 样式片段。
+    否则按文本前缀选择样式。
     """
     if "\x1b[" in line:
         try:
@@ -115,7 +115,7 @@ def render_line_fragments(line: str) -> StyleAndTextTuples:
 
 
 def line_style(line: str) -> str:
-    """Determine the prompt_toolkit style class for a rendered content line."""
+    """确定渲染文本行的 prompt_toolkit 样式类。"""
     stripped = line.strip()
     if "✗" in stripped:
         return "class:error"

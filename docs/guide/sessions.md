@@ -1,10 +1,8 @@
-# 会话、文件撤销与上下文换窗
+# Sessions, file undo, and context rollover
 
-会话保存输入、模型响应、工具交互和运行结果，默认目录为项目 `.cade/sessions/`。
-恢复重建当前分支的消息、Goal 与待消费输入，然后使用当前运行时继续任务。
-状态归属和记录协议见 [架构说明](../architecture.md#状态归属与恢复)。
+Sessions save input, model responses, tool interactions, and run results. The default location is the project's `.cade/sessions/` directory. Recovery rebuilds the active branch's messages, goal, and pending input, then continues with the current runtime. See [State ownership and recovery](../architecture.md#state-ownership-and-recovery) for the record protocol.
 
-## 恢复与分支
+## Recovery and branches
 
 ```bash
 cade -c                 # 恢复当前项目最近会话
@@ -12,34 +10,21 @@ cade --resume           # 从会话列表中选择
 cade --session ID       # 恢复指定会话
 ```
 
-界面内可用 `/resume` 选择会话，`/resume ID` 恢复指定会话，`/new` 开始新会话。
-恢复使用已经写入的事实；中断前的工具可能已经改变工作区或外部服务，继续任务前
-应核对这些对象的当前状态。
+In the interface, use `/resume` to select a session, `/resume ID` to recover a specific session, or `/new` to start a session. Recovery uses persisted facts. Tools interrupted before completion might already have changed workspace files or external services. Check their current state before continuing.
 
-`/fork` 显示当前分支的用户输入菜单；`/fork N` 选择从 1 开始计数的第 N 条输入，
-`/fork ENTRY_ID` 选择对应的用户输入记录。新会话保留该输入之前的历史前缀，
-所选输入进入 TUI 编辑框，编辑后按 Enter 提交。后续输入和执行结果属于父会话。
-历史前缀中的换窗记录保留原来源 ID 与 replacement；新分支按保留的已结束任务数
-继承撤销快照。创建新分支时，日志记录前缀中待消费输入的处置，输入由编辑框提交。
+`/fork` opens a menu of user inputs on the current branch. `/fork N` selects the Nth input, counting from one; `/fork ENTRY_ID` selects a specific user input record. The new session retains the history before that input. The selected input returns to the TUI editor for revision and submission. Later input and results remain in the parent session.
 
-`/clone` 完整复制当前会话日志和快照仓库，然后切换到副本；成功提示显示副本标题
-与 ID。副本保留父会话 ID，后续输入、重命名和撤销均作用于副本。
-两种操作共享当前工作区文件。分支历史与工作区内容分别来自选定前缀和当前磁盘。
+Rollover records in the retained prefix keep their original source IDs and replacements. The new branch inherits undo snapshots according to the number of completed tasks retained. Fork creation records the disposition of pending input in the prefix; the editor submits the selected input.
 
-`/tree` 显示当前会话的 entry tree；选择节点后，当前 head 移至该 entry 并重建
-上下文与待消费输入。菜单覆盖同一会话中的活动分支与旁支记录。
+`/clone` copies the complete session log and snapshot repository, then switches to the copy. The success message shows its title and ID. The copy retains the parent session ID. Later input, renaming, and undo affect the copy. Both fork and clone share the current workspace files: branch history comes from the selected prefix, while workspace content comes from the current disk state.
 
-`/rewind N` 移除最近 N 个用户任务轮次的输入与执行结果，默认一轮。
-实时指导属于所在任务轮次。操作移动分支 head，记录待消费输入的处置，重建活动
-上下文，并按保留的已结束任务数裁剪快照索引；工作区文件保持当前状态。
-原 transcript 条目保留在会话存储中，结果提示使用实际回退的任务轮数。
+`/tree` shows the current session's entry tree, including active and side branches. Selecting a node moves the current head to that entry and rebuilds context and pending input.
 
-## 文件撤销
+`/rewind N` removes input and results from the most recent N user task turns, defaulting to one. Steering belongs to its task turn. Rewind moves the branch head, records pending-input disposition, rebuilds active context, and trims the snapshot index to the retained completed-task count. Workspace files remain unchanged. Original transcript entries remain in storage. The result reports the actual number of task turns rewound.
 
-TUI 在一轮用户任务的前后捕获文件快照，将该轮新增、修改、删除和跳过的文件
-记录到撤销索引。快照使用 `.cade/snapshots/<session_id>/` 下的独立 Git 对象库，
-当前实现需要 Git 工程，项目 Git 暂存区和 HEAD 保持原状态。Python `ask()` 接口
-的会话记录与宿主快照是独立能力，快照覆盖由调用宿主决定。
+## File undo
+
+The TUI captures snapshots before and after each user task turn and records added, changed, deleted, and skipped files in an undo index. Snapshots use an independent Git object store under `.cade/snapshots/<session_id>/`. The current implementation requires a Git project and leaves the project's Git index and HEAD unchanged. Session recording through Python `ask()` and host snapshots are separate capabilities; the calling host determines snapshot coverage.
 
 ```text
 /undo --list            # 查看快照轮次、文件数和跳过数
@@ -47,56 +32,33 @@ TUI 在一轮用户任务的前后捕获文件快照，将该轮新增、修改�
 /undo 3                 # 按逆序撤销最近三个可撤销轮次
 ```
 
-撤销按文件检查当前内容是否与该轮结束快照一致，再执行路径和写入权限检查。
-该轮之后又被修改的文件会报告冲突并跳过，记录保持可再次处理状态；已通过检查的
-文件可先完成恢复。命令恢复该轮修改和删除的文件，并删除该轮新增的文件。
-恢复通过当前运行时的模式、规则、grant、审批及钩子执行；审批后再次检查文件冲突。
-重复处理部分完成的轮次时，已恢复文件计入完成结果。全部文件恢复后，轮次标记为
-已撤销；`/undo` 的处理结果列出恢复、冲突与失败情况。
-参数 N 使用正整数；参数错误显示用法，文件与快照记录保留当前状态。
+Undo checks each file against the turn's ending snapshot, then checks paths and write permissions. Files changed after that turn are reported as conflicts and skipped. Their records remain available for another attempt; files that pass the checks can be restored first. Undo restores modified and deleted files and removes files added during the turn.
 
-快照范围受排除规则和单文件大小限制，默认跳过 `.git/`、`.cade/`、依赖与构建
-目录、多种二进制文件，以及超过 10 MiB 的文件。快照捕获的是轮次前后的工作区
-差异，同期外部编辑也可能进入记录。范围定义见
-[SnapshotStore](../../src/cade/harness/snapshot.py)，对话分支回退与文件撤销分别
-通过 `/rewind` 和 `/undo` 执行。
+Restoration uses the current runtime's mode, rules, grants, approval, and hooks. File conflicts are checked again after approval. When retrying a partially completed turn, files already restored count as complete. Once all files are restored, the turn is marked undone. Results list restored files, conflicts, and failures. N must be a positive integer. Invalid arguments display usage without changing files or snapshot records.
 
-## 上下文换窗
+Exclusion rules and a per-file size limit constrain snapshot coverage. By default, snapshots skip `.git/`, `.cade/`, dependency and build directories, several binary formats, and files larger than 10 MiB. Snapshots capture the workspace difference across a turn, so concurrent external edits can also appear. See [SnapshotStore](../../src/cade/harness/snapshot.py) for the scope. Use `/rewind` for conversation history and `/undo` for files.
 
-自动换窗由有效输入预算和预测占用触发，保留当前请求、持久工具状态及有界的近期
-完整交互，重新收集项目指令、NOTE、验证事实和运行状态。旧窗口原文继续保存在
-session 和 artifact 中，模型通过 `history` 获取。阈值与配额见
-[配置指南](configuration.md#运行与预算字段)，算法见 [上下文策略](../context-policy.md)。
+## Context rollover
 
-`NOTE.md` 记录当前目标、已确认决策、验证结果、未解决事项和下一步动作，由用户
-或模型维护。collector 读取当前文件；换窗可记录笔记快照，恢复时若文件缺失或
-内容变化，会将旧快照和核对提示提供给模型。
+Automatic rollover uses the effective input budget and predicted usage. It retains the current request, persistent tool state, and bounded recent complete interactions. It recollects project instructions, NOTE content, verification facts, and runtime state. Original content remains in session records and artifacts for retrieval through `history`. See [Runtime and budget fields](configuration.md#runtime-and-budget-fields) and the [context policy](../context-policy.md).
+
+`NOTE.md` records the current goal, confirmed decisions, validation results, unresolved issues, and next actions. The user or model maintains it. The collector reads the current file. Rollover can record a note snapshot; if the file is missing or changed on recovery, the old snapshot and a verification notice are supplied to the model.
 
 ```text
-/context                # 查看当前预算、占用与换窗状态
+/context                # 查看当前预算、占用和换窗状态
 /rollover               # 检查非空 NOTE.md 后开启新窗口
 /rollover --force       # 跳过 NOTE.md 检查
 /compact                # 开启新窗口并保留最近用户请求
 ```
 
-手动 `/rollover` 清理普通对话投影并重新加载上下文，命令使用已经存在的 NOTE。
-需要沿用最近请求时使用 `/compact`。后续请求对历史的保留范围取决于所用换窗路径，
-会话原文仍可查询。
+Manual `/rollover` clears the ordinary conversation projection and reloads context using the existing NOTE. Use `/compact` to retain the most recent request. Subsequent history retention depends on the rollover path. Original session content remains queryable.
 
-## 历史原文读取
+## Read original history
 
-模型可通过 `history` 浏览旧窗口索引、搜索事实并按 entry ID 分页读取完整内容。
-默认搜索用户意图、assistant 和工具事实，派生的提醒、审计复制及 history 回显
-由 `include_derived=true` 纳入搜索。搜索返回短原文与字符偏移，按 ID 读取和邻近
-记录浏览可获取完整原文。
+The model can use `history` to browse old-window indexes, search facts, and page through full content by entry ID. Search includes user intent, assistant messages, and tool facts by default. Set `include_derived=true` to include derived reminders, audit copies, and history echoes. Search returns short excerpts and character offsets. Read by ID or browse adjacent records for full content.
 
-history 输出也受工具证据配额约束。分页结果被裁剪时，缩小页长并重读同一偏移，
-确认该页读取完整后继续后续内容。artifact 保存的完整结果和当前请求中的预览
-分别服务于原文恢复与预算控制。
+History output also uses the tool evidence quota. If a page is trimmed, request a smaller page at the same offset. Continue only after reading that page completely. Full artifact results support source recovery; current-request previews control the budget.
 
-## 旁支问题
+## Side questions
 
-`/btw <question>` 从当前模型上下文的副本回答问题，使用当前主模型配置创建独立
-provider，请求工具集为空。主任务运行期间也可提交旁支问题，主任务继续执行。
-问题与回答显示在 TUI；会话日志通过 command 事件记录调用，agent 对话历史和
-任务快照仍对应主任务轮次。
+`/btw <question>` answers from a copy of the current model context through an independent provider using the current main-model configuration and no tools. You can ask while the main task continues. The question and answer appear in the TUI. A command event records the invocation; agent conversation history and task snapshots remain tied to main-task turns.

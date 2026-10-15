@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>cade — 统一内核驱动的 Python Coding Agent 运行时与三端工作台 (工程架构版)</title>
-  <meta name="description" content="基于不可篡改的无损事件流与动态投影，通过 95% 无摘要换窗与持久记忆系统，统一驱动 TUI、CLI 与 Web 三端工作台的确定性 Coding Agent 运行时。">
-  <meta property="og:title" content="cade — 统一内核驱动的 Python Coding Agent 运行时与三端工作台 (工程架构版)">
-  <meta property="og:description" content="基于不可篡改的无损事件流与动态投影，通过 95% 无摘要换窗与持久记忆系统，统一驱动 TUI、CLI 与 Web 三端工作台的确定性 Coding Agent 运行时。">
+  <title>Cade — Python coding-agent runtime</title>
+  <meta name="description" content="A Python coding-agent runtime with shared TUI, exec, and browser hosts, persistent sessions, tool permissions, and context rollover.">
+  <meta property="og:title" content="Cade — Python coding-agent runtime">
+  <meta property="og:description" content="A Python coding-agent runtime with shared TUI, exec, and browser hosts, persistent sessions, tool permissions, and context rollover.">
   <meta property="og:url" content="https://reddishjade.github.io/cade/">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
@@ -17,22 +17,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
   <script>
     (function() {
-      try {
-        var l = localStorage.getItem('cade-lang');
-        if (!l) {
-          var nav = (navigator.language || '').toLowerCase();
-          if (nav.indexOf('zh') === 0) l = 'zh';
-          else if (nav.indexOf('en') === 0) l = 'en';
-          else l = 'zh';
-        }
-        if (l === 'zh' || l === 'en') {
-          document.documentElement.dataset.lang = l;
-          document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
-          if (l === 'en') {
-            document.title = 'cade — Unified Python Coding Agent Runtime & Tri-Workbenches (Tech Edition)';
-          }
-        }
-      } catch (e) {}
       try {
         var t = localStorage.getItem('cade-theme');
         if (t === 'light' || t === 'dark') { document.documentElement.dataset.theme = t; }
@@ -123,9 +107,6 @@
     a { color: inherit; text-decoration: none; }
     h1, h2, h3, p { margin: 0; }
 
-    .lz, .le { display: inline; }
-    html[data-lang="zh"] .le { display: none !important; }
-    html[data-lang="en"] .lz { display: none !important; }
 
     .wrap {
       max-width: 1180px;
@@ -133,7 +114,7 @@
       padding: 0 28px;
     }
 
-    /* Header / Nav */
+    /* 页头和导航。 */
     nav {
       position: sticky;
       top: 0;
@@ -200,11 +181,11 @@
       color: var(--paper);
     }
     .btn-small { padding: 6px 12px; font-size: 13px; height: 34px; }
-    .theme-toggle, .lang-toggle { font-family: var(--font-mono); padding: 0 10px; min-width: 34px; }
+    .theme-toggle { font-family: var(--font-mono); padding: 0 10px; min-width: 34px; }
     .theme-icon { width: 16px; height: 16px; display: none; }
     .theme-icon.active { display: block; }
 
-    /* Hero */
+    /* 首屏。 */
     .hero {
       padding: 76px 0 68px;
       border-bottom: 1px solid var(--line-soft);
@@ -263,7 +244,7 @@
     .stats span { display: inline-flex; align-items: center; gap: 6px; }
     .stats span::before { content: "•"; color: var(--clay); }
 
-    /* Terminal Mockup */
+    /* 终端演示。 */
     .terminal-wrap { position: relative; }
     .terminal {
       border: 1px solid var(--line);
@@ -388,7 +369,7 @@
     }
     @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 
-    /* Tool ticker */
+    /* 工具滚动条。 */
     .marquee {
       border-bottom: 1px solid var(--line-soft);
       padding: 12px 0;
@@ -411,7 +392,7 @@
       to { transform: translateX(-50%); }
     }
 
-    /* Section Headers */
+    /* 章节标题。 */
     section { padding: 92px 0; }
     .sec-head { margin-bottom: 48px; }
     .sec-kicker {
@@ -439,7 +420,7 @@
       margin-top: 20px;
     }
 
-    /* Features Grid (01-06) */
+    /* 功能网格。 */
     .features {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -477,7 +458,7 @@
       line-height: 1.68;
     }
 
-    /* Install & Quick Start */
+    /* 安装和快速上手。 */
     .install-grid {
       display: grid;
       grid-template-columns: 1fr 1.1fr;
@@ -559,7 +540,7 @@
       color: var(--ink-soft);
     }
 
-    /* Workflows */
+    /* 工作流。 */
     .workflow-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
     .workflow-card {
       border: 1px solid var(--line-soft);
@@ -586,7 +567,7 @@
     .workflow-card h3 { font-family: var(--font-display); font-weight: 500; font-size: 1.18rem; margin-bottom: 8px; }
     .workflow-card p { font-size: .92rem; color: var(--ink-soft); line-height: 1.55; }
 
-    /* Slash commands */
+    /* 斜杠命令。 */
     .cmd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
     .cmd-cell {
       border: 1px solid var(--line-soft);
@@ -601,7 +582,7 @@
     .cmd-more { margin-top: 24px; font-size: .92rem; color: var(--ink-soft); }
     .cmd-more a { color: var(--clay); text-decoration: underline; text-underline-offset: 3px; }
 
-    /* Architecture Stack */
+    /* 架构分层。 */
     .arch-stack { position: relative; }
     .arch-row {
       display: grid;
@@ -633,7 +614,7 @@
     }
     .arch-flow span { opacity: .65; color: var(--clay); }
 
-    /* Docs Hero Card */
+    /* 文档入口卡片。 */
     .docs-hero-card {
       display: grid;
       grid-template-columns: 1.2fr 0.8fr;
@@ -697,7 +678,7 @@
       flex-shrink: 0;
     }
 
-    /* Footer */
+    /* 页脚。 */
     footer { padding: 50px 0 60px; border-top: 1px solid var(--line); }
     .footer-inner { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
     .footer-left { display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-size: 13px; color: var(--ink-soft); }
@@ -705,7 +686,7 @@
     .footer-links a { color: var(--ink-soft); position: relative; }
     .footer-links a:hover { color: var(--clay); }
 
-    /* Responsive */
+    /* 响应式布局。 */
     @media (max-width: 980px) {
       .hero-grid { grid-template-columns: 1fr; gap: 50px; }
       .features { grid-template-columns: 1fr; }
@@ -733,12 +714,12 @@
         <span>cade</span>
       </a>
       <div class="nav-links">
-        <a href="#features"><span class="lz">特性</span><span class="le">Features</span></a>
-        <a href="#install"><span class="lz">安装</span><span class="le">Install</span></a>
-        <a href="#workflows"><span class="lz">场景</span><span class="le">Workflows</span></a>
-        <a href="#commands"><span class="lz">命令</span><span class="le">Commands</span></a>
-        <a href="#architecture"><span class="lz">架构</span><span class="le">Architecture</span></a>
-        <a href="docs.html"><span class="lz">技术文档</span><span class="le">Docs</span></a>
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#workflows">Workflows</a>
+        <a href="#commands">Commands</a>
+        <a href="#architecture">Architecture</a>
+        <a href="docs.html">Docs</a>
       </div>
     </div>
     <div class="nav-right">
@@ -747,9 +728,7 @@
         <svg class="theme-icon theme-light" data-mode="light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
         <svg class="theme-icon theme-dark" data-mode="dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
-      <button class="btn btn-small lang-toggle" id="langToggle" aria-label="Switch language">
-        <span class="lz">EN</span><span class="le">中</span>
-      </button>
+
       <a class="btn btn-primary btn-small" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">
         GitHub
       </a>
@@ -761,25 +740,25 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <div class="eyebrow reveal"><span class="lz">Python 3.12+ · MIT · v0.2.0</span><span class="le">Python 3.12+ · MIT · v0.2.0</span></div>
+        <div class="eyebrow reveal">Python 3.12+ · MIT · v0.2.0</div>
         <h1 class="reveal" style="transition-delay:.08s">
-          <span class="lz">可扩展的 Python<br><em>Coding Agent</em> 运行时骨架</span>
-          <span class="le">An extensible<br><em>Python coding-agent</em> runtime harness</span>
+
+          An extensible<br><em>Python coding-agent</em> runtime harness
         </h1>
         <p class="hero-lede reveal" style="transition-delay:.16s">
-          <span class="lz">围绕结构化事件流、执行模式、路径安全、工具审批、审计脱敏、上下文换窗、TUI 会话与记忆系统构建的可测试 Coding Agent 运行时骨架。</span>
-          <span class="le">A testable coding-agent runtime harness built around structured event streams, execution modes, path safety, tool approval, audited redaction, context rollover, TUI sessions, and a memory system.</span>
+
+          A testable coding-agent runtime harness built around structured event streams, execution modes, path safety, tool approval, audited redaction, context rollover, TUI sessions, and a memory system.
         </p>
         <div class="hero-actions reveal" style="transition-delay:.24s">
-          <a class="btn btn-primary" href="#install"><span class="lz">快速开始</span><span class="le">Quick Start</span></a>
-          <a class="btn" href="docs.html"><span class="lz">技术文档</span><span class="le">Documentation</span></a>
+          <a class="btn btn-primary" href="#install">Quick Start</a>
+          <a class="btn" href="docs.html">Documentation</a>
           <a class="btn" href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">GitHub</a>
         </div>
         <div class="stats reveal" style="transition-delay:.32s">
-          <span><span class="lz">TUI / CLI / Web 三端</span><span class="le">Tri-Workbenches</span></span>
-          <span><span class="lz">95% 平滑换窗</span><span class="le">95% Rollover</span></span>
-          <span><span class="lz">/undo 无损回滚</span><span class="le">/undo Revert</span></span>
-          <span><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></span>
+          <span>Tri-Workbenches</span>
+          <span>95% Rollover</span>
+          <span>/undo Revert</span>
+          <span>Durable Memory</span>
         </div>
       </div>
 
@@ -807,43 +786,43 @@
   <section id="features">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">01 — <span class="lz">核心能力</span><span class="le">Capabilities</span></p>
+        <p class="sec-kicker">01 — Capabilities</p>
         <h2>
-          <span class="lz">把 coding agent 拆成<br><em>可测试、可扩展</em> 的部件</span>
-          <span class="le">Decompose a coding agent into<br><em>testable, extensible</em> parts</span>
+
+          Decompose a coding agent into<br><em>testable, extensible</em> parts
         </h2>
         <span class="sec-rule"></span>
       </header>
       <div class="features">
         <article class="feature reveal">
           <span class="feature-num">01</span>
-          <h3><span class="lz">结构化 Agent 循环与统一内核</span><span class="le">Structured Agent Loop & Unified Kernel</span></h3>
-          <p><span class="lz">CodingAgentHarness 统一消费 provider 流式事件（文本、推理思考流、工具调用与结果），在单一可信循环中驱动 TUI、CLI 与 Web 三端工作台。</span><span class="le">CodingAgentHarness consumes streaming events — text, reasoning, tool_use, and tool_result — driving TUI, CLI, and Web interfaces from a single deterministic loop.</span></p>
+          <h3>Structured agent loop and shared runtime</h3>
+          <p>CodingAgentHarness consumes streaming events — text, reasoning, tool_use, and tool_result — driving TUI, CLI, and Web interfaces from a single deterministic loop.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">02</span>
-          <h3><span class="lz">无损历史与动态投影 (/undo)</span><span class="le">Lossless History & Projections</span></h3>
-          <p><span class="lz">会话以追加型不可篡改日志持久记录，任何历史状态均可投影视角。配合磁盘快照池，实现毫秒级原子文件回退与视窗回拨，决不静默截断。</span><span class="le">Sessions persist as append-only event logs with dynamic projections. Snapshot pooling enables atomic file reverts and window rewinds without silent truncation.</span></p>
+          <h3>History and projections</h3>
+          <p>Sessions persist as append-only event logs with dynamic projections. Snapshot pooling enables atomic file reverts and window rewinds without silent truncation.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">03</span>
-          <h3><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Summary-Free Context Rollover</span></h3>
-          <p><span class="lz">彻底剔除模型自我递归摘要引起的信息失真与幻觉放大。在 95% 上下文容量阈值自动平滑重开窗口，继承核心目标并对冲中间冗余。</span><span class="le">Eliminates lossy self-summaries. Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs.</span></p>
+          <h3>Context rollover without summaries</h3>
+          <p>Eliminates lossy self-summaries. Automatically rolls over context at 95% capacity, inheriting core goals while purging intermediate tool outputs.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">04</span>
-          <h3><span class="lz">按需 Memory</span><span class="le">On-Demand Memory</span></h3>
-          <p><span class="lz">少量昂贵经验保存为 .cade/memory/ 内的可编辑 Markdown。Agent 按需搜索、读取历史来源并核验当前代码，普通 turn 和恢复不加载 Memory。</span><span class="le">A few costly findings live in editable workspace Markdown. Search on demand, follow history sources, and revalidate current code; ordinary turns and resume do not load Memory.</span></p>
+          <h3>On-demand memory</h3>
+          <p>A few costly findings live in editable workspace Markdown. Search on demand, follow history sources, and revalidate current code; ordinary turns and resume do not load Memory.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">05</span>
-          <h3><span class="lz">三种执行模式与权限沙箱</span><span class="le">Three Execution Modes & Sandboxing</span></h3>
-          <p><span class="lz">plan 只读勘察防误改，build 交互开发（默认），act 全自动推进。结合工作区路径隔离、敏感命令审批与受限环境，守护系统安全。</span><span class="le">plan for read-only safety, build for guided development, act for automated sprints. Path jailing, policy gating, and sandboxing secure host environments.</span></p>
+          <h3>Execution modes and sandboxing</h3>
+          <p>plan for read-only safety, build for guided development, act for automated sprints. Path jailing, policy gating, and sandboxing secure host environments.</p>
         </article>
         <article class="feature reveal">
           <span class="feature-num">06</span>
-          <h3><span class="lz">三端工作台与扩展生态</span><span class="le">Tri-Workbenches & Ecosystem</span></h3>
-          <p><span class="lz">默认 TUI 全屏分屏视图、极速 CLI 交互流与可视化 Web 端无缝切换；原生支持 MCP 外部工具协议集成与 Python 生命周期 Hooks 自动化。</span><span class="le">Seamlessly switch between split-pane TUI (default), CLI streams, and Web interfaces; with native MCP protocol integration and lifecycle hooks.</span></p>
+          <h3>Hosts and extensions</h3>
+          <p>Seamlessly switch between split-pane TUI (default), CLI streams, and Web interfaces; with native MCP protocol integration and lifecycle hooks.</p>
         </article>
       </div>
     </div>
@@ -852,10 +831,10 @@
   <section id="install" style="background:var(--paper-2)">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">02 — <span class="lz">快速开始</span><span class="le">Quick Start</span></p>
+        <p class="sec-kicker">02 — Quick Start</p>
         <h2>
-          <span class="lz">克隆、安装、<em>直接对话</em></span>
-          <span class="le">Clone, install, <em>start talking</em></span>
+
+          Clone, install, <em>start talking</em>
         </h2>
         <span class="sec-rule"></span>
       </header>
@@ -864,27 +843,27 @@
           <div class="step reveal">
             <div class="step-num">1</div>
             <div>
-              <h4><span class="lz">安装 Cade</span><span class="le">Install Cade</span></h4>
-              <p><span class="lz">使用 uv tool install 安装（Linux 默认沙箱需要 bubblewrap / bwrap）。</span><span class="le">Install the command-line tool with uv (Linux default sandbox requires bubblewrap / bwrap).</span></p>
+              <h4>Install Cade</h4>
+              <p>Install the command-line tool with uv (Linux default sandbox requires bubblewrap / bwrap).</p>
             </div>
           </div>
           <div class="step reveal">
             <div class="step-num">2</div>
             <div>
-              <h4><span class="lz">配置 Provider</span><span class="le">Configure a provider</span></h4>
-              <p><span class="lz">首次运行 cade，选择账户登录或 API key 并配置模型。</span><span class="le">Run cade to choose account sign-in or an API key and configure a model.</span></p>
+              <h4>Configure a provider</h4>
+              <p>Run cade to choose account sign-in or an API key and configure a model.</p>
             </div>
           </div>
           <div class="step reveal">
             <div class="step-num">3</div>
             <div>
-              <h4><span class="lz">启动会话</span><span class="le">Launch a session</span></h4>
-              <p><span class="lz">默认进入 TUI；exec 执行自动化任务；web 打开浏览器工作台。cade -c 继续最近任务；--resume 选择历史会话。</span><span class="le">Default launches TUI; exec runs automation; web opens the browser workbench. cade -c continues the latest task; --resume picks a previous session.</span></p>
+              <h4>Launch a session</h4>
+              <p>Default launches TUI; exec runs automation; web opens the browser workbench. cade -c continues the latest task; --resume picks a previous session.</p>
             </div>
           </div>
           <p class="sandbox-note reveal">
-            <span class="lz"><strong>沙箱与安全：</strong>Linux 下 Agent 的 bash 命令默认在 bubblewrap 沙箱中运行（工作区与 /tmp 可写、宿主其余路径只读、凭据遮蔽、网络隔离）；权限引擎与自动 reviewer 负责操作审批。</span>
-            <span class="le"><strong>Sandbox & Safety:</strong> On Linux, agent bash commands run inside a bubblewrap sandbox by default (writable workspace & /tmp, read-only host, credential masking, network isolation); the permission engine and auto-reviewer handle operation approvals.</span>
+
+            <strong>Sandbox & Safety:</strong> On Linux, agent bash commands run inside a bubblewrap sandbox by default (writable workspace & /tmp, read-only host, credential masking, network isolation); the permission engine and auto-reviewer handle operation approvals.
           </p>
         </div>
 
@@ -892,15 +871,15 @@
           <div class="code-card">
             <div class="code-header">
               <span class="code-lang">Shell</span>
-              <button class="copy-btn" data-copy="#install-code" aria-label="Copy code"><span class="lz">复制</span><span class="le">Copy</span></button>
+              <button class="copy-btn" data-copy="#install-code" aria-label="Copy code">Copy</button>
             </div>
             <pre><code id="install-code">uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
 cd /path/to/your/project
 
-cade                <span class="code-comment"><span class="lz"># 默认：启动 TUI 沉浸式工作台</span><span class="le"># Default: launch TUI workbench</span></span>
-cade tui            <span class="code-comment"><span class="lz"># 启动终端工作台</span><span class="le"># Launch terminal workbench</span></span>
-cade web            <span class="code-comment"><span class="lz"># 启动现代 Web 浏览器工作台</span><span class="le"># Launch browser workbench (FastAPI + WebSockets)</span></span>
-cade -c             <span class="code-comment"><span class="lz"># 极速断点续接最近任务</span><span class="le"># Resume latest task</span></span></code></pre>
+cade                <span class="code-comment"># 启动默认 TUI 工作台</span>
+cade tui            <span class="code-comment"># 启动终端工作台</span>
+cade web            <span class="code-comment"># 启动浏览器工作台</span>
+cade -c             <span class="code-comment"># 继续最近的任务</span></code></pre>
           </div>
           <div class="cli-chips">
             <span class="chip">cade (TUI)</span>
@@ -918,43 +897,43 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   <section id="workflows">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">03 — <span class="lz">实战场景</span><span class="le">Workflows</span></p>
+        <p class="sec-kicker">03 — Workflows</p>
         <h2>
-          <span class="lz">你可以用 Cade <em>做什么</em></span>
-          <span class="le">What you can do with <em>Cade</em></span>
+
+          What you can do with <em>Cade</em>
         </h2>
         <span class="sec-rule"></span>
       </header>
       <div class="workflow-grid">
         <div class="workflow-card reveal">
           <div class="workflow-icon">&gt;_</div>
-          <h3><span class="lz">勘察与理解代码库</span><span class="le">Understand your codebase</span></h3>
-          <p><span class="lz">利用只读并发调度快速检索符号、分析目录结构，或使用 @file 注入精准上下文，快速理清复杂系统。</span><span class="le">Search symbols, map dependencies with concurrent reads, or inject exact context with @file to grok unfamiliar systems.</span></p>
+          <h3>Understand your codebase</h3>
+          <p>Search symbols, map dependencies with concurrent reads, or inject exact context with @file to grok unfamiliar systems.</p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⚑</div>
-          <h3><span class="lz">Plan 规划与 Build 实施</span><span class="le">Plan and build features</span></h3>
-          <p><span class="lz">在 /mode plan 模式下零副作用产出架构方案与文件清单；切换至 /mode build 模式由沙箱与审查器守卫全自动落地。</span><span class="le">Produce zero-side-effect plans in /mode plan mode, then switch to /mode build mode to implement features safely under sandbox gating.</span></p>
+          <h3>Plan and build features</h3>
+          <p>Produce zero-side-effect plans in /mode plan mode, then switch to /mode build mode to implement features safely under sandbox gating.</p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⎇</div>
-          <h3><span class="lz">会话分支与快照撤销</span><span class="le">Branching and snapshot undo</span></h3>
-          <p><span class="lz">大胆尝试实验性重构；随时用 /fork 开启新分支探索，或用 /undo 瞬间原子回滚所有受影响的文件变更。</span><span class="le">Explore refactors freely; use /fork to branch off a previous turn, or /undo to atomically restore modified files.</span></p>
+          <h3>Branching and snapshot undo</h3>
+          <p>Explore refactors freely; use /fork to branch off a previous turn, or /undo to atomically restore modified files.</p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⬡</div>
-          <h3><span class="lz">连接 MCP 工具生态</span><span class="le">Extend with MCP tools</span></h3>
-          <p><span class="lz">通过标准 MCP stdio 协议直连本地数据库、外部 API 或自定义服务，动态扩充 Agent 的专业工具箱。</span><span class="le">Plug into local databases, APIs, or custom servers via standard MCP stdio protocol with dynamic tool discovery.</span></p>
+          <h3>Extend with MCP tools</h3>
+          <p>Plug into local databases, APIs, or custom servers via standard MCP stdio protocol with dynamic tool discovery.</p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">◈</div>
-          <h3><span class="lz">跨会话长期记忆</span><span class="le">Long-horizon memory</span></h3>
-          <p><span class="lz">可复用经验留在 workspace Markdown，使用既有 bash + rg 按需搜索；来源只证明历史存在，使用前仍需核对当前代码。</span><span class="le">Keep reusable findings in workspace Markdown and search with existing bash + rg. Sources establish that history exists; current applicability still needs verification.</span></p>
+          <h3>Long-horizon memory</h3>
+          <p>Keep reusable findings in workspace Markdown and search with existing bash + rg. Sources establish that history exists; current applicability still needs verification.</p>
         </div>
         <div class="workflow-card reveal">
           <div class="workflow-icon">⚡</div>
-          <h3><span class="lz">外部 Hooks 自动化</span><span class="le">Event-driven hooks</span></h3>
-          <p><span class="lz">在工具调用前后挂载外部脚本，实现命令执行前的动态安全判定、代码生成后的自动格式化与审计通知。</span><span class="le">Attach external scripts before or after tool runs for dynamic policy gating, automatic formatting, or audit notifications.</span></p>
+          <h3>Event-driven hooks</h3>
+          <p>Attach external scripts before or after tool runs for dynamic policy gating, automatic formatting, or audit notifications.</p>
         </div>
       </div>
     </div>
@@ -963,50 +942,50 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   <section id="commands" style="background:var(--paper-2)">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">04 — <span class="lz">TUI 命令</span><span class="le">TUI Commands</span></p>
+        <p class="sec-kicker">04 — TUI Commands</p>
         <h2>
-          <span class="lz">一个斜杠，<em>切换模式</em></span>
-          <span class="le">One slash to <em>switch modes</em></span>
+
+          One slash to <em>switch modes</em>
         </h2>
         <span class="sec-rule"></span>
       </header>
       <div class="cmd-grid reveal">
         <div class="cmd-cell">
           <div class="cmd-name">/mode plan</div>
-          <div class="cmd-desc"><span class="lz">进入只读规划模式</span><span class="le">Enter read-only planning mode</span></div>
+          <div class="cmd-desc">Enter read-only planning mode</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/mode build</div>
-          <div class="cmd-desc"><span class="lz">进入允许写入的构建模式</span><span class="le">Enter write-enabled build mode</span></div>
+          <div class="cmd-desc">Enter write-enabled build mode</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/mode act</div>
-          <div class="cmd-desc"><span class="lz">人工审批模式 (默认)</span><span class="le">User approval mode (default)</span></div>
+          <div class="cmd-desc">User approval mode (default)</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/undo</div>
-          <div class="cmd-desc"><span class="lz">文件级快照撤销</span><span class="le">File-level snapshot undo</span></div>
+          <div class="cmd-desc">File-level snapshot undo</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/resume</div>
-          <div class="cmd-desc"><span class="lz">恢复历史会话</span><span class="le">Resume a past session</span></div>
+          <div class="cmd-desc">Resume a past session</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/fork</div>
-          <div class="cmd-desc"><span class="lz">从指定消息分支新会话</span><span class="le">Branch a new session from a message</span></div>
+          <div class="cmd-desc">Branch a new session from a message</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/model</div>
-          <div class="cmd-desc"><span class="lz">显示或切换当前模型</span><span class="le">Show or switch the current model</span></div>
+          <div class="cmd-desc">Show or switch the current model</div>
         </div>
         <div class="cmd-cell">
           <div class="cmd-name">/memory</div>
-          <div class="cmd-desc"><span class="lz">显示 Memory 目录位置</span><span class="le">Show the Memory directory</span></div>
+          <div class="cmd-desc">Show the Memory directory</div>
         </div>
       </div>
       <p class="cmd-more reveal">
-        <span class="lz">完整 30+ 条 slash 命令见 <a href="docs.html#slash-commands">技术文档</a> 或 <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>。</span>
-        <span class="le">See the full 30+ slash commands in the <a href="docs.html#slash-commands">Docs</a> or <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>.</span>
+
+        See the full 30+ slash commands in the <a href="docs.html#slash-commands">Docs</a> or <a href="https://github.com/reddishJade/cade/blob/main/README.md" target="_blank" rel="noopener">README</a>.
       </p>
     </div>
   </section>
@@ -1014,10 +993,10 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   <section id="architecture">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">05 — <span class="lz">架构全景</span><span class="le">Architecture</span></p>
+        <p class="sec-kicker">05 — Architecture</p>
         <h2>
-          <span class="lz">统一内核驱动，<em>清晰职责边界</em></span>
-          <span class="le">Unified Kernel, <em>Clear Ownership</em></span>
+
+          Shared runtime, <em>clear ownership</em>
         </h2>
         <span class="sec-rule"></span>
       </header>
@@ -1025,36 +1004,36 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
         <div class="arch-row">
           <div class="arch-name">surfaces/</div>
           <div class="arch-desc">
-            <h4><span class="lz">三端交互投影层</span><span class="le">Multi-Interface Surfaces</span></h4>
-            <p><span class="lz">TUI 终端工作台（默认）、exec 自动化入口与 Web 浏览器工作台，共用运行时与持久会话。</span><span class="le">Terminal workbench (default), exec automation, and Web browser workbench share a runtime and persistent sessions.</span></p>
+            <h4>Host interfaces</h4>
+            <p>Terminal workbench (default), exec automation, and Web browser workbench share a runtime and persistent sessions.</p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">harness/</div>
           <div class="arch-desc">
-            <h4><span class="lz">运行时中枢与策略装配</span><span class="le">Runtime & Harness Assembly</span></h4>
-            <p><span class="lz">应用装配、追加型无损会话存储、权限审查引擎、脱敏审计日志、MCP 外部协议集成、生命周期 Hooks。</span><span class="le">App bootstrap, append-only lossless session storage, permission engine, audit logging, MCP protocol, and lifecycle hooks.</span></p>
+            <h4>Runtime and harness assembly</h4>
+            <p>App bootstrap, append-only lossless session storage, permission engine, audit logging, MCP protocol, and lifecycle hooks.</p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">agent/</div>
           <div class="arch-desc">
-            <h4><span class="lz">Agent 循环与上下文对冲</span><span class="le">Agent Loop & Context Engine</span></h4>
-            <p><span class="lz">事件驱动循环、Prompt 装配、95% 水位线无摘要平滑换窗引擎、工具并发安全分区、动态历史投影。</span><span class="le">Event-driven loop, prompt assembly, 95% summary-free context rollover engine, tool concurrency, and dynamic projection.</span></p>
+            <h4>Agent loop and context</h4>
+            <p>Event-driven loop, prompt assembly, 95% summary-free context rollover engine, tool concurrency, and dynamic projection.</p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">coding_agent/</div>
           <div class="arch-desc">
-            <h4><span class="lz">工程工具系统与安全沙箱</span><span class="le">Engineering Tools & Sandbox</span></h4>
-            <p><span class="lz">文件原子精准修补、目录勘察、Subagents 子代理并行协作、本地安全隔离环境与受限 Shell。</span><span class="le">Atomic file patching, directory survey, subagent orchestration, and sandboxed safe execution.</span></p>
+            <h4>Coding tools and sandbox</h4>
+            <p>Atomic file patching, directory survey, subagent orchestration, and sandboxed safe execution.</p>
           </div>
         </div>
         <div class="arch-row">
           <div class="arch-name">ai/</div>
           <div class="arch-desc">
-            <h4><span class="lz">模型与 Provider 统一适配</span><span class="le">AI Provider Adapters</span></h4>
-            <p><span class="lz">统一抽象接口，深度适配 DeepSeek、OpenAI、ChatGLM、MiMo 及本地网关，原生支持流式输出、Prompt 缓存与思考推理流。</span><span class="le">Unified interface for DeepSeek, OpenAI, ChatGLM, MiMo, and local endpoints with streaming, prompt caching, and reasoning tokens.</span></p>
+            <h4>AI provider adapters</h4>
+            <p>Unified interface for DeepSeek, OpenAI, ChatGLM, MiMo, and local endpoints with streaming, prompt caching, and reasoning tokens.</p>
           </div>
         </div>
       </div>
@@ -1067,10 +1046,10 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   <section id="docs" style="background:var(--paper-2)">
     <div class="wrap">
       <header class="sec-head reveal">
-        <p class="sec-kicker">06 — <span class="lz">技术文档</span><span class="le">Documentation</span></p>
+        <p class="sec-kicker">06 — Documentation</p>
         <h2>
-          <span class="lz">深入了解 <em>Cade</em></span>
-          <span class="le">Deep dive into <em>Cade</em></span>
+
+          Deep dive into <em>Cade</em>
         </h2>
         <span class="sec-rule"></span>
       </header>
@@ -1082,30 +1061,30 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
             <span>docs.cade</span>
           </div>
           <h3>
-            <span class="lz">Cade 官方技术与开发者文档中心</span>
-            <span class="le">Cade Official Developer Documentation Hub</span>
+
+            Cade developer documentation
           </h3>
           <p>
-            <span class="lz">涵盖系统设计哲学、统一内核架构、无损历史与动态投影 (/undo)、95% 无摘要换窗机制、按需 Memory、三端工作台 (TUI/CLI/Web) 以及全套 Slash 指令与配置参考手册。</span>
-            <span class="le">Comprehensive reference covering unified kernel architecture, lossless history & projections (/undo), 95% summary-free context rollover, durable memory, tri-workbenches (TUI/CLI/Web), and full slash commands.</span>
+
+            Comprehensive reference covering unified kernel architecture, lossless history & projections (/undo), 95% summary-free context rollover, durable memory, tri-workbenches (TUI/CLI/Web), and full slash commands.
           </p>
           <div class="docs-hero-cta">
             <a class="btn btn-primary" style="padding:12px 28px; font-size:15px; border-radius:10px;" href="docs.html">
-              <span class="lz">进入 Cade 开发者文档页面</span>
-              <span class="le">Open Full Developer Documentation</span>
+
+              Open developer documentation
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </a>
           </div>
         </div>
         <div class="docs-hero-topics">
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">设计哲学与核心机制</span><span class="le">Philosophy & Overview</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">无损历史与动态投影</span><span class="le">Lossless History</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">95% 无摘要换窗机制</span><span class="le">95% Rollover</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">按需 Memory</span><span class="le">Durable Memory</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">TUI / CLI / Web 工作台</span><span class="le">Tri-Workbenches</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">Plan / Build / Act 模式</span><span class="le">Execution Modes</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">MCP 服务与 Skills 扩展</span><span class="le">MCP & Skills</span></div>
-          <div class="topic-chip"><span class="chip-dot"></span><span class="lz">权限审查与安全沙箱</span><span class="le">Security & Policy</span></div>
+          <div class="topic-chip"><span class="chip-dot"></span>Philosophy & Overview</div>
+          <div class="topic-chip"><span class="chip-dot"></span>Lossless History</div>
+          <div class="topic-chip"><span class="chip-dot"></span>95% Rollover</div>
+          <div class="topic-chip"><span class="chip-dot"></span>Durable Memory</div>
+          <div class="topic-chip"><span class="chip-dot"></span>Tri-Workbenches</div>
+          <div class="topic-chip"><span class="chip-dot"></span>Execution Modes</div>
+          <div class="topic-chip"><span class="chip-dot"></span>MCP & Skills</div>
+          <div class="topic-chip"><span class="chip-dot"></span>Security & Policy</div>
         </div>
       </div>
     </div>
@@ -1119,9 +1098,9 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
       <span>MIT © 2026 Cade Contributors</span>
     </div>
     <div class="footer-links">
-      <a href="docs.html"><span class="lz">技术文档</span><span class="le">Documentation</span></a>
+      <a href="docs.html">Documentation</a>
       <a href="https://github.com/reddishJade/cade" target="_blank" rel="noopener">GitHub</a>
-      <a href="#top"><span class="lz">返回顶部</span><span class="le">Back to top</span></a>
+      <a href="#top">Back to top</a>
     </div>
   </div>
 </footer>
@@ -1129,20 +1108,6 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
 <script>
 (function() {
   const TERM_CONFIG = {
-    zh: {
-      banner: "cade v0.2.0 · act 模式 · deepseek-flash",
-      prompt: "给 main.py 增加 --version 选项",
-      thinking: "thinking  检查 main.py 的 argparse 命令行配置与版本常量...",
-      thoughtDone: "thought for 1.8s",
-      tools: [
-        { name: "read_file", arg: "src/cade/main.py" },
-        { name: "edit_file", arg: "src/cade/main.py", diff: "+8 −2" },
-        { name: "bash",      arg: "uv run pytest -q" }
-      ],
-      ok: "测试通过 · --version 选项已接入",
-      statusLeft: "~/workspace/cade (main)",
-      statusRight: "context: 8.4k/1.0M (0.8%) · deepseek-flash"
-    },
     en: {
       banner: "cade v0.2.0 · act mode · deepseek-flash",
       prompt: "add a --version flag to main.py",
@@ -1173,8 +1138,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   async function playTerm() {
     const runId = ++termRun;
     clearTimers();
-    const lang = document.documentElement.dataset.lang === 'en' ? 'en' : 'zh';
-    const cfg = TERM_CONFIG[lang];
+    const cfg = TERM_CONFIG.en;
 
     termBody.innerHTML = `
       <div class="t-main-content">
@@ -1224,7 +1188,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
       return;
     }
 
-    // Type prompt character by character
+    // 逐字显示提示词。
     await wait(240);
     for (let i = 0; i <= cfg.prompt.length; i++) {
       if (runId !== termRun) return;
@@ -1235,17 +1199,17 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
     if (runId !== termRun) return;
     if (caretEl) caretEl.remove();
 
-    // Show reasoning stream
+    // 显示思考流。
     thinkingEl.textContent = cfg.thinking;
     thinkingEl.classList.add('on');
     await wait(600);
     if (runId !== termRun) return;
 
-    // Conclude reasoning
+    // 结束思考显示。
     thinkingEl.textContent = cfg.thoughtDone;
     await wait(220);
 
-    // Stagger tool runs
+    // 依次显示工具执行。
     for (const tool of cfg.tools) {
       if (runId !== termRun) return;
       const item = document.createElement('div');
@@ -1261,18 +1225,18 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
     }
 
     if (runId !== termRun) return;
-    // Show completion
+    // 显示完成状态。
     okEl.textContent = '✓ ' + cfg.ok;
     okEl.classList.add('on');
 
-    // Pause before subtle loop
+    // 暂停后重复演示。
     await wait(8500);
     if (runId === termRun) {
       playTerm();
     }
   }
 
-  // Scroll reveal
+  // 滚动时显示内容。
   if ('IntersectionObserver' in window && !reducedMotion) {
     const io = new IntersectionObserver((entries) => {
       entries.forEach(e => {
@@ -1291,7 +1255,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
     });
   }
 
-  // Copy code helper
+  // 复制代码。
   document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const sel = btn.getAttribute('data-copy');
@@ -1300,7 +1264,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
       navigator.clipboard.writeText(target.innerText).then(() => {
         const orig = btn.innerHTML;
         btn.classList.add('copied');
-        btn.innerHTML = '<span class="lz">已复制!</span><span class="le">Copied!</span>';
+        btn.textContent = 'Copied';
         setTimeout(() => {
           btn.innerHTML = orig;
           btn.classList.remove('copied');
@@ -1309,31 +1273,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
     });
   });
 
-  // Language toggle
-  const langToggle = document.getElementById('langToggle');
-  function setLang(lang) {
-    document.documentElement.dataset.lang = lang;
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-    try { localStorage.setItem('cade-lang', lang); } catch (e) {}
-    document.title = lang === 'zh'
-      ? 'cade — 统一内核驱动的 Python Coding Agent 运行时与三端工作台 (工程架构版)'
-      : 'cade — Unified Python Coding Agent Runtime & Tri-Workbenches (Tech Edition)';
-    const desc = lang === 'zh'
-      ? '基于不可篡改的无损事件流与动态投影，通过 95% 无摘要换窗与持久记忆系统，统一驱动 TUI、CLI 与 Web 三端工作台的确定性 Coding Agent 运行时。'
-      : 'A deterministic Python coding-agent runtime driving TUI, CLI, and Web workbenches via lossless event streams, dynamic projections, 95% summary-free rollover, and durable memory.';
-    const metaDesc = document.querySelector('meta[name="description"]');
-    if (metaDesc) metaDesc.setAttribute('content', desc);
-    const ogDesc = document.querySelector('meta[property="og:description"]');
-    if (ogDesc) ogDesc.setAttribute('content', desc);
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle) ogTitle.setAttribute('content', document.title);
-    playTerm();
-  }
-  langToggle.addEventListener('click', () => {
-    setLang(document.documentElement.dataset.lang === 'zh' ? 'en' : 'zh');
-  });
-
-  // Theme toggle
+  // 切换主题。
   const themeToggle = document.getElementById('themeToggle');
   const themeIcons = themeToggle.querySelectorAll('.theme-icon');
   function applyTheme(mode) {
@@ -1354,7 +1294,7 @@ cade -c             <span class="code-comment"><span class="lz"># 极速断点�
   });
   applyTheme(document.documentElement.dataset.theme || 'auto');
 
-  // Start
+  // 启动演示。
   playTerm();
 })();
 </script>

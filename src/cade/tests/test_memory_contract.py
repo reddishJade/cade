@@ -67,7 +67,7 @@ def test_memory_catalog_symlink_defense(tmp_path: Path) -> None:
         memory_symlink.symlink_to(real_outside_dir, target_is_directory=True)
     except OSError as exc:
         if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
-            pytest.skip("Windows 当前账号缺少创建符号链接的权限")
+            pytest.skip("The current Windows account cannot create symbolic links")
         raise
 
     collector = MemoryCatalogCollector(project_root=tmp_path)

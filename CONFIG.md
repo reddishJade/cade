@@ -1,97 +1,80 @@
-# Cade 配置参考
+# Cade configuration reference
 
-`cade.config.json` 位于项目根目录。`python -m cade.main` 和 `build_app()` 自动读取它；`--config` 用于显式指定其他路径。相对路径按 `--project-root` 解析。
+`cade.config.json` lives in the project root. `python -m cade.main` and `build_app()` read it automatically. Use `--config` to select another file. Relative paths resolve against `--project-root`.
 
-配置发现栈（优先级从低到高）：全局 `~/.cade/settings.json` → 项目
-`cade.config.json` → 本地 `.cade/settings.json` → 环境变量
-`CADE_APPROVAL_POLICY`。
+Configuration precedence, lowest to highest: global `~/.cade/settings.json` → project `cade.config.json` → local `.cade/settings.json` → `CADE_APPROVAL_POLICY`.
 
-**没有配置文件时**启用正式内置能力（`core`、`subagent`、`memory`，以及存在
-可见 skill 时的 `skills`）。配置分层覆盖。
+Without a configuration file, built-in capabilities are enabled: `core`, `subagent`, `memory`, and `skills` when visible skills exist. Configuration layers override earlier values.
 
----
+## Default model and provider
 
-## 默认模型与 provider
+Defaults are stored separately from authentication:
 
-默认选择独立于认证保存：
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `default_provider` | string | `openai-codex` | Provider for new sessions |
+| `default_model` | string | `gpt-5.6-luna` | Model ID for the selected provider |
+| `default_reasoning_effort` | string/null | `high` | Startup effort supported by the model |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `default_provider` | string | `openai-codex` | 新会话使用的 provider |
-| `default_model` | string | `gpt-5.6-luna` | 所选 provider 的模型 ID |
-| `default_reasoning_effort` | string/null | `high` | 模型支持的启动 effort |
+`~/.cade/auth.json` stores API keys or OAuth credentials by provider. Both can coexist. `cade login` stores credentials without changing defaults. `cade setup` and `cade config` explicitly select defaults. Configuration discovery does not read authentication; assembly selects the provider before resolving credentials.
 
-`~/.cade/auth.json` 按 provider 保存 API key 或 OAuth。两种认证可同时存在，
-`cade login` 只保存凭据，不改变默认模型。`cade setup` 和 `cade config` 明确设置
-默认选择。配置发现不读取 auth；应用装配先选择 provider，再读取它的凭据。
+### Connections
 
-### connections
+`provider.connections.<provider>` stores `transport`, optional `base_url`, and `api_key_env`, not keys or models. Built-in providers need no connection settings. Custom providers must declare a transport. Built-in identities are `openai-codex`, `openai`, `deepseek`, `chatglm`, `mimo`, and `custom`. `openai` defaults to the Responses API.
 
-`provider.connections.<provider>` 保存 `transport`、可选 `base_url` 和
-`api_key_env`，不含 API key 或模型。内置 provider 无需配置连接；自定义 provider
-必须声明 transport。内置身份为 `openai-codex`、`openai`、`deepseek`、`chatglm`、
-`mimo`、`custom`，其中 `openai` 默认使用 Responses API。
+### Options and model profiles
 
-### options 与 model_profiles
+`provider.options` stores shared request options:
 
-`provider.options` 保存共享请求选项：
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `context_window` | int/null | `null` | Override model window size |
+| `thinking` | bool | `true` | Request reasoning |
+| `clear_thinking` | bool | `false` | ChatGLM retained-reasoning setting |
+| `tool_stream` | bool | `true` | Stream tool calls |
+| `response_format` | object/null | `null` | Structured response format |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `context_window` | int/null | `null` | 覆盖模型的窗口大小 |
-| `thinking` | bool | `true` | 请求 thinking |
-| `clear_thinking` | bool | `false` | ChatGLM 保留式思考 |
-| `tool_stream` | bool | `true` | 工具流式输出 |
-| `response_format` | object/null | `null` | 结构化响应格式 |
+`provider.model_profiles` supports `subagent`, `fallback`, `reviewer`, `judge`, and `refiner`. Role objects can override `provider`, `model`, `reasoning_effort`, and request options. Omitted fields inherit the main model. String-valued role settings and a `main` role are not accepted. The main model uses the default fields.
 
-`provider.model_profiles` 支持辅助角色 `subagent`、`fallback`、`reviewer`、`judge`、
-`refiner`。角色对象可覆盖 `provider`、`model`、`reasoning_effort` 和上述请求选项。
-未提供的字段继承主模型；不接受字符串角色配置或 `main` 角色。主模型使用默认字段。
-API key 先查所选 provider 的 auth，再查其专用环境变量或 `.env`；不会借用其他
-provider 的 key。完整示例见 [配置指南](docs/guide/configuration.md)。
+Credentials first use the selected provider's stored authentication, then its dedicated environment variable or `.env`. Keys are not borrowed from other providers. See the [configuration guide](docs/guide/configuration.md) for complete examples.
 
 #### DeepSeek
 
-- **默认 base_url**: `https://api.deepseek.com`
-- **内置模型**: `deepseek-flash`（DeepSeek-V4.1-Flash）、`deepseek-v4-pro`（DeepSeek-V4-Pro）
-- **旧模型 ID**: `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 已被官方停用但 API 仍接受，cade 会归一化为 `deepseek-flash`
-- **Thinking mode**: 默认开启，`extra_body={"thinking": {"type": "enabled"}}`
-- **reasoning_effort**: 默认 `"high"`，复杂 agent 请求自动设为 `"max"`
-- **缓存统计**: 原生 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
+- Default `base_url`: `https://api.deepseek.com`.
+- Built-in models: `deepseek-flash` (DeepSeek-V4.1-Flash) and `deepseek-v4-pro` (DeepSeek-V4-Pro).
+- Retired IDs: `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are still accepted by the API but normalized to `deepseek-flash` by Cade.
+- Thinking is enabled by default through `extra_body={"thinking": {"type": "enabled"}}`.
+- `reasoning_effort` defaults to `"high"`; complex agent requests use `"max"` automatically.
+- Cache statistics use native `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`.
 
 #### MiMo
 
-- **默认 base_url**: `https://api.xiaomimimo.com/v1`
-- **Thinking**: mimo-v2.5-pro/mimo-v2.5 默认开启，mimo-v2-flash 默认关闭
-- **缓存统计**: 兼容字段 `prompt_tokens_details.cached_tokens`
+- Default `base_url`: `https://api.xiaomimimo.com/v1`.
+- Thinking defaults to on for mimo-v2.5-pro/mimo-v2.5 and off for mimo-v2-flash.
+- Cache statistics use `prompt_tokens_details.cached_tokens`.
 
 #### ChatGLM
 
-- **默认 base_url**: `https://open.bigmodel.cn/api/paas/v4/`
-- **tool_stream**: 仅 `glm-4.6`/`glm-4.7` 支持
-- **缓存统计**: 兼容字段 `prompt_tokens_details.cached_tokens`
+- Default `base_url`: `https://open.bigmodel.cn/api/paas/v4/`.
+- `tool_stream` is supported only by `glm-4.6` and `glm-4.7`.
+- Cache statistics use `prompt_tokens_details.cached_tokens`.
 
-### 运行时模型切换
+### Runtime model switching
 
-`/model` 打开已认证模型选择器；直接指定 provider 可以区分 API 与账号调用：
+`/model` opens the authenticated model picker. Explicit provider prefixes distinguish API and account access:
 
 ```text
 /model openai-codex/gpt-5.6-luna:high
 /model deepseek/deepseek-flash:high
 ```
 
-`/effort high` 改当前主模型深度，`/model` 不保存启动默认值。新会话默认值通过
-`cade config` 或 settings 编辑。`cade exec --model provider/model` 在装配前临时
-覆盖默认选择，不改磁盘 settings，未显式配置的辅助角色随主模型继承。
+`/effort high` changes the current main-model effort. `/model` does not save startup defaults; use `cade config` or edit settings. `cade exec --model provider/model` temporarily overrides selection before assembly without writing settings. Auxiliary roles without explicit overrides inherit the main model.
 
-### 交互式配置
+### Interactive configuration
 
-`/config`（REPL/TUI）与 `cade config`（CLI）打开同一个交互式设置浏览器，
-收录默认 provider/model/effort、执行模式、审批策略和 shell。其余字段
-（agent 调参、request hygiene、路径、安全细则、hooks、prompt 等）直接编辑
-`cade.config.json`；认证由 `cade login` 管理，连接与角色配置独立保留。
+`/config` (REPL/TUI) and `cade config` (CLI) open the same settings browser. It includes default provider/model/effort, execution mode, approval policy, and shell. Edit other fields directly in `cade.config.json`, including agent tuning, request hygiene, paths, security details, hooks, and prompts. `cade login` manages authentication. Connections and role settings remain separate.
 
-```
+```text
 > Default Provider       openai-codex
   Default Model          gpt-5.6-luna
   Default Reasoning Effort high
@@ -103,61 +86,53 @@ provider 的 key。完整示例见 [配置指南](docs/guide/configuration.md)�
   'asks for review': always waits for explicit user approval.
 ```
 
-- Approval Policy 三选项映射：always proceeds → `never`；
-  agent decides → `on-request` + `approval_router=auto`；
-  asks for review → `on-request` + `approval_router=user`。
-- 高亮行底部显示灰色说明，枚举项逐值解释（含权衡说明）。
-- 回车进入编辑：菜单选值，当前值标注 `(current)`，esc 返回列表。
-- 写入前用 `CadeRuntimeConfig` 校验，非法值不落盘。
-- REPL 支持跳转：`/config shell` 直接进入匹配的设置项。
+Approval Policy choices map as follows:
 
-示例：
+- **always proceeds** → `never`.
+- **agent decides** → `on-request` with `approval_router=auto`.
+- **asks for review** → `on-request` with `approval_router=user`.
 
-```
-/config                                     # 打开设置浏览器
-/config default mode                        # 跳转到 Default Mode
-cade config                                # CLI 启动同一浏览器
+The highlighted setting has a description below the list. Enum choices explain their tradeoffs. Press Enter to edit; the menu marks the current value with `(current)`. Press Esc to return. `CadeRuntimeConfig` validates values before saving. REPL supports direct selection with commands such as `/config shell`.
+
+```text
+/config                         # 打开设置浏览器
+/config default mode            # 跳转到 Default Mode
+cade config                     # 从 CLI 打开同一浏览器
 ```
 
----
+## Agent
 
-## agent
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `max_steps` | optional positive int | unset | Maximum loop steps per task; unlimited by default |
+| `rollover_message_threshold` | int | `0` | Optional message-count threshold; zero adds no limit |
+| `rollover_token_threshold` | int | `0` | Optional absolute token threshold; zero adds no limit |
+| `automatic_rollover` | bool | `true` | Roll over automatically according to the current model window |
+| `fallback_recent_messages` | int | `10` | Message fallback when the current user turn cannot be found |
+| `fallback_recent_tokens` | int | `20000` | Token fallback when the current user turn cannot be found |
+| `reserve_tokens` | int | `16384` | Reserved tokens for model output and tool interaction |
+| `rollover_trigger_ratio` | float | `0.95` | Automatic rollover ratio relative to the model window |
+| `tool_workers` | int | `4` | Active tools per parallel batch; values below one run as one |
+| `tool_timeout_seconds` | float | `120.0` | Per-tool timeout |
+| `watchdog_repeated_tool_limit` | int | `3` | Consecutive repeated-tool threshold |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `max_steps` | 正整数（可选） | 未设置 | 单次任务最大循环轮次；默认无限制 |
-| `rollover_message_threshold` | int | `0` | 可选的消息数换窗阈值；0 不设置额外阈值 |
-| `rollover_token_threshold` | int | `0` | 可选的绝对 token 换窗阈值；0 不设置额外阈值 |
-| `automatic_rollover` | bool | `true` | 是否按当前模型窗口自动换窗 |
-| `fallback_recent_messages` | int | `10` | 找不到当前 user 回合时的消息数兜底 |
-| `fallback_recent_tokens` | int | `20000` | 找不到当前 user 回合时的 token 兜底 |
-| `reserve_tokens` | int | `16384` | 为模型输出和工具交互保留的 token 预算 |
-| `rollover_trigger_ratio` | float | `0.95` | 相对当前模型窗口的自动换窗比例 |
-| `tool_workers` | int | `4` | 单个 parallel batch 的最大活跃工具数；小于 1 时按 1 执行 |
-| `tool_timeout_seconds` | float | `120.0` | 单个工具调用超时 |
-| `watchdog_repeated_tool_limit` | int | `3` | 连续重复同一工具阈值 |
+See [Runtime and budget fields](docs/guide/configuration.md#runtime-and-budget-fields) for current budget details.
 
----
+## Execution modes
 
-## execution_modes
+Modes are switchable permission profiles on the same agent. New sessions use `execution_modes.default_mode` (`act` by default). Recovery restores the saved mode. Runtime switching preserves session context.
 
-执行模式是同一 agent 上可切换的权限 profile。新会话从
-`execution_modes.default_mode` 启动（默认 `act`），恢复会话时恢复已保存的模式；
-REPL 可在运行时切换，切换不会丢失会话上下文。
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `default_mode` | string | `act` | `plan`, `build`, or `act` for new sessions; recovered sessions use their saved mode |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `default_mode` | string | `act` | 新会话的默认执行模式：`plan`、`build` 或 `act`；恢复会话时以持久化的模式为准 |
+| Mode | Tool visibility | Built-in rules and fallback |
+| --- | --- | --- |
+| `plan` | Exploration with `read` and `bash`, plus restricted `write` and `edit` | Confirmed read-only shell runs directly; analyzer-confirmed mutations are denied; unresolved shell goes to automatic review; structured writes are limited to plan files; fallback is `deny` |
+| `build` | Normal coding tools | Structured reads/writes and confirmed read-only shell run directly; unresolved or mutating shell goes to automatic review; fallback is `ask` |
+| `act` | Normal coding tools | Reads and confirmed read-only shell run directly; structured writes and unresolved or mutating shell require user approval; fallback is `ask` |
 
-| mode | 工具可见性 | 内置规则与 fallback |
-|---|---|---|
-| `plan` | `read` / `bash` 等探索能力，以及受限的 `write` / `edit` | 已确认只读 shell 直接执行；analyzer 确认的 mutation 由 mode policy 拒绝；未解析 shell 进入自动 reviewer；仅允许结构化写入计划文件；fallback=`deny` |
-| `build` | 日常 coding surface | 结构化读写和已确认只读 shell 直接执行；未解析/有副作用 shell 进入自动 reviewer；fallback=`ask` |
-| `act` | 日常 coding surface | 只读和已确认只读 shell 直接执行；结构化写入与未解析/有副作用 shell 进入用户审批；fallback=`ask` |
-
-每个 mode 可配置 `rules` 数组。用户规则追加到内置规则之后，匹配采用 findLast
-语义（最后一条匹配规则生效），所以用户规则优先。fallback 不作为 catch-all `*`
-规则存储。
+Each mode accepts a `rules` array. User rules override built-in defaults. See the [architecture](docs/architecture.md#modes-permissions-and-execution-environment) for decision ordering and constraints. Fallback is not stored as a catch-all `*` rule.
 
 ```json
 {
@@ -178,79 +153,63 @@ REPL 可在运行时切换，切换不会丢失会话上下文。
 }
 ```
 
-规则字段：
+### Rule fields
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `action` | string | 必填，工具名或通配符，如 `bash`、`write`、`*` |
-| `effect` | string | 必填，`allow`、`ask`、`deny` |
-| `command` | string/null | shell 主命令，可使用通配符 |
-| `subcommand` | string/null | shell 精确子命令 |
-| `subcommand_in` | string[]/null | shell 子命令集合，命中任一个即可 |
-| `flags_any` | string[]/null | 至少包含一个指定 flag |
-| `flags_all` | string[]/null | 必须包含全部指定 flag |
-| `resource_pattern` | string/null | 非 shell 的目标路径通配符；shell 中作为额外资源约束 |
+| Field | Type | Description |
+| --- | --- | --- |
+| `action` | string | Required tool name or wildcard, such as `bash`, `write`, or `*` |
+| `effect` | string | Required: `allow`, `ask`, or `deny` |
+| `command` | string/null | Main shell command; wildcards supported |
+| `subcommand` | string/null | Exact shell subcommand |
+| `subcommand_in` | string[]/null | Match any listed subcommand |
+| `flags_any` | string[]/null | Require at least one listed flag |
+| `flags_all` | string[]/null | Require all listed flags |
+| `resource_pattern` | string/null | Target path pattern for nonshell actions; additional resource constraint for shell |
 
-结构化条件缺少对应的命令信息时不匹配。短 flag 会排序归一化，例如 `-rf` 与
-`-fr` 等价。复合 shell 命令目前只按第一段提取结构化字段，规则需要据此保守配置。
+Structured conditions do not match if corresponding command information is missing. Short flags are sorted and normalized, so `-rf` and `-fr` are equivalent. Compound shell commands currently extract structured fields from the first segment only; configure rules conservatively.
 
----
+## Request hygiene
 
-## request_hygiene
+These settings control model-facing history compression without changing complete disk history.
 
-控制发给模型的消息历史压缩策略，不影响磁盘完整历史。
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | Enable compression |
+| `max_tool_result_bytes` | int | `8000` | Maximum tool-result bytes |
+| `max_tool_arg_length` | int | `1000` | Maximum argument string length for completed calls |
+| `keep_head_lines` | int | `50` | Retained leading tool-result lines |
+| `keep_tail_lines` | int | `50` | Retained trailing tool-result lines |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `enabled` | bool | `true` | 是否启用 |
-| `max_tool_result_bytes` | int | `8000` | tool_result 最大字节数 |
-| `max_tool_arg_length` | int | `1000` | 已完成工具调用参数字符串最大长度 |
-| `keep_head_lines` | int | `50` | 压缩 tool_result 保留头部行数 |
-| `keep_tail_lines` | int | `50` | 压缩 tool_result 保留尾部行数 |
+## Paths
 
-实现位置：`src/cade/agent/history.py`、`src/cade/harness/config.py`。
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `sessions_dir` | string/null | `null` | Session directory; CLI defaults to `.cade/sessions` |
+| `skills_dir` | string/null | `null` | Highest-priority skill directory; relative to the project root |
 
----
+Fixed local paths: `.cade/session_index.json`, `.cade/session_artifacts/`, `.cade/mcp_cache.json`, and `.cade/mcp_config.json`.
 
-## paths
+## Observability
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `sessions_dir` | string/null | `null` | REPL 会话目录；未配置时 CLI 使用 `.cade/sessions` |
-| `skills_dir` | string/null | `null` | 最高优先级 Skill 扫描目录；相对路径按项目根目录解析 |
-固定本地路径：`.cade/session_index.json`、`.cade/session_artifacts/`、`.cade/mcp_cache.json`、`.cade/mcp_config.json`。
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `audit_path` | string/null | `null` | Audit log path |
 
----
+## Hooks
 
-## observability
+`hooks.entries` declares trusted external command hooks. Each configuration layer replaces the entire lower-priority array. Commands must be argv arrays. They do not run through a shell and do not support in-process Python callbacks.
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `audit_path` | string/null | `null` | 审计日志路径 |
+Commands run in event order with redacted `HookRecord` JSON on stdin. They can return one JSON object on stdout; empty stdout means `{}`. `pre_tool` accepts only `decision` (`allow`, `deny`, or `ask`) and `arguments` (a complete object). Rewritten arguments pass schema validation and PermissionEngine again. Hooks cannot relax existing denial. `/hooks` shows sources, enabled status, run counts, and recent errors.
 
----
-
-## hooks
-
-`hooks.entries` 声明受信任的外部命令 hook。每个配置层的 entries 数组整体替换
-低优先级数组，不按元素合并。命令必须是 argv 数组；不经过 shell，不支持进程内
-Python callback。
-
-运行时按事件顺序启动命令，以脱敏后的 `HookRecord` JSON 作为 stdin。命令可向
-stdout 返回单个 JSON object；空 stdout 等价于 `{}`。`pre_tool` 仅接受
-`decision`（`allow` / `deny` / `ask`）和 `arguments`（完整参数 object）。
-参数变换后会重新执行工具 schema 校验和 PermissionEngine；hook 不能放宽已有
-deny。使用 `/hooks` 查看每项来源、启用状态、运行次数和最近错误。
-
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `event` | string | 必填 | `pre_tool`、`post_tool`、`on_error`、`on_context_window_reset`、`before_agent_start`、`before_provider_request` |
-| `command` | string[] | 必填 | 非空 argv 数组 |
-| `matcher` | string/null | `null` | 可选事件匹配表达式 |
-| `timeout` | number | `10.0` | 正数秒数 |
-| `enabled` | bool | `true` | 是否启用 |
-| `failure_policy` | string | `"warn"` | `ignore`、`warn`、`fail` |
-| `inherit_to_subagents` | bool | `false` | 是否显式传播给 subagent；默认不传播 |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `event` | string | required | `pre_tool`, `post_tool`, `on_error`, `on_context_window_reset`, `before_agent_start`, or `before_provider_request` |
+| `command` | string[] | required | Nonempty argv array |
+| `matcher` | string/null | `null` | Optional event matching expression |
+| `timeout` | number | `10.0` | Positive timeout in seconds |
+| `enabled` | bool | `true` | Enable this hook |
+| `failure_policy` | string | `"warn"` | `ignore`, `warn`, or `fail` |
+| `inherit_to_subagents` | bool | `false` | Explicitly propagate to subagents |
 
 ```json
 {
@@ -269,23 +228,21 @@ deny。使用 `/hooks` 查看每项来源、启用状态、运行次数和最近
 }
 ```
 
----
+## Security
 
-## security
-
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `approval_policy` | string | `"on-request"` | `on-request`：处理规则产生的 `ask`；`never`：未匹配已有 grant 时拒绝 |
-| `approval_router` | string | `"mode"` | `ask` 的审批路由：`mode` 按模式（plan/build→自动 reviewer，act→用户）；`user` 强制用户；`auto` 强制自动 reviewer |
-| `non_workspace_access` | bool | `true` | `false` 时忽略外部目录白名单，工作区外一律拒绝 |
-| `auto_review_timeout_seconds` | number | `90` | 自动 reviewer 的总 deadline，范围 0–300 秒（不含 0） |
-| `sandbox` | object | 见下文 | Linux Agent shell 的文件系统与网络隔离策略 |
-| `restricted_dirs` | array | `[]` | 禁止访问目录列表 |
-| `permissions` | object | `{}` | 权限组到决策的映射；支持 `read`、`edit`、`shell`、`web`、`subagent`、`skill` |
-| `tools` | object | `{}` | 具体工具名到决策的映射；覆盖同名权限组展开结果 |
-| `global_default` | string/null | `null` | 无规则匹配时的默认决策：`allow`、`ask`、`deny` |
-| `external_directories` | array | `[]` | 外部目录白名单，每条包含 `path`（必填）和 `access`（可选，默认 `"read"`；可选值 `read`/`write`/`read_write`） |
-| `sensitive_path_overrides` | array | `[]` | 敏感路径的精确例外；不接受通配符 |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `approval_policy` | string | `"on-request"` | `on-request` handles rule-generated `ask`; `never` denies requests without an existing grant |
+| `approval_router` | string | `"mode"` | `mode` uses automatic review in Plan/Build and user review in Act; `user` and `auto` force a route |
+| `non_workspace_access` | bool | `true` | When false, deny all outside-workspace access regardless of directory allowlists |
+| `auto_review_timeout_seconds` | number | `90` | Total automatic review deadline, greater than zero and at most 300 seconds |
+| `sandbox` | object | see below | Linux Agent Shell filesystem and network isolation |
+| `restricted_dirs` | array | `[]` | Denied directories |
+| `permissions` | object | `{}` | Decisions for groups: `read`, `edit`, `shell`, `web`, `subagent`, `skill` |
+| `tools` | object | `{}` | Tool-specific decisions overriding group expansion |
+| `global_default` | string/null | `null` | Default static decision: `allow`, `ask`, or `deny` |
+| `external_directories` | array | `[]` | Entries with required `path` and optional `access`, default `read`; values: `read`, `write`, `read_write` |
+| `sensitive_path_overrides` | array | `[]` | Exact sensitive-path exceptions; no wildcards |
 
 ### Linux shell sandbox
 
@@ -300,24 +257,18 @@ deny。使用 `/hooks` 查看每项来源、启用状态、运行次数和最近
 }
 ```
 
-| 字段 | 可选值 | 默认值 | 说明 |
-|---|---|---|---|
-| `sandbox.mode` | `workspace-write` / `read-only` / `danger-full-access` | `workspace-write` | 项目写边界；`danger-full-access` 允许以当前用户权限写宿主路径 |
-| `sandbox.network_access` | `deny` / `allow` | `deny` | `deny` 创建独立 network namespace；`allow` 保留宿主网络 |
+| Field | Values | Default | Description |
+| --- | --- | --- | --- |
+| `sandbox.mode` | `workspace-write`, `read-only`, `danger-full-access` | `workspace-write` | Project write boundary; `danger-full-access` permits host writes with current-user permissions |
+| `sandbox.network_access` | `deny`, `allow` | `deny` | `deny` creates a separate network namespace; `allow` retains host networking |
 
-`workspace-write` 将宿主根挂为只读，并允许写项目根、`/tmp`，以及
-`external_directories` 中现有的 `write`/`read_write` 目录。项目内已有的
-`.git`、`.agents`、`.cade` 会重新挂为只读；缺失的名称通过仅在命令期间存在的
-只读空占位目录阻止首次创建。已知凭据目录、密钥文件和未获
-`sensitive_path_overrides` 读取授权的 `.env*` 文件会被遮蔽。
+`workspace-write` mounts the host root read-only and permits writes to the project, `/tmp`, and existing external directories with `write` or `read_write` access. Existing project `.git`, `.agents`, and `.cade` paths are remounted read-only. Missing names get read-only placeholders for the command's duration to prevent initial creation. Known credential directories, key files, and `.env*` files without an applicable read override are masked.
 
-Linux 默认配置要求 PATH 中存在 `bwrap`；缺失时 fail closed。只有
-`danger-full-access + allow` 同时启用时才完全绕过 bubblewrap。其他组合仍保留
-文件系统或网络边界。当前非 Linux 平台保持宿主 shell 行为。
+Linux defaults require `bwrap` on `PATH` and fail closed if it is missing. Only `danger-full-access` combined with `allow` bypasses bubblewrap entirely. Other combinations retain filesystem or network boundaries. Non-Linux platforms retain host shell behavior.
 
-### 静态权限示例
+### Static permissions
 
-`edit` 权限组覆盖 `write/edit/patch/save_memory`；保存 Memory 不能绕过写入禁用。
+The `edit` group covers `write`, `edit`, `patch`, and `save_memory`. Memory saving cannot bypass disabled writes.
 
 ```json
 {
@@ -335,30 +286,19 @@ Linux 默认配置要求 PATH 中存在 `bwrap`；缺失时 fail closed。只有
 }
 ```
 
-权限组先展开为具体工具，`tools` 中的具体工具配置随后覆盖。静态规则未匹配时
-由 `global_default` 产出静态约束；mode ruleset 未匹配时由当前 mode 的 fallback
-产出模式约束。路径边界、mode policy、静态策略、shell 可解析性与 mode ruleset
-共同进入同一个 resolver，较严格的结果优先。
+Groups expand to tools first, followed by tool-specific overrides. Unmatched static rules use `global_default`; unmatched mode rules use the mode fallback. Path boundaries, mode policy, static policy, shell parseability, and mode rules share a resolver. Stricter results take precedence.
 
-规则产生的 `ask` 是内部 approval request，不等于询问用户。默认配置下，Plan
-与 Build 使用 `on-request + auto_review`，approval request 交给独立的
-`reviewer` profile；Act 使用 `on-request + user`。reviewer request 显式携带
-当前 execution mode，使 reviewer 能遵守各 mode 的 authority。`approval_policy=never` 禁止提交新的 approval request。这里
-只接受 `on-request` 和 `never`，没有旧值迁移或别名。
+An internal approval request does not necessarily ask the user. Plan and Build route to the independent `reviewer` profile by default; Act routes to the user. Reviewer requests include execution mode authority. `approval_policy=never` prohibits new approval requests. Only `on-request` and `never` are accepted; no legacy aliases are migrated.
 
-自动 reviewer 接收带角色和信任标记的有界会话 transcript，以及本次动作的完整
-参数；review 会话没有工具，因此不能修改本地状态。输出 contract 为
-`outcome / risk_level / user_authorization / rationale`：低风险和有界可逆的中风险
-动作可自动放行；高风险动作要求至少中等授权且范围明确；critical 风险拒绝。
-它只能批准单次执行，最多尝试三次，并受一个 90 秒总 deadline 约束。超时、
-provider 错误或无效输出都会 fail closed；它不能覆盖 restricted directories、
-路径边界、危险命令或显式 `deny`。
+Automatic review receives a bounded transcript with roles and trust labels plus complete action arguments. It has no tools and cannot modify local state. The output contract is `outcome / risk_level / user_authorization / rationale`. Low-risk and bounded reversible medium-risk actions can pass automatically. High-risk actions require at least medium authorization and explicit scope. Critical risk is denied.
 
-批准后会显示风险、授权程度和理由，例如：
+Review grants one execution, tries at most three times, and shares a 90-second deadline. Timeouts, provider errors, and invalid output fail closed. Review cannot override restricted directories, path boundaries, dangerous commands, or explicit denial.
+
+An approval notice includes risk, authorization, and rationale:
 
 ```text
 Automatic approval review approved (risk: low, authorization: high):
-运行指定的本地聚焦测试是用户授权实现的常规验证，不涉及网络、敏感数据或破坏性操作。
+Running the specified local focused tests is routine validation for the authorized implementation. It does not involve networking, sensitive data, or destructive actions.
 ```
 
 ```json
@@ -375,158 +315,121 @@ Automatic approval review approved (risk: low, authorization: high):
 }
 ```
 
-权限提示、自动 reviewer 与 shell 效果分析不是 OS sandbox；它们决定工具调用
-是否获准。Linux Agent shell 另由 bubblewrap 强制文件与网络边界。已确认只读
-shell 可直接执行；未解析或可能产生副作用的命令仍由当前 mode 的 reviewer 处理，
-危险命令与硬边界不能被 reviewer 覆盖。
+Permission prompts, automatic review, and shell effect analysis decide whether calls are authorized; they are not OS sandboxing. Bubblewrap separately enforces Linux Agent Shell filesystem and network boundaries. Confirmed read-only shell commands can run directly. Unparsed or potentially mutating commands use the mode's reviewer. Review cannot override dangerous commands or hard boundaries.
 
-### external_directories 示例
+### External directories
 
 ```json
 {"path": "../reference", "access": "read"}
 {"path": "../shared/templates", "access": "read_write"}
 ```
 
-- `access=read`：仅允许读取操作
-- `access=write`：仅允许写入操作
-- `access=read_write`：读写均允许
-- `.env`、`.env.*`、`.git`、凭据路径在所有目录中均被拒绝
-- `.env.example` 读取允许，写入拒绝
+- `read`: reading only.
+- `write`: writing only.
+- `read_write`: reading and writing.
+- Sensitive `.env`, `.env.*`, `.git`, and credential paths remain protected in external directories.
+- `.env.example` can be read but not written.
 
----
+## Tools
 
-## tools
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `subagent_extra_tools` | string[] | `[]` | Additional main-agent tools available to subagents; `todowrite` is not inherited by default |
+| `shell` | string | `"auto"` | `auto`, `pwsh`, `powershell`, `cmd`, `bash`, `zsh`, `sh`, or `fish` |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `subagent_extra_tools` | string[] | `[]` | 额外允许 subagent 使用的主 agent 工具名；`todowrite` 默认不继承 |
-| `shell` | string | `"auto"` | `auto`、`pwsh`、`powershell`、`cmd`、`bash`、`zsh`、`sh`、`fish` |
+`todowrite` is a default main-agent session tool. It replaces the complete list, with at most one `in_progress` item. The list persists in the transcript and `RunState` and is reinjected in dynamic context after rollover. Subagents share it only when `todowrite` appears in `subagent_extra_tools`.
 
-`todowrite` 是主 agent 默认可用的会话级工具。它以完整列表替换当前清单，
-最多允许一个 `in_progress` 项。清单写入
-session transcript 和 `RunState`，并在每轮动态上下文中重新注入，因此换窗后仍可恢复。
-只有将 `"todowrite"` 加入 `subagent_extra_tools` 时，
-subagent 才会共享该会话清单。
+Input uses a `todos` array. Each item requires `id`, `content`, and `status`, with optional `priority` (`high`, `medium`, `low`). Status values are `pending`, `in_progress`, `completed`, and `cancelled`. Unlike the top-level TypeScript reference implementation, Cade requires IDs for recovery and event correlation.
 
-`todowrite` 输入使用 `todos` 数组。每个 todo 需要 `id`、`content`、`status`，
-可选 `priority`（`high` / `medium` / `low`）。`status` 支持 `pending`、
-`in_progress`、`completed`、`cancelled`。`id` 是 cade 会话恢复和事件关联所需，
-因此不同于顶层 TypeScript 参考实现，不能省略。
+## Skills
 
-## skills
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `trust_project_skills` | bool | `false` | Trust and expose project `.cade/skills/` and `.agents/skills/`; otherwise discover only user skills |
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `trust_project_skills` | bool | `false` | 是否信任并披露项目内 `.cade/skills/` 与 `.agents/skills/`；默认仅发现用户级技能 |
+Without visible skills, `load_skill` is not registered and no empty catalog is injected. Discovery uses first-wins ordering:
 
-无可见 skill 时不注册 `load_skill`，也不向上下文注入空 catalog。
+1. Explicit `paths.skills_dir` or `build_app(skills_dir=...)`.
+2. Project `.cade/skills/`.
+3. Project `.agents/skills/`.
+4. User `~/.cade/skills/`.
+5. User `~/.agents/skills/`.
 
-Skill discovery 按 first-wins 处理同名技能，覆盖顺序为：
-显式 `paths.skills_dir` / `build_app(skills_dir=...)` → 项目
-`.cade/skills/` → 项目 `.agents/skills/` → 用户 `~/.cade/skills/` → 用户
-`~/.agents/skills/`。项目固定目录仍受 `trust_project_skills` 控制；显式目录表示
-调用方已信任。显式目录不存在时记录 warning。
+Fixed project directories require `trust_project_skills`. An explicit directory indicates caller trust. A missing explicit directory produces a warning.
 
-`load_skill` 首次激活返回 skill root、正文及 `scripts/`、`references/`、
-`assets/` 相对路径元数据，但不会主动读取或执行资源。相同 session 内重复激活
-只返回简短状态；activation 状态可从会话历史恢复，并在上下文压缩时保留。
+First activation returns the skill root, body, and relative metadata for `scripts/`, `references/`, and `assets/`, without reading or executing resources. Repeated activation in one session returns a short status. Activation recovers from history and survives context compression.
 
-### 工具注册
+### Tool registration
 
-项目工具实现注册为 `read`、`write`、`edit`、`patch`、`glob`、`find`、
-`ls`、`grep`、`websearch`、`webfetch`、`question`、`bash`。运行时按功能
-追加 `delegate`、`save_memory`、`history`、`rollover`；发现 skill 时注册
-`load_skill`；MCP 在启动时通过发现或有效缓存注册具有完整 schema 的
-`mcp__{server}__{tool}` 工具，实际调用时才建立持久连接；修改 MCP 配置后重新启动
-应用。Build/Act 默认不向模型暴露
-`grep/glob/find/ls`，日常代码搜索交给 `bash` 组合 `rg/fd/git` 等原生命令。
-`websearch` 通过 Exa / Parallel MCP provider 搜索网络，默认 Exa；支持 `query`、
-`numResults`、`type`（`auto`/`fast`/`deep`）、`livecrawl`（`fallback`/`preferred`）
-和 `timeout`。可通过环境变量 `EXA_API_KEY` / `PARALLEL_API_KEY` 或
-`OPENCODE_EXPERIMENTAL_PARALLEL` 切换/鉴权。`webfetch` 支持 `markdown`、`text`、
-`html` 输出格式，自动解压 gzip/deflate，最多读取 5MB，并在截断时标记结果。
-Memory 位于当前 workspace 的 `.cade/memory/`，每条是可编辑 Markdown 文件。
-普通 turn 和 resume/rebuild 都不扫描或加载 Memory；Agent 有明确历史需求时
-通过既有 `bash + rg` 显式搜索该目录，再读取文件及 History 来源并核对当前代码。
-`save_memory` 接受 `path`、`markdown`、显式 `sources`，覆盖需完整旧文本
-`expected_content`；Host 校验引用存在并替换末尾来源 footer，不解析正文或验证结论。
-`history` 的 `read/around` 可按 `session_id + entry_id` 精确读取同 workspace 原始
-历史，不切换 Session/head，也不依赖导航 cache。显式 Session 的 `around` 只接受
-`before`。完整参数见 [Memory](docs/guide/memory.md)。
-默认 `.cade/sessions/` 以当前物理位置确定归属，workspace 移动/改名后不要求修改
-旧 `project_path`；自定义或共享目录才校验日志内持久化的 workspace 绑定。
-MCP schema cache 记录配置 hash、协商协议版本和 server identity；缺少这些
-协商元数据的旧缓存会自动重新发现。
+Product tools register as `read`, `write`, `edit`, `patch`, `glob`, `find`, `ls`, `grep`, `websearch`, `webfetch`, `question`, and `bash`. Runtime capabilities add `delegate`, `save_memory`, `history`, and `rollover`. Skills add `load_skill` when discovered. MCP tools register complete schemas at startup through discovery or valid cache; persistent connections open on first call. Restart after changing MCP configuration.
 
----
+Build/Act do not expose `grep`, `glob`, `find`, and `ls` to models by default. Normal search uses native commands such as `rg`, `fd`, and `git` through `bash`.
 
----
+`websearch` uses Exa by default or Parallel MCP. Parameters include `query`, `numResults`, `type` (`auto`, `fast`, `deep`), `livecrawl` (`fallback`, `preferred`), and `timeout`. Environment controls include `EXA_API_KEY`, `PARALLEL_API_KEY`, and `OPENCODE_EXPERIMENTAL_PARALLEL`. `webfetch` supports `markdown`, `text`, and `html`, decompresses gzip/deflate, reads at most 5 MB, and marks truncation.
 
-## prompt
+Memory entries are editable Markdown in `.cade/memory/`. A bounded catalog exposes retrieval metadata; the agent searches explicitly, reads content and History sources, and checks current code. `save_memory` accepts `path`, `markdown`, and explicit `sources`; updates require complete old `expected_content`. The host validates references and replaces the source footer without interpreting conclusions.
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `modules` | array | 7 个模块 | 参与拼接的 prompt 模块 |
-| `instructions` | array | `[]` | 指令源列表（见下方） |
+History `read`/`around` retrieves original workspace records by `session_id + entry_id` without switching session/head or relying on navigation caches. Explicit-session `around` accepts only `before`. Default local session storage establishes ownership by physical location, permitting workspace moves without changing old `project_path`. Custom/shared directories validate persisted workspace binding. See [Memory](docs/guide/memory.md).
 
-默认模块顺序：`identity`、`tool_discipline`、`citations`、`tools`、`search_strategy`、`environment`、`cwd`。
+MCP schema caches record configuration hash, negotiated protocol version, and server identity. Older caches without negotiation metadata trigger rediscovery.
 
-身份、工具纪律、引用与搜索策略在装配时生成固定文本；环境信息在同次装配中捕获，目录条目在每次请求读取。`tools` 模块从当次启用的工具集合生成操作指南；工具名称、描述和参数始终由 API schema 声明。前缀保留分界标记。会话通知由 Harness 在当前请求边界注入，文件与工具历史来自会话消息。
+## Prompt
 
-### prompt.instructions 格式
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `modules` | array | seven modules | Modules used to assemble the prompt |
+| `instructions` | array | `[]` | Instruction sources |
 
-每个元素为包含以下字段的对象：
+Default order: `identity`, `tool_discipline`, `citations`, `tools`, `search_strategy`, `environment`, `cwd`.
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `type` | string | 是 | `"file"` 或 `"inline"` |
-| `path` | string | 仅 file | 项目相对路径，禁止绝对路径、`~`、`..` 遍历 |
-| `content` | string | 仅 inline | 指令文本 |
-| `priority` | string | 否 | `"critical"`、`"high"`、`"medium"`、`"low"`；默认 `"critical"` |
+Identity, tool discipline, citations, and search strategy are fixed at assembly. Environment information is captured in that assembly; directory entries are read per request. Tool guidance uses enabled tools; API schemas declare names, descriptions, and parameters. Prefix boundary markers remain. Harness injects session notices at request boundaries. File and tool history comes from session messages.
 
-示例：
+### Instruction format
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `type` | string | yes | `file` or `inline` |
+| `path` | string | file only | Project-relative path; absolute paths, `~`, and `..` traversal are prohibited |
+| `content` | string | inline only | Instruction text |
+| `priority` | string | no | `instruction` (default) or `context`; controls ordering only |
+
 ```json
-{"type": "file", "path": "AGENTS.md", "priority": "critical"}
-{"type": "inline", "content": "No external dependencies without approval.", "priority": "high"}
+{"type": "file", "path": "AGENTS.md", "priority": "instruction"}
+{"type": "inline", "content": "No external dependencies without approval.", "priority": "instruction"}
 ```
 
-未配置 `instructions` 时自动回退到 `AGENTS.md`。
-配置非空时：先收集配置源，再收集回退文件。配置源与回退文件按路径去重，配置源优先。
+Without configured instructions, collection falls back to `AGENTS.md`. With explicit sources, configured sources precede fallback files. Paths are deduplicated with configured sources taking precedence.
 
-所有指令内容共享一个 32KB UTF-8 字节预算：按配置源顺序累加，预算不足时保留
-当前指令的前缀，后续指令不再注入。不解析标题、不区分语言，也不移除代码块。
+All instructions share a 32 KB UTF-8 budget, accumulated in source order. If a source exceeds the remainder, its prefix is retained and later sources are omitted. Collection does not parse headings, distinguish languages, or remove code blocks.
 
----
+## Cache optimization
 
-## 缓存优化
+### Statistics
 
-### 统计口径
+1. Prefer DeepSeek's native `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`.
+2. Fall back to `prompt_tokens_details.cached_tokens` for OpenAI, ChatGLM, and MiMo.
+3. Compute hit rate as `hit / (hit + miss)`.
 
-1. **原生优先**（DeepSeek）：`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
-2. **兼容回退**（OpenAI/ChatGLM/MiMo）：`prompt_tokens_details.cached_tokens`
-3. **命中率公式**：`hit / (hit + miss)`
+### Stable tools
 
-### 工具稳定化
+1. Sort tools alphabetically by `name`.
+2. Sort schema keys recursively with `sort_keys=True`.
+3. Use the first 16 characters of a SHA256 fingerprint.
 
-1. 工具列表按 `name` 字母排序
-2. Schema 键递归排序（`sort_keys=True`）
-3. SHA256 前 16 字符指纹
+See `src/cade/ai/cache.py` for cache statistics.
 
-实现位置：`src/cade/ai/cache.py`。
+### Token efficiency
 
-### Token ROI 原则
+Keep stable cacheable prefixes, a replaceable working window, bounded tool output, progressive tool discovery, model-aware rollover, and repeat suppression.
 
-优化策略：稳定可缓存前缀、使用可丢弃的当前工作窗口、控制工具输出、渐进发现工具、按模型窗口换窗、智能重复抑制。
+`ContextWindowRollover` in `src/cade/harness/agent_runtime/context_window.py`:
 
-`ContextWindowRollover`（`src/cade/harness/agent_runtime/context_window.py`）：
-- 关闭旧工作窗口，不生成摘要
-- 保留启动上下文、已激活 skill 和当前回合
-- 对当前 surface 的过期读取和大工具输出做预算裁剪
-- 原始 transcript 始终作为无损事实源，通过 `history` 按需召回
-- 项目根 `NOTE.md` 作为显式工作交接状态
+- Closes the old working window without generating a summary.
+- Retains startup context, activated skills, and the current turn.
+- Trims stale reads and large tool output in the surface according to budget.
+- Preserves the original transcript as the complete factual source for `history` retrieval.
+- Uses project `NOTE.md` as explicit handoff state.
 
-手动命令中，`/compact` 使用同一硬换窗机制并保留最近工作回合；
-`/rollover` 开启不携带普通对话的干净窗口，默认要求非空 `NOTE.md`，
-必要时可用 `/rollover --force` 跳过交接检查。
+`/compact` uses the same rollover mechanism and retains the latest working turn. `/rollover` starts a window without ordinary conversation and requires a nonempty `NOTE.md` by default. Use `/rollover --force` to bypass that check.
 
-`RepeatDetector`（`src/cade/agent/watchdog.py`）：文件变更感知的重复检测，变更后自动清除只读调用历史。
+`RepeatDetector` in `src/cade/agent/watchdog.py` detects repetition with file-change awareness and clears read-only call history after changes.

@@ -737,7 +737,7 @@ button {
 
 .modal__foot { display: flex; gap: 8px; padding: 4px 20px 18px; flex-wrap: wrap; }
 
-/* ── toast ── */
+/* ── 通知 ── */
 
 .toast {
   position: fixed;

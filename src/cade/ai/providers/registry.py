@@ -119,7 +119,7 @@ def get_config_value(name: str, env_files: tuple[Path, ...] = ()) -> str | None:
     return None
 
 
-# ── Factory ──
+# ── 工厂 ──
 
 
 def build_provider_bundle(settings: ProviderSettings) -> ProviderBundle:

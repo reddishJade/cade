@@ -1,54 +1,61 @@
-# 仓库准则
+# Repository guidelines
 
-## 工程原则
+## Engineering principles
 
-- 新设计先研究成熟产品如何解决相关问题，采用适合需求的经过验证的模式。研究投入与范围相匹配：新增子系统或技术选型需要调研，修改单个函数的内部实现不需要。
-- 取舍顺序：先完整满足当前需求，其次避免日后必须拆除的结构，最后才是扩展性。扩展性来自清晰的模块边界。
-- 以可工作的端到端增量构建，从最小的完整版本开始，每个增量保持可用。现有可工作的功能保留到有完整替代为止。生产代码以长期可维护的形态编写。
-- 用探索性原型验证假设。原型保持隔离（独立目录或分支），结论以文字记录。采用原型前重新评估代码质量，复用其中符合生产标准的部分。
-- 组件保持模块化，职责清晰。行为放在拥有它的层，I/O、计算和展示分离。依赖只指向更低的层（见"项目结构与架构"）。
-- 优先使用现有项目依赖，断定某项能力缺失之前先查其文档和类型。成熟且维护良好的库能降低整体复杂度或提高可靠性时采用；只有在有明确理由时才添加依赖或重新实现常见功能。
-- 允许破坏性变更。在同一次变更中删除过时路径，并更新调用方、测试和文档。
+- Before introducing a design, study how established products solve the problem. Match the research effort to the scope: new subsystems and technology choices need research; changes inside a single function do not.
+- First, meet the current requirements completely. Next, avoid structures that will need to be replaced. Consider extensibility last. Clear module boundaries provide extensibility.
+- Build working end-to-end increments, starting with the smallest complete version. Keep existing functionality until a complete replacement works. Write production code for long-term maintenance.
+- Use isolated prototypes in a separate directory or branch to test assumptions. Record conclusions in writing. Review prototype code before adoption and reuse only production-quality parts.
+- Keep components modular and responsibilities clear. Put behavior in the layer that owns it. Separate I/O, computation, and presentation. Dependencies point only to lower layers; see Project structure and architecture.
+- Prefer existing dependencies. Check their documentation and types before concluding that a capability is missing. Adopt maintained libraries when they reduce complexity or improve reliability. Add dependencies or reimplement common functionality only for a clear reason.
+- Breaking changes are allowed. Remove obsolete paths and update callers, tests, and documentation in the same change.
 
-## 任务范围与完成
+## Scope and completion
 
-- 阅读与变更相关的代码和文档，依赖或不确定性需要时扩大上下文。例行编辑直接进行。
-- 任务完成于：变更已实施且请求的行为已验证，或识别出具体阻碍。验证与变更相匹配。已验证的行为、假设和未执行的检查分开报告。无法运行验证时，说明原因，并给出维护者可以运行的最小命令。
-- 每个任务围绕一个主题，所有改动服务于该主题。范围外的发现在最终报告中单独成段列出（位置、现象、影响），由维护者决定。
-- 遇到权限、环境或外部依赖方面的阻碍时，记录证据后停止重试。其他失败在还有可检验的新假设且成本合理时继续。进展指更接近目标行为（更多测试通过、失败范围缩小），或排除了一个有证据的假设。没有这样的方向时停下，报告阻碍、已排除的假设，以及需要维护者提供的内容。
-- 文档按层级放置：根 README 承载项目定位、安装运行步骤和顶层能力概览，仅在顶层能力变化时修改；模块细节写在 docstring 和注释里；模块级文档在要求时编写。变更使现有文档失真时，修正对应的句子。
+- Read the code and documentation relevant to the change. Expand the context when dependencies or uncertainty require it. Proceed directly with routine edits.
+- A task is complete when the change is implemented and the requested behavior is verified, or a specific blocker is identified. Match validation to the change. Report verified behavior, assumptions, and checks not run separately. If validation is unavailable, explain why and provide the smallest command the maintainer can run.
+- Keep each task focused on one topic. Report out-of-scope findings separately, with the location, symptom, and impact. Let the maintainer decide whether to address them.
+- For permission, environment, or external dependency blockers, record evidence and stop retrying. For other failures, continue only while a testable hypothesis remains and verification is reasonably inexpensive. Progress means getting closer to the expected behavior or ruling out an evidence-based hypothesis. Otherwise, stop and report the blocker, rejected hypotheses, and information needed from the maintainer.
+- Keep documentation at the right level. The root README covers the project, installation, startup, and top-level capabilities; update it only when those capabilities change or for an explicitly requested documentation migration. Put module details in docstrings and comments. Write module documentation when requested. Correct existing statements that a change makes inaccurate.
 
-## 与维护者协作
+## Working with the maintainer
 
-在每个任务开始时阅读 [HUMAN.md](HUMAN.md)，其中定义了如何汇报结果、发进度更新、做决策、暂停和交接。HUMAN.md 不可用时，适用这条核心规则：长任务中在对话里发简短更新（每条 1 到 2 句话，写明自上一条更新以来的一个具体结果和下一步动作），至少约每 8 次工具调用一条。
+Read [HUMAN.md](HUMAN.md) at the start of each task. It defines reporting, progress updates, decisions, checkpoints, and handoffs. If it is unavailable, post short progress updates during long tasks, at least about every eight tool calls. Each update states one concrete result and the next action in one or two sentences.
 
-## 项目结构与架构
+## Project structure and architecture
 
-Cade 是一个 Python 3.12+ 的 coding-agent harness。所有包代码位于 `src/cade/`，命令行入口为 `src/cade/main.py`。分层设计自上而下为：`server/`（web 宿主）、`coding_agent/`（产品装配、工具、交互服务、TUI 和 exec 模式）、`harness/`（运行时、会话、策略、MCP）、`agent/`（循环与上下文）、`ai/`（provider 适配器）。每一层只从其下的层导入。文档和示例位于 `docs/` 和 `examples/`。
+Cade is a Python 3.12+ coding-agent harness. Package code lives in `src/cade/`; the CLI entry point is `src/cade/main.py`. The layers, from highest to lowest, are `server/` (web host), `coding_agent/` (product assembly, tools, interaction services, TUI, and exec mode), `harness/` (runtime, sessions, policies, and MCP), `agent/` (loop and context), and `ai/` (provider adapters). Each layer imports only from lower layers. Documentation and examples live in `docs/` and `examples/`.
 
-## 命令
+## Commands
 
-在仓库根目录执行；先按[开发指南](docs/development.md#环境准备)安装开发依赖。
+Run commands from the repository root. Install development dependencies as described in the environment setup section of the [development guide](docs/development.md).
 
-代码变更后运行 Lint、格式检查和类型检查。变更涉及 import 或入口时，追加受影响入口的启动检查。`src/cade/tests/` 中存在 `test_*.py` 时，运行回归测试。行为变更按[验证准则](docs/testing.md)选择最小充分检查；是否执行 E2E 由具体风险和覆盖缺口决定，不由模块归属决定。仅修改文档时，检查内容、链接、命令和差异。
+After code changes, run lint, format, and type checks. If imports or entry points change, also check startup for affected entry points. Run regression tests when `src/cade/tests/` contains `test_*.py` files. For behavior changes, select the smallest sufficient checks using the [validation guidelines](docs/testing.md). Choose E2E based on concrete risk and coverage gaps, not module ownership. For documentation-only changes, check content, links, commands, and the diff.
 
-- Lint：`uv run --locked ruff check src/cade/`
-- 格式化：`uv run --locked ruff format src/cade/`
-- 格式检查：`uv run --locked ruff format --check src/cade/`
-- 类型检查：`uv run --locked pyright src/cade/`
-- 回归测试：`uv run --locked pytest -q src/cade/tests`
-- 启动检查：`uv run --locked cade --help`
-- exec E2E（按验证准则选定后执行）：`uv run --locked cade exec "<任务>"`
+- Lint: `uv run --locked ruff check src/cade/`
+- Format: `uv run --locked ruff format src/cade/`
+- Check formatting: `uv run --locked ruff format --check src/cade/`
+- Check types: `uv run --locked pyright src/cade/`
+- Run regression tests: `uv run --locked pytest -q src/cade/tests`
+- Check startup: `uv run --locked cade --help`
+- Run exec E2E when selected by the validation guidelines: `uv run --locked cade exec "<TASK>"`
 
-## 代码风格与命名
+## Code style and naming
 
-使用完整的类型注解和标准的四空格 Python 缩进。Ruff 强制格式化，行宽 88 字符；Ruff 的问题在代码中解决，异常捕获使用具体的异常类型。优先使用小型、单一用途的函数。模块、函数和变量使用 `snake_case`，类使用 `PascalCase`，测试模块使用 `test_<feature>.py`。注释和 docstring 使用简体中文。
+Use complete type annotations and standard four-space Python indentation. Ruff enforces formatting with an 88-character line limit. Fix lint issues in code. Catch specific exception types. Prefer small, single-purpose functions. Use `snake_case` for modules, functions, and variables; `PascalCase` for classes; and `test_<feature>.py` for test modules.
 
-## 特定任务参考
+## Language and writing style
 
-只阅读条件与当前任务匹配的参考文档：
+- Write code comments and docstrings in Simplified Chinese. Follow the `zh-tech-writing` skill. Keep comments and docstrings direct, specific, and concise.
+- Write all other natural-language content in English, including documentation, prompts, CLI and web UI text, and error messages. Follow the [Google developer documentation style guide](https://developers.google.com/style). Use active voice, sentence case, consistent terms, and short, direct instructions.
+- Preserve Chinese test data when it verifies Chinese-language handling. Do not translate identifiers, protocol fields, or other machine-readable contracts as prose.
+- Reply to the maintainer in the language they use. This repository content policy does not change the conversation language.
 
-- 实施行为变更或新增测试之前，阅读[验证准则](docs/testing.md)，按其中的要求选择验证方式、准备运行环境和判断测试覆盖缺口。
-- 环境搭建、仓库 skill 变更，或准备提交和 PR 时，阅读[开发指南](docs/development.md)中对应的章节。
-- 架构变更时，阅读[架构](docs/architecture.md)。
-- 代码审查时，阅读[审查标准](docs/review-standards.md)。
+## Task-specific references
+
+Read only the references relevant to the task:
+
+- Before behavior changes or new tests, read the [validation guidelines](docs/testing.md) to select checks, prepare the environment, and identify coverage gaps.
+- For environment setup, repository skill changes, commits, or PRs, read the relevant sections of the [development guide](docs/development.md).
+- For architecture changes, read the [architecture](docs/architecture.md).
+- For code reviews, read the [review standards](docs/review-standards.md).

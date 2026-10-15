@@ -1,75 +1,67 @@
-# CLI 命令行参数与交互指南
+# CLI and terminal interaction
 
-Cade 提供了开箱即用的命令行工具 `cade`。本节汇总启动参数、终端快捷键与高级输入技巧。
+Use the `cade` CLI to start the terminal interface or run a noninteractive task.
 
----
-
-## 1. 命令行启动参数
+## Startup options
 
 ```text
-用法: cade [选项] [子命令]
+Usage: cade [OPTIONS] [COMMAND]
 ```
 
-### 常用全局选项
+### Common global options
 
-| 选项参数 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| `--project-root <path>` | path | 工作区根，默认当前目录 |
-| `--config <path>` | path | 替代项目配置文件 |
-| `--sessions-dir <path>` | path | 覆盖本次会话目录 |
-| `-c, --continue` | flag | 恢复当前项目最近会话 |
-| `--session <id>` | string | 恢复指定会话 |
-| `--resume` | flag | 启动 TUI 会话选择器 |
-| `-h, --help` | flag | 打印命令行帮助信息 |
+| Option | Type | Description |
+| --- | --- | --- |
+| `--project-root <path>` | path | Workspace root; defaults to the current directory |
+| `--config <path>` | path | Alternative project configuration file |
+| `--sessions-dir <path>` | path | Session directory override for this invocation |
+| `-c, --continue` | flag | Resume the current project's most recent session |
+| `--session <id>` | string | Resume a specific session |
+| `--resume` | flag | Open the TUI session picker |
+| `-h, --help` | flag | Show CLI help |
 
-三个公共路径参数可以放在子命令前后，`session` 查询还可放在动作后；重复指定时
-最后的显式值生效。会话目录优先使用 CLI 覆盖，再使用配置中的 `paths.sessions_dir`，
-未配置时使用工作区 `.cade/sessions/`。
+The three shared path options can appear before or after a subcommand. For `session` queries, they can also follow the action. If repeated, the last explicit value wins. The session directory uses the CLI override first, then `paths.sessions_dir`, and finally the workspace's `.cade/sessions/` directory.
 
-### 命令行常用场景
+### Common invocations
 
 ```bash
-# 1. 默认交互式启动
+# 启动默认交互界面
 cade
 
-# 2. 在指定工作区启动 TUI
+# 在指定工作区启动 TUI
 cade tui --project-root ./repo
 
-# 3. 在 CI 或脚本中非交互式执行单条任务（Headless）
-cade exec "运行 pytest 并修复所有失败的测试用例"
+# 在 CI 或脚本中执行单次任务
+cade exec "Run pytest and fix all failing tests"
 ```
 
-`exec` 的模型、模式、审批与运行上限由子命令选项覆盖，见 `cade exec --help`。
+The `exec` subcommand can override the model, mode, approval policy, and run limits. See `cade exec --help`.
 
----
+## Terminal interaction
 
-## 2. 终端交互快捷键与技巧
+### Shortcuts
 
-在交互终端（TUI）中，Cade 提供了丰富的操作便利：
+- **Multiline input**: press Shift+Enter. If your terminal does not map that shortcut, press Esc followed by Enter as a fallback.
+- **Completion**: use Tab to complete slash commands after `/` and tool names after `/tool `. Enter `@` for file completion.
+- **Interrupt and exit**: press Ctrl+C to cancel the current model stream or long-running command. Press it twice while idle with an empty input to exit.
 
-### 2.1 快捷键清单
-- **多行输入**：按 `Shift+Enter` 进行换行。如果你的终端未正确映射该快捷键，可使用 `Esc` 然后按 `Enter` 作为通用后备换行方案。
-- **补全机制 (`Tab`)**：
-  - 自动补全 Slash 命令（输入 `/` 后按 `Tab`）；
-  - 自动补全工具名称（输入 `/tool ` 后按 `Tab`）；
-  - 自动补全文件路径（输入 `@` 触发文件补全）。
-- **打断与退出 (`Ctrl+C`)**：
-  - **单次按下**：秒级取消当前正在进行的模型流式推理或后台长命令执行；
-  - **连续按两次**：安全退出 Cade 终端。
+### File references
 
-### 2.2 高级输入魔法
+Enter `@` in a prompt to find and reference workspace files:
 
-1. **`@` 文件直接引用**：
-   在提示词中输入 `@` 即可模糊补全并引用工作区中的文件：
-   ```text
-   > 请参考 @src/cade/main.py 的入参处理，为 @src/cade/coding_agent/interaction/commands.py 补充对应选项
-   ```
-   Cade 会在发送请求时自动把引用的文件内容作为背景上下文呈递给模型。
+```text
+> Use argument handling in @src/cade/main.py as a reference. Add the corresponding options to @src/cade/coding_agent/interaction/commands.py.
+```
 
-2. **`!` 快速执行本地命令**：
-   如果只想在不打断对话的情况下快速看一下本地状态，可以在行首加 `!`：
-   ```text
-   > !git status
-   > !pytest src/tests/test_harness.py
-   ```
-   命令输出将直接呈现在终端中。
+Cade includes the referenced file content as model context when it sends the request.
+
+### Shell commands
+
+Prefix a line with `!` to run a local command without leaving the conversation:
+
+```text
+> !git status
+> !pytest src/tests/test_harness.py
+```
+
+Command output appears in the terminal.

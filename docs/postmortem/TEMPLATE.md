@@ -1,4 +1,4 @@
-# 事故标题
+# Incident title
 
 Date: YYYY-MM-DD
 Status: Draft
@@ -6,47 +6,47 @@ Severity: S1 | S2 | S3
 
 ## Summary
 
-用三至五句话说明发生了什么、影响谁、持续多久以及最终如何恢复。
+In three to five sentences, describe what happened, who was affected, the duration, and how service recovered.
 
 ## Impact
 
-- 用户可见影响：
-- 数据或安全影响：
-- 受影响版本/平台：
-- 开始与结束时间：
+- User-visible impact:
+- Data or security impact:
+- Affected versions/platforms:
+- Start and end times:
 
 ## Detection
 
-说明最初由用户、监控、测试还是开发者发现，以及检测延迟。
+State whether a user, monitoring, tests, or a developer first detected the incident. Include detection delay.
 
 ## Timeline
 
-- HH:MM — 事件
-- HH:MM — 事件
+- HH:MM — Event
+- HH:MM — Event
 
 ## Root cause
 
-描述技术根因和促成条件。区分直接触发、潜在设计缺陷与组织流程问题。
+Describe the technical root cause and contributing conditions. Distinguish the immediate trigger, latent design defects, and process gaps.
 
 ## Violated invariant
 
-指出 `docs/architecture.md` 中被破坏的不变量；若不存在，先补充架构不变量。
+Identify the violated invariant in `docs/architecture.md`. If it is missing, document it there first.
 
 ## Why tests did not catch it
 
-说明验证了哪个错误表面，以及缺少哪条真实 loader、process、session 或 UI 路径。
+Explain which surface was checked and which real loader, process, session, or UI path was missing.
 
 ## Resolution
 
-说明止血、修复、数据恢复和发布过程。
+Describe containment, repair, data recovery, and release.
 
 ## Corrective actions
 
 | Action | Owner | Status | Validation |
-|---|---|---|---|
-| 添加 assembled regression test | TBD | Open | 测试路径 |
-| 修复根因 | TBD | Open | 测试或观测证据 |
+| --- | --- | --- | --- |
+| Add an assembled-component regression test | TBD | Open | Test path |
+| Fix the root cause | TBD | Open | Test or observed evidence |
 
 ## Lessons
 
-记录可推广到其他模块的工程判断，以及需要创建或更新的 Agent Note。
+Record engineering conclusions applicable to other modules and any Agent Note to create or update.

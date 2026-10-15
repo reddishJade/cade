@@ -1,24 +1,19 @@
-# 配置
+# Configuration
 
-运行时配置由 [CadeRuntimeConfig](../../src/cade/harness/config.py) 校验，未知字段、
-错误类型和非法枚举值会在启动时报告。本文列出配置来源、运行与预算字段；完整字段
-以该模型为准，模型接入见 [Provider 指南](providers.md)。
+[CadeRuntimeConfig](../../src/cade/harness/config.py) validates runtime configuration. Unknown fields, incorrect types, and invalid enum values are reported at startup. This page covers sources, runtime settings, and budgets. The model defines the complete field set. See [Models and providers](providers.md) for provider configuration.
 
-## 配置来源
+## Configuration sources
 
-启动时按以下顺序合并 JSON，后读入的显式字段覆盖先前值，嵌套对象递归合并，
-数组整体替换：
+At startup, Cade merges JSON in this order. Later explicit fields override earlier values. Nested objects merge recursively; arrays are replaced as a whole.
 
-1. 用户配置：`~/.cade/settings.json`。
-2. 项目配置：`<项目根>/cade.config.json`；`cade --config PATH` 指定文件时替代此项。
-3. 工作区本地配置：`<项目根>/.cade/settings.json`。
-4. `CADE_APPROVAL_POLICY`：覆盖 `security.approval_policy`。
+1. User settings: `~/.cade/settings.json`.
+2. Project settings: `<PROJECT_ROOT>/cade.config.json`, replaced by the file specified with `cade --config PATH`.
+3. Local workspace settings: `<PROJECT_ROOT>/.cade/settings.json`.
+4. `CADE_APPROVAL_POLICY`: overrides `security.approval_policy`.
 
-未提供的字段使用模型默认值。Python `build_app(runtime_config=...)` 使用传入配置，
-`agent_config=...` 可单独覆盖 agent 配置。API key 还可从环境和 `.env` 读取，其
-解析顺序见下文。
+Omitted fields use model defaults. Python `build_app(runtime_config=...)` uses the supplied configuration; `agent_config=...` can override agent settings separately. API keys can also come from the environment and `.env` files, as described below.
 
-以下片段可保存为 `cade.config.json`，其余字段保留默认值：
+Save the following example as `cade.config.json` to override these fields and keep other defaults:
 
 ```json
 {
@@ -41,61 +36,55 @@
 }
 ```
 
-## 运行与预算字段
+## Runtime and budget fields
 
-预算单位为 token。物理窗口来自模型元数据或
-`provider.options.context_window` 或角色的
-`provider.model_profiles.<name>.context_window`，输入预算在物理窗口中扣除输出预留
-与额外余量；换窗使用预测输入和新增输入预留。算法见 [上下文策略](../context-policy.md)。
+Budgets use tokens. The physical context window comes from model metadata, `provider.options.context_window`, or `provider.model_profiles.<name>.context_window`. The input budget subtracts the output reserve and safety margin from that window. Rollover uses predicted input and a reserve for new input. See the [context policy](../context-policy.md) for the algorithm.
 
-| 字段 | 默认值 | 含义 |
-|---|---|---|
-| `agent.max_steps` | `null` | 可选的循环 step 上限 |
-| `agent.max_llm_calls` | `null` | 可选的主循环模型调用上限 |
-| `agent.automatic_rollover` | `true` | 启用自动换窗与上下文超限恢复 |
-| `agent.rollover_token_threshold` | `0` | 正值增加显式换窗 token 上限，零沿用窗口策略 |
-| `agent.rollover_trigger_ratio` | `0.95` | 以物理窗口比例提供触发上限，并受有效输入预算约束 |
-| `agent.reserve_tokens` | `16384` | 模型输出预留；支持输出上限的 transport 同时将其下发 |
-| `agent.headroom_tokens` | `null` | 自动余量为物理窗口的 2%，最多 8192；窗口未知时为 1024 |
-| `agent.evidence_token_budget` | `null` | 自动工具证据配额为 32000 与有效输入预算中的较小值；窗口未知时为 32000 |
-| `agent.working_set_token_budget` | `null` | 自动近期交互配额为 4096 与输入预算四分之一中的较小值；窗口未知时为 4096，设零可关闭此配额 |
-| `agent.next_turn_input_tokens` | `1024` | 新增调用与证据预留，上限为触发预算的八分之一 |
-| `agent.tool_workers` | `4` | 声明为 parallel 的工具批次的最大并发数 |
-| `agent.tool_timeout_seconds` | `120.0` | 单个工具执行超时秒数 |
-| `agent.watchdog_repeated_tool_limit` | `3` | 连续相同工具调用签名达到该次数后终止 |
+| Field | Default | Description |
+| --- | --- | --- |
+| `agent.max_steps` | `null` | Optional loop step limit |
+| `agent.max_llm_calls` | `null` | Optional model call limit for the main loop |
+| `agent.automatic_rollover` | `true` | Enable automatic rollover and context overflow recovery |
+| `agent.rollover_token_threshold` | `0` | A positive value adds an explicit rollover token limit; zero uses the window policy |
+| `agent.rollover_trigger_ratio` | `0.95` | Trigger cap as a fraction of the physical window, bounded by the effective input budget |
+| `agent.reserve_tokens` | `16384` | Output reserve, also sent as an output limit on supported transports |
+| `agent.headroom_tokens` | `null` | Automatic margin: 2% of the physical window, capped at 8192; 1024 if the window is unknown |
+| `agent.evidence_token_budget` | `null` | Automatic tool evidence quota: the smaller of 32000 and the effective input budget; 32000 if the window is unknown |
+| `agent.working_set_token_budget` | `null` | Automatic recent-interaction quota: the smaller of 4096 and one-quarter of the input budget; 4096 if the window is unknown; zero disables this quota |
+| `agent.next_turn_input_tokens` | `1024` | Reserve for new calls and evidence, capped at one-eighth of the trigger budget |
+| `agent.tool_workers` | `4` | Maximum concurrency for tool batches declared parallel |
+| `agent.tool_timeout_seconds` | `120.0` | Per-tool execution timeout in seconds |
+| `agent.watchdog_repeated_tool_limit` | `3` | Stop after this many consecutive identical tool call signatures |
 
-`prompt.instructions[].priority` 仅决定注入排序，可选 `instruction`（默认）和
-`context`，不影响是否纳入请求。旧值 `critical`、`high`、`medium`、`low` 不再接受；
-普通指令改用 `instruction`，需要排在事实上下文中的内容使用 `context`。
+`prompt.instructions[].priority` controls injection order only. Accepted values are `instruction` (default) and `context`; neither controls inclusion. The old values `critical`, `high`, `medium`, and `low` are no longer accepted. Use `instruction` for ordinary instructions and `context` for factual context.
 
-## 权限与执行环境字段
+## Permissions and execution environment
 
-| 字段 | 默认值 | 可选值或用途 |
-|---|---|---|
-| `execution_modes.default_mode` | `act` | `plan`、`build`、`act` |
-| `security.approval_policy` | `on-request` | `on-request` 按需审批；`never` 拒绝新增审批请求 |
-| `security.approval_router` | `mode` | `mode` 跟随模式；`user` 或 `auto` 固定审批路由 |
-| `security.sandbox.mode` | `workspace-write` | `read-only`、`workspace-write`、`danger-full-access` |
-| `security.sandbox.network_access` | `deny` | `deny`、`allow`，控制 Linux Agent Shell 网络 |
-| `skills.trust_project_skills` | `false` | 是否信任并发现项目技能 |
-| `paths.sessions_dir` | `null` | 覆盖默认项目 `.cade/sessions/` 存储位置 |
-| `paths.skills_dir` | `null` | 指定技能目录 |
-| `observability.audit_path` | `null` | 指定附加审计日志路径 |
+| Field | Default | Values or purpose |
+| --- | --- | --- |
+| `execution_modes.default_mode` | `act` | `plan`, `build`, or `act` |
+| `security.approval_policy` | `on-request` | `on-request` requests approval as needed; `never` denies new approval requests |
+| `security.approval_router` | `mode` | `mode` follows the execution mode; `user` or `auto` fixes the approval route |
+| `security.sandbox.mode` | `workspace-write` | `read-only`, `workspace-write`, or `danger-full-access` |
+| `security.sandbox.network_access` | `deny` | `deny` or `allow` for Linux agent shell networking |
+| `skills.trust_project_skills` | `false` | Trust and discover project skills |
+| `paths.sessions_dir` | `null` | Override the default project `.cade/sessions/` location |
+| `paths.skills_dir` | `null` | Set a skills directory |
+| `observability.audit_path` | `null` | Set an additional audit log path |
 
-Linux sandbox、结构化文件工具和外部服务的执行边界见
-[架构说明](../architecture.md#模式权限与执行环境)。
+See [Modes, permissions, and execution environment](../architecture.md#modes-permissions-and-execution-environment) for Linux sandbox, structured file tool, and external service boundaries.
 
-## 默认模型、连接与凭据
+## Default models, connections, and credentials
 
-三类设置分别保存：
+Store these settings separately:
 
-| 内容 | 位置 | 职责 |
-|---|---|---|
-| 默认选择 | settings 的 `default_provider`、`default_model`、`default_reasoning_effort` | 决定新会话使用哪个 provider、模型和 effort |
-| 连接参数 | `provider.connections.<provider>` | 保存 transport、自定义端点和可选 `api_key_env`，切换默认模型不删除连接 |
-| 认证凭据 | `~/.cade/auth.json`，按 provider 保存 | API key 与 OAuth 可以同时存在，登录不修改默认模型 |
+| Content | Location | Responsibility |
+| --- | --- | --- |
+| Default selection | `default_provider`, `default_model`, and `default_reasoning_effort` in settings | Select the provider, model, and effort for new sessions |
+| Connection parameters | `provider.connections.<provider>` | Store transport, custom endpoints, and optional `api_key_env`; changing model defaults does not remove connections |
+| Credentials | `~/.cade/auth.json`, keyed by provider | Keep API keys and OAuth credentials together; login does not change the default model |
 
-例如，把下面字段写入 `~/.cade/settings.json`，其余字段保留：
+For example, add these fields to `~/.cade/settings.json`, keeping other fields:
 
 ```json
 {
@@ -105,20 +94,11 @@ Linux sandbox、结构化文件工具和外部服务的执行边界见
 }
 ```
 
-内置默认是 `openai-codex` / `gpt-5.6-luna` / `high`。内置 provider 包括
-`openai-codex`（ChatGPT 登录）、`openai`（OpenAI API）、`deepseek`、`chatglm`、
-`mimo` 和 `custom`。OpenAI API 和 Codex 账户使用独立的 provider 身份；登录其中
-一个不会改变另一个的调用方式。模型选择先于凭据解析；所选 provider 缺少凭据时
-明确报错，不因另一个账号存在而改模型。
+Built-in defaults are `openai-codex` / `gpt-5.6-luna` / `high`. Built-in providers are `openai-codex` (ChatGPT login), `openai` (OpenAI API), `deepseek`, `chatglm`, `mimo`, and `custom`. OpenAI API and Codex accounts have separate provider identities. Logging in to one does not change how the other is called. Model selection precedes credential resolution. Missing credentials for the selected provider cause an explicit error, not a model change based on another account.
 
-`cade login --method api_key` 保存所选 provider 的 API key；`cade login` 的账号
-登录保存 OAuth。两者不修改启动默认值。`cade setup` 会明确选择默认模型，并把凭据
-单独写到认证存储。`cade auth status` 显示认证类型和状态，不能证明服务余额充足。
+`cade login --method api_key` saves an API key for the selected provider. Account login through `cade login` saves OAuth credentials. Neither changes startup defaults. `cade setup` explicitly selects a default model and stores credentials separately. `cade auth status` shows authentication type and status, not available account credit.
 
-`provider.options` 保存共享请求选项：`context_window`、`thinking`、
-`clear_thinking`、`tool_stream`、`response_format`。辅助角色由
-`provider.model_profiles` 配置，支持 `subagent`、`fallback`、`reviewer`、`judge`、
-`refiner`；不写的角色继承主模型，角色对象中未提供的字段继承主模型选项。例如：
+`provider.options` stores shared request options: `context_window`, `thinking`, `clear_thinking`, `tool_stream`, and `response_format`. `provider.model_profiles` configures the auxiliary roles `subagent`, `fallback`, `reviewer`, `judge`, and `refiner`. Omitted roles inherit the main model; omitted fields inherit main-model options. For example:
 
 ```json
 {
@@ -134,26 +114,14 @@ Linux sandbox、结构化文件工具和外部服务的执行边界见
 }
 ```
 
-API 凭据先查所选 provider 在 auth 中保存的 API key，再查 provider 专用环境变量
-或 `.env`。变量包括 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`MIMO_API_KEY`、
-`CHATGLM_API_KEY`（也接受 `ZHIPUAI_API_KEY`、`BIGMODEL_API_KEY`）。自定义连接可
-指定 `api_key_env`；默认 custom 使用 `API_KEY`。不把 OpenAI key 借给 DeepSeek。
-同名变量先查进程环境，再查包目录 `.env`、项目根 `.env`、项目 `cade/.env`。
-认证不再在配置发现阶段注入；`settings.json` 不保存 `api_key`、OAuth token 或
-`account_id`。旧的 `provider.model_profiles.main` 与 profile 内的连接、凭据字段
-不再接受。
+API credential resolution first checks the selected provider's stored API key, then its dedicated environment variable or `.env` entry. Variables include `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `MIMO_API_KEY`, and `CHATGLM_API_KEY` (also `ZHIPUAI_API_KEY` and `BIGMODEL_API_KEY`). Custom connections can specify `api_key_env`; the default custom provider uses `API_KEY`. Cade does not reuse an OpenAI key for DeepSeek.
 
-`cade exec --model provider/model --reasoning-effort high` 临时覆盖默认选择，
-在装配前生效；未单独配置的辅助角色随主模型继承。`--transport` 可显式选择协议。
-`/model`、`/effort`、`/context-window` 修改当前运行，保存启动默认值使用配置字段；
-会话切换不写全局配置。`provider.options.context_window` 可把大窗口模型限制在更小的
-窗口（如 `/config` 中的 Context Window 设为 `200k`）；切换模型时，沿用的上限超过新
-模型的窗口会被丢弃。
+For each variable, lookup checks the process environment, then `.env` in the package directory, project root, and project `cade/` directory. Authentication is not injected during configuration discovery. `settings.json` does not store `api_key`, OAuth tokens, or `account_id`. The old `provider.model_profiles.main` field and connection or credential fields inside profiles are no longer accepted.
 
-## 查看与修改
+`cade exec --model provider/model --reasoning-effort high` temporarily overrides defaults before assembly. Auxiliary roles without explicit overrides inherit from the main model. Use `--transport` to select a protocol explicitly.
 
-`cade config` 打开配置浏览器并写入项目配置；`cade config --config PATH` 指定
-写入目标。界面中的 `/config` 编辑项目 `cade.config.json`，两者使用同一个字段
-目录。保存后的配置在下一次装配应用时读取；运行期间可通过模型切换等专用入口
-更新能力，模型和静态权限策略替换要求 agent 空闲，发布边界见
-[组件与装配](../architecture.md#组件与装配)。
+`/model`, `/effort`, and `/context-window` affect the current runtime. Use configuration fields to save startup defaults; switching sessions does not write global settings. `provider.options.context_window` can restrict a model to a smaller window, such as `200k`. When switching models, an inherited cap larger than the new model's window is discarded.
+
+## Inspect and edit settings
+
+`cade config` opens the configuration browser and writes project settings. Use `cade config --config PATH` to select the target. In the interface, `/config` edits the project's `cade.config.json` using the same field catalog. Saved settings are read at the next application assembly. Dedicated runtime commands, such as model switching, update supported capabilities during a run. Model and static permission policy replacement require an idle agent. See [Components and assembly](../architecture.md#components-and-assembly) for publication boundaries.

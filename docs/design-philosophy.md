@@ -1,59 +1,33 @@
-# Cade 设计取舍
+# Cade design tradeoffs
 
-本文说明当前设计选择的收益、约束和维护代价。组件及运行行为统一由
-[架构说明](architecture.md) 描述，预算算法由 [上下文策略](context-policy.md)
-描述，工程规则由 [AGENTS.md](../AGENTS.md) 定义。
+This page explains the benefits, constraints, and maintenance costs of current design choices. The [architecture](architecture.md) defines components and behavior, the [context policy](context-policy.md) defines budgeting, and [AGENTS.md](../AGENTS.md) defines engineering rules.
 
-## 会话事实与请求投影
+## Session facts and request projections
 
-追加日志保留用户输入、模型输出、工具交互和换窗边界，使恢复、分支与审计共享
-事实来源。分支 head 决定当前历史位置，surface 决定模型当前可见的消息，二者
-分别承载历史选择和上下文选择。事件协议承担长期读取责任，修改持久结构时需要
-同步考虑编码、回放和分支校验。
+An append-only log preserves user input, model output, tool interactions, and rollover boundaries so recovery, branching, and audits share a factual source. The branch head selects history; the surface selects model-visible messages. Persistent event protocols must remain readable, so storage changes require coordinated encoding, replay, and branch validation.
 
-请求投影按模型窗口选择内容，原始工具结果留在日志或 artifact 中。大结果预览、
-历史引用和旧交互回收减少每次请求成本，按 ID 读取保留精确取证路径。模型需要
-重新读取被回收的证据，任务依赖的路径、验证状态和未完成事项需持续维护在 NOTE
-及其他受保护状态中。
+Request projections select content for the model window while original results remain in logs or artifacts. Previews, history references, and reclamation reduce request cost; ID-based retrieval preserves exact evidence. Models must reread reclaimed evidence. Paths, validation state, and unresolved work need ongoing maintenance in NOTE or other protected state.
 
-换窗使用已有消息、状态和操作索引构造工作集，减少额外模型总结的调用成本，保留
-工具调用配对与可追溯来源。工作集预算约束近期交互的携带量，必需输入超限时仍需
-调整模型窗口、任务规模或上下文来源。
+Rollover builds a working set from existing messages, state, and operation indexes. It avoids an extra model summarization call while preserving tool pairing and traceable sources. Working-set budgets limit recent interactions. If required input still exceeds the limit, adjust the model window, task scope, or context sources.
 
-## 配置发布与运行资源
+## Configuration publication and runtime resources
 
-不可变 composition 将 provider、工具 schema、配置和静态策略绑定为一个代际，
-一次运行可按 composition ID 追溯其装配。发布与活动运行分开，使请求在执行期间
-使用一致配置；取消、审批授权、连接和 inbox 保留各自的生命周期。
+Immutable composition binds providers, tool schemas, configuration, and static policy into a generation identified by a composition ID. Separating publication from active runs keeps request configuration consistent. Cancellation, grants, connections, and inboxes retain their own lifecycles.
 
-运行时维护 session 执行所有权，排队与纠偏通过持久 inbox 表达。持久输入可在
-重新启动后重建，进程内任务和网络连接需要重新建立。工具副作用与日志记录之间
-存在进程退出窗口，恢复依赖已记录事实及当前工作区核对。
+The runtime owns session execution. A persistent inbox represents queuing and steering and can be rebuilt after restart. In-process tasks and connections must be recreated. A process can exit between a tool side effect and its log record, so recovery depends on recorded facts and workspace inspection.
 
-## 权限与执行约束
+## Permissions and execution limits
 
-类型化 Action 将工具名称、目标路径和 Shell 语义转换为同一裁决输入，规则、
-路径边界、hooks 和 grant 使用统一 resolver。显式拒绝保留优先级，自动审批
-限于单次调用，减少长期授权由模型判断累积的范围。
+Typed `Action` values convert tool names, paths, and shell semantics into common decision inputs. Rules, path boundaries, hooks, and grants share a resolver. Explicit denial retains precedence. Automatic approval applies to one call, limiting the accumulation of long-lived model-approved access.
 
-审批允许动作开始，OS sandbox 限制命令实际可访问的资源。两种边界共同处理
-可预判动作与命令运行时行为，Linux namespace 隔离覆盖 Agent Shell。MCP server
-和受信任 hooks 使用宿主权限，其部署环境需要承担独立的进程访问控制。
+Approval allows an action to start; OS sandboxing limits accessible resources. Together, they cover anticipated actions and runtime behavior. Linux namespace isolation covers Agent Shell. MCP servers and trusted hooks use host permissions and need separate process access controls in their deployment environment.
 
-文件撤销采用用户轮次快照，便于把一次任务的变更作为整体查看。恢复前检查结束
-快照与当前文件，降低覆盖后续编辑的概率；大小、排除规则和删除文件处理限制
-撤销覆盖，冲突可形成部分恢复结果。
+File undo uses user-turn snapshots so a task's changes can be reviewed together. Comparing ending snapshots with current files reduces the risk of overwriting later edits. Size limits, exclusions, and deleted-file handling constrain coverage. Conflicts can produce partial restoration.
 
-## 扩展与宿主
+## Extensions and hosts
 
-Provider、Shell、FileSystem 和工具协议对应现有替换点，将网络、文件与进程访问
-放在明确边界。产品 registry 选择能力，harness 负责运行和权限，宿主消费事件与
-render intent。新增能力需要同时表达执行语义、权限目标、持久结果和生命周期。
+Provider, Shell, FileSystem, and tool protocols are replacement boundaries for network, file, and process access. Product registries select capabilities. Harness owns runtime and permissions. Hosts consume events and render intents. New capabilities need explicit execution semantics, permission targets, persistent results, and lifecycle handling.
 
-Skills 先提供目录，再按需加载正文，减少常驻上下文；Memory 保存带来源的少量
-跨会话知识，普通文件工具提供按需读取。两种能力都依赖模型选择使用时机，其内容
-通过实际工具权限边界参与任务。
+Skills publish summaries before loading full instructions on demand. Memory stores sourced cross-session knowledge for ordinary file reads. Both depend on the model choosing when to use them; resulting actions remain subject to tool permissions.
 
-子代理采用独立持久会话，父任务通过自包含 prompt、子运行事件和工具结果交换
-信息，支持释放实例后续接。父权限域、直接父会话控制和有界委派深度限制运行范围；
-父宿主需要管理取消传播、冷恢复和依赖关闭。
+Subagents use independent persistent sessions. Parents exchange self-contained prompts, child-run events, and tool results, supporting continuation after an instance is released. Parent permission domains, direct-parent control, and bounded delegation depth constrain execution. Parent hosts manage cancellation propagation, cold recovery, and dependency shutdown.

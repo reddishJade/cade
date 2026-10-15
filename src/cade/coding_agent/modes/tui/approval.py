@@ -10,10 +10,10 @@ def tool_preview_lines(tool: ToolSpec, action_input: ToolInput) -> list[str]:
     """生成 TUI 授权预览内容。"""
     lines: list[str] = []
 
-    # Tool name
+    # 工具名称。
     lines.append(f"[bold]Tool:[/bold] {tool.name}")
 
-    # ToolInput is always dict[str, Any]
+    # ToolInput 始终为 dict[str, Any]。
     if tool.name == "edit":
         _preview_edit_file(action_input, lines)
     elif tool.name == "bash":
@@ -74,7 +74,7 @@ def _preview_edit_file(action_input: dict, lines: list[str]) -> None:
         lines.append("[yellow]Replace all occurrences[/yellow]")
 
     if old_text or new_text:
-        # Show compact diff snippet
+        # 显示精简的差异片段。
         old_snippet = old_text[:280].replace("\n", "¶ ")
         new_snippet = new_text[:280].replace("\n", "¶ ")
         if old_snippet:
@@ -186,7 +186,7 @@ def _preview_write_file(action_input: dict, lines: list[str]) -> None:
     content = action_input.get("content", "")
     lines.append(f"[bold]File:[/bold] {path}")
     if content:
-        # Show first/last lines of content
+        # 显示内容的开头和结尾。
         content_lines = content.split("\n")
         display_lines: list[str] = []
         for cl in content_lines[:10]:

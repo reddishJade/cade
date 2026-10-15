@@ -1,82 +1,73 @@
-# 快速上手指南
+# Quickstart
 
-只需三步，即可让 Cade 在你的项目中跑起来，协助你分析代码、执行重构或编写新功能。
+Start Cade in your project to analyze code, refactor it, or implement a feature.
 
----
+## Configure a model and API key
 
-## 1. 配置模型与 API Key
+Cade defaults to `gpt-5.6-luna` through Codex login with `high` reasoning effort. You can keep API keys for other providers at the same time. Settings select the default model independently of authentication.
 
-Cade 默认使用 Codex 登录的 `gpt-5.6-luna`，reasoning effort 为 `high`。
-其他 provider 的 API key 可以同时保留；默认模型在 settings 中独立选择。
-
-最快捷的方式是通过环境变量设置你的 API Key：
+To supply an API key through the environment:
 
 ```bash
-# 方式 A：直接设置环境变量（以 DeepSeek 为例）
+# 方式 A：设置 DeepSeek 环境变量
 export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
 
-# 方式 B：或者设置标准的 OpenAI 环境变量
+# 方式 B：设置标准 OpenAI 环境变量
 export OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
-# 若使用第三方转发网关或自建服务，可同时指定 BASE_URL
+# 第三方网关或自建服务也可指定 BASE_URL
 export OPENAI_BASE_URL="https://api.deepseek.com/v1"
 ```
 
-你也可以直接进入目标项目目录，在项目根目录下创建 `.env` 文件写入上述配置，Cade 启动时会自动读取。
+You can also put these settings in a `.env` file in the target project root. Cade reads it on startup.
 
----
+## Start the terminal interface
 
-## 2. 启动 Cade 交互终端
-
-进入你想要操作的代码仓库根目录，直接输入 `cade` 启动：
+From the repository you want to work on, run:
 
 ```bash
 cd /path/to/your/project
 cade
 ```
 
-首次启动时，如果没有检测到已配置的密钥，Cade 会弹出友好的初始化向导（Setup Wizard），引导你选择模型提供商并输入 API Key。
+If no configured key is found on first startup, the setup wizard prompts you to select a provider and enter an API key.
 
-成功进入后，你将看到 Cade 的终端 TUI 界面，底部包含当前工作模式（默认 `act`）、活跃模型与上下文状态。
+The TUI shows the current execution mode (`act` by default), active model, and context status at the bottom.
 
----
+## Complete a task
 
-## 3. 完成你的第一个任务
+### Investigate in Plan mode
 
-### 场景一：让 Cade 先行调研，不破坏代码（Plan 模式）
-
-如果你想先让 Cade 调研代码结构，输出方案而不随意改动代码：
+To inspect the code and propose changes first:
 
 ```text
 > /mode plan
-> 梳理当前项目的认证模块实现，指出存在的安全风险，并输出重构方案
+> Review the authentication module. Identify security risks and propose a refactoring plan.
 ```
 
-在此模式下，Cade 仅能使用只读工具（如 `read_file`、`grep_search`）探索代码，所有方案会规整地写入 `.cade/plans/` 目录中供你查阅。
+Plan mode uses read-only exploration tools and writes plans to `.cade/plans/` for review. See [Execution modes](modes.md) for the shell review rules.
 
-### 场景二：让 Cade 自动编码并运行测试（Build 模式）
+### Implement and test in Build mode
 
-当你确定了需求，想让 Cade 一口气完成编码、修改与测试验证时：
+When the requirements are clear:
 
 ```text
 > /mode build
-> 为 src/utils.py 中的 format_date 函数添加单元测试，并运行 pytest 确保通过
+> Add unit tests for format_date in src/utils.py. Run pytest and verify that they pass.
 ```
 
-在 `build` 模式下，Cade 会自动检索文件、调用 `edit_file` 精确修改，并通过内置的审查机制自动运行 `pytest` 校验效果，无需你反复手动敲回车批准。
+In Build mode, Cade searches files, applies edits, and submits shell commands such as `pytest` to the built-in review mechanism without asking you to approve each file change.
 
-### 场景三：随时撤销改动
+### Undo changes
 
-如果 Cade 修改的结果不符合预期，直接输入：
+If the result is not what you expected, enter:
 
 ```text
 > /undo
 ```
 
-Cade 拥有基于快照的文件级回滚能力，一秒钟即可将最近一次工具执行所修改的文件恢复至修改前的状态。
+Cade uses file snapshots to restore changes. See [Sessions and undo](sessions.md) for the undo boundary.
 
----
+## Exit and resume
 
-## 4. 退出与继续工作
-
-- **退出终端**：输入 `/exit` 或连续按两次 `Ctrl+C`。
-- **继续上次未完成的工作**：再次进入目录时运行 `cade`，输入 `/continue` 即可无缝衔接上一轮会话的历史状态。
+- To exit, enter `/exit` or press Ctrl+C twice while idle with an empty input.
+- To resume work, return to the project directory and run `cade -c`.

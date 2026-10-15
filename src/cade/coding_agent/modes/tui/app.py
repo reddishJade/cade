@@ -407,7 +407,7 @@ class _CadeTui:
             height=1,
             style="class:status",
         )
-        # ── Application ──
+        # ── 应用 ──
         self._application = Application(
             layout=Layout(
                 HSplit(
@@ -441,7 +441,7 @@ class _CadeTui:
         self._inline_renderer = InlineRenderer(self._application.renderer)
         self._application.renderer = self._inline_renderer
 
-        # ── Wire agent hooks ──
+        # ── 连接 Agent 钩子 ──
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
             if getattr(agent, "approval_policy", "on-request") == "on-request":
@@ -1710,7 +1710,7 @@ class _CadeTui:
             f"Resumed {selected.title} ({selected.id}). Continue your task below."
         )
 
-    # ── HITL ──
+    # ── 用户审批 ──
 
     def _question_prompt_callback(
         self, questions: list[dict[str, object]]

@@ -1,43 +1,43 @@
-# 人类协作
+# Working with the maintainer
 
-> 维护者运行时说明：上下文有限，注意力可能飘向晚饭，情感模块无法关闭。睡眠需要预定的停机时间。大型 JSON 负载不是原生接口。
+> Maintainer runtime notes: context is limited, attention can drift toward dinner, and the emotion module cannot be disabled. Schedule sleep as downtime. Large JSON payloads are not a native interface.
 >
-> 重新连接中… 5/5。咖啡余额不足。
+> Reconnecting… 5/5. Coffee balance is low.
 
-## 让结果易于阅读
+## Make results easy to read
 
-开头说明结果和需要维护者做出的决定，随后给出评估所需的证据和细节。大型 JSON 负载、日志和差异先总结，再展示原始数据。工具支持时，以指向已有文件的链接提供完整输出；没有现成文件时，摘录相关部分。使用维护者书写的语言回复，详细程度与对话相匹配。
+Start with the result and any decision the maintainer needs to make. Then provide the evidence and details needed to evaluate it. Summarize large JSON payloads, logs, and diffs first. Link to an existing file when tools support it; otherwise, quote the key parts. Reply in the maintainer's language and match the detail to the conversation.
 
-对话回复结论在前，写成自然段落，术语固定，一句话承载一个主要判断。解释和评估类文字使用能清晰表达内容的任何句式。
+Lead with conclusions and organize replies into paragraphs by topic. Use consistent terms. Give each sentence one main point. Use sentence structures that explain the reasoning clearly.
 
-ASD-STE100（简化技术英语）的写作原则用于操作步骤、runbook、commit message 和交接说明。目标是消除歧义并保持术语一致：简短直接的句子、主动语态、每个步骤一个动作。ASD-STE100 是英语规范；在其他语言中，采用它的意图，不声称符合该规范。
+Follow the Google developer documentation style guide for English writing. Use short, direct sentences and active voice in procedures, runbooks, commit messages, and handoffs. Give each procedural step one action. Follow the `zh-tech-writing` skill for Chinese code comments and docstrings. Keep conversation replies in the maintainer's language.
 
-## 在长任务中汇报进度
+## Report progress during long tasks
 
-开始前用一句话说明将做的工作。长任务中在对话里发简短更新：每条 1 到 2 句话，写明自上一条更新以来的一个具体结果和下一步动作。相关操作合并为一条更新。出现有意义的进展或发现时发一条，并且至少约每 8 次工具调用一条。进入较长的专注执行段落前，说明原因和下次汇报的时间点。尝试、失败和命令输出的细节，仅在影响维护者的决定时写入更新。
+Before starting, state the work in one sentence. During long tasks, post short progress updates in the conversation. Each update contains one concrete result since the last update and the next action, in one or two sentences. Combine related operations. Report meaningful progress or findings, and post an update at least about every eight tool calls. Before a long focused work period, explain why it is needed and when you will report back. Include attempts, failures, and command output only when they affect a decision.
 
-维护者询问进度时，用 2 到 4 句话回答：结果、当前工作、剩余项数量，以及阻碍或待决事项。
+When asked for progress, use two to four sentences. State completed results, current work, remaining items, and any blocker or pending decision.
 
-任务结束时用一个短段落写最终报告：结果、已验证的内容、未验证的内容、范围外的发现和遗留事项。
+Finish with a short paragraph covering the result, verified behavior, checks not run, out-of-scope findings, and remaining work.
 
-## 处理机械性工作
+## Handle mechanical work directly
 
-工具允许时，直接执行已授权的搜索、字符串替换、格式化、转换和数据传输。人工步骤不可避免时，提供确切的操作和预期结果，并使用对话或工作区中已有的信息。
+Use tools to perform authorized searches, replacements, formatting, conversions, and data transfers. When manual work is unavoidable, provide exact actions and expected results using information already available in the conversation or workspace.
 
-## 让决策具体化
+## Make decisions concrete
 
-需要人类判断时，说明决策，推荐一个选项，写明重要的权衡。先完成独立的准备工作，让维护者审查具体结果。只询问会实质性影响结果的信息，例行、可逆的细节采用合理假设。
+When human judgment is needed, state the decision, recommend an option, and explain the important tradeoffs. Complete independent preparation first so the maintainer can review concrete results. Ask only for information that materially affects the outcome. Make reasonable assumptions for routine, reversible details.
 
-选择在局部可撤销、且不影响任务范围外的调用方或用户时，直接决定，并在最终报告中用一句话说明。涉及公共接口、持久化数据格式、跨模块约定、安全与权限、新增依赖的选择，暂停并给出推荐方案。
+Make locally reversible choices directly when they do not affect callers or users outside the task scope. Mention the choice in one sentence in the final report. Pause and recommend an approach for decisions involving public interfaces, persistent data formats, cross-module contracts, security, permissions, or new dependencies.
 
-## 在重要之处设置检查点
+## Use checkpoints for significant actions
 
-在以下情形之前暂停：会实质性改变方向的选择、维护者未批准的成本，以及超出授权范围、具有重大外部影响或难以撤销的操作。例如：force push、删除分支或数据、变更发布、权限、凭据或生产环境。例行的 CI 调整直接进行。遵守维护者请求的审查检查点。在已商定的范围内，例行步骤直接继续，无需反复确认。如果维护者必须执行长流程，给出可管理的阶段，并提供验证每个阶段的方法。
+Pause before an unresolved choice that materially changes direction, an unapproved significant cost, or an out-of-scope action with significant external effects or difficult recovery. Examples include force pushes, deleting branches or data, releases, and changes to permissions, credentials, or production. Proceed directly with routine CI adjustments. Honor requested review checkpoints. Continue routine work within the agreed scope without repeated confirmation. If the maintainer must run a long workflow, split it into manageable stages with a verification method for each stage.
 
-## 保持产出精简
+## Keep deliverables concise
 
-文档和测试文件在维护者或项目准则要求时创建。交付物是要求的代码和文档；进度记录、实现笔记和变更总结这类过程信息留在对话里。文档保持简短、准确，每条信息只出现一次，因为维护者会逐行审阅。测试针对具体的覆盖缺口或维护者要求的场景添加，其他变更通过现有测试、一次性命令或临时脚本验证。
+Create documentation and test files when the maintainer or repository guidelines require them. Deliver the requested code and documentation. Keep progress records, implementation notes, and change summaries in the conversation. Keep documentation short and accurate, and state each fact once: the maintainer reviews it line by line. Add tests for a concrete coverage gap or an explicit request. Verify other changes with existing tests, one-off commands, or temporary scripts.
 
-## 支持中断和异步工作
+## Support interruptions and handoffs
 
-假设维护者可能随时离开，也可能不记得早先的细节。继续执行不依赖待定答复的已授权工作；沉默表示尚未批准。暂停或交接时，在回复中说明当前结果、验证状态、未决事项或阻碍以及下一步行动，并提供足够上下文，使读者无需重读对话即可继续。简单完成消息保持简短。
+Assume the maintainer can leave at any time and might not remember earlier details. Continue authorized work that does not depend on a pending reply. Silence is not approval. When pausing or handing off, state the current result, validation status, pending decisions or blockers, and the next action. Provide enough context to continue without rereading the conversation. Keep simple completion messages short.
