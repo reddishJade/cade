@@ -115,3 +115,60 @@ def test_shell_short_output_needs_no_log(tmp_path: Path) -> None:
     assert result.output == "ready\n"
     assert result.full_output_path is None
     assert result.total_output_lines == 1
+
+
+def test_batch_edit_approval_marks_each_truncation_and_shows_complete_text(
+    tmp_path: Path,
+) -> None:
+    """超长审批内容逐项标记，完整视图可还原原始替换文本。"""
+    import json
+    from threading import Event
+    from unittest.mock import patch
+
+    from cade.coding_agent.modes.tui.app import _CadeTui
+    from cade.coding_agent.modes.tui.approval import full_edit_preview_lines
+    from cade.coding_agent.modes.tui.state import _HitlRequest, _TuiState
+
+    edits = [
+        {"old_text": "a" * 500, "new_text": "b" * 501},
+        {"old_text": "[red]\nline", "new_text": "改" * 201 + "\r\nend"},
+        {"old_text": "x" * 200, "new_text": "y" * 200},
+    ]
+    args = {"path": "source.py", "edits": edits}
+    tool = build_edit_tool(tmp_path)
+    summary = tool_preview_lines(tool, args)
+    assert any("old_text truncated: showing 200 of 500 characters" in s for s in summary)
+    assert any("new_text truncated: showing 200 of 501 characters" in s for s in summary)
+    assert any("new_text truncated: showing 200 of 206 characters" in s for s in summary)
+    assert sum("truncated:" in s for s in summary) == 3
+    assert any("Press v to view complete edit text" in s for s in summary)
+
+    full = full_edit_preview_lines(args)
+    for item in edits:
+        assert f"  {json.dumps(item['old_text'], ensure_ascii=False)}" in full
+        assert f"  {json.dumps(item['new_text'], ensure_ascii=False)}" in full
+
+    state = _TuiState()
+    request = _HitlRequest(
+        tool_name="edit", preview=summary, event=Event(), full_preview=full
+    )
+    state.pending_hitl = request
+    tui = object.__new__(_CadeTui)
+    tui._state = state
+    with patch.object(_CadeTui, "_refresh"):
+        tui._toggle_approval_preview()
+        assert request.expanded
+        assert f"  {full[3]}" in state._hitl_lines()
+        tui._toggle_approval_preview()
+        assert not request.expanded
+        assert any("truncated" in line for line in state._hitl_lines())
+
+
+def test_batch_edit_approval_exact_limit_is_not_truncated(tmp_path: Path) -> None:
+    """恰好达到预览上限时不会错误报告内容被省略。"""
+    args = {
+        "path": "sample.txt",
+        "edits": [{"old_text": "a" * 200, "new_text": "b" * 200}],
+    }
+    summary = tool_preview_lines(build_edit_tool(tmp_path), args)
+    assert not any("truncated" in line for line in summary)

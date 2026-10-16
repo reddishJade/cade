@@ -58,6 +58,8 @@ class _HitlRequest:
     preview: list[str]
     event: Event
     result: HITLResult | None = None
+    full_preview: list[str] | None = None
+    expanded: bool = False
 
 
 @dataclass
@@ -707,7 +709,13 @@ class _TuiState:
             return []
         lines: list[str] = []
         lines.append("? Authorization request")
-        for line in self.pending_hitl.preview:
+        request = self.pending_hitl
+        preview = (
+            request.full_preview
+            if request.expanded and request.full_preview is not None
+            else request.preview
+        )
+        for line in preview:
             lines.append(f"  {line}")
         return lines
 

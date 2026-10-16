@@ -80,7 +80,11 @@ from cade.harness.agent_runtime.events import (
 )
 from cade.harness.snapshot import SnapshotStore, SnapshotUnsupportedError
 
-from .approval import approval_scope_lines, tool_preview_lines
+from .approval import (
+    approval_scope_lines,
+    full_edit_preview_lines,
+    tool_preview_lines,
+)
 from .chrome import TUI_STYLES, compact_path, fit_text, status_line, welcome_text
 from .command_output import TerminalCommandOutput
 from .commands import run_host_command
@@ -290,6 +294,7 @@ class _CadeTui:
             KeyBindings, self._approval_choices.control.key_bindings
         )
         approval_bindings.add("enter")(lambda _event: self._accept_approval_choice())
+        approval_bindings.add("v")(lambda _event: self._toggle_approval_preview())
         self._command_choices: RadioList[object] = RadioList(
             [(None, "")],
             show_numbers=True,
@@ -1835,20 +1840,33 @@ class _CadeTui:
     def _approval_callback(self, approval: ApprovalRequest) -> HITLResult:
         from cade.harness.security import HITLResult
 
+        scope_preview = [
+            _strip_rich_markup(line)
+            for line in approval_scope_lines(
+                approval.tool, approval.action_input, approval.allowed_scopes
+            )
+        ]
         request = _HitlRequest(
             tool_name=approval.tool.name,
             preview=[
-                _strip_rich_markup(line)
-                for line in (
-                    tool_preview_lines(approval.tool, approval.action_input)
-                    + approval_scope_lines(
-                        approval.tool,
-                        approval.action_input,
-                        approval.allowed_scopes,
+                *(
+                    _strip_rich_markup(line)
+                    for line in tool_preview_lines(
+                        approval.tool, approval.action_input
                     )
-                )
+                ),
+                *scope_preview,
             ],
             event=Event(),
+            full_preview=(
+                [
+                    "Tool: edit",
+                    *full_edit_preview_lines(approval.action_input),
+                    *scope_preview,
+                ]
+                if approval.tool.name == "edit"
+                else None
+            ),
         )
         self._state.pending_hitl = request
 
@@ -1882,6 +1900,14 @@ class _CadeTui:
             args=(None, None),
             daemon=True,
         ).start()
+
+    def _toggle_approval_preview(self) -> None:
+        """在审批时切换编辑摘要和完整替换文本。"""
+        request = self._state.pending_hitl
+        if request is None or request.full_preview is None:
+            return
+        request.expanded = not request.expanded
+        self._refresh()
 
     def _accept_approval_choice(self) -> None:
         choice = self._approval_choices.current_value

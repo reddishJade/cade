@@ -37,3 +37,5 @@ The `edit` tool checks that the model is not editing stale content:
    File modified since last read. Please read again before editing.
    ```
 3. Successful changes can be restored through the snapshot mechanism with `/undo`.
+
+During TUI approval, edit previews label each truncated old/new text with the displayed and original character counts. Press `v` to toggle the complete, JSON-escaped replacement text before approving.
