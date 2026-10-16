@@ -11,11 +11,11 @@ from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_mutation_queue import with_file_mutation
 from .utils import (
-    _diff_preview,
+    diff_preview,
     _display,
-    _ensure_write_size,
-    _write_safe_path,
-    _write_text,
+    ensure_write_size,
+    write_safe_path,
+    write_text,
 )
 
 WRITE_FILE_SCHEMA = {
@@ -73,7 +73,7 @@ def write_file_content(
     root: Path,
     operations: FileSystem,
     data: ToolInput,
-) -> str:
+) -> ToolOutput:
     request = _parse_write_file_request(root, operations, data)
     return with_file_mutation(
         request.path,
@@ -89,13 +89,13 @@ def _parse_write_file_request(
     path_str = str(data.get("path", "")).strip()
     if not path_str:
         raise ValueError("path is required")
-    path = _write_safe_path(root, path_str)
+    path = write_safe_path(root, path_str)
     if operations.exists(path) and operations.is_dir(path):
         raise ValueError(f"path is a directory: {_display(root, path)}")
     if "content" not in data:
         raise ValueError("content is required")
     content = str(data.get("content", ""))
-    _ensure_write_size(content)
+    ensure_write_size(content)
     return WriteFileRequest(path=path, content=content)
 
 
@@ -118,10 +118,10 @@ def _write_file_impl(
     desired_bom = desired_bom or new_has_bom
     clean_content = request.content[1:] if new_has_bom else request.content
 
-    diff = _diff_preview(display, old_content, clean_content)
+    diff = diff_preview(display, old_content, clean_content)
 
     encoding = "utf-8-sig" if desired_bom else "utf-8"
-    _write_text(request.path, clean_content, encoding, operations)
+    write_text(request.path, clean_content, encoding, operations)
 
     return ToolOutput(
         f"wrote file: {display}\n{diff}",

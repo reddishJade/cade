@@ -12,13 +12,13 @@ from cade.harness.execution_env import FileSystem, LocalFileSystem
 from .file_mutation_queue import with_file_mutation
 from .text_edit import apply_text_replacement, normalize_to_lf
 from .utils import (
-    _diff_preview,
+    diff_preview,
     _display,
-    _ensure_write_size,
-    _first_changed_line,
-    _read_text,
-    _write_safe_path,
-    _write_text,
+    ensure_write_size,
+    first_changed_line,
+    read_text,
+    write_safe_path,
+    write_text,
 )
 
 EDIT_FILE_SCHEMA = {
@@ -88,7 +88,7 @@ def edit_file_content(
     root: Path,
     operations: FileSystem,
     data: ToolInput,
-) -> str:
+) -> ToolOutput:
     request = _parse_edit_file_request(root, operations, data)
     return with_file_mutation(
         request.path,
@@ -104,7 +104,7 @@ def _parse_edit_file_request(
     path_str = str(data.get("path", "")).strip()
     if not path_str:
         raise ValueError("path is required")
-    path = _write_safe_path(root, path_str)
+    path = write_safe_path(root, path_str)
     if operations.exists(path) and operations.is_dir(path):
         raise ValueError(f"path is a directory: {_display(root, path)}")
     if not operations.is_file(path):
@@ -130,7 +130,7 @@ def _edit_file_impl(
     operations: FileSystem,
 ) -> ToolOutput:
     path = request.path
-    before, encoding = _read_text(path, operations)
+    before, encoding = read_text(path, operations)
     old_text = request.old_text
     new_text = request.new_text
     display = _display(root, path)
@@ -155,11 +155,11 @@ def _edit_file_impl(
         raise ValueError(f"No changes made to {display}.")
 
     total = before.count(old_text) if request.replace_all else 1
-    _ensure_write_size(updated)
-    _write_text(path, updated, encoding, operations)
+    ensure_write_size(updated)
+    write_text(path, updated, encoding, operations)
 
-    patch = _diff_preview(display, before, updated)
-    first_line = _first_changed_line(before, updated)
+    patch = diff_preview(display, before, updated)
+    first_line = first_changed_line(before, updated)
     return ToolOutput(
         f"edited file: {display} replacements={total}\n{patch}",
         metadata={"patch": patch, "first_changed_line": first_line},

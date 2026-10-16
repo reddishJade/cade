@@ -18,7 +18,7 @@ from .path_utils import (
 MAX_WRITE_BYTES = 1_000_000
 
 
-def _write_safe_path(root: Path, raw_path: str) -> Path:
+def write_safe_path(root: Path, raw_path: str) -> Path:
     path_str = raw_path.strip().strip("\"'")
     if not path_str:
         raise ValueError("path is required")
@@ -28,14 +28,14 @@ def _write_safe_path(root: Path, raw_path: str) -> Path:
     return filepath
 
 
-def _safe_path(root: Path, raw_path: str) -> Path:
+def safe_path(root: Path, raw_path: str) -> Path:
     path = resolve_project_path(root, raw_path)
     if is_path_blocked(root, path):
         raise ValueError(f"path is blocked: {display_path(root, path)}")
     return path
 
 
-def _read_text(path: Path, operations: FileSystem) -> tuple[str, str]:
+def read_text(path: Path, operations: FileSystem) -> tuple[str, str]:
     data = operations.read_bytes(path)
     encoding = "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8"
     try:
@@ -45,7 +45,7 @@ def _read_text(path: Path, operations: FileSystem) -> tuple[str, str]:
     raise UnicodeDecodeError("utf-8", data, 0, 1, "file is not valid UTF-8 text")
 
 
-def _write_text(
+def write_text(
     path: Path,
     text: str,
     encoding: str,
@@ -54,13 +54,13 @@ def _write_text(
     operations.write_bytes(path, text.encode(encoding))
 
 
-def _ensure_write_size(text: str) -> None:
+def ensure_write_size(text: str) -> None:
     size = len(text.encode("utf-8"))
     if size > MAX_WRITE_BYTES:
         raise ValueError(f"write content too large: {size} bytes")
 
 
-def _diff_preview(path: str, before: str, after: str) -> str:
+def diff_preview(path: str, before: str, after: str) -> str:
     lines = unified_diff(
         before.splitlines(keepends=True),
         after.splitlines(keepends=True),
@@ -70,7 +70,7 @@ def _diff_preview(path: str, before: str, after: str) -> str:
     return "".join(lines)
 
 
-def _first_changed_line(before: str, after: str) -> int | None:
+def first_changed_line(before: str, after: str) -> int | None:
     before_lines = before.splitlines()
     after_lines = after.splitlines()
     for index, (before_line, after_line) in enumerate(

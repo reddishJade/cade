@@ -16,7 +16,7 @@ from .path_utils import (
     resolve_absolute_path,
     truncate_output,
 )
-from .utils import _display, _read_text, _safe_path
+from .utils import _display, read_text, safe_path
 
 READ_FILE_SCHEMA = {
     "type": "object",
@@ -39,7 +39,7 @@ READ_FILE_SCHEMA = {
 }
 
 
-def build_read_file_tool(
+def build_read_tool(
     project_root: Path,
     operations: FileSystem | None = None,
     cancel_event: threading.Event | None = None,
@@ -304,11 +304,11 @@ def _read_directory(
 def read_project_text_file(project_root: Path, raw_path: str) -> str:
     operations = LocalFileSystem()
     root = project_root.resolve()
-    path = _safe_path(root, raw_path)
+    path = safe_path(root, raw_path)
     if not operations.is_file(path):
         raise ValueError(f"not a file: {_display(root, path)}")
     size = operations.size(path)
     if size > MAX_FILE_READ_BYTES:
         raise ValueError(f"file too large: {size} bytes")
-    text, _encoding = _read_text(path, operations)
+    text, _encoding = read_text(path, operations)
     return truncate_output(text)
