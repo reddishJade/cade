@@ -5,11 +5,7 @@ from __future__ import annotations
 import codecs
 import tempfile
 from contextlib import ExitStack
-from typing import Protocol
-
-
-class _WriteStream(Protocol):
-    def write(self, data: bytes) -> int: ...
+from typing import BinaryIO, cast
 
 
 class OutputCapture:
@@ -18,7 +14,7 @@ class OutputCapture:
     def __init__(self, max_bytes: int = 50 * 1024) -> None:
         self._max_bytes = max_bytes
         self._data = bytearray()
-        self._stream: _WriteStream | None = None
+        self._stream: BinaryIO | None = None
         self._stack = ExitStack()
         self._path: str | None = None
         self._newlines = 0
@@ -38,7 +34,7 @@ class OutputCapture:
             )
             self._path = stream.name
             stream.write(self._data)
-            self._stream = stream
+            self._stream = cast(BinaryIO, stream)
 
         if self._stream is not None:
             self._stream.write(data)
