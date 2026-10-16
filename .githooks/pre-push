@@ -2,12 +2,32 @@
 set -euo pipefail
 
 while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/dev|refs/heads/main)
+      if [[ "$local_sha" =~ ^0+$ ]]; then
+        printf 'Do not delete dev or main.\n' >&2
+        exit 1
+      fi
+      if [[ ! "$remote_sha" =~ ^0+$ ]] &&
+        ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+        printf 'Only fast-forward pushes are allowed for dev and main. Fetch before pushing.\n' >&2
+        exit 1
+      fi
+      if [[ "$remote_ref" == refs/heads/main ]]; then
+        remote_dev_sha="$(git ls-remote --exit-code "$2" refs/heads/dev | cut -f1)"
+        if [[ "$local_sha" != "$remote_dev_sha" ]]; then
+          printf 'Promote only the current remote dev commit to main. Push dev first.\n' >&2
+          exit 1
+        fi
+      fi
+      ;;
+  esac
   if [[ "$local_sha" =~ ^0+$ ]]; then
     continue
   fi
   case "$remote_ref" in
-    refs/heads/internal/*|refs/heads/backup/*|refs/heads/experiment/*|refs/heads/exp/*|refs/heads/eval)
-      printf 'Keep internal and experimental branches in cade-internal: %s\n' "$remote_ref" >&2
+    refs/heads/internal/*|refs/heads/backup/*|refs/heads/eval)
+      printf 'Keep internal branches in cade-internal: %s\n' "$remote_ref" >&2
       exit 1
       ;;
   esac

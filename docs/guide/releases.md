@@ -24,7 +24,9 @@ uv pip show cade-agent
 
 Before the first release, configure these GitHub rules:
 
-- Require CI checks for `main` and `dev` and restrict force pushes and deletion.
+- Prohibit force pushes and deletion for `main` and `dev`. Allow merge commits on both branches.
+- Require CI checks only for `main`. Do not require PRs for either branch. `dev` accepts direct development and experimental branch merges without a required status check.
+- Promote only the current remote `dev` commit to `main`. Install the [pre-push hook](../development.md#environment-setup) to enforce this rule locally; GitHub branch protection does not enforce the source branch.
 - Restrict creation of `v*` tags and prohibit updates or deletion of existing tags.
 - Create a `release` environment that permits deployment only from `v*` tags and requires approval. A sole maintainer can allow self-review.
 

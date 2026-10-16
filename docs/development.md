@@ -1,6 +1,6 @@
 # Development guide
 
-`reddishJade` maintains this repository alone. Create and merge your own PRs. Product PRs trigger CI and do not require another person's review.
+`reddishJade` maintains this repository alone. Develop regular product changes directly on `dev`. Use a separate branch only for an explicitly experimental feature. `dev` accepts direct pushes and merges without requiring a PR or a passing CI check. CI still runs on pushes to `dev` and `main`.
 
 | Repository | Content | Branches |
 | --- | --- | --- |
@@ -19,13 +19,12 @@ install -m 755 .githooks/pre-push "$(git rev-parse --git-path hooks/pre-push)"
 
 ## Daily product development
 
-Create a short-lived branch from the latest `dev` for one task:
+Start regular development on `dev`:
 
 ```sh
 cd ~/workspace/cade
 git switch dev
 git pull --ff-only origin dev
-git switch -c fix/short-description
 ```
 
 After editing, run the checks:
@@ -44,16 +43,24 @@ Commit after checks pass. Use `git add -p` for tracked files and `git add -- PAT
 git add -p
 git diff --cached
 git commit -m "fix: describe the change"
-git push -u origin HEAD
-gh pr create --base dev --fill
-gh pr checks --watch
+git push origin dev
 ```
 
-After CI passes, merge the PR and delete the short-lived branch:
+For an explicitly experimental product feature, create a branch from `dev`:
 
 ```sh
-gh pr merge --squash --delete-branch
+git switch -c experiment/feature-name
 ```
+
+Keep the experiment isolated until it is ready. Review and validate it before merging into `dev`. A PR is optional:
+
+```sh
+git switch dev
+git merge experiment/feature-name
+git push origin dev
+```
+
+`dev` and `main` reject force pushes and deletion. Merge commits are allowed. Do not use `--force` or `--force-with-lease` on either branch.
 
 ## Internal evaluation and acceptance
 
@@ -70,7 +77,7 @@ Run checks from the internal `README.md`, then commit and push. Create the PR wi
 
 ## Promote to main and release
 
-When a version increment is needed, run `uv version --bump patch` on the working branch. Merge the version and lockfile into `dev` through a PR. After `dev` CI passes, promote the same commit to `main`:
+When a version increment is needed, run `uv version --bump patch` on `dev`. Commit the version and lockfile, then push `dev`. Promote only the current remote `dev` commit to `main` after its CI checks pass. A PR is not required:
 
 ```sh
 cd ~/workspace/cade
@@ -80,6 +87,8 @@ git fetch origin
 git merge-base --is-ancestor origin/main HEAD
 git push origin HEAD:main
 ```
+
+The installed pre-push hook checks that the proposed `main` commit equals the current remote `dev` tip. Configure GitHub to protect both branches against force pushes and deletion and require CI only for `main`. Branch protection does not independently enforce the source-branch restriction; the hook enforces it for this checkout.
 
 Create a tag only for a release. Use the current version if it has not been published; otherwise, increment it first:
 
