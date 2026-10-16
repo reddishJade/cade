@@ -103,7 +103,7 @@ def _write_file_impl(
     root: Path,
     request: WriteFileRequest,
     operations: FileSystem,
-) -> str:
+) -> ToolOutput:
     operations.mkdir(request.path.parent)
     display = _display(root, request.path)
 
