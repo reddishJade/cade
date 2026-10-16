@@ -4,13 +4,14 @@ from .bash import build_bash_tool
 from .glob_search import build_glob_tools
 from .grep_search import build_grep_tool
 from .question import build_question_tool
-from .read_file import build_read_file_tool
+from .read import build_read_tool
 from .shell_adapter import ShellSpec, build_shell_argv, detect_shell
 from .subagent import build_subagent_tools
 from .tools_manager import ensure_tool
 from .webfetch import build_webfetch_tool
 from .websearch import build_websearch_tool
-from .write_file import build_write_file_tools
+from .write import build_write_tool
+from .edit import build_edit_tool
 
 __all__ = [
     "ShellSpec",
@@ -18,12 +19,13 @@ __all__ = [
     "build_glob_tools",
     "build_grep_tool",
     "build_question_tool",
-    "build_read_file_tool",
+    "build_read_tool",
     "build_shell_argv",
     "build_subagent_tools",
     "build_webfetch_tool",
     "build_websearch_tool",
-    "build_write_file_tools",
+    "build_write_tool",
+    "build_edit_tool",
     "detect_shell",
     "ensure_tool",
 ]

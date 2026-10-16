@@ -8,22 +8,25 @@ The normal model-facing coding primitives are `read`, `write`, `edit`, and `bash
 
 ### Files
 
-- `read_file.py`: file reads, slices, and line ranges.
-- `write_file.py`: file creation and replacement.
-- `file_handlers.py`: reads, writes, and model-facing `edit` using exact `old_text` matching.
+- `read.py`: read schema, registration, and bounded file/directory reads.
+- `write.py`: write schema, registration, and complete file replacement.
+- `edit.py`: edit schema, registration, and unique-match text replacement.
+- `utils.py`: shared file I/O, path validation, and diff helpers.
 - `text_edit.py`: exact replacement and newline handling.
 - `file_image.py`: multimodal image support and Base64 extraction.
 - `glob_search.py`: optional `glob`, `find`, and `ls`; prefer `fd`, with `rg` or Python fallback.
 - `grep_search.py`: optional ripgrep-based content search.
 - `file_index.py` / `_search_utils.py`: directory indexes and filtering.
 - `bash.py`: sandbox or native shell execution, timeouts, process-group cleanup, and full-log recovery paths for truncated output.
-- `shell_adapter.py`: connect permissions to shell execution.
+- `shell_adapter.py`: shell detection, command arguments, and shell-specific guidance.
 - `subagent.py`: delegation, concurrent batches, and result collection.
 - `question.py`: user questions and choices.
 - `webfetch.py`: fetch pages and convert content to Markdown.
 - `websearch.py`: external documentation and web search.
 - `truncate.py`: bounded output previews.
 - `file_mutation_queue.py`: mutation queues and file locks.
+
+See [Basic tool contract](../../../../docs/basic-tools.md) for tool behavior and ownership.
 
 ## Invariants
 

@@ -19,7 +19,12 @@ from cade.harness.execution_env import (
 )
 
 from ._constants import DEFAULT_TIMEOUT_SECONDS
-from .shell_adapter import ShellSpec, build_shell_argv, detect_shell
+from .shell_adapter import (
+    ShellSpec,
+    build_shell_argv,
+    build_shell_prompt_guidelines,
+    detect_shell,
+)
 from .truncate import DEFAULT_MAX_BYTES, truncate_tail
 
 logger = logging.getLogger("cade.coding_agent.tools.bash")
@@ -93,7 +98,7 @@ def build_bash_tool(
         description="Run a shell command.",
         input_hint='JSON: {"command": "git status --short", "timeout_ms": 30000}',
         handler=bash,
-        prompt_guidelines=_build_prompt_guidelines(spec, shell_syntax, root),
+        prompt_guidelines=build_shell_prompt_guidelines(spec, shell_syntax, root),
         schema=_build_schema(shell_syntax),
     )
 
@@ -136,100 +141,6 @@ def _build_schema(shell_syntax: str) -> dict[str, Any]:
         "required": ["command"],
         "additionalProperties": False,
     }
-
-
-# ── 提示词 ──
-
-
-def _build_prompt_guidelines(
-    spec: ShellSpec,
-    syntax: str,
-    root: Path,
-) -> tuple[str, ...]:
-    """按 shell 类型生成详细使用指引。"""
-    guidelines: list[str] = [
-        "Bash output may be truncated; use the reported full output path when present.",
-    ]
-
-    if syntax == "powershell":
-        ps_ver = spec.ps_kind or "powershell"
-        if ps_ver == "powershell":
-            # PowerShell 5.1 不支持 &&
-            guidelines.extend(
-                [
-                    "PowerShell 5.1 detected: use `;` to chain commands (`&&` is NOT supported).",
-                    "Example: `cd src; dir` or `Set-Location src; Get-ChildItem`",
-                ]
-            )
-        else:
-            # PowerShell 7 及以上版本。
-            guidelines.extend(
-                [
-                    "PowerShell 7+ detected: use `&&` or `;` to chain commands.",
-                    "Example: `cd src && dir` or `cd src; dir`",
-                ]
-            )
-        guidelines.extend(
-            [
-                "Use `|` for pipelines (Out-File, Select-Object, etc.).",
-                "Quote paths with spaces using single quotes (').",
-                "Use `cd` to change directory before running commands.",
-                (
-                    "Common file commands: Get-Content (read), Set-Content (write), "
-                    "Remove-Item (del), Copy-Item, Move-Item, New-Item, Out-File"
-                ),
-            ]
-        )
-    elif syntax == "cmd":
-        guidelines.extend(
-            [
-                "Use `&&` or `&` to chain commands in cmd.exe.",
-                "Example: `cd src && dir`",
-                "Use `cd /d` to change drives (e.g. `cd /d D:/projects`).",
-                (
-                    "Common file commands: type (read), copy (read+write), "
-                    "del/erase (delete), move/ren (write), mkdir (write), dir (list)"
-                ),
-            ]
-        )
-    else:
-        guidelines.extend(
-            [
-                "Chain commands with `&&` (stop on error) or `;` (always continue).",
-                "Example: `cd src && cat file.txt`",
-                "Use `cd` to change directory before running commands.",
-                "Use single quotes (') for paths with spaces in bash.",
-                (
-                    "Common file commands: cat (read), cp (read+write), mv (write), "
-                    "rm (delete), rg (content search), fd (file search), "
-                    "curl/wget (download), tar (archive)"
-                ),
-            ]
-        )
-
-    # workdir 指引
-    guidelines.append(
-        "Use the `workdir` parameter to run commands inside the project."
-        f" Project root: {root.as_posix()}"
-    )
-    guidelines.append(
-        "Set `purpose` to `validation` for test, lint, type, build, or other "
-        "checks whose outcomes you will cite as verification. Use commands "
-        "that fail if a check fails."
-    )
-
-    # 运行时变量
-    import sys as _sys
-    import tempfile as _tempfile
-
-    guidelines.append(
-        f"If not specified, commands time out after {DEFAULT_TIMEOUT_SECONDS * 1000}ms."
-    )
-    guidelines.append(
-        f"OS: {_sys.platform}, Shell: {spec.name}, Temp dir: {_tempfile.gettempdir()}"
-    )
-
-    return tuple(guidelines)
 
 
 # ── 请求解析 ──

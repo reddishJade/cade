@@ -1,7 +1,7 @@
 """保护文本精确编辑引擎、编码/换行往返以及本地文件操作工具契约。
 
-控制性回归使用真实 FileHandlers、TextEdit 与 LocalFileSystem。
-在 pytest 独立 tmp_path 空间验证真实文件创建、块替换、格式化触发及边界拦截。
+控制性回归使用实际 Read、Write、Edit、TextEdit 与 LocalFileSystem。
+在 pytest 独立 tmp_path 空间验证真实文件创建、精确替换、无隐式格式化及边界拦截。
 """
 
 from __future__ import annotations
@@ -11,11 +11,9 @@ from pathlib import Path
 import pytest
 
 from cade.agent.types import ToolOutput
-from cade.coding_agent.tools.file_handlers import (
-    edit_file_content,
-    read_file_content,
-    write_file_content,
-)
+from cade.coding_agent.tools.edit import edit_file_content
+from cade.coding_agent.tools.read import read_file_content
+from cade.coding_agent.tools.write import write_file_content
 from cade.coding_agent.tools.text_edit import (
     apply_text_replacement,
     detect_line_ending,
@@ -90,12 +88,12 @@ def test_line_ending_and_bom_integrity() -> None:
     assert original == "hello world"
 
 
-def test_file_handlers_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
+def test_core_tools_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
     """验证真实文件系统上的写入、精确定位编辑及分页读取生命周期。"""
     fs = LocalFileSystem()
     target_rel = "nested/deep/module.txt"
 
-    # 1. write_file_content 自动创建父目录并原子写文件
+    # 1. write_file_content 自动创建父目录并写入文件
     write_res = write_file_content(
         tmp_path,
         fs,
@@ -132,7 +130,7 @@ def test_file_handlers_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
     assert "line 1" not in read_res
 
 
-def test_file_handlers_error_rejections(tmp_path: Path) -> None:
+def test_core_tools_error_rejections(tmp_path: Path) -> None:
     """验证文件处理器对非法路径、目录写冲突及越界读取的严格报错。"""
     fs = LocalFileSystem()
 
@@ -163,3 +161,50 @@ def test_file_handlers_error_rejections(tmp_path: Path) -> None:
     assert isinstance(read_bin, ToolOutput)
     assert read_bin.is_error
     assert "Cannot read binary file" in read_bin
+
+
+def test_write_and_edit_leave_python_formatting_untouched(tmp_path: Path) -> None:
+    """确保文件工具只写入指定内容，且 Diff 对应磁盘内容。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "sample.py"
+    written = write_file_content(
+        tmp_path, fs, {"path": "sample.py", "content": "x=  1\n"}
+    )
+    assert path.read_bytes() == b"x=  1\n"
+    assert isinstance(written, ToolOutput)
+    assert "+x=  1" in str(written.metadata["patch"])
+
+    edited = edit_file_content(
+        tmp_path, fs, {"path": "sample.py", "old_text": "1", "new_text": "2"}
+    )
+    assert path.read_bytes() == b"x=  2\n"
+    assert isinstance(edited, ToolOutput)
+    patch = str(edited.metadata["patch"])
+    assert "-x=  1" in patch
+    assert "+x=  2" in patch
+
+
+def test_edit_preserves_unrelated_mixed_line_endings(tmp_path: Path) -> None:
+    """精确替换不改变其他行的换行符。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "mixed.txt"
+    path.write_bytes(b"first\r\nsecond\nthird\r\n")
+    edit_file_content(
+        tmp_path, fs, {"path": "mixed.txt", "old_text": "second", "new_text": "SECOND"}
+    )
+    assert path.read_bytes() == b"first\r\nSECOND\nthird\r\n"
+
+
+def test_ambiguous_edit_keeps_file_unchanged(tmp_path: Path) -> None:
+    """同名片段重复时拒绝编辑，并保留原文件。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "ambiguous.txt"
+    before = b"same\nsame\n"
+    path.write_bytes(before)
+    with pytest.raises(ValueError, match="Found multiple matches"):
+        edit_file_content(
+            tmp_path,
+            fs,
+            {"path": "ambiguous.txt", "old_text": "same", "new_text": "new"},
+        )
+    assert path.read_bytes() == before

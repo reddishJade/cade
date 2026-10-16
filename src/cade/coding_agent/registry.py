@@ -15,10 +15,11 @@ from cade.coding_agent.tools import (
     build_glob_tools,
     build_grep_tool,
     build_question_tool,
-    build_read_file_tool,
+    build_read_tool,
+    build_edit_tool,
     build_webfetch_tool,
     build_websearch_tool,
-    build_write_file_tools,
+    build_write_tool,
 )
 from cade.harness.execution_env import Shell
 
@@ -36,14 +37,14 @@ def build_project_scoped_registry(
 ) -> tuple[ToolSpec, ...]:
     registry: tuple[ToolSpec, ...] = ()
     registry += (
-        build_read_file_tool(
+        build_read_tool(
             project_root,
             cancel_event=cancel_event,
         ),
     )
-    registry += build_write_file_tools(
-        project_root,
-        cancel_event=cancel_event,
+    registry += (
+        build_write_tool(project_root, cancel_event=cancel_event),
+        build_edit_tool(project_root, cancel_event=cancel_event),
     )
     registry += build_glob_tools(project_root, cancel_event=cancel_event)
     registry += (build_grep_tool(project_root, cancel_event=cancel_event),)
