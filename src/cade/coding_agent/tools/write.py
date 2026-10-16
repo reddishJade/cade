@@ -18,7 +18,6 @@ from .utils import (
     _write_text,
 )
 
-
 WRITE_FILE_SCHEMA = {
     "type": "object",
     "properties": {

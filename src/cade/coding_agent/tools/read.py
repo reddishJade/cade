@@ -5,10 +5,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from cade.agent.types import ToolSpec
+from cade.agent.types import LocationRenderIntent, ToolInput, ToolOutput, ToolSpec
 from cade.harness.execution_env import FileSystem, LocalFileSystem
-
-from cade.agent.types import LocationRenderIntent, ToolInput, ToolOutput
 
 from .file_image import detect_image, read_image
 from .path_utils import (
@@ -19,6 +17,7 @@ from .path_utils import (
     truncate_output,
 )
 from .utils import _display, _read_text, _safe_path
+
 
 READ_FILE_SCHEMA = {
     "type": "object",

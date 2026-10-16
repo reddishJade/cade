@@ -21,7 +21,6 @@ from .utils import (
     _write_text,
 )
 
-
 EDIT_FILE_SCHEMA = {
     "type": "object",
     "properties": {

@@ -13,7 +13,6 @@ import pytest
 from cade.agent.types import ToolOutput
 from cade.coding_agent.tools.edit import edit_file_content
 from cade.coding_agent.tools.read import read_file_content
-from cade.coding_agent.tools.write import write_file_content
 from cade.coding_agent.tools.text_edit import (
     apply_text_replacement,
     detect_line_ending,
@@ -21,6 +20,7 @@ from cade.coding_agent.tools.text_edit import (
     restore_line_endings,
     strip_bom,
 )
+from cade.coding_agent.tools.write import write_file_content
 from cade.harness.execution_env import LocalFileSystem
 
 

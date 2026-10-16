@@ -1,6 +1,7 @@
 """暴露给 Agent 的工作区工具。"""
 
 from .bash import build_bash_tool
+from .edit import build_edit_tool
 from .glob_search import build_glob_tools
 from .grep_search import build_grep_tool
 from .question import build_question_tool
@@ -11,11 +12,11 @@ from .tools_manager import ensure_tool
 from .webfetch import build_webfetch_tool
 from .websearch import build_websearch_tool
 from .write import build_write_tool
-from .edit import build_edit_tool
 
 __all__ = [
     "ShellSpec",
     "build_bash_tool",
+    "build_edit_tool",
     "build_glob_tools",
     "build_grep_tool",
     "build_question_tool",
@@ -25,7 +26,6 @@ __all__ = [
     "build_webfetch_tool",
     "build_websearch_tool",
     "build_write_tool",
-    "build_edit_tool",
     "detect_shell",
     "ensure_tool",
 ]
