@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import tempfile
 import threading
 from collections.abc import Callable
@@ -19,6 +18,7 @@ from cade.harness.execution_env import (
 )
 
 from ._constants import DEFAULT_TIMEOUT_SECONDS
+from .path_utils import resolve_project_path
 from .shell_adapter import (
     ShellSpec,
     build_shell_argv,
@@ -26,9 +26,6 @@ from .shell_adapter import (
     detect_shell,
 )
 from .truncate import DEFAULT_MAX_BYTES, truncate_tail
-
-logger = logging.getLogger("cade.coding_agent.tools.bash")
-
 
 @dataclass(frozen=True)
 class BashRequest:
@@ -196,14 +193,7 @@ def _resolve_workdir(root: Path, workdir: str | None) -> Path:
     """安全解析 workdir。"""
     if workdir is None:
         return root
-    # 安全解析（禁止绝对路径、.. 逃逸）
-    from cade.coding_agent.tools.path_utils import resolve_project_path
-
-    try:
-        return resolve_project_path(root, workdir)
-    except ValueError:
-        logger.warning("invalid workdir %r, falling back to project root", workdir)
-        return root
+    return resolve_project_path(root, workdir)
 
 
 # ── 输出渲染 ──

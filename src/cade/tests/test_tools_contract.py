@@ -208,3 +208,11 @@ def test_ambiguous_edit_keeps_file_unchanged(tmp_path: Path) -> None:
             {"path": "ambiguous.txt", "old_text": "same", "new_text": "new"},
         )
     assert path.read_bytes() == before
+
+
+def test_bash_rejects_invalid_workdir(tmp_path: Path) -> None:
+    """非法工作目录必须显式报错，不能回退到项目根目录。"""
+    from cade.coding_agent.tools.bash import _resolve_workdir
+
+    with pytest.raises(ValueError, match="parent-directory paths are not allowed"):
+        _resolve_workdir(tmp_path, "../other")

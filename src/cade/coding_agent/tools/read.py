@@ -18,7 +18,6 @@ from .path_utils import (
 )
 from .utils import _display, _read_text, _safe_path
 
-
 READ_FILE_SCHEMA = {
     "type": "object",
     "properties": {
