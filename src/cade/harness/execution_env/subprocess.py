@@ -4,7 +4,9 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from io import BufferedReader
 from pathlib import Path
+from typing import cast
 
 from ._process import POLL_INTERVAL, close_pipes, kill_process, start_process
 from .output_capture import OutputCapture
@@ -48,7 +50,8 @@ class SubprocessShell:
             if proc.stdout is None:
                 return
             try:
-                while raw := proc.stdout.read1(8192):
+                stdout = cast(BufferedReader, proc.stdout)
+                while raw := stdout.read1(8192):
                     progress = output_capture.append(raw)
                     if on_progress and progress:
                         on_progress(progress)
