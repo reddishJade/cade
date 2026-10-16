@@ -4,8 +4,9 @@
 不模拟服务协议。文件场景在仓库 e2e-results 下创建独立目录，不修改真实 Memory。
 运行：uv run --locked pytest -q src/cade/tests/test_context_contract.py。
 真实宿主及服务验收另通过 cade exec 执行。
-特殊标记回归使用无外部服务的选定指令块（100 个「a 」及标记）和 90 token
-预算；已核对的 cl100k_base 普通文本计数为 106，必须拒绝发送。
+计量使用 conftest 中的本地单字节词表，不依赖下载或缓存。
+特殊标记回归使用 100 个「a 」及标记和 90 token 预算：
+正文至少 212 字节，真实编码必须拒绝发送；误入字节兜底则只计约 71 token。
 """
 
 from __future__ import annotations
@@ -84,7 +85,7 @@ async def collect_loop_result(
     return result
 
 
-def policy(budget: int = 2048, *, next_input: int = 0) -> ContextPolicy:
+def policy(budget: int = 8192, *, next_input: int = 0) -> ContextPolicy:
     return ContextPolicy(
         physical_window=budget,
         output_reserve=0,
@@ -148,7 +149,7 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
     context = AgentContext(
         messages=history,
         context_policy=policy() if explicit_policy else None,
-        request_token_budget=2048,
+        request_token_budget=8192,
     )
     assembly = DefaultRequestAssembler(
         context_collectors=SelectedContext(blocks).freeze()
@@ -185,7 +186,7 @@ def test_special_token_literals_do_not_bypass_context_budget(marker: str) -> Non
         priority=ContextPriority.INSTRUCTION,
         content="a " * 100 + marker,
     )
-    assert block.get_token_count() == 106
+    assert block.get_token_count() == 200 + len(marker)
     assembly = DefaultRequestAssembler(
         context_collectors=SelectedContext([block]).freeze()
     ).assemble(
