@@ -10,6 +10,27 @@ cade web --open       # 启动后打开浏览器
 cade web --port 9000
 ```
 
+## Access control
+
+Open the private URL printed by `cade web`, or use `cade web --open`. Each server
+start generates a new access token. Treat the URL as a credential. Its fragment
+is not sent to the server; the frontend removes it from the address bar and stores
+the token in the tab's session storage. After a restart, open the new URL.
+
+REST API requests require `Authorization: Bearer <token>`. WebSocket clients must
+send the subprotocols `cade` and `<token>`; the server selects only `cade`.
+WebSocket handshakes and state-changing HTTP requests also require a trusted
+`Origin`. All requests require a trusted `Host`, including the configured port.
+Missing, duplicate, `null`, and untrusted origins are rejected where an origin
+is required. A token does not bypass these checks.
+
+Loopback and wildcard binds trust only `127.0.0.1`, `localhost`, and `[::1]` at
+the configured port. For remote access, bind to an explicit address with `--host`;
+only that address is trusted. Forwarded headers do not change this policy.
+Arbitrary reverse-proxy origins are not supported. HTTP does not encrypt the
+credential or agent traffic; keep the service on a trusted network or use an
+SSH tunnel to its loopback address.
+
 ## Process model
 
 ```mermaid

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import secrets
 import subprocess
 import time
 from collections.abc import Callable
@@ -22,6 +23,7 @@ from cade.coding_agent.execution_modes import (
 )
 
 from .runner import WebRunHub
+from .security import WebSecurityMiddleware, web_origins
 
 STATIC_DIR = Path(__file__).parent / "static"
 _SESSION_TRANSCRIPT_LIMIT = 500
@@ -42,9 +44,21 @@ def create_app(
     app: CadeApp,
     project_root: Path,
     app_factory: AppFactory | None = None,
+    *,
+    access_token: str | None = None,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> FastAPI:
     """装配 FastAPI 应用（静态资源 + API + WebSocket）。"""
-    server = FastAPI(title="cade web", docs_url=None, redoc_url=None)
+    server = FastAPI(title="cade web", docs_url=None, redoc_url=None, openapi_url=None)
+    server.add_middleware(
+        WebSecurityMiddleware,
+        token=access_token if access_token is not None else secrets.token_urlsafe(32),
+        allowed_origins=(
+            allowed_origins
+            if allowed_origins is not None
+            else web_origins("127.0.0.1", 8787)
+        ),
+    )
     hub = WebRunHub(app)
 
     server.state.cade_app = app
@@ -267,7 +281,7 @@ def create_app(
 
     @server.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
-        await websocket.accept()
+        await websocket.accept(subprotocol="cade")
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
 

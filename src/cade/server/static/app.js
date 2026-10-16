@@ -3,6 +3,22 @@
 "use strict";
 
 (() => {
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  const suppliedToken = fragment.get("token");
+  if (suppliedToken !== null) {
+    history.replaceState(null, "", location.pathname + location.search);
+    sessionStorage.setItem("cade.web.token", suppliedToken);
+  }
+  const accessToken = sessionStorage.getItem("cade.web.token") || "";
+
+  function fetch(path, options = {}) {
+    const url = new URL(path, location.href);
+    if (url.origin !== location.origin) throw new Error("Cross-origin API request denied");
+    const headers = new Headers(options.headers);
+    headers.set("Authorization", `Bearer ${accessToken}`);
+    return window.fetch(url, { ...options, headers, credentials: "omit" });
+  }
+
   const $ = (id) => document.getElementById(id);
 
   const els = {
@@ -481,7 +497,7 @@
 
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws = new WebSocket(`${proto}://${location.host}/ws`, ["cade", accessToken]);
 
     ws.onopen = () => {
       connected = true;
@@ -1144,5 +1160,18 @@
 
   setMode(mode);
   setRunning(false);
-  connect();
+  async function start() {
+    try {
+      const response = await fetch("/api/info");
+      if (!response.ok) throw new Error("Web authentication failed");
+      connect();
+    } catch (_err) {
+      systemNote(
+        "Authentication required",
+        "Open the private URL printed by cade web. The URL changes after each server restart.",
+        "system-note--error",
+      );
+    }
+  }
+  start();
 })();

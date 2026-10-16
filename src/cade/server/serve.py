@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from cade.coding_agent.app import CadeApp, build_app
@@ -40,8 +41,19 @@ def run_web_server(
 
     try:
         from .api import create_app
+        from .security import web_origins
 
-        fastapi_app = create_app(app, project_root, app_factory=build_for)
+        token = secrets.token_urlsafe(32)
+        origins = web_origins(host, port)
+        browser_url = f"{origins[0]}/#token={token}"
+        fastapi_app = create_app(
+            app,
+            project_root,
+            app_factory=build_for,
+            access_token=token,
+            allowed_origins=origins,
+        )
+        print(f"Open this private URL in your browser: {browser_url}", flush=True)
         if open_browser:
             import threading
             import webbrowser
@@ -55,13 +67,15 @@ def run_web_server(
 
                 while perf_counter() - started < 1.5:
                     _time.sleep(0.1)
-                webbrowser.open(f"http://{host}:{port}")
+                webbrowser.open(browser_url)
 
             threading.Thread(target=_open, daemon=True).start()
 
         import uvicorn
 
-        uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
+        uvicorn.run(
+            fastapi_app, host=host, port=port, log_level="info", proxy_headers=False
+        )
         return 0
     except KeyboardInterrupt:
         return 0

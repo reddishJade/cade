@@ -10,15 +10,17 @@ From the project root, run:
 cade web
 ```
 
-Cade starts its HTTP/WebSocket service and prints the address, which defaults to `http://127.0.0.1:8787`.
+Cade starts its HTTP/WebSocket service on `127.0.0.1:8787` by default. Open the private URL printed in the terminal, or run `cade web --open`. The URL contains an access token and changes after each server restart.
 
 ### Set the host and port
 
-To bind the service to a remote development machine's or container's network interfaces:
+For remote access, bind to the machine's explicit address. Replace this example address with your machine's address:
 
 ```bash
-cade web --host 0.0.0.0 --port 9000
+cade web --host 192.0.2.10 --port 9000
 ```
+
+A wildcard bind such as `0.0.0.0` still accepts only loopback Host and Origin values. It does not enable arbitrary remote addresses.
 
 See the [web host reference](../web.md) for access and operational details before exposing the service.
 
