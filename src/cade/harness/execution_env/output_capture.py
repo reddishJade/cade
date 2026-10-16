@@ -28,7 +28,7 @@ class OutputCapture:
         self._last_byte = data[-1]
         if self._stream is None and len(self._data) + len(data) > self._max_bytes:
             stream = self._stack.enter_context(
-                tempfile.NamedTemporaryFile(
+                tempfile.NamedTemporaryFile(  # noqa: SIM115
                     mode="wb", prefix="cade-bash-", suffix=".log", delete=False
                 )
             )
