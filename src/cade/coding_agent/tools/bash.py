@@ -27,6 +27,7 @@ from .shell_adapter import (
 )
 from .truncate import DEFAULT_MAX_BYTES, truncate_tail
 
+
 @dataclass(frozen=True)
 class BashRequest:
     command: str
