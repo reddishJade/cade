@@ -204,7 +204,16 @@ def _render_bash_output(
     result: ExecutionResult,
     timeout_ms: int,
 ) -> str:
-    output = _truncate_bash_output(result.output)
+    if result.full_output_path is None:
+        output = _truncate_bash_output(result.output)
+    else:
+        truncated = truncate_tail(result.output)
+        output = (
+            f"{truncated.content}\n"
+            f"[Showing the last {DEFAULT_MAX_BYTES // 1024}KB of "
+            f"{result.total_output_lines} lines. "
+            f"Full output: {result.full_output_path}]"
+        )
 
     if result.timed_out:
         output += f"\nCommand timed out after {timeout_ms}ms"

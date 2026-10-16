@@ -6,13 +6,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from cade.agent.types import DiffRenderIntent, ToolInput, ToolOutput, ToolSpec
+from cade.agent.types import ToolInput, ToolOutput, ToolSpec
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_mutation_queue import with_file_mutation
 from .utils import (
     _display,
-    diff_preview,
     ensure_write_size,
     write_safe_path,
     write_text,
@@ -107,24 +106,5 @@ def _write_file_impl(
     operations.mkdir(request.path.parent)
     display = _display(root, request.path)
 
-    old_content = ""
-    desired_bom = False
-    if operations.exists(request.path):
-        raw = operations.read_bytes(request.path)
-        desired_bom = raw.startswith(b"\xef\xbb\xbf")
-        old_content = raw.decode("utf-8-sig" if desired_bom else "utf-8")
-
-    new_has_bom = request.content.startswith("\ufeff")
-    desired_bom = desired_bom or new_has_bom
-    clean_content = request.content[1:] if new_has_bom else request.content
-
-    diff = diff_preview(display, old_content, clean_content)
-
-    encoding = "utf-8-sig" if desired_bom else "utf-8"
-    write_text(request.path, clean_content, encoding, operations)
-
-    return ToolOutput(
-        f"wrote file: {display}\n{diff}",
-        metadata={"patch": diff},
-        render_intent=DiffRenderIntent(patch=diff, files=(display,)),
-    )
+    write_text(request.path, request.content, "utf-8", operations)
+    return ToolOutput(f"wrote file: {display}")

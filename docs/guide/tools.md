@@ -7,7 +7,7 @@ Cade's coding tools declare execution behavior explicitly. The scheduler batches
 | Tool | Scheduling | Key parameters | Purpose |
 | --- | --- | --- | --- |
 | `read` | Parallel read pool | `path`, `offset`, `limit` | Read file content with line ranges and pagination |
-| `edit` | Serial write barrier | `path`, `old_text`, `new_text`, `replace_all` | Replace matching text with stale-write checks |
+| `edit` | Serial write barrier | `path`, `edits[]` (each `old_text`, `new_text`) | Replace matching text with stale-write checks |
 | `write` | Serial write barrier | `path`, `content` | Create a file or replace its complete contents |
 | `grep` | Optional parallel read tool | `pattern`, `path`, `glob`, `max_results`, `ignore_case`, `literal`, `context` | Search text or regular expressions, preferring ripgrep |
 | `glob` | Optional parallel read tool | `pattern`, `path`, `max_results` | Match paths with patterns such as `src/**/*.py` |
@@ -31,7 +31,7 @@ The scheduler follows the tool contract rather than inferring whether a tool is 
 
 The `edit` tool checks that the model is not editing stale content:
 
-1. `old_text` must match uniquely in the target file unless the requested replacement mode permits otherwise.
+1. Every `edits[].old_text` must match uniquely in the original file; overlapping edits are rejected.
 2. Cade records the file version when it is read. If the file changes before the edit, the operation is rejected:
    ```text
    File modified since last read. Please read again before editing.

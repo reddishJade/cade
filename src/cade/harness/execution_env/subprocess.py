@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ._process import POLL_INTERVAL, close_pipes, kill_process, start_process
+from .output_capture import OutputCapture
 from .result import ExecutionResult
 from .sandbox import CommandSandbox
 
@@ -38,7 +39,7 @@ class SubprocessShell:
             if finalize_sandbox is not None:
                 finalize_sandbox()
             raise
-        output_chunks: list[bytes] = []
+        output_capture = OutputCapture()
         cancelled = False
         timed_out = False
         sandbox_violation: str | None = None
@@ -47,11 +48,10 @@ class SubprocessShell:
             if proc.stdout is None:
                 return
             try:
-                for raw in proc.stdout:
-                    output_chunks.append(raw)
-                    if on_progress:
-                        text = raw.decode("utf-8", errors="replace")
-                        on_progress(text)
+                while raw := proc.stdout.read1(8192):
+                    progress = output_capture.append(raw)
+                    if on_progress and progress:
+                        on_progress(progress)
             except (LookupError, OSError, RuntimeError, TypeError, ValueError):
                 logger.debug("error draining process output", exc_info=True)
 
@@ -79,7 +79,7 @@ class SubprocessShell:
             if finalize_sandbox is not None:
                 sandbox_violation = finalize_sandbox()
 
-        output = b"".join(output_chunks).decode(errors="replace")
+        output, full_output_path, total_lines = output_capture.finish()
         returncode = proc.returncode
         if sandbox_violation is not None:
             if on_progress is not None:
@@ -95,4 +95,6 @@ class SubprocessShell:
             returncode=returncode,
             timed_out=timed_out,
             cancelled=cancelled,
+            full_output_path=full_output_path,
+            total_output_lines=total_lines,
         )

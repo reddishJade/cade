@@ -10,7 +10,7 @@ from cade.agent.types import DiffRenderIntent, ToolInput, ToolOutput, ToolSpec
 from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_mutation_queue import with_file_mutation
-from .text_edit import apply_text_replacement, normalize_to_lf
+from .text_edit import apply_text_edits, apply_text_replacement, normalize_to_lf
 from .utils import (
     _display,
     diff_preview,
@@ -26,22 +26,24 @@ EDIT_FILE_SCHEMA = {
     "properties": {
         "path": {
             "type": "string",
-            "description": "The path to the file to modify (relative or absolute).",
+            "description": "The path to an existing file (relative or absolute).",
         },
-        "old_text": {
-            "type": "string",
-            "description": "The text to replace (must not be empty).",
-        },
-        "new_text": {
-            "type": "string",
-            "description": "Replacement text; must differ from old_text.",
-        },
-        "replace_all": {
-            "type": "boolean",
-            "description": "Replace all occurrences of old_text (default false).",
+        "edits": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Unique, non-overlapping changes matched against the original file.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "old_text": {"type": "string", "minLength": 1},
+                    "new_text": {"type": "string"},
+                },
+                "required": ["old_text", "new_text"],
+                "additionalProperties": False,
+            },
         },
     },
-    "required": ["path", "old_text", "new_text"],
+    "required": ["path", "edits"],
     "additionalProperties": False,
 }
 
@@ -49,8 +51,7 @@ EDIT_FILE_SCHEMA = {
 @dataclass(frozen=True)
 class EditFileRequest:
     path: Path
-    old_text: str
-    new_text: str
+    edits: tuple[tuple[str, str], ...]
     replace_all: bool
 
 
@@ -71,15 +72,16 @@ def build_edit_tool(
         name="edit",
         description=(
             "Modify an existing text file with a targeted replacement. "
-            "old_text matches literally, with LF/CRLF compatibility. "
+            "Each old_text must be unique and edits must not overlap. "
             "Use write for new files or full replacements."
         ),
-        input_hint='JSON: {"path": "src/x.py", "old_text": "...", "new_text": "..."}',
+        input_hint='JSON: {"path": "src/x.py", "edits": [{"old_text": "...", "new_text": "..."}]}',
         handler=handler,
         schema=EDIT_FILE_SCHEMA,
         prompt_guidelines=(
             "Use edit for precise changes to existing files.",
-            "Provide enough old_text context to ensure a unique match.",
+            "All edits match the original file, not earlier edits.",
+            "Merge overlapping changes into one edit entry.",
         ),
     )
 
@@ -110,16 +112,34 @@ def _parse_edit_file_request(
     if not operations.is_file(path):
         raise ValueError(f"not a file: {_display(root, path)}")
 
-    old_text = str(data.get("old_text", ""))
-    if not old_text.strip():
-        raise ValueError("old_text must not be empty")
-    if "new_text" not in data:
-        raise ValueError("new_text is required")
+    if "edits" in data:
+        if "old_text" in data or "new_text" in data or "replace_all" in data:
+            raise ValueError("Use edits or legacy old_text/new_text, not both")
+        items = data["edits"]
+        if not isinstance(items, list) or not items:
+            raise ValueError("edits must be a non-empty array")
+        edits: list[tuple[str, str]] = []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(f"edits[{index}] must be an object")
+            old_text = item.get("old_text")
+            new_text = item.get("new_text")
+            if not isinstance(old_text, str) or not old_text.strip():
+                raise ValueError(f"edits[{index}].old_text must not be empty")
+            if not isinstance(new_text, str):
+                raise ValueError(f"edits[{index}].new_text is required")
+            edits.append((old_text, new_text))
+        return EditFileRequest(path=path, edits=tuple(edits), replace_all=False)
 
+    old_text = data.get("old_text")
+    new_text = data.get("new_text")
+    if not isinstance(old_text, str) or not old_text.strip():
+        raise ValueError("old_text must not be empty")
+    if not isinstance(new_text, str):
+        raise ValueError("new_text is required")
     return EditFileRequest(
         path=path,
-        old_text=old_text,
-        new_text=str(data.get("new_text", "")),
+        edits=((old_text, new_text),),
         replace_all=bool(data.get("replace_all", False)),
     )
 
@@ -131,25 +151,23 @@ def _edit_file_impl(
 ) -> ToolOutput:
     path = request.path
     before, encoding = read_text(path, operations)
-    old_text = request.old_text
-    new_text = request.new_text
     display = _display(root, path)
-
     try:
-        updated = apply_text_replacement(
-            before, old_text, new_text, replace_all=request.replace_all
-        )
+        if request.replace_all:
+            old_text, new_text = request.edits[0]
+            updated = apply_text_replacement(
+                before, old_text, new_text, replace_all=True
+            )
+            total = normalize_to_lf(before).count(normalize_to_lf(old_text))
+        else:
+            updated = apply_text_edits(before, request.edits)
+            total = len(request.edits)
     except ValueError as exc:
         raise ValueError(f"{exc} in {display}") from exc
 
     if updated == before:
         raise ValueError(f"No changes made to {display}.")
 
-    total = (
-        normalize_to_lf(before).count(normalize_to_lf(old_text))
-        if request.replace_all
-        else 1
-    )
     ensure_write_size(updated)
     write_text(path, updated, encoding, operations)
 

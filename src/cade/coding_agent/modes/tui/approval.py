@@ -65,25 +65,27 @@ def approval_scope_lines(
 def _preview_edit_file(action_input: dict, lines: list[str]) -> None:
     """为 edit_file 工具显示文件路径和 mini diff。"""
     path = action_input.get("path", "")
-    old_text = action_input.get("old_text", "")
-    new_text = action_input.get("new_text", "")
-    replace_all = action_input.get("replace_all", False)
-
     lines.append(f"[bold]File:[/bold] {path}")
-    if replace_all:
+    edits = action_input.get("edits")
+    if isinstance(edits, list):
+        lines.append(f"[bold]Replacements:[/bold] {len(edits)}")
+        for index, item in enumerate(edits, start=1):
+            if not isinstance(item, dict):
+                continue
+            old_text = str(item.get("old_text", ""))
+            new_text = str(item.get("new_text", ""))
+            lines.append(f"[dim]Edit {index}[/dim]")
+            lines.append(f"[red]─ {old_text[:200].replace(chr(10), '¶ ')}[/red]")
+            lines.append(f"[green]+ {new_text[:200].replace(chr(10), '¶ ')}[/green]")
+        return
+
+    old_text = str(action_input.get("old_text", ""))
+    new_text = str(action_input.get("new_text", ""))
+    if action_input.get("replace_all", False):
         lines.append("[yellow]Replace all occurrences[/yellow]")
-
     if old_text or new_text:
-        # 显示精简的差异片段。
-        old_snippet = old_text[:280].replace("\n", "¶ ")
-        new_snippet = new_text[:280].replace("\n", "¶ ")
-        if old_snippet:
-            lines.append(f"[red]─ {old_snippet}[/red]")
-        if new_snippet:
-            lines.append(f"[green]+ {new_snippet}[/green]")
-
-        if len(old_text) > 280 or len(new_text) > 280:
-            lines.append("[dim]  (truncated, see above for full)[/dim]")
+        lines.append(f"[red]─ {old_text[:280].replace(chr(10), '¶ ')}[/red]")
+        lines.append(f"[green]+ {new_text[:280].replace(chr(10), '¶ ')}[/green]")
 
 
 def _preview_bash(action_input: dict, lines: list[str]) -> None:

@@ -90,3 +90,40 @@ def apply_text_replacement(
         content,
         count=0 if replace_all else 1,
     )
+
+def apply_text_edits(
+    content: str,
+    edits: tuple[tuple[str, str], ...],
+) -> str:
+    """在原始内容中定位所有修改，检查冲突后一次性应用。"""
+    if not edits:
+        raise ValueError("edits must not be empty")
+    matched: list[tuple[re.Match[str], str]] = []
+    for index, (old_text, new_text) in enumerate(edits):
+        if not old_text:
+            raise ValueError(f"edits[{index}].old_text must not be empty")
+        if old_text == new_text:
+            raise ValueError("No changes to apply")
+        pieces = normalize_to_lf(old_text).split("\n")
+        pattern = re.compile(
+            _FLEXIBLE_NEWLINE.join(re.escape(part) for part in pieces)
+        )
+        first = pattern.search(content)
+        if first is None:
+            raise ValueError(f"Could not find edits[{index}].old_text")
+        if pattern.search(content, first.start() + 1) is not None:
+            raise ValueError(f"Found multiple matches for edits[{index}].old_text")
+        matched.append((first, new_text))
+
+    matched.sort(key=lambda item: item[0].start())
+    for (previous, _), (current, _) in zip(matched, matched[1:], strict=False):
+        if previous.end() > current.start():
+            raise ValueError("Edit ranges overlap; merge changes into one entry")
+
+    updated = content
+    for match, new_text in reversed(matched):
+        replacement = _replacement_line_endings(content, match, new_text)
+        updated = updated[: match.start()] + replacement + updated[match.end() :]
+    if updated == content:
+        raise ValueError("No changes to apply")
+    return updated

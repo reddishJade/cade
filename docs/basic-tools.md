@@ -16,9 +16,9 @@ Each core tool lives in a file named after the tool: `read.py`, `write.py`, `edi
 ## Contracts
 
 - **Read:** `read(path, offset?, limit?)` reads a file, directory, or supported image. Text offsets start at 1. Preserve line numbers, continuation hints, bounded output, binary detection, and image metadata. No workspace writes.
-- **Write:** `write(path, content)` creates parent directories if necessary and creates or replaces one UTF-8 text file. Preserve the existing BOM behavior for overwritten files. Return a diff that describes the resulting file.
-- **Edit:** `edit(path, old_text, new_text, replace_all=false)` requires an existing text file. Without `replace_all`, the match must be unique. Missing and ambiguous matches fail before writing. Match line endings independently of LF, CRLF, or CR encoding. Preserve the original line endings of each matched span where possible. For inserted line breaks beyond the matched span, use the nearest applicable line-ending style. Leave text outside each match unchanged, including mixed line endings. Preserve BOM and return a diff that describes the saved file.
-- **Bash:** `bash(command, workdir?, timeout_ms?, purpose?)` uses the configured Shell. Preserve timeout, cancellation, exit status, bounded output, and the full-output recovery path. `purpose=validation` records workspace fingerprints.
+- **Write:** `write(path, content)` creates parent directories if necessary and writes exactly the supplied UTF-8 text. Overwriting a file does not inherit an existing BOM or require the old contents to be readable. Return the written path.
+- **Edit:** `edit(path, edits=[{old_text, new_text}, ...])` requires an existing text file. Every old_text must match a unique region of the original file. The replacements must not overlap, and all checks complete before writing. Legacy single-edit arguments remain accepted by the handler. Missing and ambiguous matches fail before writing. Match line endings independently of LF, CRLF, or CR encoding. Preserve the original line endings of each matched span where possible. For inserted line breaks beyond the matched span, use the nearest applicable line-ending style. Leave text outside each match unchanged, including mixed line endings. Preserve BOM and return a diff that describes the saved file.
+- **Bash:** `bash(command, workdir?, timeout_ms?, purpose?)` uses the configured Shell. Preserve timeout, cancellation, and exit status. Stream process output in fixed-size chunks; retain a bounded tail in memory and write larger output to a recoverable log file. `purpose=validation` records workspace fingerprints.
 
 ## Invariants
 
@@ -31,6 +31,6 @@ Each core tool lives in a file named after the tool: `read.py`, `write.py`, `edi
 
 ## Regression coverage
 
-Check read pagination, missing paths, binary files, and tool registration; write/create and edit round trips; rejection of ambiguous edits without filesystem changes; mixed LF/CRLF multiline matching and per-match newline preservation; BOM retention; cancellation; and exact preservation of unformatted Python files. Compare returned patches against the actual saved content.
+Check read pagination, missing paths, binary files, and tool registration; write/create and edit round trips; batch-edit atomicity and overlap validation; rejection of ambiguous edits without filesystem changes; mixed LF/CRLF multiline matching and per-match newline preservation; BOM retention in Edit and exact BOM behavior in Write; large-output streaming and log recovery; cancellation; and exact preservation of unformatted Python files. Compare returned patches against the actual saved content.
 
 Run static checks, regression tests, and startup checks from [Testing](testing.md).

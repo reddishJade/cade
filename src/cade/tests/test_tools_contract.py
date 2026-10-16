@@ -172,7 +172,7 @@ def test_write_and_edit_leave_python_formatting_untouched(tmp_path: Path) -> Non
     )
     assert path.read_bytes() == b"x=  1\n"
     assert isinstance(written, ToolOutput)
-    assert "+x=  1" in str(written.metadata["patch"])
+    assert "wrote file" in str(written)
 
     edited = edit_file_content(
         tmp_path, fs, {"path": "sample.py", "old_text": "1", "new_text": "2"}
@@ -323,3 +323,54 @@ def test_edit_adds_lines_without_modifying_unmatched_line_endings(
     )
 
     assert path.read_bytes() == b"head\nA\r\nX\nY\nC\r\nend"
+
+
+def test_write_replaces_bytes_without_inheriting_bom(tmp_path: Path) -> None:
+    """Write 写入精确内容，不继承旧文件 BOM，允许覆盖非文本旧内容。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "raw.txt"
+    path.write_bytes(b"\xef\xbb\xbfold")
+    write_file_content(tmp_path, fs, {"path": "raw.txt", "content": "new"})
+    assert path.read_bytes() == b"new"
+
+    path.write_bytes(b"\xff\xfe\x00")
+    write_file_content(tmp_path, fs, {"path": "raw.txt", "content": "hello"})
+    assert path.read_bytes() == b"hello"
+
+    write_file_content(tmp_path, fs, {"path": "raw.txt", "content": "\ufeffmark"})
+    assert path.read_bytes() == b"\xef\xbb\xbfmark"
+
+
+def test_file_mutation_lock_registry_releases_keys(tmp_path: Path) -> None:
+    """同一路径串行执行，所有操作完成后不保留锁条目。"""
+    import concurrent.futures
+    import threading
+    import time
+
+    from cade.coding_agent.tools.file_mutation_queue import (
+        _file_locks,
+        with_file_mutation,
+    )
+
+    path = tmp_path / "shared.txt"
+    active = 0
+    largest = 0
+    guard = threading.Lock()
+
+    def mutate() -> None:
+        nonlocal active, largest
+        def critical() -> None:
+            nonlocal active, largest
+            with guard:
+                active += 1
+                largest = max(largest, active)
+            time.sleep(0.005)
+            with guard:
+                active -= 1
+
+        with_file_mutation(path, critical)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(lambda _: mutate(), range(12)))
+    assert largest == 1
+    assert path.resolve() not in _file_locks
