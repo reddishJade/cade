@@ -12,8 +12,8 @@ from cade.harness.execution_env import FileSystem, LocalFileSystem
 from .file_mutation_queue import with_file_mutation
 from .text_edit import apply_text_replacement, normalize_to_lf
 from .utils import (
-    diff_preview,
     _display,
+    diff_preview,
     ensure_write_size,
     first_changed_line,
     read_text,

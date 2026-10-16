@@ -11,8 +11,8 @@ from cade.harness.execution_env import FileSystem, LocalFileSystem
 
 from .file_mutation_queue import with_file_mutation
 from .utils import (
-    diff_preview,
     _display,
+    diff_preview,
     ensure_write_size,
     write_safe_path,
     write_text,
