@@ -137,9 +137,15 @@ def test_batch_edit_approval_marks_each_truncation_and_shows_complete_text(
     args = {"path": "source.py", "edits": edits}
     tool = build_edit_tool(tmp_path)
     summary = tool_preview_lines(tool, args)
-    assert any("old_text truncated: showing 200 of 500 characters" in s for s in summary)
-    assert any("new_text truncated: showing 200 of 501 characters" in s for s in summary)
-    assert any("new_text truncated: showing 200 of 206 characters" in s for s in summary)
+    assert any(
+        "old_text truncated: showing 200 of 500 characters" in s for s in summary
+    )
+    assert any(
+        "new_text truncated: showing 200 of 501 characters" in s for s in summary
+    )
+    assert any(
+        "new_text truncated: showing 200 of 206 characters" in s for s in summary
+    )
     assert sum("truncated:" in s for s in summary) == 3
     assert any("Press v to view complete edit text" in s for s in summary)
 

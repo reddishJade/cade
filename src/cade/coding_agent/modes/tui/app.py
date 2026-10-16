@@ -1851,9 +1851,7 @@ class _CadeTui:
             preview=[
                 *(
                     _strip_rich_markup(line)
-                    for line in tool_preview_lines(
-                        approval.tool, approval.action_input
-                    )
+                    for line in tool_preview_lines(approval.tool, approval.action_input)
                 ),
                 *scope_preview,
             ],

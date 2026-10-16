@@ -109,7 +109,9 @@ def _preview_edit_file(action_input: dict, lines: list[str]) -> None:
             truncated = old_cut or new_cut
 
     if truncated:
-        lines.append("[yellow]Press v to view complete edit text before approval.[/yellow]")
+        lines.append(
+            "[yellow]Press v to view complete edit text before approval.[/yellow]"
+        )
 
 
 def full_edit_preview_lines(action_input: ToolInput) -> list[str]:
@@ -142,6 +144,7 @@ def full_edit_preview_lines(action_input: ToolInput) -> list[str]:
             )
         )
     return lines
+
 
 def _preview_bash(action_input: dict, lines: list[str]) -> None:
     """为 bash 工具显示命令和结构化分析。"""
