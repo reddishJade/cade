@@ -106,9 +106,7 @@ def apply_text_edits(
         if old_text == new_text:
             raise ValueError("No changes to apply")
         pieces = normalize_to_lf(old_text).split("\n")
-        pattern = re.compile(
-            _FLEXIBLE_NEWLINE.join(re.escape(part) for part in pieces)
-        )
+        pattern = re.compile(_FLEXIBLE_NEWLINE.join(re.escape(part) for part in pieces))
         first = pattern.search(content)
         if first is None:
             raise ValueError(f"Could not find edits[{index}].old_text")

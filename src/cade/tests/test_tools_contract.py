@@ -359,6 +359,7 @@ def test_file_mutation_lock_registry_releases_keys(tmp_path: Path) -> None:
 
     def mutate() -> None:
         nonlocal active, largest
+
         def critical() -> None:
             nonlocal active, largest
             with guard:
