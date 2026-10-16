@@ -27,11 +27,13 @@ def _write_safe_path(root: Path, raw_path: str) -> Path:
         raise ValueError(f"path is blocked: {_display(root, filepath)}")
     return filepath
 
+
 def _safe_path(root: Path, raw_path: str) -> Path:
     path = resolve_project_path(root, raw_path)
     if is_path_blocked(root, path):
         raise ValueError(f"path is blocked: {display_path(root, path)}")
     return path
+
 
 def _read_text(path: Path, operations: FileSystem) -> tuple[str, str]:
     data = operations.read_bytes(path)

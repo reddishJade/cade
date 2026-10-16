@@ -34,10 +34,12 @@ WRITE_FILE_SCHEMA = {
     "additionalProperties": False,
 }
 
+
 @dataclass(frozen=True)
 class WriteFileRequest:
     path: Path
     content: str
+
 
 def build_write_tool(
     project_root: Path,

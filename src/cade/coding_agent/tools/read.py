@@ -300,6 +300,7 @@ def _read_directory(
         render_intent=LocationRenderIntent(path=display),
     )
 
+
 def read_project_text_file(project_root: Path, raw_path: str) -> str:
     operations = LocalFileSystem()
     root = project_root.resolve()

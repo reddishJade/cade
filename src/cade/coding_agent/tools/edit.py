@@ -45,12 +45,14 @@ EDIT_FILE_SCHEMA = {
     "additionalProperties": False,
 }
 
+
 @dataclass(frozen=True)
 class EditFileRequest:
     path: Path
     old_text: str
     new_text: str
     replace_all: bool
+
 
 def build_edit_tool(
     project_root: Path,
@@ -120,6 +122,7 @@ def _parse_edit_file_request(
         new_text=str(data.get("new_text", "")),
         replace_all=bool(data.get("replace_all", False)),
     )
+
 
 def _edit_file_impl(
     root: Path,
