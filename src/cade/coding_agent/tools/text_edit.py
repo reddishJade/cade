@@ -92,6 +92,7 @@ def apply_text_replacement(
         count=0 if replace_all else 1,
     )
 
+
 def apply_text_edits(
     content: str,
     edits: tuple[tuple[str, str], ...],
