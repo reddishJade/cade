@@ -81,8 +81,10 @@ def test_shell_streams_large_output_to_log(tmp_path: Path) -> None:
     command = [
         sys.executable,
         "-c",
-        "import sys; sys.stdout.buffer.write("
-        "'start\\n'.encode() + '界'.encode() * 50000 + b'\\nEND')",
+        (
+            "import sys; sys.stdout.buffer.write("
+            "'start\\n'.encode() + '界'.encode() * 50000 + b'\\nEND')"
+        ),
     ]
     updates: list[str] = []
     result = SubprocessShell().run(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 
 
 def detect_line_ending(content: str) -> str:
@@ -116,7 +117,7 @@ def apply_text_edits(
         matched.append((first, new_text))
 
     matched.sort(key=lambda item: item[0].start())
-    for (previous, _), (current, _) in zip(matched, matched[1:], strict=False):
+    for (previous, _), (current, _) in pairwise(matched):
         if previous.end() > current.start():
             raise ValueError("Edit ranges overlap; merge changes into one entry")
 

@@ -121,13 +121,13 @@ def _parse_edit_file_request(
         edits: list[tuple[str, str]] = []
         for index, item in enumerate(items):
             if not isinstance(item, dict):
-                raise ValueError(f"edits[{index}] must be an object")
+                raise TypeError(f"edits[{index}] must be an object")
             old_text = item.get("old_text")
             new_text = item.get("new_text")
             if not isinstance(old_text, str) or not old_text.strip():
                 raise ValueError(f"edits[{index}].old_text must not be empty")
             if not isinstance(new_text, str):
-                raise ValueError(f"edits[{index}].new_text is required")
+                raise TypeError(f"edits[{index}].new_text is required")
             edits.append((old_text, new_text))
         return EditFileRequest(path=path, edits=tuple(edits), replace_all=False)
 
@@ -136,7 +136,7 @@ def _parse_edit_file_request(
     if not isinstance(old_text, str) or not old_text.strip():
         raise ValueError("old_text must not be empty")
     if not isinstance(new_text, str):
-        raise ValueError("new_text is required")
+        raise TypeError("new_text is required")
     return EditFileRequest(
         path=path,
         edits=((old_text, new_text),),
