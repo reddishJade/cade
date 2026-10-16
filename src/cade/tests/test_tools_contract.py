@@ -216,3 +216,110 @@ def test_bash_rejects_invalid_workdir(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="parent-directory paths are not allowed"):
         _resolve_workdir(tmp_path, "../other")
+
+
+def test_edit_matches_mixed_line_endings_without_normalizing_file(
+    tmp_path: Path,
+) -> None:
+    """跨 LF/CRLF 匹配时逐个保留原换行符及目标外字节。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "mixed.txt"
+    before = b"\xef\xbb\xbfhead\r\nfirst\nsecond\r\nthird\nfoot\r\n"
+    expected = b"\xef\xbb\xbfhead\r\nFIRST\nSECOND\r\nTHIRD\nfoot\r\n"
+    path.write_bytes(before)
+
+    result = edit_file_content(
+        tmp_path,
+        fs,
+        {
+            "path": "mixed.txt",
+            "old_text": "first\nsecond\nthird",
+            "new_text": "FIRST\nSECOND\nTHIRD",
+        },
+    )
+
+    assert path.read_bytes() == expected
+    assert "replacements=1" in str(result)
+    patch = str(result.metadata["patch"])
+    assert "+FIRST\n" in patch
+    assert "+SECOND\r\n" in patch
+
+
+def test_edit_replace_all_keeps_each_occurrence_line_endings(tmp_path: Path) -> None:
+    """不同换行风格的多处匹配分别继承各自的换行符。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "repeated.txt"
+    path.write_bytes(b"top\r\nitem\r\nvalue\nmid\nitem\nvalue\r\nend")
+
+    result = edit_file_content(
+        tmp_path,
+        fs,
+        {
+            "path": "repeated.txt",
+            "old_text": "item\nvalue",
+            "new_text": "ITEM\nVALUE",
+            "replace_all": True,
+        },
+    )
+
+    assert path.read_bytes() == b"top\r\nITEM\r\nVALUE\nmid\nITEM\nVALUE\r\nend"
+    assert "replacements=2" in str(result)
+
+
+def test_edit_rejects_ambiguous_matches_with_different_endings(
+    tmp_path: Path,
+) -> None:
+    """LF 和 CRLF 归一匹配后如存在多个候选，应拒绝且不写入。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "ambiguous.txt"
+    before = b"item\r\nvalue\nitem\nvalue"
+    path.write_bytes(before)
+
+    with pytest.raises(ValueError, match="Found multiple matches"):
+        edit_file_content(
+            tmp_path,
+            fs,
+            {
+                "path": "ambiguous.txt",
+                "old_text": "item\nvalue",
+                "new_text": "ITEM\nVALUE",
+            },
+        )
+
+    assert path.read_bytes() == before
+
+
+def test_edit_uses_adjacent_line_ending_for_new_lines(tmp_path: Path) -> None:
+    """目标原本不含换行符时，新换行符跟随相邻行而非整个文件。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "insert.txt"
+    path.write_bytes(b"crlf\r\nnext\neditable\nend\r\n")
+
+    edit_file_content(
+        tmp_path,
+        fs,
+        {"path": "insert.txt", "old_text": "editable", "new_text": "edit\nable"},
+    )
+
+    assert path.read_bytes() == b"crlf\r\nnext\nedit\nable\nend\r\n"
+
+
+def test_edit_adds_lines_without_modifying_unmatched_line_endings(
+    tmp_path: Path,
+) -> None:
+    """新增行遵循匹配区域的换行风格，其他行保持原样。"""
+    fs = LocalFileSystem()
+    path = tmp_path / "added.txt"
+    path.write_bytes(b"head\nA\r\nB\nC\r\nend")
+
+    edit_file_content(
+        tmp_path,
+        fs,
+        {
+            "path": "added.txt",
+            "old_text": "A\nB\nC",
+            "new_text": "A\nX\nY\nC",
+        },
+    )
+
+    assert path.read_bytes() == b"head\nA\r\nX\nY\nC\r\nend"

@@ -71,7 +71,7 @@ def build_edit_tool(
         name="edit",
         description=(
             "Modify an existing text file with a targeted replacement. "
-            "old_text must match exactly, including whitespace and newlines. "
+            "old_text matches literally, with LF/CRLF compatibility. "
             "Use write for new files or full replacements."
         ),
         input_hint='JSON: {"path": "src/x.py", "old_text": "...", "new_text": "..."}',
@@ -135,15 +135,6 @@ def _edit_file_impl(
     new_text = request.new_text
     display = _display(root, path)
 
-    # 读取工具展示 LF；仅将匹配片段映射到原文件的 CRLF。
-    if old_text not in before and "\r\n" in before:
-        crlf_text = normalize_to_lf(old_text).replace("\n", "\r\n")
-        if crlf_text in before:
-            old_text = crlf_text
-
-    if "\r\n" in before:
-        new_text = normalize_to_lf(new_text).replace("\n", "\r\n")
-
     try:
         updated = apply_text_replacement(
             before, old_text, new_text, replace_all=request.replace_all
@@ -154,7 +145,11 @@ def _edit_file_impl(
     if updated == before:
         raise ValueError(f"No changes made to {display}.")
 
-    total = before.count(old_text) if request.replace_all else 1
+    total = (
+        normalize_to_lf(before).count(normalize_to_lf(old_text))
+        if request.replace_all
+        else 1
+    )
     ensure_write_size(updated)
     write_text(path, updated, encoding, operations)
 
