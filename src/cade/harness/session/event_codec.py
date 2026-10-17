@@ -54,7 +54,28 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             ]
         }
     if isinstance(event, AssistantStructuredEvent):
-        return [_assistant_block_payload(block) for block in event.data]
+        blocks = [_assistant_block_payload(block) for block in event.data]
+        if event.replay_payload is None and event.reasoning_content is None:
+            return blocks
+        return {
+            "blocks": blocks,
+            "reasoning_content": event.reasoning_content,
+            "replay_payload": (
+                {
+                    "protocol": event.replay_payload.protocol,
+                    "transport": event.replay_payload.transport,
+                    "model": event.replay_payload.model,
+                    "output_items": [
+                        dict(item) for item in event.replay_payload.output_items
+                    ],
+                    "reasoning_tokens": event.replay_payload.reasoning_tokens,
+                    "output_tokens": event.replay_payload.output_tokens,
+                    "output_token_limit": event.replay_payload.output_token_limit,
+                }
+                if event.replay_payload is not None
+                else None
+            ),
+        }
     if isinstance(event, ToolUseStructuredEvent):
         return {
             "id": event.data.id,

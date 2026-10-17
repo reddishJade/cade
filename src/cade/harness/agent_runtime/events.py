@@ -11,7 +11,7 @@ from cade.agent.types import (
     ToolCallContent,
     ToolRenderIntent,
 )
-from cade.ai.events import ToolCall
+from cade.ai.events import ProviderReplayPayload, ToolCall
 
 from ...agent.events import (
     AgentEvent,
@@ -125,6 +125,8 @@ class AssistantStructuredEvent:
     step: int
     data: tuple[AssistantEventBlock, ...]
     correlation: EventCorrelation = field(default_factory=EventCorrelation)
+    replay_payload: ProviderReplayPayload | None = None
+    reasoning_content: str | None = None
 
 
 @dataclass(frozen=True)
@@ -351,16 +353,20 @@ def _translate_message_end(
     state: _StreamTranslationState,
 ) -> AssistantStructuredEvent | None:
     msg = event.message
-    if not isinstance(msg, AssistantMessage) or not msg.content:
+    if not isinstance(msg, AssistantMessage) or (
+        not msg.content and msg.replay_payload is None
+    ):
         return None
     blocks = _assistant_event_blocks(msg)
-    if not blocks:
+    if not blocks and msg.replay_payload is None:
         return None
     return AssistantStructuredEvent(
         "assistant",
         state.step,
         blocks,
         state.correlation.snapshot(),
+        msg.replay_payload,
+        msg.reasoning_content,
     )
 
 

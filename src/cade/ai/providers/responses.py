@@ -15,12 +15,14 @@ import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterator, Mapping
 from inspect import isawaitable
-from typing import Any
+from typing import Any, cast
 
 from cade.ai.cache import CacheUsage
 from cade.ai.events import (
     FinalMessage,
     ProviderEvent,
+    ProviderJsonValue,
+    ProviderReplayPayload,
     ReasoningDelta,
     TextDelta,
     ToolCall,
@@ -251,6 +253,9 @@ def to_responses_tools(
 
 def to_responses_input(
     messages: list[dict[str, Any]],
+    *,
+    transport: str | None = None,
+    model: str | None = None,
 ) -> list[dict[str, Any]]:
     """将内部会话消息转换为 Responses API 的 input 项数组。"""
     items: list[dict[str, Any]] = []
@@ -272,6 +277,17 @@ def to_responses_input(
             continue
 
         if role == "assistant":
+            replay_payload = msg.get("_cade_replay_payload")
+            replay_items = _compatible_replay_items(
+                replay_payload,
+                transport=transport,
+                model=model,
+                visible_tool_calls=msg.get("tool_calls"),
+            )
+            if replay_items is not None:
+                items.extend(replay_items)
+                continue
+
             # 处理 tool calls
             tool_calls = msg.get("tool_calls")
             if isinstance(tool_calls, list):
@@ -323,6 +339,65 @@ def to_responses_input(
     return items
 
 
+def _compatible_replay_items(
+    value: object,
+    *,
+    transport: str | None,
+    model: str | None,
+    visible_tool_calls: object,
+) -> list[dict[str, Any]] | None:
+    if not isinstance(value, Mapping):
+        return None
+    if (
+        value.get("protocol") != "openai_responses"
+        or value.get("transport") != transport
+        or value.get("model") != model
+    ):
+        return None
+    raw_items = value.get("output_items")
+    if not isinstance(raw_items, (list, tuple)):
+        return None
+    items: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, Mapping):
+            return None
+        items.append(dict(item))
+    if not items:
+        return None
+
+    visible_call_ids: list[str] = []
+    if isinstance(visible_tool_calls, list):
+        for call in visible_tool_calls:
+            if not isinstance(call, Mapping):
+                return None
+            call_id = call.get("id")
+            if not isinstance(call_id, str) or not call_id:
+                return None
+            visible_call_ids.append(call_id)
+    elif visible_tool_calls is not None:
+        return None
+
+    replay_call_ids: list[str] = []
+    has_reasoning_item = False
+    for item in items:
+        if item.get("type") == "reasoning":
+            has_reasoning_item = True
+        elif item.get("type") == "function_call":
+            call_id = item.get("call_id")
+            if not isinstance(call_id, str) or not call_id:
+                return None
+            replay_call_ids.append(call_id)
+    if replay_call_ids != visible_call_ids:
+        return None
+
+    if has_reasoning_item and not any(
+        _optional_response_int(value, name) is not None
+        for name in ("reasoning_tokens", "output_tokens", "output_token_limit")
+    ):
+        return None
+    return items
+
+
 def to_responses_text_config(
     response_format: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
@@ -345,12 +420,174 @@ def _response_value(value: object, name: str, default: Any = None) -> Any:
     return getattr(value, name, default)
 
 
+def _response_json_value(value: object) -> ProviderJsonValue:
+    """按 SDK wire alias 将已完成的输出项转换为 JSON 值。"""
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        value = model_dump(mode="json", by_alias=True, exclude_none=True)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        result: dict[str, ProviderJsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError("Responses output item keys must be strings")
+            result[key] = _response_json_value(item)
+        return result
+    if isinstance(value, (list, tuple)):
+        return [_response_json_value(item) for item in value]
+    raise TypeError("Responses output item contains a non-JSON value")
+
+
+def _response_replay_item(value: object) -> dict[str, ProviderJsonValue]:
+    item = _response_json_value(value)
+    if not isinstance(item, dict):
+        raise TypeError("Responses output item must be an object")
+    return item
+
+
+def _merge_completed_output_items(
+    streamed_items: list[tuple[int | None, dict[str, ProviderJsonValue]]],
+    response_items: list[tuple[int, dict[str, ProviderJsonValue]]],
+) -> list[tuple[int | None, dict[str, ProviderJsonValue]]] | None:
+    indexed: dict[int, dict[str, ProviderJsonValue]] = {}
+    unindexed: list[dict[str, ProviderJsonValue]] = []
+
+    for index, item in streamed_items:
+        if index is None:
+            item_id = _replay_item_id(item)
+            if item not in unindexed and not (
+                item_id is not None
+                and any(_replay_item_id(existing) == item_id for existing in unindexed)
+            ):
+                unindexed.append(item)
+            continue
+        existing = indexed.get(index)
+        if existing is not None and existing != item:
+            return None
+        item_id = _replay_item_id(item)
+        already_present = (
+            any(
+                _replay_item_id(existing_item) == item_id
+                for existing_item in indexed.values()
+            )
+            if item_id is not None
+            else item in indexed.values()
+        )
+        if not already_present:
+            indexed[index] = item
+
+    for index, item in response_items:
+        item_id = _replay_item_id(item)
+        matching_unindexed = next(
+            (
+                unindexed_index
+                for unindexed_index, existing_item in enumerate(unindexed)
+                if (item_id is not None and _replay_item_id(existing_item) == item_id)
+                or (item_id is None and existing_item == item)
+            ),
+            None,
+        )
+        if matching_unindexed is not None:
+            unindexed[matching_unindexed] = item
+            continue
+        matching_index = next(
+            (
+                existing_index
+                for existing_index, existing_item in indexed.items()
+                if (item_id is not None and _replay_item_id(existing_item) == item_id)
+                or (item_id is None and existing_item == item)
+            ),
+            None,
+        )
+        if matching_index is not None:
+            indexed[matching_index] = item
+            continue
+        if item in unindexed:
+            unindexed.remove(item)
+            indexed[index] = item
+            continue
+        existing = indexed.get(index)
+        if existing is not None:
+            if existing != item:
+                return None
+            indexed[index] = item
+            continue
+        indexed[index] = item
+
+    indexed_ids = {
+        item_id
+        for item in indexed.values()
+        if (item_id := _replay_item_id(item)) is not None
+    }
+    unindexed = [
+        item
+        for item in unindexed
+        if _replay_item_id(item) not in indexed_ids and item not in indexed.values()
+    ]
+    return [
+        *((index, item) for index, item in sorted(indexed.items())),
+        *((None, item) for item in unindexed),
+    ]
+
+
+def _replay_item_id(item: Mapping[str, ProviderJsonValue]) -> str | None:
+    item_id = item.get("id")
+    return item_id if isinstance(item_id, str) and item_id else None
+
+
+def _optional_response_int(value: object, name: str) -> int | None:
+    result = _response_value(value, name)
+    if isinstance(result, int) and not isinstance(result, bool) and result >= 0:
+        return result
+    return None
+
+
+def _completed_replay_payload(
+    indexed_items: list[tuple[int | None, dict[str, ProviderJsonValue]]],
+    transport: str,
+    model: str,
+    reasoning_tokens: int | None,
+    output_tokens: int | None,
+    output_token_limit: int | None,
+) -> ProviderReplayPayload | None:
+    if not indexed_items:
+        return None
+    indices = [index for index, _ in indexed_items]
+    if any(index is not None for index in indices):
+        if any(index is None for index in indices):
+            return None
+        ordered = sorted(indexed_items, key=lambda entry: cast(int, entry[0]))
+        if [index for index, _ in ordered] != list(range(len(ordered))):
+            return None
+    else:
+        ordered = indexed_items
+    return ProviderReplayPayload(
+        protocol="openai_responses",
+        transport=transport,
+        model=model,
+        output_items=tuple(item for _, item in ordered),
+        reasoning_tokens=reasoning_tokens,
+        output_tokens=output_tokens,
+        output_token_limit=output_token_limit,
+    )
+
+
 def _response_int(value: object, name: str) -> int:
     """从 SDK 模型或字典事件中安全读取整数字段。"""
     result = _response_value(value, name, 0)
     if isinstance(result, int) and not isinstance(result, bool):
         return result
     return 0
+
+
+def _response_tool_arguments(value: object) -> str:
+    arguments = _response_value(value, "arguments")
+    if isinstance(arguments, str):
+        return arguments
+    if arguments is None:
+        return "{}"
+    return json.dumps(arguments)
 
 
 def _reasoning_summary_text(item: object) -> str:
@@ -499,7 +736,11 @@ class OpenAIResponsesProvider:
         client, extra_headers = self._get_client_and_headers()
         try:
             instructions, input_messages = extract_responses_instructions(messages)
-            responses_input = to_responses_input(input_messages)
+            responses_input = to_responses_input(
+                input_messages,
+                transport=self.transport,
+                model=self.config.model,
+            )
             responses_tools = to_responses_tools(tools, strict=self._strict_tools())
 
             params: dict[str, Any] = {
@@ -584,6 +825,15 @@ class OpenAIResponsesProvider:
         ordered_call_ids: list[str] = []
         accumulated_text = ""
         accumulated_reasoning: dict[str, str] = defaultdict(str)
+        completed_output_items: list[
+            tuple[int | None, dict[str, ProviderJsonValue]]
+        ] = []
+        completed_call_ids: set[str] = set()
+        replay_items_valid = True
+        response_completed = False
+        reasoning_tokens_for_replay: int | None = None
+        output_tokens_for_replay: int | None = None
+        output_token_limit = _optional_response_int(params, "max_output_tokens")
         last_response_id: str | None = None
 
         async for event in _iterate_response_events(response_stream):
@@ -624,6 +874,19 @@ class OpenAIResponsesProvider:
                 "response.output_item.done",
             ):
                 item = _response_value(event, "item")
+                if event_type == "response.output_item.done":
+                    replay_item = _response_replay_item(item)
+                    completed_output_items.append(
+                        (
+                            _optional_response_int(event, "output_index"),
+                            replay_item,
+                        )
+                    )
+                    item_id = str(_response_value(item, "id", "") or "")
+                    if replay_item.get("type") == "function_call":
+                        call_id = str(replay_item.get("call_id") or item_id)
+                        if call_id:
+                            completed_call_ids.add(call_id)
                 item_type = _response_value(item, "type", "") if item else ""
                 if item_type == "reasoning":
                     key = _reasoning_item_key(event, _reasoning_item_key(item))
@@ -644,6 +907,9 @@ class OpenAIResponsesProvider:
                         ordered_call_ids.append(call_id)
                     function_calls[call_id]["id"] = call_id
                     function_calls[call_id]["name"] = name
+                    function_calls[call_id]["arguments"] = _response_tool_arguments(
+                        item
+                    )
 
             elif event_type == "response.function_call_arguments.delta":
                 raw_id = str(
@@ -674,20 +940,59 @@ class OpenAIResponsesProvider:
             ):
                 resp = _response_value(event, "response")
                 if resp:
+                    response_status = _response_value(resp, "status")
+                    if event_type == "response.completed":
+                        response_completed = True
+                    elif event_type == "response.done":
+                        response_completed = response_status in (None, "completed")
+                    elif event_type == "response.incomplete":
+                        response_completed = False
                     last_response_id = _response_value(resp, "id")
                     response_output = _response_value(resp, "output", ())
                     if isinstance(response_output, (list, tuple)):
+                        response_items: list[
+                            tuple[int, dict[str, ProviderJsonValue]]
+                        ] = []
                         for output_index, item in enumerate(response_output):
-                            if _response_value(item, "type", "") != "reasoning":
+                            item_status = _response_value(item, "status")
+                            if item_status not in (None, "completed"):
                                 continue
-                            key = f"output:{output_index}"
-                            complete_text = _reasoning_summary_text(item)
-                            suffix = _unseen_reasoning_suffix(
-                                accumulated_reasoning[key], complete_text
+                            item_type = _response_value(item, "type", "")
+                            if response_completed:
+                                replay_item = _response_replay_item(item)
+                                response_items.append((output_index, replay_item))
+                                item_id = str(replay_item.get("id") or "")
+                                if replay_item.get("type") == "function_call":
+                                    call_id = str(replay_item.get("call_id") or item_id)
+                                    if call_id:
+                                        completed_call_ids.add(call_id)
+                                        if call_id not in ordered_call_ids:
+                                            ordered_call_ids.append(call_id)
+                                        function_calls[call_id]["id"] = call_id
+                                        function_calls[call_id]["name"] = str(
+                                            replay_item.get("name") or ""
+                                        )
+                                        function_calls[call_id]["arguments"] = (
+                                            _response_tool_arguments(replay_item)
+                                        )
+                            if item_type == "reasoning":
+                                key = f"output:{output_index}"
+                                complete_text = _reasoning_summary_text(item)
+                                suffix = _unseen_reasoning_suffix(
+                                    accumulated_reasoning[key], complete_text
+                                )
+                                if suffix:
+                                    accumulated_reasoning[key] += suffix
+                                    yield ReasoningDelta(chunk=suffix)
+                        if response_completed:
+                            merged_items = _merge_completed_output_items(
+                                completed_output_items,
+                                response_items,
                             )
-                            if suffix:
-                                accumulated_reasoning[key] += suffix
-                                yield ReasoningDelta(chunk=suffix)
+                            if merged_items is None:
+                                replay_items_valid = False
+                            else:
+                                completed_output_items = merged_items
                     usage = _response_value(resp, "usage")
                     if usage:
                         prompt_tokens = _response_int(usage, "input_tokens")
@@ -697,6 +1002,12 @@ class OpenAIResponsesProvider:
                         output_details = _response_value(usage, "output_tokens_details")
                         reasoning_tokens = _response_int(
                             output_details, "reasoning_tokens"
+                        )
+                        reasoning_tokens_for_replay = _optional_response_int(
+                            output_details, "reasoning_tokens"
+                        )
+                        output_tokens_for_replay = _optional_response_int(
+                            usage, "output_tokens"
                         )
 
                         self._metrics["cached_tokens"] = cached_tokens
@@ -718,7 +1029,6 @@ class OpenAIResponsesProvider:
 
         if last_response_id:
             self._last_response_id = last_response_id
-
         # 构建工具调用事件
         ready_calls = [
             ToolCall(
@@ -727,14 +1037,42 @@ class OpenAIResponsesProvider:
                 input=parse_tool_arguments(function_calls[cid]["arguments"]),
             )
             for cid in ordered_call_ids
-            if cid in function_calls
+            if cid in function_calls and cid in completed_call_ids
         ]
 
-        if ready_calls:
+        if ready_calls and response_completed:
             yield ToolCallEvent(calls=ready_calls)
-            yield FinalMessage(content=accumulated_text, stop_reason="tool_use")
+            yield FinalMessage(
+                content=accumulated_text,
+                stop_reason="tool_use",
+                replay_payload=_completed_replay_payload(
+                    completed_output_items,
+                    self.transport,
+                    self.config.model,
+                    reasoning_tokens_for_replay,
+                    output_tokens_for_replay,
+                    output_token_limit,
+                )
+                if replay_items_valid
+                else None,
+            )
         else:
-            yield FinalMessage(content=accumulated_text, stop_reason="end_turn")
+            yield FinalMessage(
+                content=accumulated_text,
+                stop_reason="end_turn" if response_completed else "max_tokens",
+                replay_payload=(
+                    _completed_replay_payload(
+                        completed_output_items,
+                        self.transport,
+                        self.config.model,
+                        reasoning_tokens_for_replay,
+                        output_tokens_for_replay,
+                        output_token_limit,
+                    )
+                    if response_completed and replay_items_valid
+                    else None
+                ),
+            )
 
 
 class OpenAICodexResponsesProvider(OpenAIResponsesProvider):

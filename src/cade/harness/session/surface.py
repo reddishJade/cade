@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
+from pydantic import ValidationError
+
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -14,6 +16,7 @@ from cade.agent.messages import (
     UserMessage,
 )
 from cade.agent.types import ToolCallContent
+from cade.ai.events import ProviderReplayPayload
 
 from .schema import SESSION_EVENT_SCHEMA_VERSION
 from .types import JsonValue, SessionEntry
@@ -222,6 +225,8 @@ class _AssistantEvent:
     content: tuple[object, ...]
     tool_call_ids: frozenset[str]
     texts: tuple[str, ...]
+    reasoning_content: str | None = None
+    replay_payload: ProviderReplayPayload | None = None
 
 
 def _message_kind(message: AgentMessage) -> str:
@@ -281,12 +286,34 @@ def _transcript_event(data: object, event_type: str) -> object | None:
 def _assistant_event(data: object) -> _AssistantEvent | None:
     from cade.agent.types import ContentBlock, TextContent
 
-    if not isinstance(data, list):
+    reasoning_content: str | None = None
+    replay_payload: ProviderReplayPayload | None = None
+    if isinstance(data, dict):
+        raw_blocks = data.get("blocks")
+        if not isinstance(raw_blocks, list):
+            return None
+        blocks = raw_blocks
+        raw_reasoning = data.get("reasoning_content")
+        if isinstance(raw_reasoning, str):
+            reasoning_content = raw_reasoning
+        raw_replay = data.get("replay_payload")
+        if raw_replay is not None:
+            try:
+                replay_payload = AssistantMessage.model_validate(
+                    {"replay_payload": raw_replay}
+                ).replay_payload
+            except ValidationError as exc:
+                raise InvalidSessionSurfaceError(
+                    "assistant replay payload is invalid"
+                ) from exc
+    elif isinstance(data, list):
+        blocks = data
+    else:
         return None
     content: list[ContentBlock] = []
     ids: set[str] = set()
     texts: list[str] = []
-    for raw in data:
+    for raw in blocks:
         if not isinstance(raw, dict):
             continue
         if raw.get("type") == "text":
@@ -299,9 +326,15 @@ def _assistant_event(data: object) -> _AssistantEvent | None:
         if call is not None:
             content.append(call)
             ids.add(call.id)
-    if not content:
+    if not content and replay_payload is None:
         return None
-    return _AssistantEvent(tuple(content), frozenset(ids), tuple(texts))
+    return _AssistantEvent(
+        tuple(content),
+        frozenset(ids),
+        tuple(texts),
+        reasoning_content,
+        replay_payload,
+    )
 
 
 def _tool_call(data: object) -> ToolCallContent | None:
@@ -355,7 +388,13 @@ def _append_tool_assistant(
         block for block in event.content if not isinstance(block, ToolCallContent)
     ]
     content.extend(calls)
-    messages.append(AssistantMessage(content=cast(list[ContentBlock], content)))
+    messages.append(
+        AssistantMessage(
+            content=cast(list[ContentBlock], content),
+            reasoning_content=event.reasoning_content,
+            replay_payload=event.replay_payload,
+        )
+    )
     seen.update(call.id for call in calls)
     pending.clear()
 

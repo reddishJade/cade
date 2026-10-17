@@ -143,4 +143,14 @@ def _convert_assistant(m: AssistantMessage) -> dict[str, Any]:
         )
     if tool_calls:
         result["tool_calls"] = tool_calls
+    if m.replay_payload is not None:
+        result["_cade_replay_payload"] = {
+            "protocol": m.replay_payload.protocol,
+            "transport": m.replay_payload.transport,
+            "model": m.replay_payload.model,
+            "output_items": [dict(item) for item in m.replay_payload.output_items],
+            "reasoning_tokens": m.replay_payload.reasoning_tokens,
+            "output_tokens": m.replay_payload.output_tokens,
+            "output_token_limit": m.replay_payload.output_token_limit,
+        }
     return result

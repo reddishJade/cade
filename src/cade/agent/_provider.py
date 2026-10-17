@@ -38,6 +38,7 @@ from cade.ai.events import (
     Message,
     ProviderEvent,
     ProviderFailure,
+    ProviderReplayPayload,
     ReasoningDelta,
     StopReason,
     TextDelta,
@@ -288,6 +289,7 @@ def _provider_events_to_response(
     has_usage = False
     final_content: str | None = None
     provider_failure: ProviderFailure | None = None
+    replay_payload: ProviderReplayPayload | None = None
 
     for event in events:
         if isinstance(event, TextDelta):
@@ -309,6 +311,7 @@ def _provider_events_to_response(
             final_content = f"Provider error: {event.message}"
         if isinstance(event, FinalMessage):
             stop_reason = event.stop_reason or "end_turn"
+            replay_payload = event.replay_payload
             if event.content:
                 final_content = event.content
 
@@ -331,6 +334,7 @@ def _provider_events_to_response(
             stop_reason=stop_reason,
             error_message=final_content if stop_reason == "error" else None,
             provider_failure=provider_failure,
+            replay_payload=(replay_payload if stop_reason != "error" else None),
             usage=usage,
         ),
         stop_reason=stop_reason,

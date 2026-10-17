@@ -28,8 +28,20 @@ def repair_tool_pairing(messages: list[AgentMessage]) -> list[AgentMessage]:
                 for block in msg.content
                 if not isinstance(block, ToolCallContent) or block.id in tool_result_ids
             ]
-            if filtered_content:
-                repaired.append(msg.model_copy(update={"content": filtered_content}))
+            if filtered_content or (not msg.content and msg.replay_payload is not None):
+                replay_payload = (
+                    None
+                    if len(filtered_content) != len(msg.content)
+                    else msg.replay_payload
+                )
+                repaired.append(
+                    msg.model_copy(
+                        update={
+                            "content": filtered_content,
+                            "replay_payload": replay_payload,
+                        }
+                    )
+                )
         elif isinstance(msg, ToolResultMessage):
             if msg.tool_call_id in tool_call_ids:
                 repaired.append(msg)

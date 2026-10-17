@@ -13,7 +13,7 @@ from cade.agent.types import (
     ToolRenderIntent,
     ToolResultContent,
 )
-from cade.ai.events import ProviderFailure, StopReason
+from cade.ai.events import ProviderFailure, ProviderReplayPayload, StopReason
 
 type UserContent = str | list[TextContent | ImageContent | FileContent]
 type ToolResultMessageContent = (
@@ -52,6 +52,7 @@ class AssistantMessage(BaseModel):
     stop_reason: StopReason = "end_turn"
     error_message: str | None = None
     provider_failure: ProviderFailure | None = None
+    replay_payload: ProviderReplayPayload | None = None
     model: str = ""
     provider: str = ""
     timestamp: int = 0

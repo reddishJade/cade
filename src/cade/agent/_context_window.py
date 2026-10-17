@@ -49,6 +49,45 @@ def estimate_wire_message_tokens(
     count_tokens: Callable[[str], int] = estimate_tokens,
 ) -> int:
     """按实际消息正文估算，避免把 JSON 转义与 Python repr 算成模型输入。"""
+    replay = message.get("_cade_replay_payload")
+    if isinstance(replay, Mapping) and replay.get("protocol") == "openai_responses":
+        reasoning_tokens = replay.get("reasoning_tokens")
+        output_tokens = replay.get("output_tokens")
+        if (
+            isinstance(reasoning_tokens, int)
+            and not isinstance(reasoning_tokens, bool)
+            and reasoning_tokens >= 0
+        ):
+            replay_reasoning_tokens = reasoning_tokens
+        else:
+            replay_reasoning_tokens = None
+        output_token_limit = replay.get("output_token_limit")
+        if (
+            isinstance(output_tokens, int)
+            and not isinstance(output_tokens, bool)
+            and output_tokens >= 0
+        ):
+            replay_output_budget = output_tokens
+        elif (
+            isinstance(output_token_limit, int)
+            and not isinstance(output_token_limit, bool)
+            and output_token_limit >= 0
+        ):
+            replay_output_budget = output_token_limit
+        else:
+            replay_output_budget = None
+        raw_items = replay.get("output_items")
+        has_reasoning_item = isinstance(raw_items, list) and any(
+            isinstance(item, Mapping) and item.get("type") == "reasoning"
+            for item in raw_items
+        )
+        if (
+            replay_reasoning_tokens is None
+            and has_reasoning_item
+            and replay_output_budget is not None
+        ):
+            return 4 + replay_output_budget
+
     total = 4
     content = message.get("content")
     if isinstance(content, str):
@@ -82,4 +121,19 @@ def estimate_wire_message_tokens(
                     if isinstance(value, str):
                         total += count_tokens(value)
             total += 4
+    if isinstance(replay, Mapping):
+        reasoning_tokens = replay.get("reasoning_tokens")
+        if (
+            isinstance(reasoning_tokens, int)
+            and not isinstance(reasoning_tokens, bool)
+            and reasoning_tokens >= 0
+        ):
+            total += reasoning_tokens
+        output_tokens = replay.get("output_tokens")
+        if (
+            isinstance(output_tokens, int)
+            and not isinstance(output_tokens, bool)
+            and output_tokens >= 0
+        ):
+            total = max(total, 4 + output_tokens)
     return total

@@ -1007,7 +1007,7 @@
       if (inner.type === "inbox/claimed") {
         renderUser(inner.data?.display_text || "", entry.id);
       } else if (inner.type === "assistant") {
-        const blocks = inner.data;
+        const blocks = inner.data?.blocks ?? inner.data;
         let text = "";
         if (typeof blocks === "string") text = blocks;
       else if (Array.isArray(blocks)) {

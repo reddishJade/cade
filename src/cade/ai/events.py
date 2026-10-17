@@ -8,6 +8,15 @@ from typing import Literal
 from cade.ai.types import ToolArguments
 
 type Message = dict[str, object]
+type ProviderJsonValue = (
+    str
+    | int
+    | float
+    | bool
+    | None
+    | list["ProviderJsonValue"]
+    | dict[str, "ProviderJsonValue"]
+)
 type StopReason = Literal[
     "end_turn",
     "max_tokens",
@@ -57,6 +66,20 @@ class FinalMessage:
 
     content: str
     stop_reason: StopReason
+    replay_payload: ProviderReplayPayload | None = None
+
+
+@dataclass(frozen=True)
+class ProviderReplayPayload:
+    """完整响应项的 provider 专属重放数据。"""
+
+    protocol: Literal["openai_responses"]
+    transport: str
+    model: str
+    output_items: tuple[dict[str, ProviderJsonValue], ...]
+    reasoning_tokens: int | None = None
+    output_tokens: int | None = None
+    output_token_limit: int | None = None
 
 
 @dataclass(frozen=True)
