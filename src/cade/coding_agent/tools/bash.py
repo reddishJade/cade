@@ -22,6 +22,7 @@ from .path_utils import resolve_project_path
 from .shell_adapter import (
     ShellSpec,
     build_shell_argv,
+    build_shell_environment,
     build_shell_prompt_guidelines,
     detect_shell,
 )
@@ -64,6 +65,7 @@ def build_bash_tool(
             timeout=request.timeout,
             cancel_event=cancel_event,
             on_progress=on_progress,
+            env=build_shell_environment(spec),
         )
         output = _render_bash_output(result, request.timeout)
         return ToolOutput(

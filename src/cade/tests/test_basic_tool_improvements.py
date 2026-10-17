@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from cade.coding_agent.modes.tui.approval import tool_preview_lines
+from cade.coding_agent.tools.bash import build_bash_tool
 from cade.coding_agent.tools.edit import build_edit_tool, edit_file_content
+from cade.coding_agent.tools.shell_adapter import ShellSpec
 from cade.harness.execution_env import LocalFileSystem, SubprocessShell
 
 
@@ -115,6 +120,53 @@ def test_shell_short_output_needs_no_log(tmp_path: Path) -> None:
     assert result.output == "ready\n"
     assert result.full_output_path is None
     assert result.total_output_lines == 1
+
+
+@pytest.fixture
+def zsh_workspace() -> Iterator[Path]:
+    """在仓库内创建并清理 shell 工具的测试工作区。"""
+    root = Path(__file__).resolve().parents[3] / "e2e-results"
+    root.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="zsh-contract-", dir=root) as directory:
+        yield Path(directory)
+
+
+def test_zsh_bash_uses_effective_tempdir_for_heredoc(
+    zsh_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """自定义临时目录应覆盖 zsh 继承的不可用临时文件前缀。"""
+    zsh = shutil.which("zsh")
+    if zsh is None:
+        pytest.skip("zsh is not installed")
+
+    selected_tmpdir = zsh_workspace / "selected-tmp"
+    selected_tmpdir.mkdir()
+    monkeypatch.setenv("TMPDIR", str(selected_tmpdir))
+    monkeypatch.setenv("TMPPREFIX", str(zsh_workspace / "unavailable" / "zsh"))
+    monkeypatch.setenv("CADE_TEST_PASSTHROUGH", "preserved")
+    monkeypatch.setattr(tempfile, "tempdir", None)
+
+    tool = build_bash_tool(
+        zsh_workspace,
+        shell_spec=ShellSpec(
+            name="zsh",
+            command_prefix=(zsh, "-f", "-c"),
+            syntax="posix",
+        ),
+        shell=SubprocessShell(),
+    )
+    result = tool.handler(
+        {
+            "command": (
+                'printf "%s\\n" "$TMPPREFIX"\n'
+                'printf "%s\\n" "$CADE_TEST_PASSTHROUGH"\n'
+                "cat <<'EOF'\nheredoc works\nEOF"
+            )
+        },
+        None,
+    )
+
+    assert result == f"{selected_tmpdir}/zsh\npreserved\nheredoc works\n"
 
 
 def test_batch_edit_approval_marks_each_truncation_and_shows_complete_text(

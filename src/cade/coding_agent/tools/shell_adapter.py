@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -128,6 +129,14 @@ def detect_shell(config: str = "auto") -> ShellSpec:
 
 def build_shell_argv(spec: ShellSpec, command: str) -> list[str]:
     return [*spec.command_prefix, command]
+
+
+def build_shell_environment(spec: ShellSpec) -> dict[str, str] | None:
+    if spec.name != "zsh":
+        return None
+    env = os.environ.copy()
+    env["TMPPREFIX"] = str(Path(tempfile.gettempdir()) / "zsh")
+    return env
 
 
 def _resolve_explicit_shell(config: str) -> ShellSpec:
