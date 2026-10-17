@@ -23,7 +23,6 @@ from .shell_adapter import (
     ShellSpec,
     build_shell_argv,
     build_shell_environment,
-    build_shell_prompt_guidelines,
     detect_shell,
 )
 from .truncate import DEFAULT_MAX_BYTES, truncate_tail
@@ -98,7 +97,11 @@ def build_bash_tool(
         description="Run a shell command.",
         input_hint='JSON: {"command": "git status --short", "timeout_ms": 30000}',
         handler=bash,
-        prompt_guidelines=build_shell_prompt_guidelines(spec, shell_syntax, root),
+        prompt_guidelines=(
+            ("PowerShell 5.1 does not support `&&`; use `;` to separate commands.",)
+            if spec.ps_kind == "powershell"
+            else ()
+        ),
         schema=_build_schema(shell_syntax),
     )
 

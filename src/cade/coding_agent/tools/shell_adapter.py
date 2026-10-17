@@ -12,8 +12,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._constants import DEFAULT_TIMEOUT_SECONDS
-
 SHELL_NAMES = frozenset(
     {
         "auto",
@@ -185,111 +183,8 @@ def _detect_windows_shell() -> ShellSpec:
 
 
 def _detect_posix_shell() -> ShellSpec:
-    shell_env = os.environ.get("SHELL")
-    if shell_env:
-        name = os.path.basename(shell_env)
-        if name in _KNOWN_SHELLS:
-            spec = _KNOWN_SHELLS[name]
-            if not spec.deny and shutil.which(spec.command_prefix[0]):
-                return spec
-    for name in ("bash", "zsh", "sh"):
+    for name in ("bash", "sh"):
         spec = _KNOWN_SHELLS[name]
-        if spec.deny:
-            continue
-        if shutil.which(spec.command_prefix[0]):
+        if _is_on_path(spec):
             return spec
     return _KNOWN_SHELLS["sh"]
-
-
-# ── 提示词 ──
-
-
-def build_shell_prompt_guidelines(
-    spec: ShellSpec,
-    syntax: str,
-    root: Path,
-) -> tuple[str, ...]:
-    """按 shell 类型生成详细使用指引。"""
-    guidelines: list[str] = [
-        "Bash output may be truncated; use the reported full output path when present.",
-    ]
-
-    if syntax == "powershell":
-        ps_ver = spec.ps_kind or "powershell"
-        if ps_ver == "powershell":
-            # PowerShell 5.1 不支持 &&
-            guidelines.extend(
-                [
-                    "PowerShell 5.1: use `;` to chain commands (`&&` is unsupported).",
-                    "Example: `cd src; dir` or `Set-Location src; Get-ChildItem`",
-                ]
-            )
-        else:
-            # PowerShell 7 及以上版本。
-            guidelines.extend(
-                [
-                    "PowerShell 7+ detected: use `&&` or `;` to chain commands.",
-                    "Example: `cd src && dir` or `cd src; dir`",
-                ]
-            )
-        guidelines.extend(
-            [
-                "Use `|` for pipelines (Out-File, Select-Object, etc.).",
-                "Quote paths with spaces using single quotes (').",
-                "Use `cd` to change directory before running commands.",
-                (
-                    "Common file commands: Get-Content (read), Set-Content (write), "
-                    "Remove-Item (del), Copy-Item, Move-Item, New-Item, Out-File"
-                ),
-            ]
-        )
-    elif syntax == "cmd":
-        guidelines.extend(
-            [
-                "Use `&&` or `&` to chain commands in cmd.exe.",
-                "Example: `cd src && dir`",
-                "Use `cd /d` to change drives (e.g. `cd /d D:/projects`).",
-                (
-                    "Common file commands: type (read), copy (read+write), "
-                    "del/erase (delete), move/ren (write), mkdir (write), dir (list)"
-                ),
-            ]
-        )
-    else:
-        guidelines.extend(
-            [
-                "Chain commands with `&&` (stop on error) or `;` (always continue).",
-                "Example: `cd src && cat file.txt`",
-                "Use `cd` to change directory before running commands.",
-                "Use single quotes (') for paths with spaces in bash.",
-                (
-                    "Common file commands: cat (read), cp (read+write), mv (write), "
-                    "rm (delete), rg (content search), fd (file search), "
-                    "curl/wget (download), tar (archive)"
-                ),
-            ]
-        )
-
-    # workdir 指引
-    guidelines.append(
-        "Use the `workdir` parameter to run commands inside the project."
-        f" Project root: {root.as_posix()}"
-    )
-    guidelines.append(
-        "Set `purpose` to `validation` for test, lint, type, build, or other "
-        "checks whose outcomes you will cite as verification. Use commands "
-        "that fail if a check fails."
-    )
-
-    # 运行时变量
-    import sys as _sys
-    import tempfile as _tempfile
-
-    guidelines.append(
-        f"If not specified, commands time out after {DEFAULT_TIMEOUT_SECONDS * 1000}ms."
-    )
-    guidelines.append(
-        f"OS: {_sys.platform}, Shell: {spec.name}, Temp dir: {_tempfile.gettempdir()}"
-    )
-
-    return tuple(guidelines)
