@@ -434,7 +434,6 @@ def build_app(
         auto_approval_callback = auto_reviewer
         closers = (*closers, auto_reviewer.close)
 
-    fallback_provider = providers.llms.get("fallback")
     agent = build_agent(
         project_root=project_root,
         llm=providers.llm,
@@ -448,7 +447,6 @@ def build_app(
         context_rollover=infra.context_rollover,
         context_window_controller=infra.context_window_controller,
         cancellation_token=infra.cancellation_token,
-        fallback_provider=fallback_provider,
         judge_provider=(
             providers.llms["judge"]
             if "judge" in cfg.runtime_config.provider.model_profiles

@@ -294,7 +294,6 @@ class SubagentSessionManager:
         )
         composition = AgentComposition.create(
             primary_provider=provider,
-            fallback_provider=None,
             registry=registry,
             config=parent_composition.config,
             gate=parent_composition.gate,

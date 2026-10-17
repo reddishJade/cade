@@ -60,16 +60,13 @@ The main model uses the three default fields. `provider.model_profiles` stores o
 {
   "provider": {
     "model_profiles": {
-      "subagent": {"provider": "openai-codex", "model": "gpt-6-luna", "reasoning_effort": "medium"},
-      "fallback": {"provider": "deepseek", "model": "deepseek-flash", "reasoning_effort": "high"}
+      "subagent": {"provider": "openai-codex", "model": "gpt-6-luna", "reasoning_effort": "medium"}
     }
   }
 }
 ```
 
-The `subagent` role runs delegated tasks. The `fallback` role provides main-model recovery. The `reviewer`, `judge`, and `refiner` roles serve their respective services. Omitted roles and fields inherit from the main model. An explicitly different provider uses its own credentials.
-
-Configuring a fallback provider does not establish that the account has credit. Use an available service and inspect the effective configuration during validation.
+The `subagent` role runs delegated tasks. The `reviewer`, `judge`, and `refiner` roles serve their respective services. Omitted roles and fields inherit from the main model. An explicitly different provider uses its own credentials. Cade does not switch to another model on request failure; use `/model` to change models explicitly.
 
 ## Reasoning effort and selection syntax
 

@@ -93,5 +93,4 @@ def resolve_model_profiles(
             config, provider, model, {**options, **fields}, env_files
         )
     profiles.setdefault("subagent", main)
-    profiles.setdefault("fallback", main)
     return profiles

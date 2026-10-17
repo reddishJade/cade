@@ -116,7 +116,6 @@ def build_agent(
     context_window_controller: ContextWindowController | None = None,
     cancellation_token: CancellationToken | None = None,
     context_rollover: ContextWindowRollover | None = None,
-    fallback_provider: ModelProvider | None = None,
     judge_provider: ModelProvider | None = None,
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = (),
     skill_registry: SkillRegistry | None = None,
@@ -212,7 +211,6 @@ def build_agent(
     )
     composition = AgentComposition.create(
         primary_provider=llm,
-        fallback_provider=fallback_provider,
         registry=registry,
         config=config,
         gate=gate,

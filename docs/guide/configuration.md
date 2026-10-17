@@ -98,7 +98,7 @@ Built-in defaults are `openai-codex` / `gpt-5.6-luna` / `high`. Built-in provide
 
 `cade login --method api_key` saves an API key for the selected provider. Account login through `cade login` saves OAuth credentials. Neither changes startup defaults. `cade setup` explicitly selects a default model and stores credentials separately. `cade auth status` shows authentication type and status, not available account credit.
 
-`provider.options` stores shared request options: `context_window`, `thinking`, `clear_thinking`, `tool_stream`, and `response_format`. `provider.model_profiles` configures the auxiliary roles `subagent`, `fallback`, `reviewer`, `judge`, and `refiner`. Omitted roles inherit the main model; omitted fields inherit main-model options. For example:
+`provider.options` stores shared request options: `context_window`, `thinking`, `clear_thinking`, `tool_stream`, and `response_format`. `provider.model_profiles` configures the auxiliary roles `subagent`, `reviewer`, `judge`, and `refiner`. Omitted roles inherit the main model; omitted fields inherit main-model options. For example:
 
 ```json
 {

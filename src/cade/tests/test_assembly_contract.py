@@ -492,3 +492,68 @@ async def test_goal_uses_configured_judge_or_current_main(
     assert len(main.requests) == (0 if switch_main else 1 if configured_judge else 2)
     if switch_main:
         assert len(switched.requests) == (1 if configured_judge else 2)
+
+
+class _UnauthorizedModelError(RuntimeError):
+    status_code = 401
+
+
+class _FailingSelectedProvider(_WorkingDirectoryProvider):
+    """在每次模型请求中模拟不可重试的鉴权失败。"""
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        options: StreamOptions | None = None,
+        **kwargs: object,
+    ) -> AsyncIterator[ProviderEvent]:
+        self.requests.append((list(messages), list(tools)))
+        yield TextDelta(chunk="")
+        raise _UnauthorizedModelError("Selected model authentication failed")
+
+
+def test_config_rejects_automatic_model_fallback() -> None:
+    """移除的辅助模型角色必须在配置加载时明确报错。"""
+    with pytest.raises(ValueError, match="fallback"):
+        CadeRuntimeConfig.model_validate(
+            {"provider": {"model_profiles": {"fallback": {"model": "other-model"}}}}
+        )
+
+
+@pytest.mark.asyncio
+async def test_failed_main_model_never_uses_backup_provider(
+    working_directory_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """连续模型失败保持所选 Provider，禁止隐式模型切换。"""
+    selected = _FailingSelectedProvider(call_bash=False)
+    unused = _WorkingDirectoryProvider(call_bash=False)
+    profiles = {
+        "main": ModelProfileConfig(chat_model=selected.model),
+        "subagent": ModelProfileConfig(chat_model=selected.model),
+    }
+    bundle = ProviderBundle(
+        llm=selected,
+        llms={"main": selected, "subagent": selected, "fallback": unused},
+    )
+    monkeypatch.setattr(app_module, "resolve_model_profiles", lambda *_args: profiles)
+    monkeypatch.setattr(app_module, "build_provider_bundle", lambda _settings: bundle)
+
+    root = working_directory_root / "no-model-fallback"
+    root.mkdir()
+    app = build_app(
+        project_root=root,
+        runtime_config=CadeRuntimeConfig(),
+        sessions_dir=working_directory_root / "sessions",
+    )
+    try:
+        assert app.agent.provider is selected
+        for attempt in range(4):
+            await app.agent.run_async(f"Request {attempt}")
+            assert app.agent.provider is selected
+    finally:
+        app.close()
+
+    assert len(selected.requests) == 4
+    assert unused.requests == []
