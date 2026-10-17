@@ -147,7 +147,7 @@ def test_batch_edit_approval_marks_each_truncation_and_shows_complete_text(
         "new_text truncated: showing 200 of 206 characters" in s for s in summary
     )
     assert sum("truncated:" in s for s in summary) == 3
-    assert any("Press v to view complete edit text" in s for s in summary)
+    assert any("Press Ctrl+O to expand the complete edit text" in s for s in summary)
 
     full = full_edit_preview_lines(args)
     for item in edits:
@@ -161,12 +161,13 @@ def test_batch_edit_approval_marks_each_truncation_and_shows_complete_text(
     state.pending_hitl = request
     tui = object.__new__(_CadeTui)
     tui._state = state
+    assert state.tool_collapsed
     with patch.object(_CadeTui, "_refresh"):
-        tui._toggle_approval_preview()
-        assert request.expanded
+        tui._toggle_tools_key(None)
+        assert not state.tool_collapsed
         assert f"  {full[3]}" in state._hitl_lines()
-        tui._toggle_approval_preview()
-        assert not request.expanded
+        tui._toggle_tools_key(None)
+        assert state.tool_collapsed
         assert any("truncated" in line for line in state._hitl_lines())
 
 

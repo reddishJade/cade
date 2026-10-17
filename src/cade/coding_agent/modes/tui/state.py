@@ -59,7 +59,6 @@ class _HitlRequest:
     event: Event
     result: HITLResult | None = None
     full_preview: list[str] | None = None
-    expanded: bool = False
 
 
 @dataclass
@@ -712,7 +711,7 @@ class _TuiState:
         request = self.pending_hitl
         preview = (
             request.full_preview
-            if request.expanded and request.full_preview is not None
+            if not self.tool_collapsed and request.full_preview is not None
             else request.preview
         )
         for line in preview:

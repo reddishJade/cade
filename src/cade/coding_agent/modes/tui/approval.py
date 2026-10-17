@@ -110,7 +110,7 @@ def _preview_edit_file(action_input: dict, lines: list[str]) -> None:
 
     if truncated:
         lines.append(
-            "[yellow]Press v to view complete edit text before approval.[/yellow]"
+            "[yellow]Press Ctrl+O to expand the complete edit text before approval.[/yellow]"
         )
 
 
@@ -119,7 +119,7 @@ def full_edit_preview_lines(action_input: ToolInput) -> list[str]:
     lines = [
         f"File: {action_input.get('path', '')}",
         "Full edit text (JSON-escaped strings, including newlines and controls).",
-        "Press v to return to the summary.",
+        "Press Ctrl+O to collapse tool details.",
     ]
     edits = action_input.get("edits")
     if not isinstance(edits, list):

@@ -294,7 +294,6 @@ class _CadeTui:
             KeyBindings, self._approval_choices.control.key_bindings
         )
         approval_bindings.add("enter")(lambda _event: self._accept_approval_choice())
-        approval_bindings.add("v")(lambda _event: self._toggle_approval_preview())
         self._command_choices: RadioList[object] = RadioList(
             [(None, "")],
             show_numbers=True,
@@ -1898,14 +1897,6 @@ class _CadeTui:
             args=(None, None),
             daemon=True,
         ).start()
-
-    def _toggle_approval_preview(self) -> None:
-        """在审批时切换编辑摘要和完整替换文本。"""
-        request = self._state.pending_hitl
-        if request is None or request.full_preview is None:
-            return
-        request.expanded = not request.expanded
-        self._refresh()
 
     def _accept_approval_choice(self) -> None:
         choice = self._approval_choices.current_value
