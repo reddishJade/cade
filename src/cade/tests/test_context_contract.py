@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from cade.agent import (
     make_state_section,
     run_agent_loop,
 )
+from cade.agent.context import ContextBlockTarget
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -115,6 +117,20 @@ def selected_blocks() -> list[ContextBlock]:
     ]
 
 
+def wire_message_bytes(
+    messages: list[Message] | tuple[Message, ...],
+) -> tuple[bytes, ...]:
+    return tuple(
+        json.dumps(
+            message,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        for message in messages
+    )
+
+
 def tool_group(call_id: str, text: str, *, durable: bool = False) -> list[AgentMessage]:
     return [
         AssistantMessage(
@@ -167,6 +183,137 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
     assert [m.model_dump() for m in history] == before
     assert assembly.mandatory_estimated_tokens >= sum(
         b.get_token_count() for b in blocks
+    )
+
+
+def test_dynamic_user_context_stays_after_retained_history() -> None:
+    """覆盖缺口：旧测试未检查动态快照是否改写跨请求历史前缀。
+
+    运行命令：
+    uv run --locked pytest -q \
+        src/cade/tests/test_context_contract.py::test_dynamic_user_context_stays_after_retained_history
+
+    预期：快照从缺席变为存在再变化。wire 历史前缀逐字节不变，最新快照只在末尾出现，
+    AgentContext.messages 保持不变。
+    """
+    system_context = ContextBlock(
+        source=ContextBlockSource.ENVIRONMENT,
+        priority=ContextPriority.CONTEXT,
+        content="Runtime system context",
+        target=ContextBlockTarget.SYSTEM,
+        provenance="runtime:environment",
+    )
+    system_instruction = ContextBlock(
+        source=ContextBlockSource.INSTRUCTION,
+        priority=ContextPriority.INSTRUCTION,
+        content="Project system instruction",
+        target=ContextBlockTarget.SYSTEM,
+        provenance="project:instruction",
+    )
+    notes = ContextBlock(
+        source=ContextBlockSource.NOTES,
+        priority=ContextPriority.CONTEXT,
+        content="Stable request note",
+        provenance="runtime:notes",
+    )
+    selected = SelectedContext([system_context, notes, system_instruction])
+    assembler = DefaultRequestAssembler(context_collectors=selected.freeze())
+    context = AgentContext(
+        messages=[
+            SystemMessage(content="Base system instruction"),
+            UserMessage(content="Retained task"),
+            AssistantMessage(
+                content=[
+                    ToolCallContent(
+                        id="retained-call",
+                        name="read",
+                        arguments={"path": "example.txt"},
+                    )
+                ]
+            ),
+            ToolResultMessage(
+                tool_call_id="retained-call",
+                tool_name="read",
+                content="Retained tool result",
+            ),
+            AssistantMessage(content=[TextContent(text="Retained answer")]),
+        ],
+        context_policy=policy(),
+    )
+    original_messages = tuple(message.model_dump_json() for message in context.messages)
+
+    first = assembler.assemble(context, current_step=1, options=None)
+    first.require_sendable()
+    assert not any(
+        "validation snapshot" in str(message) for message in first.wire_messages
+    )
+
+    stale_snapshot = ContextBlock(
+        source=ContextBlockSource.RECENT_VALIDATION,
+        priority=ContextPriority.CONTEXT,
+        content="Old validation snapshot",
+        provenance="session:validation",
+        scope="runtime",
+    )
+    selected.blocks = [system_context, notes, stale_snapshot, system_instruction]
+    second = assembler.assemble(context, current_step=2, options=None)
+    second.require_sendable()
+
+    latest_snapshot = ContextBlock(
+        source=ContextBlockSource.RECENT_VALIDATION,
+        priority=ContextPriority.CONTEXT,
+        content="Current validation snapshot",
+        provenance="session:validation",
+        scope="runtime",
+    )
+    selected.blocks = [system_context, notes, latest_snapshot, system_instruction]
+    third = assembler.assemble(context, current_step=3, options=None)
+    third.require_sendable()
+
+    retained_prefix_length = 7
+    first_wire = first.wire_messages
+    second_wire = second.wire_messages
+    third_wire = third.wire_messages
+    assert [message["role"] for message in first_wire[:3]] == [
+        "system",
+        "system",
+        "system",
+    ]
+    assert [message["content"] for message in first_wire[:3]] == [
+        "Base system instruction",
+        "Project system instruction",
+        "Runtime system context",
+    ]
+    retained_prefix = wire_message_bytes(first_wire[:retained_prefix_length])
+    assert wire_message_bytes(second_wire[:retained_prefix_length]) == retained_prefix
+    assert wire_message_bytes(third_wire[:retained_prefix_length]) == retained_prefix
+
+    assert first_wire[3]["content"] == "Retained task"
+    assert first_wire[4]["role"] == "assistant"
+    tool_calls = first_wire[4]["tool_calls"]
+    assert isinstance(tool_calls, list)
+    assert tool_calls[0]["id"] == "retained-call"
+    assert first_wire[5] == {
+        "role": "tool",
+        "tool_call_id": "retained-call",
+        "content": "Retained tool result",
+    }
+    assert first_wire[6]["content"] == "Retained answer"
+
+    assert second_wire[-1]["content"] == (
+        "[recent_validation]\nOld validation snapshot"
+    )
+    latest_text = "[recent_validation]\nCurrent validation snapshot"
+    assert third_wire[-1]["content"] == latest_text
+    assert sum(message.get("content") == latest_text for message in third_wire) == 1
+    assert all("Old validation snapshot" not in str(message) for message in third_wire)
+    assert third_wire[-2]["content"] == "[notes]\nStable request note"
+    validation_trace = next(
+        trace for trace in third.context_trace if trace.source == "recent_validation"
+    )
+    assert validation_trace.provenance == "session:validation"
+    assert tuple(message.model_dump_json() for message in context.messages) == (
+        original_messages
     )
 
 

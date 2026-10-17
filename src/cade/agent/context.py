@@ -271,7 +271,8 @@ class DefaultContextAssembler:
                 user_messages = [
                     UserMessage(content=_block_to_text(b)) for b in user_blocks
                 ]
-                messages[insert_idx:insert_idx] = user_messages
+                # USER_CONTEXT 是本次请求快照，只追加到投影末尾。
+                messages.extend(user_messages)
 
         final_total = _estimate_base_tokens(input, messages)
 
