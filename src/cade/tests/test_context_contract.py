@@ -187,14 +187,14 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
 
 
 def test_dynamic_user_context_stays_after_retained_history() -> None:
-    """覆盖缺口：旧测试未检查动态快照是否改写跨请求历史前缀。
+    """覆盖缺口：旧回归没有稳定 SKILL 目录，未检查它与动态快照共存。
 
     运行命令：
     uv run --locked pytest -q \
         src/cade/tests/test_context_contract.py::test_dynamic_user_context_stays_after_retained_history
 
-    预期：快照从缺席变为存在再变化。wire 历史前缀逐字节不变，最新快照只在末尾出现，
-    AgentContext.messages 保持不变。
+    预期：目录和历史前缀逐字节不变。NOTES、RECENT_VALIDATION 只保留最新值，
+    并位于完整工具结果之后。原始历史和快照来源保持不变。
     """
     system_context = ContextBlock(
         source=ContextBlockSource.ENVIRONMENT,
@@ -213,10 +213,18 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
     notes = ContextBlock(
         source=ContextBlockSource.NOTES,
         priority=ContextPriority.CONTEXT,
-        content="Stable request note",
-        provenance="runtime:notes",
+        content="Old request note snapshot",
+        provenance="session:notes",
+        scope="runtime",
     )
-    selected = SelectedContext([system_context, notes, system_instruction])
+    skill_catalog = ContextBlock(
+        source=ContextBlockSource.SKILL,
+        priority=ContextPriority.CONTEXT,
+        content="Stable skill catalog entry. " * 120,
+        provenance="runtime:skills",
+        scope="runtime",
+    )
+    selected = SelectedContext([system_context, skill_catalog, system_instruction])
     assembler = DefaultRequestAssembler(context_collectors=selected.freeze())
     context = AgentContext(
         messages=[
@@ -244,33 +252,50 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
 
     first = assembler.assemble(context, current_step=1, options=None)
     first.require_sendable()
-    assert not any(
-        "validation snapshot" in str(message) for message in first.wire_messages
-    )
+    assert not any("snapshot" in str(message) for message in first.wire_messages)
 
-    stale_snapshot = ContextBlock(
+    stale_notes = notes
+    stale_validation = ContextBlock(
         source=ContextBlockSource.RECENT_VALIDATION,
         priority=ContextPriority.CONTEXT,
         content="Old validation snapshot",
         provenance="session:validation",
         scope="runtime",
     )
-    selected.blocks = [system_context, notes, stale_snapshot, system_instruction]
+    selected.blocks = [
+        system_context,
+        skill_catalog,
+        stale_notes,
+        stale_validation,
+        system_instruction,
+    ]
     second = assembler.assemble(context, current_step=2, options=None)
     second.require_sendable()
 
-    latest_snapshot = ContextBlock(
+    latest_notes = ContextBlock(
+        source=ContextBlockSource.NOTES,
+        priority=ContextPriority.CONTEXT,
+        content="Current request note snapshot",
+        provenance="session:notes",
+        scope="runtime",
+    )
+    latest_validation = ContextBlock(
         source=ContextBlockSource.RECENT_VALIDATION,
         priority=ContextPriority.CONTEXT,
         content="Current validation snapshot",
         provenance="session:validation",
         scope="runtime",
     )
-    selected.blocks = [system_context, notes, latest_snapshot, system_instruction]
+    selected.blocks = [
+        system_context,
+        skill_catalog,
+        latest_notes,
+        latest_validation,
+        system_instruction,
+    ]
     third = assembler.assemble(context, current_step=3, options=None)
     third.require_sendable()
 
-    retained_prefix_length = 7
     first_wire = first.wire_messages
     second_wire = second.wire_messages
     third_wire = third.wire_messages
@@ -284,33 +309,52 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
         "Project system instruction",
         "Runtime system context",
     ]
-    retained_prefix = wire_message_bytes(first_wire[:retained_prefix_length])
+    skill_text = f"[skill]\n{skill_catalog.content}"
+    assert first_wire[3]["content"] == skill_text
+    assert first_wire[4]["content"] == "Retained task"
+    retained_prefix_length = len(first_wire)
+    retained_prefix = wire_message_bytes(first_wire)
     assert wire_message_bytes(second_wire[:retained_prefix_length]) == retained_prefix
     assert wire_message_bytes(third_wire[:retained_prefix_length]) == retained_prefix
 
-    assert first_wire[3]["content"] == "Retained task"
-    assert first_wire[4]["role"] == "assistant"
-    tool_calls = first_wire[4]["tool_calls"]
+    assert first_wire[5]["role"] == "assistant"
+    tool_calls = first_wire[5]["tool_calls"]
     assert isinstance(tool_calls, list)
     assert tool_calls[0]["id"] == "retained-call"
-    assert first_wire[5] == {
+    assert first_wire[6] == {
         "role": "tool",
         "tool_call_id": "retained-call",
         "content": "Retained tool result",
     }
-    assert first_wire[6]["content"] == "Retained answer"
+    assert first_wire[7]["content"] == "Retained answer"
 
-    assert second_wire[-1]["content"] == (
-        "[recent_validation]\nOld validation snapshot"
+    stale_notes_text = "[notes]\nOld request note snapshot"
+    stale_validation_text = "[recent_validation]\nOld validation snapshot"
+    latest_notes_text = "[notes]\nCurrent request note snapshot"
+    latest_validation_text = "[recent_validation]\nCurrent validation snapshot"
+    assert second_wire[-2]["content"] == stale_notes_text
+    assert second_wire[-1]["content"] == stale_validation_text
+    assert third_wire[-2]["content"] == latest_notes_text
+    assert third_wire[-1]["content"] == latest_validation_text
+    assert sum(message.get("content") == skill_text for message in third_wire) == 1
+    assert (
+        sum(message.get("content") == latest_notes_text for message in third_wire) == 1
     )
-    latest_text = "[recent_validation]\nCurrent validation snapshot"
-    assert third_wire[-1]["content"] == latest_text
-    assert sum(message.get("content") == latest_text for message in third_wire) == 1
-    assert all("Old validation snapshot" not in str(message) for message in third_wire)
-    assert third_wire[-2]["content"] == "[notes]\nStable request note"
+    assert (
+        sum(message.get("content") == latest_validation_text for message in third_wire)
+        == 1
+    )
+    assert all(
+        stale not in str(message)
+        for message in third_wire
+        for stale in (stale_notes_text, stale_validation_text)
+    )
+    assert third_wire[-2]["role"] == third_wire[-1]["role"] == "user"
+    note_trace = next(trace for trace in third.context_trace if trace.source == "notes")
     validation_trace = next(
         trace for trace in third.context_trace if trace.source == "recent_validation"
     )
+    assert note_trace.provenance == "session:notes"
     assert validation_trace.provenance == "session:validation"
     assert tuple(message.model_dump_json() for message in context.messages) == (
         original_messages

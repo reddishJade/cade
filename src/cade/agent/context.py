@@ -251,6 +251,18 @@ class DefaultContextAssembler:
             user_blocks = [
                 b for b in used_blocks if b.target != ContextBlockTarget.SYSTEM
             ]
+            prefix_user_blocks = [
+                b
+                for b in user_blocks
+                if b.source == ContextBlockSource.SKILL
+                or b.priority == ContextPriority.INSTRUCTION
+            ]
+            trailing_user_blocks = [
+                b
+                for b in user_blocks
+                if b.source != ContextBlockSource.SKILL
+                and b.priority != ContextPriority.INSTRUCTION
+            ]
 
             insert_idx = 0
             for i, m in enumerate(messages):
@@ -267,12 +279,18 @@ class DefaultContextAssembler:
                 messages[insert_idx:insert_idx] = system_messages
                 insert_idx += len(system_messages)
 
-            if user_blocks:
-                user_messages = [
-                    UserMessage(content=_block_to_text(b)) for b in user_blocks
+            if prefix_user_blocks:
+                prefix_user_messages = [
+                    UserMessage(content=_block_to_text(b)) for b in prefix_user_blocks
                 ]
-                # USER_CONTEXT 是本次请求快照，只追加到投影末尾。
-                messages.extend(user_messages)
+                messages[insert_idx:insert_idx] = prefix_user_messages
+
+            if trailing_user_blocks:
+                trailing_user_messages = [
+                    UserMessage(content=_block_to_text(b)) for b in trailing_user_blocks
+                ]
+                # 动态 USER_CONTEXT 快照追加到完整历史之后。
+                messages.extend(trailing_user_messages)
 
         final_total = _estimate_base_tokens(input, messages)
 
