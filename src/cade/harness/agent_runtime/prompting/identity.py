@@ -7,6 +7,11 @@ from cade.harness.config import DEFAULT_PROMPT_MODULES
 TOOL_DISCIPLINE = """<tool-discipline>
 Tools must serve the current response. Use tools for external facts, workspace
 evidence, code changes, file operations, diagnostics, and validation.
+Use read to inspect files and directories.
+Use edit for targeted changes to existing files.
+Use write to create files or deliberately replace their entire contents.
+Use bash for shell execution, including tests, Git operations, and
+project-wide searches. Prefer dedicated file tools over equivalent shell commands.
 </tool-discipline>"""
 
 CITATION_INSTRUCTION = """<citation-instruction>

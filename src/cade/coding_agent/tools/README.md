@@ -18,7 +18,7 @@ The normal model-facing coding primitives are `read`, `write`, `edit`, and `bash
 - `grep_search.py`: optional ripgrep-based content search.
 - `file_index.py` / `_search_utils.py`: directory indexes and filtering.
 - `bash.py`: sandbox or native shell execution, timeouts, process-group cleanup, and bounded-memory streaming with full-log recovery paths for truncated output.
-- `shell_adapter.py`: shell detection, command arguments, and shell-specific guidance.
+- `shell_adapter.py`: cross-platform shell detection, command arguments, and environment setup.
 - `subagent.py`: delegation, concurrent batches, and result collection.
 - `question.py`: user questions and choices.
 - `webfetch.py`: fetch pages and convert content to Markdown.
