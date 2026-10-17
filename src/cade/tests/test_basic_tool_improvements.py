@@ -155,6 +155,7 @@ def test_batch_edit_approval_marks_each_truncation_and_shows_complete_text(
         assert f"  {json.dumps(item['new_text'], ensure_ascii=False)}" in full
 
     state = _TuiState()
+    state.tool_collapsed = True
     request = _HitlRequest(
         tool_name="edit", preview=summary, event=Event(), full_preview=full
     )
