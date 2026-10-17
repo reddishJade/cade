@@ -203,7 +203,7 @@ class AgentHarness:
         mode = self._build_gate_mode()
         return {
             "environment": {
-                "cwd": str(Path.cwd()),
+                "cwd": str(self._effective_working_directory()),
                 "project_root": str(self.project_root)
                 if self.project_root is not None
                 else None,
@@ -216,6 +216,10 @@ class AgentHarness:
             },
             "mode": {"current_mode": mode.current_mode},
         }
+
+    def _effective_working_directory(self) -> Path:
+        """返回模型和上下文收集器使用的工作目录。"""
+        return self.project_root if self.project_root is not None else Path.cwd()
 
     def _build_loop_config_extras(self) -> dict:
         """子类可返回额外的 build_loop_config 参数。"""
@@ -517,7 +521,7 @@ class AgentHarness:
             tools=self._gate.adapt_tools(registry),
             state=self._build_context_snapshot_state(),
             project_root=self.project_root,
-            cwd=Path.cwd(),
+            cwd=self._effective_working_directory(),
             context_policy=resolve_context_policy(provider, composition.config),
         )
         return composition.request_assembler.assemble(
@@ -541,6 +545,7 @@ class AgentHarness:
                 ),
             ],
             project_root=self.project_root,
+            cwd=self._effective_working_directory(),
             context_policy=resolve_context_policy(self.provider, composition.config),
         )
         return composition.request_assembler.assemble(
@@ -668,7 +673,7 @@ class AgentHarness:
                 context_manager=self._context_manager,
                 state=context_snapshot_state,
                 project_root=self.project_root,
-                cwd=Path.cwd(),
+                cwd=self._effective_working_directory(),
             )
             result: AgentLoopResult | None = None
             async for event in run_agent_loop(
