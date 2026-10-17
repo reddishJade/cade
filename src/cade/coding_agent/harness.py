@@ -17,6 +17,7 @@ from cade.agent.messages import (
 )
 from cade.agent.results import AgentLoopResult
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, ToolSpec
+from cade.ai.providers.base import ModelProvider
 from cade.harness.agent_runtime._mode_protocol import ToolGateMode
 from cade.harness.agent_runtime.agent_helpers import aiter_to_sync_iter, run_coro_sync
 from cade.harness.agent_runtime.composition import AgentComposition
@@ -48,6 +49,7 @@ class CodingAgentHarness(AgentHarness):
         self,
         composition: AgentComposition,
         runtime: CodingAgentRuntimeConfig,
+        judge_provider: ModelProvider | None = None,
     ) -> None:
         self._coding_runtime = runtime
         self._mode = ExecutionModeState(
@@ -56,7 +58,9 @@ class CodingAgentHarness(AgentHarness):
         self._session_history = runtime.session_history
         self._goal_session_id = runtime.gate.session_id
         super().__init__(composition, runtime)
-        self._goal = GoalController(lambda: self.provider)
+        self._goal = GoalController(
+            lambda: judge_provider if judge_provider is not None else self.provider
+        )
         if self._session_history is not None:
             self._session_history.set_session_id(self.session_id)
         from cade.coding_agent.tools.subagent import bind_subagent_runtime

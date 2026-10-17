@@ -449,6 +449,11 @@ def build_app(
         context_window_controller=infra.context_window_controller,
         cancellation_token=infra.cancellation_token,
         fallback_provider=fallback_provider,
+        judge_provider=(
+            providers.llms["judge"]
+            if "judge" in cfg.runtime_config.provider.model_profiles
+            else None
+        ),
         skill_registry=skill_registry,
         external_hook_runner=external_hook_runner,
         session_history=infra.session_history,

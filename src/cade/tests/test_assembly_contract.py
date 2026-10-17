@@ -408,3 +408,91 @@ class TestHarnessWorkingDirectoryContract:
         assert collector_inputs[0].project_root is None
         assert collector_inputs[0].cwd == host_cwd
         assert Path.cwd() == host_cwd
+
+
+class _GoalRoutingProvider(_WorkingDirectoryProvider):
+    """根据请求类型返回主任务或 Goal 验收结果。"""
+
+    def __init__(self, model: str) -> None:
+        super().__init__(call_bash=False)
+        self._model = model
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        options: StreamOptions | None = None,
+        **kwargs: object,
+    ) -> AsyncIterator[ProviderEvent]:
+        self.requests.append((list(messages), list(tools)))
+        is_judgment = any(
+            message.get("role") == "user"
+            and "Has this stop condition been satisfied?" in str(message.get("content"))
+            for message in messages
+        )
+        if is_judgment:
+            yield FinalMessage(
+                content='{"ok": true, "reason": "Completion verified."}',
+                stop_reason="end_turn",
+            )
+        else:
+            yield FinalMessage(content="Task finished.", stop_reason="end_turn")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("configured_judge", "switch_main"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+async def test_goal_uses_configured_judge_or_current_main(
+    configured_judge: bool,
+    switch_main: bool,
+    working_directory_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Goal 验收使用显式 judge；省略时跟随主模型切换。"""
+    main = _GoalRoutingProvider("gpt-4o-mini")
+    judge = _GoalRoutingProvider("gpt-4o")
+    switched = _GoalRoutingProvider("gpt-4.1-mini")
+    profiles = {
+        "main": ModelProfileConfig(chat_model=main.model),
+        "subagent": ModelProfileConfig(chat_model=main.model),
+        "judge": ModelProfileConfig(chat_model=judge.model),
+    }
+    bundle = ProviderBundle(
+        llm=main,
+        llms={"main": main, "subagent": main, "judge": judge},
+    )
+    monkeypatch.setattr(
+        app_module, "resolve_model_profiles", lambda *_args: profiles
+    )
+    monkeypatch.setattr(
+        app_module, "build_provider_bundle", lambda _settings: bundle
+    )
+    config = CadeRuntimeConfig.model_validate(
+        {"provider": {"model_profiles": {"judge": {"model": judge.model}}}}
+        if configured_judge
+        else {}
+    )
+    root = working_directory_root / "judge-workspace"
+    root.mkdir()
+    app = build_app(
+        project_root=root,
+        runtime_config=config,
+        sessions_dir=working_directory_root / "sessions",
+    )
+    try:
+        if switch_main:
+            app.agent.replace_primary_provider(switched)
+        app.agent.set_goal("Task finished.")
+        await app.agent.run_async("Finish the task.")
+        assert app.agent.goal_condition is None
+    finally:
+        app.close()
+
+    active_main = switched if switch_main else main
+    assert len(active_main.requests) == (1 if configured_judge else 2)
+    assert len(judge.requests) == (1 if configured_judge else 0)
+    assert len(main.requests) == (0 if switch_main else 1 if configured_judge else 2)
+    if switch_main:
+        assert len(switched.requests) == (1 if configured_judge else 2)
