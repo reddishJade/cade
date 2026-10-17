@@ -365,21 +365,14 @@ def _write_file_impl(
     desired_bom = desired_bom or new_has_bom
     clean_content = request.content[1:] if new_has_bom else request.content
 
-    diff = "".join(
-        unified_diff(
-            old_content.splitlines(keepends=True),
-            clean_content.splitlines(keepends=True),
-            fromfile=f"a/{display}",
-            tofile=f"b/{display}",
-        )
-    )
-
     encoding = "utf-8-sig" if desired_bom else "utf-8"
     _write_text(request.path, clean_content, encoding, operations)
     _format_file(request.path)
+    final_content, _ = _read_text(request.path, operations)
+    diff = _diff_preview(display, old_content, final_content)
 
     return ToolOutput(
-        f"wrote file: {display}\n{diff}",
+        f"wrote file: {display}\n{_diff_message(display, diff)}",
         metadata={"patch": diff},
         render_intent=DiffRenderIntent(patch=diff, files=(display,)),
     )
@@ -461,17 +454,20 @@ def _edit_file_impl(
     _write_text(path, final, encoding, operations)
     _format_file(path)
 
-    diff = _diff_preview(display, content, final)
+    final_content, _ = _read_text(path, operations)
+    diff = _diff_preview(display, content, final_content)
+    first_changed_line = _first_changed_line(content, final_content)
     return ToolOutput(
-        f"edited file: {display} replacements={total_replacements}\n{diff}",
+        f"edited file: {display} replacements={total_replacements}\n"
+        f"{_diff_message(display, diff)}",
         metadata={
             "patch": diff,
-            "first_changed_line": _first_changed_line(content, final),
+            "first_changed_line": first_changed_line,
         },
         render_intent=DiffRenderIntent(
             patch=diff,
             files=(display,),
-            first_changed_line=_first_changed_line(content, final),
+            first_changed_line=first_changed_line,
         ),
     )
 
@@ -533,6 +529,11 @@ def _diff_preview(path: str, before: str, after: str) -> str:
         tofile=f"b/{path}",
     )
     return "".join(lines)
+
+
+def _diff_message(path: str, diff: str) -> str:
+    """在没有内容差异时明确说明格式化后的文件没有变化。"""
+    return diff or f"No changes made to {path} after formatting."
 
 
 def _first_changed_line(before: str, after: str) -> int | None:

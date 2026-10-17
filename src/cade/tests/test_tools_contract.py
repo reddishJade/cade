@@ -6,11 +6,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from cade.agent.types import ToolOutput
+from cade.agent.types import DiffRenderIntent, ToolOutput
+from cade.coding_agent.tools import file_handlers
 from cade.coding_agent.tools.file_handlers import (
     edit_file_content,
     read_file_content,
@@ -24,6 +26,53 @@ from cade.coding_agent.tools.text_edit import (
     strip_bom,
 )
 from cade.harness.execution_env import LocalFileSystem
+
+
+def _install_formatter(
+    monkeypatch: pytest.MonkeyPatch,
+    transform: Callable[[str], str],
+) -> list[Path]:
+    """安装一个可控的格式化边界并记录格式化调用。"""
+    calls: list[Path] = []
+    fs = LocalFileSystem()
+
+    def format_file(path: Path) -> bool:
+        calls.append(path)
+        raw = fs.read_bytes(path)
+        has_bom = raw.startswith(b"\xef\xbb\xbf")
+        encoding = "utf-8-sig" if has_bom else "utf-8"
+        formatted = transform(raw.decode(encoding))
+        fs.write_bytes(path, formatted.encode(encoding))
+        return True
+
+    monkeypatch.setattr(file_handlers, "_format_file", format_file)
+    return calls
+
+
+def _read_utf8(fs: LocalFileSystem, path: Path) -> str:
+    """通过文件系统抽象读取测试文件。"""
+    raw = fs.read_bytes(path)
+    return raw.decode("utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8")
+
+
+def _assert_diff_output(
+    result: ToolOutput,
+    expected_patch: str,
+    display: str,
+    first_changed_line: int | None = None,
+) -> None:
+    """验证文本、元数据和呈现意图使用同一份最终差异。"""
+    assert result.metadata["patch"] == expected_patch
+    assert isinstance(result.render_intent, DiffRenderIntent)
+    assert result.render_intent.patch == expected_patch
+    assert result.render_intent.files == (display,)
+    if expected_patch:
+        assert str(result).endswith(expected_patch)
+    else:
+        assert "No changes made" in result
+    if first_changed_line is not None:
+        assert result.metadata["first_changed_line"] == first_changed_line
+        assert result.render_intent.first_changed_line == first_changed_line
 
 
 def test_apply_text_replacement_exactness_and_uniqueness() -> None:
@@ -130,6 +179,152 @@ def test_file_handlers_write_edit_and_read_lifecycle(tmp_path: Path) -> None:
     )
     assert "line TWO" in read_res
     assert "line 1" not in read_res
+
+
+def test_write_reports_the_final_formatted_file_and_patch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证写入结果、差异和呈现意图都反映格式化后的文件。"""
+    fs = LocalFileSystem()
+    target = tmp_path / "module.py"
+    requested = "def run():\n  return 1\n"
+    calls = _install_formatter(
+        monkeypatch,
+        lambda text: text.replace("  return 1", "    return 1"),
+    )
+
+    result = write_file_content(
+        tmp_path,
+        fs,
+        {"path": "module.py", "content": requested},
+    )
+    assert isinstance(result, ToolOutput)
+    final = _read_utf8(fs, target)
+    expected_patch = (
+        "--- a/module.py\n"
+        "+++ b/module.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+def run():\n"
+        "+    return 1\n"
+    )
+
+    _assert_diff_output(result, expected_patch, "module.py")
+    assert final == "def run():\n    return 1\n"
+    assert calls == [target]
+
+
+def test_edit_reports_the_final_formatted_file_and_first_changed_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证编辑结果和首个变更行都基于格式化后的文件。"""
+    fs = LocalFileSystem()
+    target = tmp_path / "module.py"
+    before = "def run():\n  return 1\n"
+    target.write_text(before, encoding="utf-8")
+    calls = _install_formatter(
+        monkeypatch,
+        lambda text: text.replace("  return", "    return"),
+    )
+
+    result = edit_file_content(
+        tmp_path,
+        fs,
+        {
+            "path": "module.py",
+            "old_text": "return 1",
+            "new_text": "return 2",
+        },
+    )
+    assert isinstance(result, ToolOutput)
+    final = _read_utf8(fs, target)
+    expected_patch = (
+        "--- a/module.py\n"
+        "+++ b/module.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def run():\n"
+        "-  return 1\n"
+        "+    return 2\n"
+    )
+
+    _assert_diff_output(result, expected_patch, "module.py", first_changed_line=2)
+    assert final == "def run():\n    return 2\n"
+    assert calls == [target]
+
+
+def test_edit_includes_formatter_changes_outside_requested_span(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证请求范围之外的格式化变更也会进入编辑差异。"""
+    fs = LocalFileSystem()
+    target = tmp_path / "module.py"
+    before = "def run():\n  first = 1\n  second = 2\n"
+    target.write_text(before, encoding="utf-8")
+    calls = _install_formatter(
+        monkeypatch,
+        lambda text: text.replace("  first", "    first").replace(
+            "  second", "    second"
+        ),
+    )
+
+    result = edit_file_content(
+        tmp_path,
+        fs,
+        {
+            "path": "module.py",
+            "old_text": "second = 2",
+            "new_text": "second = 3",
+        },
+    )
+    assert isinstance(result, ToolOutput)
+    final = _read_utf8(fs, target)
+    expected_patch = (
+        "--- a/module.py\n"
+        "+++ b/module.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " def run():\n"
+        "-  first = 1\n"
+        "-  second = 2\n"
+        "+    first = 1\n"
+        "+    second = 3\n"
+    )
+
+    _assert_diff_output(result, expected_patch, "module.py", first_changed_line=2)
+    assert final == "def run():\n    first = 1\n    second = 3\n"
+    assert calls == [target]
+
+
+def test_edit_reports_formatter_induced_noop_with_empty_patch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证格式化撤销编辑时返回空差异并明确说明没有变更。"""
+    fs = LocalFileSystem()
+    target = tmp_path / "module.py"
+    before = "value = 1\n"
+    target.write_text(before, encoding="utf-8")
+    calls = _install_formatter(
+        monkeypatch,
+        lambda text: text.replace("value=1", "value = 1"),
+    )
+
+    result = edit_file_content(
+        tmp_path,
+        fs,
+        {
+            "path": "module.py",
+            "old_text": "value = 1",
+            "new_text": "value=1",
+        },
+    )
+    assert isinstance(result, ToolOutput)
+    final = _read_utf8(fs, target)
+    expected_patch = ""
+
+    _assert_diff_output(result, expected_patch, "module.py")
+    assert final == before
+    assert result.metadata["first_changed_line"] is None
+    assert result.render_intent is not None
+    assert result.render_intent.first_changed_line is None
+    assert calls == [target]
 
 
 def test_file_handlers_error_rejections(tmp_path: Path) -> None:
