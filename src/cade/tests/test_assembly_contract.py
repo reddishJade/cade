@@ -463,12 +463,8 @@ async def test_goal_uses_configured_judge_or_current_main(
         llm=main,
         llms={"main": main, "subagent": main, "judge": judge},
     )
-    monkeypatch.setattr(
-        app_module, "resolve_model_profiles", lambda *_args: profiles
-    )
-    monkeypatch.setattr(
-        app_module, "build_provider_bundle", lambda _settings: bundle
-    )
+    monkeypatch.setattr(app_module, "resolve_model_profiles", lambda *_args: profiles)
+    monkeypatch.setattr(app_module, "build_provider_bundle", lambda _settings: bundle)
     config = CadeRuntimeConfig.model_validate(
         {"provider": {"model_profiles": {"judge": {"model": judge.model}}}}
         if configured_judge
