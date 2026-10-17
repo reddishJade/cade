@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING
 
 from cade.agent.context import (
     ContextBlockSource,
-    ContextSection,
+    ContextCollectorRegistry,
+    ContextPriority,
+    DefaultContextAssembler,
     InstructionCollector,
     NotesCollector,
+    make_collector_section,
     make_state_section,
 )
-from cade.agent.request import DefaultRequestAssembler
 from cade.agent.types import ApprovalCallback, ToolSpec
 from cade.ai.providers.base import ModelProvider
 from cade.coding_agent.execution_modes import (
@@ -28,14 +30,15 @@ from cade.harness.agent_runtime import (
     CancellationToken,
 )
 from cade.harness.agent_runtime.config import (
+    GateConfig,
     GateRuntimeConfig,
+    build_request_assembler,
 )
 from cade.harness.agent_runtime.context_window import (
     ContextWindowController,
     ContextWindowRollover,
 )
 from cade.harness.agent_runtime.prompting import build_runtime_context_provider
-from cade.harness.agent_runtime.tool_gate import GateConfig
 from cade.harness.config import AgentConfig, CadeRuntimeConfig
 from cade.harness.memory.catalog import MemoryCatalogCollector
 from cade.harness.observability import (
@@ -48,7 +51,6 @@ from cade.harness.observability import (
 from cade.harness.security.permission_model import PolicyEvaluator
 from cade.harness.session.inbox import SessionInbox
 from cade.harness.session.recorder import SessionRecorder
-from cade.harness.skill_activation import is_skill_activation_content
 
 from ..prompting import CORE_IDENTITY
 from ..runtime import CodingAgentRuntimeConfig
@@ -130,8 +132,9 @@ def build_agent(
     )
 
     sec = runtime_config.security
-    context_sections = [
-        ContextSection(
+    context_collectors = ContextCollectorRegistry()
+    context_collectors.register_section(
+        make_collector_section(
             "agents",
             InstructionCollector(
                 sources=tuple(
@@ -139,32 +142,49 @@ def build_agent(
                     for i in runtime_config.prompt.instructions
                 ),
                 project_root=project_root,
-            ).collect,
-        ),
-        ContextSection(
+            ),
+        )
+    )
+    context_collectors.register_section(
+        make_collector_section(
             "recent_validation",
-            ValidationCollector(project_root, session_recorder.store).collect,
-        ),
-        ContextSection("notes", NotesCollector(project_root).collect),
-    ]
+            ValidationCollector(project_root, session_recorder.store),
+        )
+    )
+    context_collectors.register_section(
+        make_collector_section("notes", NotesCollector(project_root))
+    )
     if skill_registry is not None:
         from cade.harness.skills import SkillIndexCollector
 
-        context_sections.append(
-            ContextSection("skills", SkillIndexCollector(skill_registry).collect)
+        context_collectors.register_section(
+            make_collector_section("skills", SkillIndexCollector(skill_registry))
         )
-    context_sections.extend(
-        (
-            ContextSection(
-                "memory_catalog", MemoryCatalogCollector(project_root).collect
-            ),
-            make_state_section(
-                "environment", "environment", ContextBlockSource.ENVIRONMENT
-            ),
-            make_state_section(
-                "permissions", "permissions", ContextBlockSource.PERMISSIONS
-            ),
-            make_state_section("mode", "mode", ContextBlockSource.MODE),
+    context_collectors.register_section(
+        make_collector_section("memory_catalog", MemoryCatalogCollector(project_root))
+    )
+    context_collectors.register_section(
+        make_state_section(
+            "environment",
+            "environment",
+            ContextBlockSource.ENVIRONMENT,
+            priority=ContextPriority.CONTEXT,
+        )
+    )
+    context_collectors.register_section(
+        make_state_section(
+            "permissions",
+            "permissions",
+            ContextBlockSource.PERMISSIONS,
+            priority=ContextPriority.CONTEXT,
+        )
+    )
+    context_collectors.register_section(
+        make_state_section(
+            "mode",
+            "mode",
+            ContextBlockSource.MODE,
+            priority=ContextPriority.CONTEXT,
         )
     )
 
@@ -195,11 +215,9 @@ def build_agent(
         registry=registry,
         config=config,
         gate=gate,
-        request_assembler=DefaultRequestAssembler(
-            context_sections=tuple(context_sections),
-            preserve_tool_result=lambda message: is_skill_activation_content(
-                message.content
-            ),
+        request_assembler=build_request_assembler(
+            context_collectors,
+            DefaultContextAssembler(),
         ),
         runtime_context_provider=runtime_context_provider,
     )

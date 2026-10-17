@@ -2,17 +2,37 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
-from cade.agent.events import EventCorrelation
 from cade.agent.types import TextContent, ToolCallContent
 from cade.ai.events import ProviderFailure, ToolCall
 
 from ...agent.messages import AssistantMessage
 from ...agent.results import AgentLoopResult, TerminationReason
+from ..observability import EventCorrelation
 from .agent_helpers import text_from_blocks, to_dict
-from .events import FinalEvent
+from .events import FinalStructuredEvent
+
+
+@dataclass(frozen=True)
+class RunState:
+    """通用、可序列化的运行状态快照。"""
+
+    messages: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换为 JSON 可序列化字典。"""
+        return {"messages": self.messages}
+
+    @classmethod
+    def from_dict(cls, payload: object) -> RunState:
+        """从 JSON 字典恢复运行状态。"""
+        if not isinstance(payload, Mapping):
+            return cls(messages=[])
+        raw_messages = payload.get("messages", [])
+        return cls(messages=_message_dicts(raw_messages))
 
 
 @dataclass(frozen=True)
@@ -28,8 +48,7 @@ class AgentHarnessResult:
     provider_failure: ProviderFailure | None = None
     needs_follow_up: bool = False
     last_agent: str = "main"
-    # 消息历史由会话事件重建；这里只保存产品恢复所需的元数据。
-    run_state: dict[str, Any] = field(default_factory=dict)
+    run_state: RunState | None = None
 
 
 def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
@@ -107,15 +126,24 @@ def build_structured_result(result: AgentLoopResult) -> AgentHarnessResult:
         watchdog_reason=result.watchdog_reason,
         error_detail=result.error_detail,
         provider_failure=result.provider_failure,
+        run_state=RunState(
+            messages=[to_dict(message) for message in result.surface],
+        ),
     )
+
+
+def _message_dicts(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
 def final_event(
     step: int,
     result: AgentHarnessResult,
     correlation: EventCorrelation | None = None,
-) -> FinalEvent:
-    return FinalEvent(
+) -> FinalStructuredEvent:
+    return FinalStructuredEvent(
         "final",
         step,
         result,

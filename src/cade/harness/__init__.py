@@ -1,4 +1,4 @@
-from cade.agent.types import AgentToolResult, ToolSpec
+from cade.agent.types import ToolOutput, ToolSpec
 
 from .agent_runtime import AgentHarnessEvent
 from .agent_runtime.cancellation import CancellationToken
@@ -16,7 +16,6 @@ from .security import PermissionPolicy
 __all__ = [
     "AgentConfig",
     "AgentHarnessEvent",
-    "AgentToolResult",
     "CancellationToken",
     "ExecutionResult",
     "FileSystem",
@@ -25,5 +24,6 @@ __all__ = [
     "PermissionPolicy",
     "Shell",
     "SubprocessShell",
+    "ToolOutput",
     "ToolSpec",
 ]

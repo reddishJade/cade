@@ -1,80 +1,67 @@
-# Cade AI — LLM 通信与流事件层
+# AI protocols and streaming events
 
-AI 层是 Agent 与各大模型厂商之间的**协议翻译与流归一化层**，专注于解决一个核心问题：**如何屏蔽各大模型在 API 协议、流式分块（SSE delta）、推理思考流（reasoning）以及工具调用格式上的异构性，向上层提供中立且强类型的流式事件契约。**
+The AI layer translates vendor protocols and normalizes streaming chunks, reasoning, and tool calls into a typed `ProviderEvent` stream for Agent.
 
----
+## Data flow
 
-## 1. 核心抽象与数据流
-
-本层将所有异构 LLM 的输出统一转换为强类型的 `ProviderEvent` 流，屏蔽厂商实现细节：
-
-```
-                    ┌─────────────────────────┐
-                    │      Model Request      │
-                    │   (Messages + Tools)    │
-                    └────────────┬────────────┘
-                                 │ HTTP POST / SSE
-                                 ▼
-                    ┌─────────────────────────┐
-                    │   AI Provider Adapter   │
-                    │  (OpenAI/DeepSeek/GLM)  │
-                    └────────────┬────────────┘
-                                 │ Stream Decoding & Normalization
-                                 ▼
-                     ProviderEvent 联合事件流
-         ┌───────────────┬───────────────┬───────────────┐
-         ▼               ▼               ▼               ▼
-   ReasoningDelta    TextDelta     ToolCallEvent    FinalMessage
-   (思考/推理增量)    (回答文本增量)   (工具调用与入参)   (StopReason + 完整内容)
-                                         │
-                                         ▼
-                                    UsageUpdate
-                                   (Token 用量审计)
+```text
+Model request: messages and tools
+  → HTTP POST / SSE
+  → Provider adapter: OpenAI, DeepSeek, ChatGLM, MiMo
+  → Stream decoding and normalization
+  → ReasoningDelta / TextDelta / ToolCallEvent / FinalMessage
+  → UsageUpdate
 ```
 
-### 核心类型契约
-- **统一流事件 ([events.py](events.py))**：
-  - `ReasoningDelta`：提取模型的内部思考/推理文本增量。
-  - `TextDelta`：模型生成的最终回答文本增量。
-  - `ToolCallEvent`：结构化的工具调用请求（含工具名与参数 JSON）。
-  - `FinalMessage`：流终止标志，附带终止原因（`end_turn`、`tool_use`、`max_tokens` 等）。
-  - `ProviderFailure`：网络故障或 HTTP 错误的结构化异常。
-- **标准化配置 ([types.py](types.py))**：
-  - `ProviderConfig`：标准化的 Provider 构造参数（`api_key`、`model`、`base_url`、`thinking`、`reasoning_effort` 等）。
-- **模型解析与缓存 ([models.py](models.py) / [cache.py](cache.py))**：
-  - 模型别名映射、上下文窗口规格解析与 Prompt Cache 状态追踪。
+### Contracts
 
----
+[events.py](events.py) defines:
 
-## 2. 架构不变量与设计禁忌
+- `ReasoningDelta`: reasoning text increments.
+- `TextDelta`: answer text increments.
+- `ToolCallEvent`: tool names and JSON arguments.
+- `FinalMessage`: termination with reasons such as `end_turn`, `tool_use`, or `max_tokens`.
+- `ProviderFailure`: structured network or HTTP failures.
 
-- **单向翻译契约**：
-  - AI 层仅负责 LLM 的通信、参数编码与事件流解码。**严禁感知** Agent 的循环步数、换窗逻辑、会话持久化或具体操作系统工具。
-- **思考流一等公民**：
-  - 不论厂商原生接口将思考流放在单独字段（如 DeepSeek 的 `reasoning_content`）还是特定标签中，均必须归一化为 `ReasoningDelta` 发射，供 UI/CLI 实时展示。
-- **无静默吞咽**：
-  - 流解析中断、JSON 解析异常或网络超时必须产生显式的 `ProviderFailure` 或抛出明确异常，严禁静默丢弃 delta 导致生成内容残缺。
+[types.py](types.py) defines `ProviderConfig`, including `api_key`, `model`, `base_url`, `thinking`, and `reasoning_effort`. [models.py](models.py) resolves aliases and window sizes; [cache.py](cache.py) tracks prompt cache statistics.
 
----
+## Invariants
 
-## 3. 典型装配与调用
+AI owns communication, parameter encoding, and stream decoding. It must not depend on Agent steps, rollover, session persistence, or OS tools.
+
+Normalize vendor reasoning fields or tags to `ReasoningDelta` for presentation. Parsing failures and timeouts must produce an explicit failure or exception, not silently drop content.
+
+## Example
+
+Set `DEEPSEEK_API_KEY` before running this example. `messages` and `tools` are the request's message and tool-definition lists. Consume the stream inside an async function.
 
 ```python
-from cade.ai.providers import build_provider
-from cade.ai.types import ProviderConfig
+import os
 
-# 使用已解析的模型配置构建 Provider
-provider = build_provider(
-    ProviderConfig(
-        provider="deepseek",
-        transport="deepseek_chat",
-        model="deepseek-reasoner",
-        api_key="<resolved-api-key>",
+from cade.ai.events import FinalMessage, ReasoningDelta, TextDelta, ToolCallEvent
+from cade.ai.providers.registry import (
+    ModelProfileConfig,
+    ProviderSettings,
+    build_provider_bundle,
+)
+
+# 根据模型配置构建 provider 组合
+bundle = build_provider_bundle(
+    ProviderSettings(
+        env_files=(),
+        model_profiles={
+            "main": ModelProfileConfig(
+                provider="deepseek",
+                transport="deepseek_chat",
+                chat_model="deepseek-reasoner",
+                api_key=os.environ["DEEPSEEK_API_KEY"],
+            )
+        },
     )
 )
 
-# 直接发起流式会话并消费归一化事件
-async for event in provider.stream(messages, tools=tools):
+# 消费归一化事件
+async for event in bundle.llm.stream(messages, tools=tools):
     match event:
         case ReasoningDelta(chunk=thought):
             print(f"[Thinking] {thought}", end="")
@@ -86,9 +73,7 @@ async for event in provider.stream(messages, tools=tools):
             print(f"\n[Finished: {reason}]")
 ```
 
----
+## Submodules
 
-## 4. 子模块分工
-
-- **[providers/](providers/README.md)**：各大厂商的具体协议适配实现（OpenAI、DeepSeek、ChatGLM、MiMo 等），基于公共基类与编解码器封装。
-- **`auth/`**：Provider 认证契约、OAuth/Token 刷新实现与请求前凭据解析。具体凭据持久化由上层宿主通过 `CredentialStore` 实现，AI 层不感知 `auth.json` 路径或 CLI 交互。
+- [providers/](providers/README.md): vendor adapters using shared base classes and codecs.
+- [auth/](auth/README.md): authentication contracts, OAuth and refresh, and pre-request credential resolution. Hosts implement `CredentialStore`; AI does not know authentication file paths or CLI interactions.

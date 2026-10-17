@@ -289,7 +289,10 @@ def _replace_context_window(
 ) -> bool:
     """立即执行无摘要硬换窗并持久化新的 surface。"""
     from cade.agent._context_window import estimate_message_tokens
-    from cade.harness.agent_runtime.context_window import ContextWindowRollover
+    from cade.harness.agent_runtime.agent_helpers import to_dict
+    from cade.harness.agent_runtime.message_codec import (
+        messages_from_provider_dicts,
+    )
 
     agent = getattr(ctx.app, "agent", None)
     if agent is None:
@@ -309,7 +312,7 @@ def _replace_context_window(
     before_tokens = estimate_message_tokens(before_msgs)
 
     rollover = getattr(agent, "context_rollover", None)
-    if not isinstance(rollover, ContextWindowRollover):
+    if not callable(rollover):
         ctx.output.write("Context-window rollover is not configured.")
         return False
 
@@ -319,12 +322,20 @@ def _replace_context_window(
         return False
 
     from cade.harness.agent_runtime.config import resolve_context_policy
+    from cade.harness.agent_runtime.context_window import ContextWindowRollover
 
-    after_msgs = rollover.rollover_messages(
-        before_msgs,
-        preserve_user_request=preserve_user_request,
-        policy=resolve_context_policy(agent.provider, agent.composition.config),
-    )
+    if isinstance(rollover, ContextWindowRollover):
+        after_msgs = rollover.rollover_messages(
+            before_msgs,
+            preserve_user_request=preserve_user_request,
+            policy=resolve_context_policy(agent.provider, agent.composition.config),
+        )
+    else:
+        dict_messages = [to_dict(message) for message in before_msgs]
+        next_window = cast(Callable[..., list[dict[str, object]]], rollover)(
+            dict_messages, preserve_user_request=preserve_user_request
+        )
+        after_msgs = messages_from_provider_dicts(next_window)
     after_tokens = estimate_message_tokens(after_msgs)
 
     cast(Callable[[list[AgentMessage]], None], load_history)(after_msgs)

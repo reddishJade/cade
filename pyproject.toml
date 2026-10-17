@@ -13,6 +13,7 @@ dependencies = [
     "prompt-toolkit>=3.0.0",
     "rich>=13.0.0",
     "tiktoken>=0.7.0",
+    "tenacity>=8.0.0",
     "filelock>=3.0.0",
     "python-dotenv>=1.2.2",
     "orjson>=3.11.9",

@@ -316,7 +316,7 @@ def _tool_call(data: object) -> ToolCallContent | None:
 
 
 def _tool_result(data: object) -> ToolResultMessage | None:
-    from cade.agent.types import parse_tool_render_intent
+    from cade.agent.types import TextContent, parse_tool_render_intent
 
     if not isinstance(data, dict):
         return None
@@ -326,7 +326,7 @@ def _tool_result(data: object) -> ToolResultMessage | None:
     status = str(data.get("status", "ok"))
     return ToolResultMessage(
         tool_call_id=tool_call_id,
-        content=data.get("content", ""),
+        content=[TextContent(text=str(data.get("content", "")))],
         is_error=status != "ok",
         metadata=(
             dict(data["metadata"]) if isinstance(data.get("metadata"), dict) else None

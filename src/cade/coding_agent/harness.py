@@ -5,8 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Iterator, Mapping
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
 from uuid import uuid4
 
@@ -23,9 +22,9 @@ from cade.harness.agent_runtime.agent_helpers import aiter_to_sync_iter, run_cor
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import build_turn_context_messages
 from cade.harness.agent_runtime.events import AgentHarnessEvent
-from cade.harness.agent_runtime.goal import GoalController, GoalState
+from cade.harness.agent_runtime.goal import GoalController
 from cade.harness.agent_runtime.harness import AgentHarness
-from cade.harness.agent_runtime.result import AgentHarnessResult
+from cade.harness.agent_runtime.result import AgentHarnessResult, RunState
 from cade.harness.skill_activation import (
     ExplicitSkillActivationResult,
     is_skill_activation_content,
@@ -37,6 +36,7 @@ from .execution_modes import (
     mode_notice,
 )
 from .runtime import CodingAgentRuntimeConfig
+from .state import CodingRunState
 
 __all__ = ["CodingAgentHarness"]
 
@@ -92,6 +92,7 @@ class CodingAgentHarness(AgentHarness):
 
     def _build_loop_config_extras(self) -> dict:
         return {
+            "mode_state": self._mode,
             "completion_verifier": self._goal.completion_feedback,
         }
 
@@ -106,28 +107,31 @@ class CodingAgentHarness(AgentHarness):
         return replace(
             result,
             answer=answer,
-            run_state={
-                "current_mode": self._mode.current_mode,
-                "last_agent": result.last_agent,
-                "needs_follow_up": result.needs_follow_up,
-                "goal": self._goal.state.to_dict(),
-            },
+            run_state=CodingRunState(
+                messages=result.messages,
+                current_mode=self._mode.current_mode,
+                goal=self._goal.state,
+            ),
         )
 
     def _post_load_history(self, messages: list[AgentMessage]) -> None:
         if self._coding_runtime.skill_registry is not None:
             self._coding_runtime.skill_registry.restore_activations(messages)
 
+    def load_run_state(self, run_state: RunState) -> None:
+        super().load_run_state(run_state)
+        self.restore_run_state_metadata(run_state)
+
     def restore_run_state_metadata(self, payload: object) -> None:
         """恢复模式与目标，但不替换已经重建好的消息历史。"""
-        if not isinstance(payload, Mapping):
-            self._mode.set_mode("act")
-            return
-        mode = payload.get("current_mode")
-        self._mode.set_mode(mode if mode in {"plan", "build", "act"} else "act")
-        goal = payload.get("goal")
-        if isinstance(goal, Mapping):
-            self._goal.restore(GoalState.from_dict(goal))
+        run_state = (
+            payload
+            if isinstance(payload, CodingRunState)
+            else CodingRunState.from_dict(payload)
+        )
+        self._mode.set_mode(run_state.current_mode)
+        if run_state.goal is not None:
+            self._goal.restore(run_state.goal)
 
     def clear_history(self) -> None:
         super().clear_history()
@@ -182,6 +186,8 @@ class CodingAgentHarness(AgentHarness):
 
     def restore_goal_state(self, payload: object) -> None:
         """从 session 事件恢复 Goal 状态。"""
+        from cade.harness.agent_runtime.goal import GoalState
+
         self._goal.restore(GoalState.from_dict(payload))
 
     @property
@@ -267,17 +273,14 @@ class CodingAgentHarness(AgentHarness):
         mode: ExecutionMode | None = None,
         *,
         display_question: str | None = None,
-    ) -> AsyncGenerator[AgentHarnessEvent, None]:
+    ) -> AsyncIterator[AgentHarnessEvent]:
         if mode is not None:
             self._mode.set_mode(mode)
-        async with aclosing(
-            super().arun_stream(
-                question,
-                display_question=display_question,
-            )
-        ) as stream:
-            async for event in stream:
-                yield event
+        async for event in super().arun_stream(
+            question,
+            display_question=display_question,
+        ):
+            yield event
 
     # ── 技能激活内部 ──
 
@@ -331,7 +334,9 @@ class CodingAgentHarness(AgentHarness):
             arguments=arguments,
         )
         assistant_message = AssistantMessage(content=[tool_call])
-        before_hook = self._gate.build_before_tool_hook((load_skill,))
+        before_hook = self._gate.build_before_tool_hook(
+            self._gate.snapshot_for((load_skill,))
+        )
         before_result = before_hook(
             BeforeToolCallContext(
                 assistant_message=assistant_message,

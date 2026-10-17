@@ -1,77 +1,86 @@
-# Web 工作台（浏览器前端）
+# Browser workspace
 
-## 定位
+## Purpose
 
-`cade web` 是 Cade 的浏览器工作台：单进程 FastAPI 服务 + 零构建的
-vanilla JS 单页应用。它与 CLI/TUI 共享同一套装配、会话账本和运行语义，
-差异只在于交互投影层——把 harness 的类型化事件流实时渲染成浏览器里的
-步骤脊柱、thinking、工具卡片与审批弹窗。
+`cade web` runs a single-process FastAPI service and a vanilla JavaScript single-page application with no build step. It shares assembly, session logs, and execution semantics with CLI/TUI. The browser projects typed harness events into steps, reasoning, tool cards, and approval dialogs.
 
 ```sh
 cade web              # 默认 http://127.0.0.1:8787
-cade web --open       # 启动后自动打开浏览器
+cade web --open       # 启动后打开浏览器
 cade web --port 9000
 ```
 
-## 进程模型
+## Access control
+
+Open the private URL printed by `cade web`, or use `cade web --open`. Each server
+start generates a new access token. Treat the URL as a credential. Its fragment
+is not sent to the server; the frontend removes it from the address bar and stores
+the token in the tab's session storage. After a restart, open the new URL.
+
+REST API requests require `Authorization: Bearer <token>`. WebSocket clients must
+send the subprotocols `cade` and `<token>`; the server selects only `cade`.
+WebSocket handshakes and state-changing HTTP requests also require a trusted
+`Origin`. All requests require a trusted `Host`, including the configured port.
+Missing, duplicate, `null`, and untrusted origins are rejected where an origin
+is required. A token does not bypass these checks.
+
+Loopback and wildcard binds trust only `127.0.0.1`, `localhost`, and `[::1]` at
+the configured port. For remote access, bind to an explicit address with `--host`;
+only that address is trusted. Forwarded headers do not change this policy.
+Arbitrary reverse-proxy origins are not supported. HTTP does not encrypt the
+credential or agent traffic; keep the service on a trusted network or use an
+SSH tunnel to its loopback address.
+
+## Process model
 
 ```mermaid
 graph TD
-    Uvicorn["uvicorn (asyncio 事件循环)"]
-    Uvicorn --> REST["REST API (/api/*)<br/>会话、工作区、模型、effort、git 分支、统计"]
-    Uvicorn --> WS["WebSocket (/ws)<br/>实时通道：事件流 + 控制 + 审批桥接"]
-    Uvicorn --> Static["StaticFiles (static/)<br/>index.html / styles.css / app.js"]
-    Uvicorn --> Hub["WebRunHub (持有唯一 CadeApp)"]
-    Hub --> Worker["run_in_executor 工作线程<br/>消费 ask_stream 同步迭代"]
+    Uvicorn["uvicorn: asyncio event loop"]
+    Uvicorn --> REST["REST API: /api/*<br/>Sessions, workspaces, models, effort, Git branches, stats"]
+    Uvicorn --> WS["WebSocket: /ws<br/>Events, controls, approval bridge"]
+    Uvicorn --> Static["StaticFiles: static/<br/>index.html / styles.css / app.js"]
+    Uvicorn --> Hub["WebRunHub: owns one CadeApp"]
+    Hub --> Worker["run_in_executor worker<br/>Consumes synchronous ask_stream"]
 ```
 
-关键点：
+The process owns one `CadeApp`, as the TUI does. Browser tabs share its event stream; sessions do not run concurrently.
 
-- **单实例广播**：进程内只有一个 `CadeApp`（与 TUI 单进程模型一致），
-  多个浏览器标签页共享同一事件流。不存在多会话并发。
-- **回合不阻塞事件循环**：agent 的 `ask_stream` 是同步迭代器，放到
-  `run_in_executor` 中消费，避免预热模型等阻塞 WebSocket 心跳。
-  取消经 `CancellationToken` 传入。
-- **审批桥接**：工具线程里的 `user_approval_callback` 是同步回调，通过
-  `threading.Event` 阻塞等待浏览器端决策，超时 300s 按拒绝处理。
+The synchronous `ask_stream` iterator runs in `run_in_executor` so model warmup and other blocking work do not stall WebSocket heartbeats. Cancellation passes through `CancellationToken`.
 
-## 后端模块
+A tool thread's synchronous `user_approval_callback` waits on a `threading.Event` for a browser decision. The 300-second timeout denies the request.
 
-| 模块 | 职责 |
-|---|---|
-| `server/serve.py` | `cade web` 子命令入口：解析 `--port/--open`，装配 `create_app`，启动 uvicorn |
-| `server/api.py` | `create_app()` 装配 REST + WebSocket 路由与静态资源；模型发现缓存（10s 超时 / 5min TTL） |
-| `server/runner.py` | `WebRunHub`：提交流程、事件广播、会话/工作区切换、审批桥接、`broadcast()` |
-| `server/serialize.py` | 事件编码：递归处理 pydantic / dataclass / enum / UUID → JSON-safe dict，超长文本截断 |
+## Backend modules
 
-`app_factory`（`build_app`）可在服务器运行中重建，用于工作区切换
-（`hub.set_app` 替换整个 `CadeApp`）。
+| Module | Responsibility |
+| --- | --- |
+| `server/serve.py` | Parse `cade web` options such as `--port` and `--open`, assemble `create_app`, and start uvicorn |
+| `server/api.py` | Assemble REST/WebSocket routes and static resources; cache model discovery with a 10-second timeout and five-minute TTL |
+| `server/runner.py` | `WebRunHub`: submission, broadcasts, session/workspace switching, approval bridging |
+| `server/serialize.py` | Convert Pydantic, dataclass, enum, and UUID values to JSON-safe dictionaries and truncate long text |
 
-### 复用而非新造
+Workspace switching can rebuild the application through `app_factory` (`build_app`). `hub.set_app` replaces the entire `CadeApp`.
 
-Web 不复制运行语义，全部走 CLI 既有路径：
+### Shared runtime paths
 
-- 会话恢复：`store.resume()` + `app.restore_session()`（与 TUI `/resume` 一致）；
-  `POST /api/sessions` 新建 = `store.clear` + `restore_session`（语义同 TUI `/clear`）。
-- 状态栏：复用 REPL 的 `_compute_context_summary` 与 `format_usage_stats`，
-  与终端口径逐字节一致（`↑in ↓out R cache CH hit% $cost context% model • effort`）。
-- model / effort 选项：`reasoning_effort_levels_for_transport` 与模型网关发现
-  （custom transport 跳过发现，只列当前模型 + 前端自定义入口）。
-- git 分支：`git for-each-ref refs/heads refs/remotes/origin/` 发现，
-  `git switch` 切换（远端缺本地同名分支时自动 `--track`；回合运行中拒绝 409）。
+Web uses existing runtime semantics:
 
-## WebSocket 协议（/ws，JSON 文本帧）
+- Recovery uses `store.resume()` and `app.restore_session()`, as TUI `/resume` does. `POST /api/sessions` uses `store.clear` and `restore_session`, matching `/clear`.
+- Status uses `_compute_context_summary` and `format_usage_stats`, with the same terminal format: `↑in ↓out R cache CH hit% $cost context% model • effort`.
+- Model and effort options use `reasoning_effort_levels_for_transport` and model gateway discovery. Custom transport skips discovery and lists the current model plus a custom-entry control.
+- Git branches come from `git for-each-ref refs/heads refs/remotes/origin/`. Switching uses `git switch`; remote branches without a local counterpart use `--track`. Switching during a run returns 409.
 
-浏览器 → 服务端：
+## WebSocket protocol
 
-```text
-submit   {text, mode}        提交用户消息（approval 等待中时自动先恢复会话）
-cancel                       取消当前回合
-approval {id, decision, scope} 审批决策
-ping                          心跳
-```
+`/ws` uses JSON text frames. Browser-to-server messages:
 
-服务端 → 浏览器：
+| Type | Fields | Purpose |
+| --- | --- | --- |
+| `submit` | `text`, `mode` | Submit a message; restore the session first if waiting on approval |
+| `cancel` | None | Cancel the current turn |
+| `approval` | `id`, `decision`, `scope` | Return an approval decision |
+| `ping` | None | Send a heartbeat |
+
+Server-to-browser types:
 
 ```text
 hello | user_message | run_started | event | run_idle | run_error
@@ -79,60 +88,48 @@ run_cancelled | approval_request | session_reset | session_switched
 workspace_switched | pong
 ```
 
-`event` 即 harness 的 `AgentHarnessEvent`（`text_delta` / `reasoning_delta` /
-`tool_use` / `tool_result` / `assistant` / `context_window_reset` / `final` 等），按
-`step` 号组织渲染，与 TUI 看到的语义同构。
+`event` carries `AgentHarnessEvent` values such as `text_delta`, `reasoning_delta`, `tool_use`, `tool_result`, `assistant`, `context_window_reset`, and `final`. The UI groups rendering by `step`, matching TUI event semantics.
 
 ## REST API
 
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/info` | GET | 项目路径、session id、当前分支、模型 / effort / 可用模型 / thinking |
-| `/api/stats` | GET | 用量统计与上下文摘要（补丁状态栏） |
-| `/api/model` | GET/POST | 读取或切换模型（`{model, effort?}`），运行中拒绝 |
-| `/api/sessions` | GET/POST | 列历史会话 / 新建会话 |
-| `/api/sessions/resume` | POST | 恢复历史会话并继续（`{id}`） |
-| `/api/sessions/{id}` | GET | 单会话回放（`_SESSION_TRANSCRIPT_LIMIT` 截断） |
-| `/api/workspaces` | GET/POST | 列工作区 / 切换 `{path}`（近期列表持久化到 `~/.cade/web_workspaces.json`） |
-| `/api/git/branches` | GET/POST | 列本地 + 远端分支 / 切换 `{name}` |
-| `/ws` | WS | 实时通道 |
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/info` | GET | Project path, session ID, current branch, model, effort, available models, thinking |
+| `/api/stats` | GET | Usage and context summary for status updates |
+| `/api/model` | GET/POST | Read or switch model with `{model, effort?}`; reject during a run |
+| `/api/sessions` | GET/POST | List or create sessions |
+| `/api/sessions/resume` | POST | Resume a session with `{id}` |
+| `/api/sessions/{id}` | GET | Replay one session, bounded by `_SESSION_TRANSCRIPT_LIMIT` |
+| `/api/workspaces` | GET/POST | List or switch workspace with `{path}`; persist recent paths in `~/.cade/web_workspaces.json` |
+| `/api/git/branches` | GET/POST | List local/remote branches or switch with `{name}` |
+| `/ws` | WS | Live events and controls |
 
-## 前端
+## Frontend
 
-`static/` 三件套、无构建步骤、无框架。一个 `app.js`（IIFE）管理全部状态
-与 DOM：
+`static/` contains HTML, CSS, and one IIFE-based `app.js`. It uses no framework or build step.
 
-- **增量渲染**：文本走 `requestAnimationFrame` 节流；步骤 / 工具卡片增量建
-  节点，不做全量重渲。
-- **markdown**：内部 60 行迷你渲染器（转义 → 代码块 → 行内 code → 加粗），
-  无第三方解析依赖。
-- **主题化下拉**：模型 / effort / git 分支 / 工作区四个控件共用 `.drop`
-  组件（按钮 + fixed 定位弹出菜单、点击外部关闭、宽度 = 触发按钮、超长省略）。
-- **会话视图**：空态（"● 新对话"）与历史列表切换；历史会话点开即恢复继续，
-  不是只读预览。
-- **主题**：品牌色板映射为 CSS 变量（`--ink/--panel/--amber/--olive/...`），
-  全等宽字体，滚动条已主题化；<960px 响应式与 `prefers-reduced-motion` 已处理。
-- **缓存**：静态资源 `no-store` 发布（防止浏览器缓存旧 `app.js` 引用已
-  删除的 DOM 节点）。
+- Text updates are throttled through `requestAnimationFrame`. Steps and tool cards append nodes instead of rerendering the whole page.
+- A small internal Markdown renderer escapes content, then handles code blocks, inline code, and bold text without a parser dependency.
+- Model, effort, Git branch, and workspace controls share `.drop`: a button and fixed-position menu with outside-click dismissal, trigger-width sizing, and overflow ellipsis.
+- The session view switches between a new-conversation empty state and history. Opening history resumes the session rather than displaying a read-only preview.
+- CSS variables such as `--ink`, `--panel`, `--amber`, and `--olive` define the palette. The UI uses monospace fonts, themed scrollbars, a layout breakpoint below 960 px, and `prefers-reduced-motion` handling.
+- Static resources use `no-store` to avoid stale JavaScript referencing removed DOM nodes.
 
-## 开发与验证
+## Development and validation
 
 ```sh
-uv run cade web --port 8791                    # 本地起服务
-uv run pytest src/cade/tests/test_server_web.py -q   # 序列化/API 契约测试
-uv run ruff check src/                          # lint
-uv run pyright src/cade/server/                # 类型检查（路由未引用告警可忽略）
-node --check src/cade/server/static/app.js     # JS 语法检查
+uv run cade web --port 8791                       # 启动本地服务
+uv run pytest src/cade/tests/test_server_web.py -q # 检查序列化和 API 契约
+uv run ruff check src/                            # 检查 lint
+uv run pyright src/cade/server/                   # 检查类型
+node --check src/cade/server/static/app.js         # 检查 JS 语法
 ```
 
-静态前端改动不需要构建步骤：修改 `static/` 后刷新浏览器即可。服务端改动
-需要重启（Windows 上找占用端口进程后 taskkill）。
+Refresh the browser after static changes; no build is required. Restart the service after backend changes. On Windows, stop the process holding the port before restarting.
 
-## 已知边界
+## Known boundaries
 
-- 单会话单工作区：服务器持有唯一 `CadeApp`，不能同时跑两个工作区。
-- 工作区切换以目标目录自己的 `cade.config.json` 为准（CLI `--config`
-  不继承）。
-- custom transport 下切换模型后旧模型从列表消失，只能通过"＋"入口回来。
-- 审批弹窗依赖真实 Act 模式工具调用的 `approval_request` 事件，端到端
-  验证需要一次真实触发。
+- One server owns one session/workspace application; it cannot run two workspaces concurrently.
+- Switching workspaces uses the target directory's `cade.config.json` and does not inherit the CLI `--config` override.
+- Under custom transport, switching models removes the old model from the list; use the add control to return to it.
+- Approval dialogs require real `approval_request` events from Act-mode tools. End-to-end validation needs an actual approval-triggering call.

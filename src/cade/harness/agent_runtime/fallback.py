@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from contextlib import aclosing
+from collections.abc import AsyncIterator
 
 from cade.ai.events import Message, ProviderEvent
 from cade.ai.providers.base import ModelProvider
@@ -90,16 +89,15 @@ class FallbackWithRetryPrimary:
         tools: list[ToolDefinition],
         options: StreamOptions | None = None,
         **kwargs: object,
-    ) -> AsyncGenerator[ProviderEvent, None]:
+    ) -> AsyncIterator[ProviderEvent]:
         provider = self._fallback if self._using_fallback else self._primary
         emitted = False
         try:
-            async with aclosing(
-                provider.stream(messages, tools, options=options, **kwargs)
-            ) as stream:
-                async for event in stream:
-                    emitted = True
-                    yield event
+            async for event in provider.stream(
+                messages, tools, options=options, **kwargs
+            ):
+                emitted = True
+                yield event
         except Exception:
             self._record_failure(provider)
             if (
@@ -109,13 +107,10 @@ class FallbackWithRetryPrimary:
                 self._using_fallback = True
                 self._fallback_successes = 0
                 if not emitted:
-                    async with aclosing(
-                        self._stream_fallback_after_failure(
-                            messages, tools, options, kwargs
-                        )
-                    ) as stream:
-                        async for event in stream:
-                            yield event
+                    async for event in self._stream_fallback_after_failure(
+                        messages, tools, options, kwargs
+                    ):
+                        yield event
                     return
             raise
         else:
@@ -127,14 +122,13 @@ class FallbackWithRetryPrimary:
         tools: list[ToolDefinition],
         options: StreamOptions | None,
         kwargs: dict[str, object],
-    ) -> AsyncGenerator[ProviderEvent, None]:
+    ) -> AsyncIterator[ProviderEvent]:
         """主 provider 在输出前失败时，流式执行并记录 fallback 结果。"""
         try:
-            async with aclosing(
-                self._fallback.stream(messages, tools, options=options, **kwargs)
-            ) as stream:
-                async for event in stream:
-                    yield event
+            async for event in self._fallback.stream(
+                messages, tools, options=options, **kwargs
+            ):
+                yield event
         except Exception:
             self._record_failure(self._fallback)
             raise

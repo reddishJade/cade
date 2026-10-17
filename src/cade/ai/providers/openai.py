@@ -1,13 +1,14 @@
-"""OpenAI Chat Completions provider。"""
+"""OpenAI Chat Completions 适配器。"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from cade.ai.types import StreamOptions, ToolDefinition
+from cade.ai.types import ProviderConfig, ToolDefinition
 
 from ._compat import OpenAICompatProvider
+from ._runtime import ProviderRuntime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,14 +16,24 @@ _LOGGER = logging.getLogger(__name__)
 class OpenAIChatProvider(OpenAICompatProvider):
     """OpenAI Chat Completions provider（兼容所有 OpenAI API 兼容服务）。"""
 
-    transport = "openai_chat"
+    def __init__(
+        self,
+        config: ProviderConfig,
+        *,
+        client: Any | None = None,
+        runtime: ProviderRuntime | None = None,
+    ) -> None:
+        super().__init__(
+            config,
+            transport="openai_chat",
+            client=client,
+            runtime=runtime,
+        )
 
     def _build_thinking_params(
         self,
         params: dict[str, Any],
         thinking_override: bool | None = None,
-        *,
-        options: StreamOptions | None = None,
     ) -> None:
         effective = (
             self.config.thinking if thinking_override is None else thinking_override
@@ -36,9 +47,8 @@ class OpenAIChatProvider(OpenAICompatProvider):
         self,
         api_messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
-        options: StreamOptions | None,
     ) -> dict[str, Any]:
-        params = super()._build_chat_params(api_messages, tools, options)
+        params = super()._build_chat_params(api_messages, tools)
         if self.config.response_format:
             params["response_format"] = self.config.response_format
         return params

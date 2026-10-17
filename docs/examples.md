@@ -1,95 +1,86 @@
-# Cade 实战场景与使用示例
+# Workflows and examples
 
-本文档提供 Cade 在日常软件开发中的核心工作流与常见实战示例。
+Use these examples for common software development tasks.
 
----
+## Single-task execution
 
-## 1. 快速提问与单轮执行
-
-对于简单的代码咨询、目录分析或单步操作，可以使用单轮提问模式：
+For a code question, directory analysis, or focused operation:
 
 ```bash
 # 查询代码实现
-cade exec "解释 src/cade/agent/agent.py 中的 AgentLoop 运行机制"
+cade exec "Explain the agent loop in src/cade/agent/agent_loop.py"
 
-# 执行特定定位
-cade exec "检查项目中所有未被使用的 import 语句"
+# 定位未使用的 import
+cade exec "Check the project for unused imports"
 ```
 
----
+## Terminal workspace
 
-## 2. 交互式终端工作台 (TUI)
-
-Cade 默认启动终端工作台（TUI）：
+Cade starts the TUI by default:
 
 ```bash
-# 启动 TUI 交互
+# 启动默认 TUI
 cade
 
-# 或显式启动 TUI
+# 显式启动 TUI
 cade tui
 ```
 
-在交互界面中，支持丰富的输入与控制能力：
-* **`@` 引用文件**：输入 `@src/cade/main.py` 可直接将文件内容加入提问上下文。
-* **`!` 执行 Shell**：输入 `!git status` 可在不通过模型的情况下直接运行本地命令。
-* **`$` 调用技能**：输入 `$refactor 提取通用基类` 可显式激活已加载的 Skill。
+- Reference files with `@`, such as `@src/cade/main.py`, to include their content as context.
+- Run local shell commands with `!`, such as `!git status`, without a model call.
+- Activate a skill with `$`, such as `$refactor Extract a shared base class`.
 
----
+## Plan, review, and implement
 
-## 3. 典型工作流：从 Plan 规划到 Build 实现
+For a larger feature or refactor, investigate in Plan mode, review the plan, then implement in Build mode.
 
-对于中大型功能开发或复杂重构，推荐采用 **Plan 模式规划 → 人工确认 → Build 模式实现** 的两阶段工作流：
+### Plan the change
 
-### 第一步：进入 Plan 模式进行架构调研与规划
-在 TUI 中输入：
+In the TUI, enter:
+
 ```text
 /mode plan
-分析现有权限判定逻辑，并规划基于角色（RBAC）的扩展方案
+Analyze the current permission logic and plan an extension for role-based access control (RBAC).
 ```
-* **运行机制**：Agent 处于只读模式，通过 `read`、`bash + rg` 勘察代码，分析现有实现并在 `.cade/plans/rbac_design.md` 中生成详细的实施计划，包括修改文件清单、数据结构设计与测试用例规划。
-* **安全保证**：此阶段 Agent 无法修改任何业务代码，无法执行任意 Shell 命令。
 
-### 第二步：审查计划并一键切换到 Build 模式
-审阅生成的 Markdown 计划后，输入：
+The agent explores code with `read` and shell searches and can write `.cade/plans/rbac_design.md` with affected files, data structures, and tests. Plan mode restricts project code changes and shell mutations; see [Execution modes](guide/modes.md).
+
+### Review and implement
+
+After reviewing the Markdown plan, enter:
+
 ```text
 /mode build
-按照 .cade/plans/rbac_design.md 中的方案实现代码并跑通测试
+Implement .cade/plans/rbac_design.md and run the tests.
 ```
-* **运行机制**：Agent 自动切换为构建模式，依次使用 `edit` / `write` 应用修改，并通过 `bash` 运行单元测试。
-* **自动审查**：执行测试等低风险命令由独立的 Reviewer 模型自动审查放行；如果涉及跨工作区写入或敏感命令，则自动暂停向用户请求确认。
 
----
+The agent applies changes with `edit` and `write` and runs tests through `bash`. An independent reviewer assesses shell calls requiring review. Sensitive or out-of-workspace operations remain subject to permissions and approval.
 
-## 4. 会话分支探索与文件级快照撤销 (Undo)
+## Branch and undo
 
-在探索不确定的重构思路时，Cade 提供了完整的版本回退与分支能力：
+### Fork a session
 
-### 4.1 会话分支 (/fork)
-如果你想在某一轮对话的基础上尝试另一种技术方案：
+To explore another approach from an earlier input:
+
 ```text
 /fork 3
 ```
-系统会从第 3 条消息分叉出一个全新会话，原有会话的完整历史账本保持不变。
 
-### 4.2 文件级快照撤销 (/undo)
-如果 Agent 修改了多个文件后测试未通过，或者你不满意当前修改：
+Cade retains history before the third user input, creates a new session, and returns that input to the editor. The parent history remains unchanged. See [Sessions](guide/sessions.md).
+
+### Undo file changes
+
 ```text
-# 查看最近可撤销的文件快照
-/undo --list
-
-# 撤销最近一次工具执行所做的所有文件修改
-/undo
+/undo --list            # 查看可撤销的文件快照
+/undo                   # 撤销最近一个可撤销用户轮次的文件修改
 ```
-Cade 会利用内置的快照引擎瞬间将涉及的文件原子恢复至修改前的状态。
 
----
+Cade restores snapshot changes after conflict and permission checks. Restoration can complete partially when files conflict.
 
-## 5. 扩展能力：连接 MCP Server (Model Context Protocol)
+## Connect MCP tools
 
-Cade 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 stdio server 接入丰富的第三方工具（如数据库、GitLab、Sentry 等）。
+Create `.cade/mcp_config.json` in the project root to connect local stdio servers, such as databases or web fetch tools:
 
-在项目根目录创建 `.cade/mcp_config.json`：
 ```json
 {
   "mcpServers": {
@@ -105,34 +96,28 @@ Cade 原生支持 Model Context Protocol (MCP) 标准，可通过配置本地 st
 }
 ```
 
-启动 Cade 后，Agent 会自动发现并注册对应的动态工具：
+After startup, the agent discovers and registers tools such as:
+
 ```text
-● mcp__sqlite__read_query
-● mcp__sqlite__describe_table
-● mcp__fetch__fetch
+mcp__sqlite__read_query
+mcp__sqlite__describe_table
+mcp__fetch__fetch
 ```
-你可以直接向 Agent 提问：“查询 SQLite 数据库中最新的 10 条用户记录”，Agent 会自动调用该 MCP 工具并汇总结果。
 
----
+Ask, for example, "Read the ten most recent user records from SQLite." The agent can call the MCP tool and summarize the results.
 
-## 6. Memory
+## Memory
 
-Memory 位于 `.cade/memory/`，每个 Markdown 文件保存一条昂贵才获得、可能再次有用的
-项目知识。`/memory` 仅显示目录位置；用户可用编辑器查看、修改或删除文件。
+Each Markdown file in `.cade/memory/` stores hard-earned project knowledge that might help later tasks. `/memory` shows the directory; users can inspect, edit, and delete files with an editor.
 
-Agent 有历史需求时通过既有 `bash` 执行 `rg "关键词" .cade/memory`，再读取正文、沿 History 来源
-回到原始证据并核对当前代码。正常任务和恢复不扫描或注入 Memory。
+A bounded dynamic catalog exposes paths and opening hints on requests. For details, the agent searches with tools such as `rg "KEYWORD" .cade/memory/`, reads the body, follows History references, and checks current code.
 
-保存使用 `save_memory`，正文自由表达，来源必须是显式给出的真实 Session/entry
-引用。完整参数和修订方式见 [Memory](memory.md)。
+`save_memory` accepts free-form content with explicit real session/entry sources. See [Memory](guide/memory.md) for parameters and updates.
 
----
+## External hooks
 
-## 7. 外部事件 Hooks
+Configure host commands to validate or report key actions in `cade.config.json`:
 
-你可以通过配置外部命令 Hook，在 Agent 执行关键动作前后进行自动化校验或通知。
-
-在 `cade.config.json` 中配置：
 ```json
 {
   "hooks": {
@@ -156,5 +141,5 @@ Agent 有历史需求时通过既有 `bash` 执行 `rg "关键词" .cade/memory`
 }
 ```
 
-* `pre_tool`：在 Agent 执行 `bash` 命令前运行自定义校验脚本，可动态决定 `allow`、`deny` 或 `ask`；
-* `post_tool`：在 Agent 修改文件后自动运行 linter 修复格式。
+- `pre_tool`: run a custom check before `bash`, returning constraints such as `allow`, `deny`, or `ask`.
+- `post_tool`: run lint fixes after file edits.

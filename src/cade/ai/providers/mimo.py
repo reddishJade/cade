@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from cade.ai.types import ProviderConfig
+
 from ._compat import OpenAICompatProvider
+from ._runtime import ProviderRuntime
 
 MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 
@@ -10,4 +15,25 @@ MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 class MiMoProvider(OpenAICompatProvider):
     """Xiaomi MiMo Chat API 适配。"""
 
-    transport = "mimo_chat"
+    def __init__(
+        self,
+        config: ProviderConfig,
+        *,
+        client: Any | None = None,
+        runtime: ProviderRuntime | None = None,
+    ) -> None:
+        super().__init__(
+            config,
+            transport="mimo_chat",
+            client=client,
+            runtime=runtime,
+        )
+
+    def _record_usage(self, response, sent_messages: int) -> None:
+        super()._record_usage(response, sent_messages)
+        cached = self._metrics.get("cached_tokens", 0)
+        if isinstance(cached, int) and cached > 0:
+            self._metrics["cache_hit_tokens"] = cached
+            self._metrics["cache_miss_tokens"] = self._metrics.get(
+                "prompt_cache_miss_tokens", 0
+            )

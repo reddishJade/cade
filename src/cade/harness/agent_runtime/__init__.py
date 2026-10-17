@@ -3,7 +3,7 @@
 from .cancellation import CancellationToken
 from .composition import AgentComposition
 from .events import AgentHarnessEvent
-from .result import AgentHarnessResult
+from .result import AgentHarnessResult, RunState
 from .run_control import (
     ActiveRunHandle,
     ActiveRunState,
@@ -21,6 +21,7 @@ __all__ = [
     "AgentHarnessResult",
     "BusyMessageMode",
     "CancellationToken",
+    "RunState",
     "SessionRunController",
     "SubmitOutcome",
     "SubmitStatus",

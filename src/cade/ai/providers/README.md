@@ -1,68 +1,61 @@
-# Cade AI Providers — 模型厂商适配器
+# Provider adapters
 
-Providers 层位于 `cade.ai` 内部，专注于解决：**如何将各大模型提供商特有的请求参数、端点差异及 SSE 流式协议，适配到统一的 Provider 抽象与 `ProviderEvent` 事件流。**
+Providers translate vendor-specific request parameters, endpoints, and SSE streams into the common provider protocol and `ProviderEvent` stream.
 
----
+## Assembly
 
-## 1. 核心抽象与适配架构
-
-```
-                 ProviderConfig
-                                │
-                                ▼
-                   build_provider()
-                                │
-          ┌─────────────────────┴─────────────────────┐
-          ▼                                           ▼
-  OpenAIChatProvider                           DeepSeekProvider
-  (兼容标准 OpenAI API)                        (支持 thinking/reasoning delta)
-          │                                           │
-          ├─────────────────┬─────────────────────────┤
-          ▼                 ▼                         ▼
-   ChatGLMProvider     MiMoProvider         自定义 OpenAI-compatible
+```text
+ModelProfileConfig / ProviderSettings
+  → build_provider_bundle()
+  → OpenAIChatProvider / DeepSeekProvider / ChatGLMProvider / MiMoProvider
+  → Standard OpenAI-compatible or vendor-specific requests
 ```
 
-### 核心类型与组件
-- **Provider 基类 ([base.py](base.py))**：定义模型交互协议与接口规范。
-- **厂商适配器**：
-  - `openai.py`：标准 OpenAI Chat Completions 接口适配器。
-  - `deepseek.py`：DeepSeek 专用适配器，专门处理 `reasoning_content` 推理流字段及温度/参数限制。
-  - `chatglm.py`：智谱 GLM 系列模型协议适配。
-  - `mimo.py`：小米 MiMo 协议适配。
-- **协议兼容与流水线**：
-  - `_compat.py`：OpenAI 兼容协议基础通信抽象。
-  - `_codec.py`：请求/响应报文与工具调用（ToolCall）双向编解码。
-  - `_stream.py`：底层 SSE 字符块缓冲、行切分与 JSON 流解析。
-- **注册与工厂 ([registry.py](registry.py))**：
-  - `PROVIDER_REGISTRY`：厂商名称到 Provider 构造器的映射表。
-  - `build_provider`：依据已解析的模型配置构造一个 Provider；产品层按实际用途装配角色。
+### Components
 
----
+- [base.py](base.py): model interaction protocols and base interfaces.
+- `openai.py`: OpenAI Chat Completions.
+- `deepseek.py`: DeepSeek reasoning content and parameter restrictions.
+- `chatglm.py`: Zhipu GLM protocols.
+- `mimo.py`: Xiaomi MiMo protocols.
+- `_compat.py`: shared OpenAI-compatible communication.
+- `_codec.py`: message and tool encoding.
+- `_stream.py`: stream decoding and event normalization.
+- `_runtime.py`: retries, rate limiting, and API error classification.
+- [registry.py](registry.py): `PROVIDER_REGISTRY` constructor mapping and `build_provider_bundle` for primary and auxiliary models.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **配置归属**：角色解析与适配器共享同一份 `ProviderConfig`；厂商请求字段由适配器映射，配置字段具有明确类型。
-- **零业务状态**：Provider 实例应当无业务状态，仅持有网络连接客户端配置与模型元信息。
-- **测试环境解耦**：上层测试若需模拟 Provider，应通过标准接口构造假流，不得在生产包内留存已废弃的假桩模块。
+Keep vendor-specific parameters inside adapters, passing them through `extra` rather than adding vendor fields to generic configuration. Providers own client configuration and model metadata, not product state. Upper-layer tests should use protocol-compatible streams; do not retain obsolete test stubs in production packages.
 
----
+## Example
 
-## 3. 典型使用示例
+Set `DEEPSEEK_API_KEY`. Pass message and tool-definition lists as `messages` and `tool_specs`, then consume `events` inside an async function.
 
 ```python
-from cade.ai.providers import build_provider
-from cade.ai.types import ProviderConfig
+import os
 
-# 装配 DeepSeek 运行时
-provider = build_provider(
-    ProviderConfig(
-        provider="deepseek",
-        transport="deepseek_chat",
-        model="deepseek-reasoner",
-        api_key="<resolved-api-key>",
+from cade.ai.providers.registry import (
+    ModelProfileConfig,
+    ProviderSettings,
+    build_provider_bundle,
+)
+
+# 装配 DeepSeek provider
+bundle = build_provider_bundle(
+    ProviderSettings(
+        env_files=(),
+        model_profiles={
+            "main": ModelProfileConfig(
+                provider="deepseek",
+                transport="deepseek_chat",
+                chat_model="deepseek-reasoner",
+                api_key=os.environ["DEEPSEEK_API_KEY"],
+            )
+        },
     )
 )
 
-# 获取流式生成器
-events = provider.stream(messages, tools=tool_specs)
+# 获取事件流
+events = bundle.llm.stream(messages, tools=tool_specs)
 ```

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -10,17 +10,21 @@ from typing import TYPE_CHECKING, Any
 from cade.ai.models import get_model_context_window
 from cade.ai.providers.base import ModelProvider
 
+from ...agent._codec import convert_to_llm as _convert_to_llm
 from ...agent.config import (
     AgentLoopConfig,
+    AgentLoopTurnUpdate,
     CompletionVerifier,
     ContextWindowResetReason,
 )
+from ...agent.context import ContextCollectorRegistry, DefaultContextAssembler
 from ...agent.context_policy import ContextPolicy
 from ...agent.messages import (
     AgentMessage,
     SystemMessage,
 )
 from ...agent.request import (
+    DefaultRequestAssembler,
     RequestAssembly,
 )
 from ...agent.types import ApprovalCallback, ToolSpec
@@ -33,22 +37,63 @@ from ..observability import (
     RuntimeCorrelation,
     hook_correlation_fields,
 )
+from ..security import PermissionDecision, PermissionPolicy
+from ..security.approval import ApprovalPolicy
 from ..security.permission_model import (
+    ExternalDirectory,
     GrantStore,
+    PathExtractor,
+    PolicyEvaluator,
+    Rule,
+    SensitivePathOverride,
 )
 from ..session.inbox import SessionInbox
+from ..skill_activation import is_skill_activation_content
+from ._mode_protocol import RuntimeModeState
 from .cancellation import CancellationToken
 from .context_window import (
     ContextWindowController,
     ContextWindowRollover,
 )
+from .message_codec import messages_from_provider_dicts
+from .prompting.citations import decorate_citable_messages
 from .tool_gate import ToolGate
 
 if TYPE_CHECKING:
     from .composition import AgentComposition
 
 
+def _convert_to_llm_with_citations(
+    messages: list[AgentMessage],
+) -> list[dict[str, Any]]:
+    decorated = decorate_citable_messages(messages)
+    return _convert_to_llm(decorated)
+
+
+ContextRollover = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
 RuntimeContextProvider = Callable[[tuple[ToolSpec, ...]], list[str]]
+
+
+@dataclass(frozen=True)
+class GateConfig:
+    """随 composition 发布的静态工具策略。"""
+
+    permission_policy: PermissionPolicy | None = None
+    approval_policy: ApprovalPolicy = "on-request"
+    restricted_dirs: tuple[str, ...] = ()
+    hook_constraint_providers: tuple[PolicyEvaluator, ...] = ()
+    external_directories: tuple[ExternalDirectory, ...] = ()
+    sensitive_path_overrides: tuple[SensitivePathOverride, ...] = ()
+    user_rulesets: Mapping[str, tuple[Rule, ...]] = field(default_factory=dict)
+    default_mode_rulesets: Mapping[str, tuple[Rule, ...]] = field(default_factory=dict)
+    mode_fallbacks: Mapping[str, PermissionDecision] = field(default_factory=dict)
+    shell_unresolved_policies: Mapping[str, PermissionDecision] = field(
+        default_factory=dict
+    )
+    shell_mutation_policies: Mapping[str, PermissionDecision] = field(
+        default_factory=dict
+    )
+    tool_path_extractors: Mapping[str, PathExtractor] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -76,7 +121,7 @@ class AgentRuntimeConfig:
     session_inbox: SessionInbox
     gate: GateRuntimeConfig = field(default_factory=GateRuntimeConfig)
     gate_instance: ToolGate | None = None
-    context_rollover: ContextWindowRollover | None = None
+    context_rollover: ContextRollover | None = None
     context_window_controller: ContextWindowController | None = None
     cancellation_token: CancellationToken | None = None
     project_root: Path | None = None
@@ -103,7 +148,7 @@ def build_turn_context_messages(
 
 def _rollover_and_emit(
     loop_messages: list[AgentMessage],
-    context_rollover: ContextWindowRollover | None,
+    context_rollover: ContextRollover | None,
     emit_hook: Callable[[HookRecord], None],
     correlation: RuntimeCorrelation,
     policy: ContextPolicy | None = None,
@@ -111,7 +156,11 @@ def _rollover_and_emit(
     """切换上下文窗口并发射 Hook。"""
     if context_rollover is None:
         return loop_messages
-    next_window = context_rollover.rollover_messages(loop_messages, policy=policy)
+    if isinstance(context_rollover, ContextWindowRollover):
+        next_window = context_rollover.rollover_messages(loop_messages, policy=policy)
+    else:
+        dict_messages = [_to_dict_safe(message) for message in loop_messages]
+        next_window = messages_from_provider_dicts(context_rollover(dict_messages))
     current = correlation.snapshot()
     emit_hook(
         HookRecord(
@@ -124,6 +173,12 @@ def _rollover_and_emit(
         )
     )
     return next_window
+
+
+def _to_dict_safe(message: AgentMessage) -> dict[str, Any]:
+    from .agent_helpers import to_dict
+
+    return to_dict(message)
 
 
 def _build_before_provider_request_closure(
@@ -271,13 +326,30 @@ def _request_option_value(value: object) -> object:
     return f"<{type(value).__module__}.{type(value).__qualname__}>"
 
 
+def build_request_assembler(
+    context_collectors: ContextCollectorRegistry | None,
+    context_assembler: DefaultContextAssembler | None,
+) -> DefaultRequestAssembler:
+    """在 composition 发布前冻结请求组装贡献。"""
+    return DefaultRequestAssembler(
+        converter=_convert_to_llm_with_citations,
+        context_collectors=(
+            context_collectors.freeze() if context_collectors is not None else None
+        ),
+        context_assembler=context_assembler or DefaultContextAssembler(),
+        preserve_tool_result=lambda message: is_skill_activation_content(
+            message.content
+        ),
+    )
+
+
 def build_loop_config(
     *,
     composition: AgentComposition,
     provider: ModelProvider,
     gate: ToolGate,
     registry: tuple[ToolSpec, ...],
-    context_rollover: ContextWindowRollover | None,
+    context_rollover: ContextRollover | None,
     requested_rollover: Callable[[], ContextWindowResetReason | None] | None,
     last_prompt_tokens: int | None,
     steer: Callable[[AgentMessage], None],
@@ -286,10 +358,12 @@ def build_loop_config(
     correlation: RuntimeCorrelation | None = None,
     get_last_prompt_tokens: Callable[[], int | None] | None = None,
     # 领域扩展参数由上层装配后注入。
+    mode_state: RuntimeModeState | None = None,
     watchdog_repeated_tool_skip: frozenset[str] | None = None,
     completion_verifier: CompletionVerifier | None = None,
 ) -> AgentLoopConfig:
     active_correlation = correlation or RuntimeCorrelation("local")
+    gate_snapshot = gate.snapshot_for(registry)
 
     def rollover_decision_fn(
         loop_messages: list[AgentMessage],
@@ -359,6 +433,20 @@ def build_loop_config(
             return True
         return False
 
+    def prepare_next_turn_fn() -> AgentLoopTurnUpdate | None:
+        if mode_state is not None and mode_state.check_plan_timeout():
+            steer(
+                SystemMessage(
+                    content=(
+                        "<plan-timeout>\n"
+                        "Plan Mode timed out after reaching the maximum number "
+                        "of investigation turns. Returning to Act Mode.\n"
+                        "</plan-timeout>"
+                    )
+                )
+            )
+        return None
+
     policy = resolve_context_policy(provider, composition.config)
     return AgentLoopConfig(
         provider=provider,
@@ -385,7 +473,8 @@ def build_loop_config(
         rollover_context=rollover_fn if context_rollover is not None else None,
         completion_verifier=completion_verifier,
         is_tool_productive=gate.build_is_tool_productive_hook(),
-        before_tool_call=gate.build_before_tool_hook(registry),
+        before_tool_call=gate.build_before_tool_hook(gate_snapshot),
+        after_tool_call=gate.build_after_tool_hook(),
         before_provider_request=_build_before_provider_request_closure(
             emit_hook,
             get_prompt_version,
@@ -393,6 +482,7 @@ def build_loop_config(
             provider,
             composition.generation_id,
         ),
+        prepare_next_turn=prepare_next_turn_fn,
     )
 
 
@@ -422,7 +512,7 @@ def resolve_context_policy(
 
 def _rollover_decision(
     messages: list[AgentMessage],
-    context_rollover: ContextWindowRollover | None,
+    context_rollover: ContextRollover | None,
     requested_rollover: Callable[[], ContextWindowResetReason | None] | None,
     last_prompt_tokens: int | None,
     composition: AgentComposition,

@@ -19,7 +19,6 @@ from typing import Any
 from cade.agent.types import ApprovalRequest
 from cade.coding_agent.app import CadeApp
 from cade.coding_agent.execution_modes import ExecutionMode
-from cade.harness.agent_runtime.async_worker import IsolatedAsyncWorker
 from cade.harness.security import HITLResult
 from cade.harness.security.approval import HITLScope
 
@@ -50,7 +49,6 @@ class WebRunHub:
     def __init__(self, app: CadeApp) -> None:
         self._app = app
         self._sinks: list[Sink] = []
-        self._worker = IsolatedAsyncWorker(name="cade-web-agent")
         self._run_task: asyncio.Task[None] | None = None
         self._pending: _PendingApproval | None = None
         self.set_app(app)
@@ -178,12 +176,12 @@ class WebRunHub:
         pending.done.set()
 
     async def _run(self, text: str, mode: ExecutionMode | None) -> None:
-        """在唯一的隔离 worker 消费异步流，同步权限回调不会阻塞 Web。"""
+        """在独立工作线程中消费同步事件流，避免 agent 预热阻塞事件循环。"""
         loop = asyncio.get_running_loop()
 
-        async def _consume() -> None:
+        def _consume() -> None:
             try:
-                async for event in self._app.aask_stream(text, mode=mode):
+                for event in self._app.ask_stream(text, mode=mode):
                     payload = {"type": "event", "event": event_to_dict(event)}
                     loop.call_soon_threadsafe(self.broadcast, payload)
             except Exception as exc:  # noqa: BLE001 - 广播给前端展示
@@ -196,27 +194,12 @@ class WebRunHub:
                 )
 
         try:
-            await asyncio.wrap_future(self._worker.submit(_consume()))
+            await loop.run_in_executor(None, _consume)
         except asyncio.CancelledError:
             self.broadcast({"type": "run_cancelled"})
         finally:
             self._pending = None
             self.broadcast({"type": "run_idle"})
-
-    async def close(self) -> None:
-        """停止当前运行并关闭宿主拥有的 worker。"""
-        pending = self._pending
-        if pending is not None:
-            self._resolve_pending(pending, "deny", "once", "")
-        self._app.agent.interrupt("Web host is closing")
-        task = self._run_task
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        self._worker.close()
 
     def new_session(self) -> str | None:
         """清空当前账本并重建空会话；运行中拒绝。"""

@@ -1,22 +1,18 @@
-# Cade 架构
+# Cade architecture
 
-Cade 是本地运行的 Python coding-agent harness，负责模型请求组装、工具执行与权限、
-会话记录和运行生命周期。编码产品将这些能力装配为 `CadeApp`，TUI、exec、
-浏览器工作台和 Python 调用通过应用入口提交任务、消费事件。
+Cade is a local Python coding-agent harness. It assembles model requests, executes tools, applies permissions, records sessions, and manages runtime lifecycles. The coding product assembles these capabilities into `CadeApp`. TUI, exec, browser, and Python hosts submit tasks and consume events through the application.
 
-本文说明当前实现的组件边界、运行过程、状态归属和扩展位置。安装与使用从
-[README](../README.md) 开始；预算算法见 [上下文策略](context-policy.md)，配置字段
-见 [配置指南](guide/configuration.md)，设计取舍见 [设计理念](design-philosophy.md)。
+This page describes current component boundaries, execution, state ownership, and extension points. Start with the [README](../README.md) for installation and use. See the [context policy](context-policy.md) for budgets, [configuration](guide/configuration.md) for fields, and [design tradeoffs](design-philosophy.md) for rationale.
 
-## 组件与装配
+## Components and assembly
 
-| 层 | 代码 | 职责 |
-|---|---|---|
-| Provider | [ai/](../src/cade/ai/) | 模型协议、流式事件、用量与厂商适配 |
-| Agent | [agent/](../src/cade/agent/) | 消息模型、请求组装、模型循环与工具调度 |
-| Harness | [harness/](../src/cade/harness/) | 会话、运行控制、权限、审计、MCP 与生命周期服务 |
-| Coding product | [coding_agent/](../src/cade/coding_agent/) | 编码工具、产品装配、公共应用服务、运行模式与命令入口 |
-| Host | [coding_agent/modes/](../src/cade/coding_agent/modes/)、[server/](../src/cade/server/) | 用户交互、事件展示与宿主操作 |
+| Layer | Code | Responsibility |
+| --- | --- | --- |
+| Provider | [ai/](../src/cade/ai/) | Model protocols, streaming events, usage, and vendor adapters |
+| Agent | [agent/](../src/cade/agent/) | Messages, request assembly, model loop, and tool scheduling |
+| Harness | [harness/](../src/cade/harness/) | Sessions, run control, permissions, auditing, MCP, and lifecycle services |
+| Coding product | [coding_agent/](../src/cade/coding_agent/) | Coding tools, product assembly, shared application services, modes, and commands |
+| Host | [coding_agent/modes/](../src/cade/coding_agent/modes/), [server/](../src/cade/server/) | User interaction, event presentation, and host operations |
 
 ```text
                        Cade runtime
@@ -27,273 +23,148 @@ Cade 是本地运行的 Python coding-agent harness，负责模型请求组装�
          human UI       automation     browser UI
 ```
 
-`coding_agent/interaction/` 属于编码产品的公共应用服务，通过产品装配和运行时接口
-提供命令操作、补全候选、文件引用、技能调用、模型发现和统计快照。命令通过注入的输出与选择接口
-返回结果，认证与配置向导由宿主提供。依赖方向是运行模式与浏览器宿主 → 产品交互服务
-→ 产品装配与运行时；Provider、Agent、Harness 和编码产品分别拥有各自的实现与生命周期。
-会话存储、审批策略、运行控制和事件流归 Harness 管理。
+`coding_agent/interaction/` provides shared coding-product application services: commands, completion candidates, file references, skill invocation, model discovery, and statistics snapshots. Commands return results through injected output and selection interfaces. Hosts supply authentication and configuration wizards. Dependencies point from runtime modes and browser hosts to product interaction services, then to product assembly and runtime. Provider, Agent, Harness, and the coding product each own their implementations and lifecycles. Harness owns session storage, approval policies, run control, and event streams.
 
-`coding_agent/modes/tui/` 是终端交互适配器，拥有 `prompt_toolkit`、Rich、终端布局、折叠状态、
-思考预览和配置向导。`coding_agent/modes/exec_mode.py` 直接消费运行时事件，提供自动化协议；
-`server/` 通过公共交互层和编码产品提供 HTTP、WebSocket 和浏览器表现。
-`coding_agent/cli/` 处理认证、配置和会话管理子命令；`main.py` 负责参数解析和模式选择。
-用户选择与配置向导通过终端适配器呈现。默认命令 `cade` 和显式 `cade tui` 启动
-同一个 TUI，单次任务与自动化使用 `cade exec`，浏览器工作台使用 `cade web`。
+`coding_agent/modes/tui/` owns `prompt_toolkit`, Rich, terminal layout, folding, reasoning previews, and configuration wizards. `coding_agent/modes/exec_mode.py` consumes runtime events directly for automation. `server/` provides HTTP, WebSocket, and browser presentation through shared interaction and product services. `coding_agent/cli/` handles authentication, configuration, and session subcommands. `main.py` parses arguments and selects a mode. Terminal adapters present selection and configuration wizards. Both `cade` and `cade tui` start the same TUI; use `cade exec` for automation and `cade web` for the browser workspace.
 
-Agent 通过 provider 协议请求模型，通过工具协议执行动作。Harness 将会话、门控和
-运行服务接入循环；编码产品选择工具与策略；宿主负责输入和呈现。文件工具依赖
-`FileSystem`，命令工具依赖 `Shell`，生产实现访问本地工作区和宿主进程。
+Agent requests models through provider protocols and actions through tool protocols. Harness connects sessions, gates, and runtime services to the loop. The coding product selects tools and policies; hosts manage input and presentation. File tools depend on `FileSystem`, and command tools depend on `Shell`. Production implementations access the local workspace and host processes.
 
-[`build_app()`](../src/cade/coding_agent/app.py) 先解析配置，构造共享 session
-store、recorder、inbox、History 和取消服务，再按主模型、子代理、回退与审批用途构造 provider、本地工具、
-MCP、Skills、Memory 与子代理 registry，最后发布 composition 并返回 `CadeApp`。
-recorder 和 inbox 共享 store，应用拥有装配所得服务的关闭责任。
-各宿主只传入显式会话目录覆盖；配置目录与默认目录由共享基础设施装配统一选择。
+[`build_app()`](../src/cade/coding_agent/app.py) resolves configuration, creates the shared session store, recorder, inbox, History, and cancellation services, then constructs providers, local tools, MCP, Skills, Memory, and the subagent registry. It publishes the composition and returns `CadeApp`. Recorder and inbox share the store. The application owns service shutdown. Hosts supply only explicit session-directory overrides; shared infrastructure assembly chooses configured and default directories.
 
-`AgentComposition` 是不可变的配置代际，包含主备 provider、冻结的工具 schema、
-`AgentConfig`、静态 gate 策略、请求组装器和上下文入口。会话 inbox、取消信号、
-hooks、grant store 和换窗服务由运行时持有。run 开始时原子捕获 composition 与
-有效 provider，后续 step 使用同一份配置快照；主备切换按该快照内的容灾策略执行。
-模型与静态权限策略替换要求 agent 空闲，并发布新的 generation。
+`AgentComposition` is an immutable configuration generation containing primary and fallback providers, frozen tool schemas, `AgentConfig`, static gate policies, the request assembler, and context entry points. The runtime owns the inbox, cancellation, hooks, grant store, and rollover services. A run atomically captures its composition and effective provider. Later steps use the same snapshot, including its fallback policy. Replacing models or static permission policies requires an idle agent and publishes a new generation.
 
-默认模型由 `default_provider`、`default_model`、`default_reasoning_effort` 选择。
-`provider.connections` 保存独立连接参数；`~/.cade/auth.json` 按 provider 保存
-API key 与 OAuth。配置发现只合并和校验配置，不读取认证、不根据登录状态改模型。
-编码产品的 `assembly/providers.py` 先展开模型角色，再解析所选 provider 的凭据，
-形成只用于运行时的 `ProviderConfig`，角色与适配器共享这份配置，工厂按 transport 选择实现。
-登录只写认证，setup 和配置编辑负责默认选择。
+`default_provider`, `default_model`, and `default_reasoning_effort` select the default model. `provider.connections` stores connection parameters separately. `~/.cade/auth.json` stores API keys and OAuth credentials by provider. Configuration discovery merges and validates settings without reading authentication or changing models based on login status. Product `assembly/providers.py` expands model roles, resolves the selected providers' credentials, and builds runtime-only provider configuration. Login writes authentication only; setup and configuration editing select defaults.
 
-## 输入、运行与结束
+## Input, execution, and completion
 
-session 标识持久会话及其当前分支；run 标识一次占有该 session 的执行过程。
-单个运行时内，同一 session 同时只允许一个活动 run，排队输入保留在 inbox 中。
-用户轮次是一次任务输入及其响应过程，TUI 的文件快照按这一粒度记录。
+A session identifies a persistent conversation and its active branch. A run identifies one execution that owns that session. Within a runtime, a session has at most one active run. Queued input remains in the inbox. A user turn is one task input and its response process; the TUI records file snapshots at that boundary.
 
-step 是 Agent 循环的一次迭代，包含模型输出、可选的工具执行和继续判断。重试或
-输出续写可使一个 step 产生多次 provider 请求。事件中的 `step` 与循环计数一致；`turn_end` 按 step 发出，需与宿主记录的用户轮次区分。
+A step is one Agent loop iteration: model output, optional tool execution, and a continuation decision. Retries or output continuation can produce multiple provider requests in a step. Agent `TurnStart` and `TurnEnd` events occur per step, not per host-recorded user turn.
 
 ```mermaid
 flowchart TD
-    Input["用户提交 / 运行时注入"] --> Inbox["SessionInbox：持久化与排队"]
-    Inbox --> Claim["run 消费输入，捕获 composition"]
-    Claim --> Assemble["RequestAssembler：前缀、surface、动态上下文与预算"]
-    Assemble --> Audit["before_provider_request：请求审计"]
-    Audit --> Provider["provider 流式响应"]
-    Provider --> Calls{"包含工具调用？"}
-    Calls -->|是| Gate["模式检查、pre-tool hook、权限与审批"]
-    Gate --> Allowed{"允许执行？"}
-    Allowed -->|是| Tools["工具调度与执行"]
-    Tools --> Post["post-tool hook 与审计"]
-    Post --> Results["tool-result：结果或错误"]
-    Allowed -->|否| Results
-    Results --> Record["稳定事件写入 session，宿主展示"]
+    Input["User submission / runtime injection"] --> Inbox["SessionInbox: persist and queue"]
+    Inbox --> Claim["Run claims input and captures composition"]
+    Claim --> Assemble["RequestAssembler: prefix, surface, dynamic context, budget"]
+    Assemble --> Audit["before_provider_request: request audit"]
+    Audit --> Provider["Provider response stream"]
+    Provider --> Calls{"Tool calls?"}
+    Calls -->|Yes| Gate["Mode check, pre-tool hook, permissions, approval"]
+    Gate --> Allowed{"Allowed?"}
+    Allowed -->|Yes| Tools["Schedule and execute tools"]
+    Tools --> Post["Post-tool hook and audit"]
+    Post --> Results["tool-result: output or error"]
+    Allowed -->|No| Results
+    Results --> Record["Persist stable events; display in host"]
     Record --> Assemble
-    Calls -->|否| Finish["Goal 与晚到输入检查"]
-    Finish -->|继续| Assemble
-    Finish -->|结束| Final["final：运行结果落盘，释放所有权"]
+    Calls -->|No| Finish["Check goal and late input"]
+    Finish -->|Continue| Assemble
+    Finish -->|Stop| Final["final: persist result and release ownership"]
 ```
 
-[`SessionRunController`](../src/cade/harness/agent_runtime/run_control.py) 将
-`steer` 放入 `next_step` lane，在当前运行的下一模型边界消费；`followup` 放入
-`next_turn` lane，供后续任务消费。`interrupt` 先排入后续输入，再取消当前运行。
-结束阶段再次检查晚到的纠偏输入，必要时继续运行。纠偏只影响后续请求，已经执行
-的动作保留其结果。
+[`SessionRunController`](../src/cade/harness/agent_runtime/run_control.py) puts `steer` input in the `next_step` lane for the next model boundary of the active run. It puts `followup` in `next_turn` for a later task. `interrupt` queues follow-up input before canceling the current run. Finalization checks late steering and continues when needed. Steering affects future requests only; completed actions retain their results.
 
-循环将相邻、声明为 `parallel` 的工具组成并发批次，受 worker 数限制；
-`sequential` 工具独占一个批次，并形成前后执行屏障。工具超时、参数错误和拒绝
-执行以工具错误反馈给模型，循环可根据结果继续处理。
+Adjacent tools declared `parallel` form concurrent batches bounded by the worker limit. A `sequential` tool occupies its own batch and creates an execution barrier. Timeouts, invalid arguments, and denials return tool errors to the model so the loop can respond.
 
-正常完成、取消、step 上限、模型调用上限、watchdog 和 provider 错误都有明确的
-终止分类。watchdog 约束重复工具调用和无进展行为。取消会请求模型流与工具停止，
-文件和外部服务中已经发生的变更需要通过后续操作处理。
+Normal completion, cancellation, step limits, model call limits, watchdog stops, and provider errors have explicit termination categories. The watchdog limits repeated calls and lack of progress. Cancellation requests that model streaming and tools stop; changes already made to files or external services require subsequent handling.
 
-设置 Goal 后，独立 judge 在主循环尝试结束时根据已有消息与工具证据检查条件，
-未满足时将反馈送回循环继续处理。Goal 保存条件、暂停状态和验收次数，并限制
-重复验收；不可完成、验收不可用和次数耗尽分别产生结束提示。普通运行的
-`completed` 表示循环正常结束，任务达成情况由可用证据与 Goal 验收结果表达。
+With a goal configured, an independent judge checks existing messages and tool evidence when the main loop tries to stop. If the condition is unmet, feedback returns to the loop. Goal state stores conditions, pause status, and acceptance attempts, with limits on repeated checks. Impossible goals, unavailable acceptance, and exhausted attempts produce distinct notices. A normal `completed` result means the loop ended normally; evidence and goal acceptance establish task success.
 
-循环直接发布统一的类型化事件；Harness 补充关联标识与最终结果，不另行翻译事件。
-`CadeApp.aask_stream()` 将事件交给 `SessionRecorder`，随后向宿主输出；同步入口只在外层转换消费方式。
-TUI 与 Web 的隔离 worker 直接消费异步流，使同步权限回调等待用户时仍可操作界面。直接使用
-底层 harness 时，调用方承担稳定输出记录责任。应用关闭时先取消并等待子代理，
-释放子实例后关闭 MCP 等共享依赖；子代理等待超时会中断关闭，保留其依赖。
+`CadeApp` passes harness events to `SessionRecorder` before yielding them to hosts. Direct harness callers must record stable output themselves. Application shutdown cancels and waits for subagents, releases children, and then closes shared dependencies such as MCP. A child wait timeout interrupts shutdown and retains its dependencies.
 
-## 请求与上下文
+## Requests and context
 
-[`RequestAssembler`](../src/cade/agent/request.py) 将运行时系统前缀、当前 session
-surface、context collectors 的动态块、工具 schema 和 options 组装为
-`RequestAssembly`。provider 与发送前审计消费同一个 assembly，使请求内容和
-审计依据保持一致。Goal judge 与自动审批 reviewer 使用各自的模型调用路径，
-其请求边界由对应服务管理。
+[`RequestAssembler`](../src/cade/agent/request.py) combines the runtime system prefix, current session surface, dynamic context blocks, tool schemas, and options into `RequestAssembly`. The provider and pre-send audit consume the same assembly. Goal judges and automatic approval reviewers have separate model-call paths and service-owned request boundaries.
 
-用户输入、纠偏和运行时注入通过 inbox 调度；系统前缀经 `request_prefix` 提供，
-项目指令、NOTE、验证事实、技能目录和运行状态由上下文入口在每次请求重新收集。
-section 的一次收集直接返回具有来源、注入目标、排序优先级与审计信息的完整动态块。
-section 负责选定上下文，assembler 完整注入选定块，并回收历史与工具证据来满足预算。
+User input, steering, and runtime injections pass through the inbox. `request_prefix` supplies the system prefix. Context entry points recollect project instructions, NOTE, verification facts, skill catalogs, and runtime state for every request. A section returns complete dynamic blocks with sources, injection targets, ordering priorities, and audit information. Sections select content; the assembler injects selected blocks in full and reclaims history and tool evidence to meet budgets.
 
-工具名称、描述和参数由 API schema 声明；系统前缀中的操作指南使用与 schema
-相同的当次启用工具集合，只读旁支查询不注入工具指南。
+API schemas declare tool names, descriptions, and parameters. Prefix tool guidance uses the same enabled tool set as the schema for that request. Read-only side questions do not receive tool guidance.
 
-`ContextManager` 统一持有会话历史、输入用量锚点和最后换窗原因；
-独立 Agent 调用也使用这一入口。`ContextPolicy` 从模型物理窗口扣除输出预留与额外余量，为输入、工具证据和新增
-消息分配预算。预测以成功请求的 provider 输入用量为锚点，结合本地差额估算；
-锚点失效时使用本地估算。provider 返回实际用量，请求投影负责准入与提前换窗。
+`ContextManager` owns session history, input usage anchors, and the last rollover reason, including for standalone Agent calls. `ContextPolicy` subtracts output reserve and safety margin from the model's physical window and budgets input, tool evidence, and new messages. Prediction uses successful provider input usage plus estimated local differences, or local estimates when the anchor is invalid. Providers report actual usage; request projections control admission and early rollover.
 
-工具直接返回文本或 `AgentToolResult`；结构化内容沿消息、事件和会话传递，宿主在展示边界生成文本摘要。
-图片不经 metadata 传递；Responses 将其作为工具输出内容，Chat 在完整工具结果批次之后附加图片消息。
-大工具结果在请求中裁剪为预览与恢复引用，完整结果保留在 transcript 或 artifact。
-同一 `context_key` 的最新成功 durable 状态受保护，旧版本转为历史索引。必需
-上下文超过安全输入预算时，组装明确失败并以 `context_error` 结束，不发送残缺
-请求；换窗成立还要求存在可回收历史，预算策略的有效范围受模型窗口和必需输入
-规模约束。
+Large tool results become previews with recovery references in requests. Complete results remain in transcripts or artifacts. The latest successful durable state for a `context_key` is protected; older versions become history indexes. If required context exceeds the safe input budget, assembly fails explicitly with `context_error` instead of sending an incomplete request. Rollover also requires reclaimable history. Model window size and required input bound the policy's effective range.
 
-自动换窗保留当前用户请求、持久状态和有界的近期完整交互，重新收集 NOTE、验证
-事实与运行状态，并将 surface replacement 写入 session。旧窗口原文通过
-`history` 查询。该策略减少当前请求的历史内容，后续任务需要按引用重新读取证据；
-NOTE 的完整程度影响跨窗口任务衔接。预算公式、裁剪顺序和观测字段见
-[上下文策略](context-policy.md)。
+Automatic rollover retains the current user request, persistent state, and bounded recent complete interactions. It recollects NOTE, verification facts, and runtime state and records a surface replacement in the session. Original window content remains available through `history`. Later tasks must retrieve reclaimed evidence by reference. NOTE completeness affects continuity. See the [context policy](context-policy.md) for formulas, trimming order, and observations.
 
-## 状态归属与恢复
+## State ownership and recovery
 
-| 对象 | 所有者与存储 | 生命周期与用途 |
-|---|---|---|
-| transcript 与 artifact | session store；默认 `.cade/sessions/` 与 `.cade/session_artifacts/` | 追加会话事实与完整工具内容，支持回放和分支 |
-| inbox | `SessionInbox`；同一个 store | 保存待消费输入和 inserted/claimed/discarded 生命周期 |
-| surface | session 回放与活动运行 | 当前分支可供模型使用的消息历史，换窗时应用 replacement |
-| RequestAssembly | 请求组装器；当次请求 | 最终 wire messages、工具与 options，附带预算及来源 trace |
-| composition | harness；进程内配置快照 | 单次 run 的行为配置，以 generation ID 关联请求 |
-| 活动 run、取消与连接 | run controller、provider、MCP 等运行服务 | 进程内执行资源，恢复时重新建立 |
-| NOTE.md | 工作区文件；NotesCollector 读取 | 当前任务进展、验证与交接；换窗记录可附带其快照 |
-| Memory | 工作区 `.cade/memory/` Markdown 文件 | 可核验的跨会话知识，按任务需要读取 |
-| 文件快照 | SnapshotStore；默认 `.cade/snapshots/` | TUI 用户轮次的文件变更与撤销依据 |
+| Object | Owner and storage | Lifecycle and purpose |
+| --- | --- | --- |
+| Transcript and artifacts | Session store; `.cade/sessions/` and `.cade/session_artifacts/` by default | Append session facts and complete tool content for replay and branching |
+| Inbox | `SessionInbox`, using the same store | Persist pending input and inserted/claimed/discarded lifecycle |
+| Surface | Session replay and active run | Model-visible history for the current branch, replaced on rollover |
+| RequestAssembly | Request assembler, per request | Final wire messages, tools, options, budget, and source trace |
+| Composition | Harness, in-process snapshot | Run configuration linked to requests by generation ID |
+| Active run, cancellation, and connections | Run controller, providers, MCP, and runtime services | In-process resources reestablished after recovery |
+| NOTE.md | Workspace file read by NotesCollector | Task progress, validation, and handoff; rollover can snapshot it |
+| Memory | Markdown in workspace `.cade/memory/` | Verifiable cross-session knowledge read when needed |
+| File snapshots | SnapshotStore; `.cade/snapshots/` by default | TUI user-turn changes and undo evidence |
 
-[`replay_session()`](../src/cade/harness/session/replay.py) 按当前分支重建消息、运行
-元数据、Goal 和上下文状态，inbox 重建待消费输入。恢复后的运行使用当前装配服务
-发起新的请求，旧进程中的工具、网络连接和活动任务由宿主重新建立。工具副作用与
-事件写入属于两个操作，进程在两者之间退出时，恢复需检查当前工作区及外部状态。
+[`replay_session()`](../src/cade/harness/session/replay.py) rebuilds messages, run metadata, goal, and context state for the active branch. Inbox replay rebuilds pending input. Recovered runs issue new requests using current assembled services. Hosts reestablish tools, connections, and active tasks from the old process. Tool side effects and event recording are separate operations; if the process exits between them, recovery must check workspace and external state.
 
-会话记录区分最终用户可见的 `assistant` 条目与模型响应、`tool_use`、
-`tool_result`、`final` 等运行事件。`provider_request` 保存请求指纹、规模、参数、
-composition ID 与 trace，用于定位一次请求及其组装决策。`final` 保存回答、计数、
-终止信息和恢复所需元数据；消息与工具参数由已有语义事件重建。
+Session records distinguish final user-visible `assistant` entries from model responses and events such as `tool_use`, `tool_result`, and `final`. `provider_request` stores the request fingerprint, size, parameters, composition ID, and trace. `final` stores the answer, counters, termination details, and recovery metadata. Existing semantic events reconstruct messages and tool arguments.
 
-`context_window_reset` 保存类型化 replacement、来源 entry IDs 和递增 generation。
-回放检查来源是否属于当前分支前缀、消息结构与工具调用配对，再按日志顺序替换
-surface；原 transcript 保留。校验范围和请求指纹协议见
-[上下文策略](context-policy.md)。
+`context_window_reset` stores a typed replacement, source entry IDs, and an increasing generation. Replay checks that sources belong to the current branch prefix, validates message structure and tool pairing, and replaces the surface in log order. The original transcript remains. See the [context policy](context-policy.md) for validation scope and request fingerprints.
 
-`fork` 保留所选用户输入之前的历史前缀，将该输入交给宿主编辑并切换新 session。
-换窗记录保留完整前缀来源与 replacement，快照范围对应保留的已结束任务。
-`clone` 复制完整日志和快照并切换到副本；两者共享当前工作区文件。`rewind` 移动当前分支 head，并清理回退位置之后的快照记录。`undo` 使用
-用户轮次的文件快照恢复变更，检查当前文件与该轮结束状态的冲突，并经过写入权限
-判定。撤销恢复修改和删除文件，并删除轮次中新增的文件；逐文件结果表达部分完成，
-全部完成后标记该轮已撤销。快照使用独立 Git
-对象库，需要 Git 工程，覆盖文件受大小和排除规则限制。会话操作与历史分页读取
-见 [会话指南](guide/sessions.md)。
+`fork` retains history before a selected user input, passes that input to the host editor, and switches to a new session. Rollover records retain complete prefix sources and replacements; snapshots correspond to retained completed tasks. `clone` copies the complete log and snapshots and switches to the copy. Both share current workspace files. `rewind` moves the active branch head and removes later snapshot records.
 
-NOTE 由用户或模型维护，collector 读取当前文件；恢复时若当前 NOTE 与换窗快照
-不同，运行时提供旧快照和核对提示，文件由后续操作协调。Memory 保存带来源的少量
-知识，模型通过普通文件读取与搜索按需使用；保存和证据边界见
-[Cade's Memory](guide/memory.md)。
+`undo` restores user-turn file snapshots after checking conflicts against the turn's ending state and applying write permissions. It restores changed or deleted files and removes added files. Per-file results support partial completion; a fully restored turn is marked undone. Snapshots use an independent Git object store, require a Git project, and have size and exclusion limits. See [Sessions](guide/sessions.md) for operations and history pagination.
 
-## 模式、权限与执行环境
+The user or model maintains NOTE. If it differs from a rollover snapshot on recovery, the runtime supplies the old snapshot and a verification notice; later operations reconcile the file. Memory stores sourced knowledge for ordinary file search and reading. See [Cade's Memory](guide/memory.md) for saving and evidence boundaries.
 
-[`ExecutionModeState`](../src/cade/coding_agent/execution_modes.py) 管理工具可见性、
-模式规则和审批路由；[`ToolGate`](../src/cade/harness/agent_runtime/tool_gate.py)
-将这些策略应用到实际调用。模式通过显式选择改变，Plan 不按工具调用次数自动退出。
-以下行为对应内置规则，配置规则和路径边界参与最终判定。
+## Modes, permissions, and execution environment
 
-| 模式 | 结构化文件写入 | Shell | 默认 ask 审批者 |
-|---|---|---|---|
-| Plan | 允许维护计划文件和 `NOTE.md`，项目代码写入受限 | 只读允许，已知变更拒绝，无法静态判断时 ask | 自动 reviewer |
-| Build | 工作区内默认允许 | 只读允许，变更或无法静态判断时 ask | 自动 reviewer |
-| Act | 写入默认 ask | 只读允许，变更或无法静态判断时 ask | 用户 |
+[`ExecutionModeState`](../src/cade/coding_agent/execution_modes.py) manages tool visibility, mode rules, and approval routing. [`ToolGate`](../src/cade/harness/agent_runtime/tool_gate.py) applies them to calls. The table describes built-in rules; configured rules and path boundaries also affect decisions.
 
-门控先检查工具是否适用于当前模式，再执行 pre-tool hook。hook 可改写参数或提出
-约束，权限引擎根据实际参数提取 `Action`，结合路径边界、静态策略、Shell 分析和
-规则作出判定。用户规则排在模式默认规则之前，按首条匹配选择；其他约束共同参与
-resolver，严格程度为 `deny > ask > allow`。
+| Mode | Structured file writes | Shell | Default approval route |
+| --- | --- | --- | --- |
+| Plan | Plan files and `NOTE.md` allowed; project code restricted | Read-only allowed, known mutations denied, unknown effects ask | Automatic reviewer |
+| Build | Allowed within the workspace by default | Read-only allowed; mutations and unknown effects ask | Automatic reviewer |
+| Act | Ask by default | Read-only allowed; mutations and unknown effects ask | User |
 
-`deny` 终止调用，`allow` 进入执行，`ask` 先查询已有 session/permanent grant，
-再按 approval policy 请求用户或自动 reviewer。`never` 策略拒绝新增审批请求。
-自动 reviewer 只授予本次调用，用户授权范围取决于动作允许的 once/session/
-permanent scope。门控在运行开始时直接绑定权限引擎、工具和审批者，逐次调用使用实际参数裁决。
-门控为该次调用绑定结果回调，直接关联权限裁决、工具结果与审计；
-执行完成后触发 post-tool hook。
-观测记录使用 session、turn、request 和 tool-call 标识定位循环与动作，请求同时
-保存 composition ID。
+The gate first checks mode eligibility, then runs the pre-tool hook. Hooks can rewrite arguments or add constraints. The permission engine extracts an `Action` from actual arguments and combines path boundaries, static policies, shell analysis, and rules. User rules precede mode defaults and use first-match selection. The resolver combines other constraints with `deny > ask > allow` precedence.
 
-审批控制调用是否获准，执行环境约束获准动作的实际范围。Linux 默认将
-`LinuxBubblewrapSandbox` 注入 Agent `bash`。默认 `workspace-write` 将宿主根
-挂载为只读，开放工作区、临时目录和批准的外部写目录，项目 `.git`、`.agents`、
-`.cade` 保持只读，凭据与环境文件被遮蔽，网络按配置隔离。默认沙箱装配依赖
-`bwrap`，缺失时初始化报错。
+`deny` stops a call. `allow` executes it. `ask` checks existing session/permanent grants before requesting user or reviewer approval under the approval policy. `never` denies new approval requests. Automatic review grants only the current call. User grant scope depends on the action's supported once/session/permanent scopes. Post-tool hooks connect permission, result, and audit records. Observability uses session, turn, request, and tool-call identifiers; requests also store composition IDs.
 
-当前 OS sandbox 覆盖 Linux Agent Shell，提供 mount、network、PID namespace
-与 capability 隔离。结构化文件工具使用路径边界；其他平台的 Shell 使用本地
-进程实现。受信任 hooks 和 MCP server 在该 Shell sandbox 外运行，其进程权限
-由宿主环境控制。网络隔离范围对应 Agent Shell namespace，当前 bubblewrap
-syscall seccomp 当前处于关闭状态。
+Approval controls whether an action can start; the execution environment limits what it can access. On Linux, Agent `bash` uses `LinuxBubblewrapSandbox` by default. `workspace-write` mounts the host root read-only and permits the workspace, temporary directories, and approved external write directories. Project `.git`, `.agents`, and `.cade` stay read-only. Credentials and environment files are masked; networking follows configuration. Default sandbox assembly requires `bwrap` and fails initialization if it is missing.
 
-## 扩展能力与生命周期
+OS sandboxing currently covers Linux Agent Shell with mount, network, PID namespace, and capability isolation. Structured file tools use path boundaries. Shells on other platforms use local processes. Trusted hooks and MCP servers run outside this shell sandbox with host-controlled process permissions. Network isolation applies to the Agent Shell namespace. Bubblewrap syscall seccomp is currently disabled.
 
-Provider adapter 将厂商响应转换为统一文本、工具调用、用量、结束与失败事件，
-模型调用方通过 [provider 协议](../src/cade/ai/providers/base.py) 消费这些事件。
-所有适配器使用 SDK 原生异步流，当次请求拥有并关闭客户端与响应；取消由异步任务传播。
-SDK 处理请求建立阶段的网络瞬时错误与限流重试，Agent 循环处理 step 级重试、
-输出续写和上下文超限恢复，harness 管理主备切换。已输出事件的失败流结束后，
-后续重试按循环状态处理；主备包装器仅在当前流尚未输出时直接重发到备用 provider。
+## Extensions and lifecycle
 
-MCP registry 在启动时发现工具或读取来源有效的 schema 缓存，工具转换为
-`ToolSpec` 后接入产品注册表与统一 gate，持久连接在首次调用时建立。
-`tools/list_changed` 更新发现缓存和状态诊断；
-当前应用保留启动时的工具快照；修改 MCP 配置后重新启动应用。MCP server 提供的工具与
-资源来自外部进程，允许调用的范围由 gate 判定，进程隔离需在宿主侧配置。
+Provider adapters convert vendor responses to common text, tool call, usage, finish, and failure events through the [provider protocol](../src/cade/ai/providers/base.py). Transport runtimes handle transient network errors and rate-limit retries. Agent handles step retries, output continuation, and context overflow recovery. Harness manages fallback. After a failed stream has emitted events, loop state determines retries. The fallback wrapper resends directly to the backup only before the stream emits output.
 
-Skills registry 在发现时捕获技能定义并发布摘要目录，`load_skill` 按需注入正文；会话消息保留已加载
-技能状态，恢复时据此重建激活信息。项目技能由 `trust_project_skills` 配置控制。
-技能中的指令指导模型选择动作，动作执行仍经统一门控。
+The MCP registry discovers tools at startup or reads a source-valid schema cache. Tools become `ToolSpec` entries behind the shared gate; persistent connections open on first use. `tools/list_changed` updates discovery cache and diagnostics. The current application keeps its startup tool snapshot; restart after editing MCP configuration. MCP tools and resources come from external processes. The gate controls calls; configure process isolation on the host.
 
-外部 hooks 是配置授权的宿主命令，由 `ExternalHookRunner` 处理匹配、超时、
-失败策略和对子代理的继承。pre-tool hook 的参数改写在权限判定前生效，决策约束
-只能收紧执行范围。内部 hooks 承担请求记录和运行审计。
+The Skills registry captures definitions during discovery and publishes summaries. `load_skill` injects full content on demand. Session messages preserve loaded skill state for recovery. `trust_project_skills` controls project skills. Skill instructions guide model choices; execution still passes through the gate.
 
-工具通过 `ToolRenderIntent` 携带 terminal、diff、location 或 subagent 语义，
-intent 随类型化结果落盘，宿主从事件恢复相应呈现。工具实现负责执行和结果描述，
-TUI 与浏览器适配器负责布局、交互与显示。
+External hooks are configuration-authorized host commands. `ExternalHookRunner` handles matching, timeouts, failure policies, and subagent inheritance. Pre-tool argument rewrites precede permission decisions, and constraints can only tighten execution. Internal hooks record requests and runtime audits.
 
-## 子代理
+Tools return `ToolRenderIntent` with terminal, diff, location, or subagent semantics. Typed results persist intents so hosts can restore presentation. Tools own execution and result descriptions; TUI and browser adapters own layout and interaction.
 
-`delegate` 省略 `session_id` 时创建独立持久子会话，提供 ID 与 prompt 时向已有
-continuable 子会话提交后续任务。创建上下文来自自包含任务 prompt；并行 batch
-使用 one-shot 模式，需要续接的会话采用 continuable 模式。
+## Subagents
 
-子会话拥有 transcript、surface、inbox 和 composition，descriptor 记录直接父
-会话、模式、persona、模型和初始能力集合。持久 session ID、进程内 activation ID
-和单次 run ID 分别标识会话、实例与运行。冷恢复从日志重建 surface，采用首次
-工具集合与当前 registry 的交集，再在后续任务中请求模型。
+`delegate` without `session_id` creates an independent persistent child session. With an ID and prompt, it submits a follow-up to an existing continuable child. New context comes from a self-contained task prompt. Parallel batches use one-shot mode; sessions requiring continuation use continuable mode.
 
-续接、interrupt 和 release 由当前直接父会话控制。release 回收空闲 activation，
-持久会话保留；one-shot 结束后自动释放，continuable 可重新物化。子 gate 从父
-权限域派生，父取消信号传播到子运行；当前子 registry 的委派深度最多一层。
-父会话通过 `subagent_run` 生命周期事件和工具结果关联子运行的状态、摘要或错误。
+Each child owns its transcript, surface, inbox, and composition. A descriptor records the direct parent, mode, persona, model, and initial capabilities. Persistent session ID, in-process activation ID, and run ID identify different lifecycles. Cold recovery rebuilds the surface from the log and intersects the original tool set with the current registry before requesting the model for subsequent tasks.
 
-## 修改代码的入口
+The direct parent controls continuation, interruption, and release. Release reclaims an idle activation but retains the persistent session. One-shot children release automatically; continuable children can be materialized again. Child gates derive from the parent permission domain, and parent cancellation propagates. The current registry supports at most one delegation level. `subagent_run` lifecycle events and tool results link status, summaries, and errors to the parent.
 
-| 变更 | 主要位置 | 相邻契约 |
-|---|---|---|
-| 接入模型或处理流事件 | [ai/providers/](../src/cade/ai/providers/)、[ai/events.py](../src/cade/ai/events.py) | provider 协议、用量、失败分类 |
-| 修改循环或工具调度 | [agent_loop.py](../src/cade/agent/agent_loop.py)、[_execution.py](../src/cade/agent/_execution.py) | step、终止、并发屏障与取消 |
-| 修改请求内容与预算 | [request.py](../src/cade/agent/request.py)、[context_policy.py](../src/cade/agent/context_policy.py) | assembly、trace、换窗与历史恢复 |
-| 修改运行和输入调度 | [harness.py](../src/cade/harness/agent_runtime/harness.py)、[run_control.py](../src/cade/harness/agent_runtime/run_control.py) | run 所有权、inbox 与 composition |
-| 修改持久状态 | [session/](../src/cade/harness/session/) | 事件编码、surface 与 replay |
-| 修改权限或沙箱 | [security/](../src/cade/harness/security/)、[execution_env/](../src/cade/harness/execution_env/) | Action、resolver、grant 与路径边界 |
-| 新增编码工具 | [coding_agent/tools/](../src/cade/coding_agent/tools/)、[assembly/registry.py](../src/cade/coding_agent/assembly/registry.py) | schema、权限动作、执行模式与 render intent |
-| 新增动态上下文 | [assembly/agent.py](../src/cade/coding_agent/assembly/agent.py)、[context.py](../src/cade/agent/context.py) | 来源、优先级、生命周期与预算 |
-| 修改扩展发现与连接 | [mcp/](../src/cade/harness/mcp/)、[skills/](../src/cade/harness/skills/) | 工具快照、惰性连接、激活与关闭 |
-| 修改 hooks 与审计 | [observability/](../src/cade/harness/observability/) | 参数改写、关联标识与失败策略 |
-| 修改子代理 | [subagents.py](../src/cade/harness/agent_runtime/subagents.py) | descriptor、冷恢复、权限继承与关闭 |
-| 修改交互与展示 | [coding_agent/modes/](../src/cade/coding_agent/modes/)、[server/](../src/cade/server/) | 类型化事件与应用生命周期 |
+## Code entry points
 
-行为验证、测试范围与命令见 [测试指南](testing.md)，接口迁移与工程规则见
-[AGENTS.md](../AGENTS.md)，环境、提交和发布流程见 [开发指南](development.md)。
+| Change | Main location | Related contracts |
+| --- | --- | --- |
+| Model integration or stream handling | [ai/providers/](../src/cade/ai/providers/), [ai/events.py](../src/cade/ai/events.py) | Provider protocol, usage, failure classification |
+| Loop or tool scheduling | [agent_loop.py](../src/cade/agent/agent_loop.py), [_execution.py](../src/cade/agent/_execution.py) | Steps, termination, barriers, cancellation |
+| Request content and budgets | [request.py](../src/cade/agent/request.py), [context_policy.py](../src/cade/agent/context_policy.py) | Assembly, trace, rollover, history recovery |
+| Runs and input scheduling | [harness.py](../src/cade/harness/agent_runtime/harness.py), [run_control.py](../src/cade/harness/agent_runtime/run_control.py) | Ownership, inbox, composition |
+| Persistent state | [session/](../src/cade/harness/session/) | Event encoding, surface, replay |
+| Permissions or sandbox | [security/](../src/cade/harness/security/), [execution_env/](../src/cade/harness/execution_env/) | Action, resolver, grants, path boundaries |
+| Coding tools | [coding_agent/tools/](../src/cade/coding_agent/tools/), [assembly/registry.py](../src/cade/coding_agent/assembly/registry.py) | Schemas, permission actions, execution mode, render intents |
+| Dynamic context | [assembly/agent.py](../src/cade/coding_agent/assembly/agent.py), [context.py](../src/cade/agent/context.py) | Sources, priorities, lifecycles, budgets |
+| Extension discovery and connections | [mcp/](../src/cade/harness/mcp/), [skills/](../src/cade/harness/skills/) | Tool snapshots, lazy connections, activation, shutdown |
+| Hooks and audits | [observability/](../src/cade/harness/observability/) | Argument rewriting, correlation IDs, failure policies |
+| Subagents | [subagents.py](../src/cade/harness/agent_runtime/subagents.py) | Descriptors, cold recovery, inherited permissions, shutdown |
+| Interaction and presentation | [coding_agent/modes/](../src/cade/coding_agent/modes/), [server/](../src/cade/server/) | Typed events, application lifecycle |
+
+See the [validation guidelines](testing.md) for behavior checks and commands, [AGENTS.md](../AGENTS.md) for interface migrations and engineering rules, and the [development guide](development.md) for setup, commits, and releases.

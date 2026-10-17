@@ -476,7 +476,7 @@ def _primary_search_entry(entry: SessionEntry, retrieval_calls: set[str]) -> boo
         return (
             isinstance(messages, list)
             and any(isinstance(m, dict) and m.get("kind") == "user" for m in messages)
-            and not text.lstrip().startswith("<reminder>")
+            and not text.lstrip().startswith(("<reminder>", "<plan-timeout>"))
         )
     if kind == "tool_result" and isinstance(data, dict):
         return str(data.get("tool_use_id", "")) not in retrieval_calls

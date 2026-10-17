@@ -1,45 +1,43 @@
-# Cade 终端工作台
+# Terminal workspace
 
-基于 `prompt-toolkit` 的 inline transcript 工作台，使用 `full_screen=False`。界面围绕连续对话、任务进度和输入组织；选择器与审批表单嵌入当前布局。
+The prompt-toolkit workspace uses an inline transcript with `full_screen=False`. Conversation, progress, and input share a continuous layout with embedded pickers and approval forms.
 
 ```text
-字标与版本 / 已发现资源 / 历史对话 / 流式输出
-补全菜单或交互选择器
-有背景、上下留白的输入框
-当前操作提示（运行、补全或审批时）
-项目与分支                         上下文与用量
-执行模式                          模型与 effort
+Wordmark and version / discovered resources / history / streaming output
+Completion menu or interactive picker
+Input with background and vertical padding
+Contextual hint during execution, completion, or approval
+Project and branch                         Context and usage
+Execution mode                             Model and effort
 ```
 
-## 文件分工
+## Files
 
-| 文件 | 职责 |
+| File | Responsibility |
 | --- | --- |
-| [app.py](app.py) | 生命周期、布局、按键、后台运行和恢复 |
-| [state.py](state.py) | 消息、流式状态、折叠和可见输出 |
-| [rendering.py](rendering.py) | Markdown 与消息格式化 |
-| [inline_renderer.py](inline_renderer.py) | 主屏幕增量渲染、终端历史写入与重建 |
-| [widgets.py](widgets.py) / [completion.py](completion.py) | 输入高亮与补全适配 |
-| [commands.py](commands.py) / [command_output.py](command_output.py) | 宿主专用命令与公共命令的终端输出 |
-| [settings.py](settings.py) / [config_registry.py](config_registry.py) / [setup_wizard.py](setup_wizard.py) | 模型、权限与配置交互 |
-| [approval.py](approval.py) / [sessions.py](sessions.py) | 审批预览与启动会话选择 |
-| [thinking.py](thinking.py) / [tool_summary.py](tool_summary.py) | 思考计时、终端预览与工具摘要 |
-| [chrome.py](chrome.py) | 欢迎信息、状态排版与配色 |
+| [app.py](app.py) | Lifecycle, layout, keys, background runs, recovery |
+| [state.py](state.py) | Messages, stream state, folding, visible output |
+| [rendering.py](rendering.py) | Markdown and message formatting |
+| [inline_renderer.py](inline_renderer.py) | Incremental main-screen rendering, terminal history, reconstruction |
+| [widgets.py](widgets.py) / [completion.py](completion.py) | Input highlighting and completion |
+| [commands.py](commands.py) / [command_output.py](command_output.py) | Host commands and shared command output |
+| [settings.py](settings.py) / [config_registry.py](config_registry.py) / [setup_wizard.py](setup_wizard.py) | Model, permission, and configuration interaction |
+| [approval.py](approval.py) / [sessions.py](sessions.py) | Approval previews and startup session selection |
+| [thinking.py](thinking.py) / [tool_summary.py](tool_summary.py) | Reasoning timing, terminal previews, tool summaries |
+| [chrome.py](chrome.py) | Welcome content, status layout, colors |
 
-## 交互约定
+## Interaction contracts
 
-- 空闲 Enter 提交；忙时 Enter 默认排队，Alt+Enter 纠偏，Ctrl+J 换行。
-- 欢迎区与短对话按实际内容占用高度；长对话完整写入终端主屏幕历史，仅可见尾部交给 `prompt-toolkit` 绘制。资源来自实际工具、指令收集器与技能目录。短终端使用紧凑欢迎区。
-- 历史滚动由终端拥有，使用滚轮或终端翻页快捷键（常见为 Shift+PageUp/PageDown）；应用不再拦截 PageUp/PageDown/End 查看历史，不启用 alternate screen 或鼠标捕获。
-- 采用 Pi 主屏幕模式的更新策略：普通更新只重绘可见区域，溢出的行连续追加到历史；屏幕外内容因折叠、会话切换或终端缩放而改变时，清除屏幕及 scrollback，再重放当前完整文档。此时启动 Cade 之前的终端历史也会被清除。
-- 输入区使用三行起步的完整背景；空闲时显示两行状态，欢迎区提供按键说明。
-- 输入提示随运行、补全和审批状态变化；补全 Enter 只接受选项。
-- 忙时输入通过共享运行控制器写入 session inbox，在对应模型或任务边界消费。
-- 选择器、补全和状态栏共同参与高度计算；窄终端按显示宽度裁剪。
-- 思考和工具详情默认折叠，错误与权限提示保持可见。
-- 恢复加载共享 session 状态，并显示恢复提示；`cade -c` 无历史时可以直接开始。
-- 退出时保留完整对话，只清理输入和状态区，再显示字标、耗时、会话 ID 和恢复命令；保留非默认会话目录及显式配置路径。
+- Idle Enter submits. Busy Enter queues by default. Alt+Enter steers; Ctrl+J inserts a new line.
+- Welcome content and short conversations use their actual height. Long conversations are written to main-screen terminal history; prompt-toolkit paints only the visible tail. Resources come from actual tools, collectors, and skill catalogs. Short terminals use a compact welcome area.
+- The terminal owns history scrolling through its wheel and page shortcuts, commonly Shift+PageUp/PageDown. The application does not capture PageUp/PageDown/End for history and does not use the alternate screen or mouse capture.
+- Following the Pi main-screen update strategy, ordinary updates repaint the visible area and append overflow to history. Folding, session changes, or resizing that alter off-screen content clear the screen and scrollback, then replay the document. This also clears terminal history from before Cade started.
+- Input has a full background and starts at three lines. Idle layout shows two status lines and welcome key hints.
+- Input hints reflect execution, completion, and approval state. Completion Enter accepts a candidate without submitting it.
+- Busy input enters the persistent session inbox through shared run control and is consumed at the relevant model or task boundary.
+- Pickers, completion, and status participate in height calculation. Narrow terminals trim by display width.
+- Reasoning and tool details start collapsed. Errors and permission notices remain visible.
+- Recovery loads shared session state and displays a notice. `cade -c` can start a task if no history exists.
+- Exit preserves the conversation, clears input and status, and displays the wordmark, duration, session ID, and resume command. Nondefault session directories and explicit configuration paths are retained.
 
-用户操作见 [快速开始](../../../../../docs/guide/quickstart.md)。
-
-公共应用操作在 [interaction/](../../interaction/README.md)，TUI 只负责终端输入与表现。
+See the [quickstart](../../../../../docs/guide/quickstart.md) for usage. Shared operations live in [interaction/](../../interaction/README.md); TUI owns only terminal input and presentation.

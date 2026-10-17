@@ -4,13 +4,15 @@
 不模拟服务协议。文件场景在仓库 e2e-results 下创建独立目录，不修改真实 Memory。
 运行：uv run --locked pytest -q src/cade/tests/test_context_contract.py。
 真实宿主及服务验收另通过 cade exec 执行。
-特殊标记回归使用无外部服务的选定指令块（100 个「a 」及标记）和 90 token
-预算；已核对的 cl100k_base 普通文本计数为 106，必须拒绝发送。
+计量使用 conftest 中的本地单字节词表，不依赖下载或缓存。
+特殊标记回归使用 100 个「a 」及标记和 90 token 预算：
+正文至少 212 字节，真实编码必须拒绝发送；误入字节兜底则只计约 71 token。
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -23,15 +25,18 @@ from cade.agent import (
     ContextAssemblyError,
     ContextBlock,
     ContextBlockSource,
+    ContextCollectorRegistry,
     ContextManager,
     ContextPolicy,
     ContextPriority,
-    ContextSection,
     DefaultRequestAssembler,
+    FrozenContextCollectorRegistry,
     TerminationReason,
+    make_collector_section,
     make_state_section,
     run_agent_loop,
 )
+from cade.agent.context import ContextBlockTarget
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -54,8 +59,10 @@ class SelectedContext:
     def collect(self, input: object) -> list[ContextBlock]:
         return self.blocks
 
-    def sections(self) -> tuple[ContextSection, ...]:
-        return (ContextSection("selected", self.collect),)
+    def freeze(self) -> FrozenContextCollectorRegistry:
+        registry = ContextCollectorRegistry()
+        registry.register_section(make_collector_section("selected", self))
+        return registry.freeze()
 
 
 class UncalledProvider:
@@ -80,7 +87,7 @@ async def collect_loop_result(
     return result
 
 
-def policy(budget: int = 2048, *, next_input: int = 0) -> ContextPolicy:
+def policy(budget: int = 8192, *, next_input: int = 0) -> ContextPolicy:
     return ContextPolicy(
         physical_window=budget,
         output_reserve=0,
@@ -108,6 +115,20 @@ def selected_blocks() -> list[ContextBlock]:
             content="Memory catalog must survive. " * 100,
         ),
     ]
+
+
+def wire_message_bytes(
+    messages: list[Message] | tuple[Message, ...],
+) -> tuple[bytes, ...]:
+    return tuple(
+        json.dumps(
+            message,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        for message in messages
+    )
 
 
 def tool_group(call_id: str, text: str, *, durable: bool = False) -> list[AgentMessage]:
@@ -144,10 +165,10 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
     context = AgentContext(
         messages=history,
         context_policy=policy() if explicit_policy else None,
-        request_token_budget=2048,
+        request_token_budget=8192,
     )
     assembly = DefaultRequestAssembler(
-        context_sections=SelectedContext(blocks).sections()
+        context_collectors=SelectedContext(blocks).freeze()
     ).assemble(context, current_step=1, options=None)
     assembly.require_sendable()
     assert assembly.estimated_tokens <= assembly.token_budget
@@ -162,6 +183,181 @@ def test_selected_blocks_survive_history_and_evidence_pressure(
     assert [m.model_dump() for m in history] == before
     assert assembly.mandatory_estimated_tokens >= sum(
         b.get_token_count() for b in blocks
+    )
+
+
+def test_dynamic_user_context_stays_after_retained_history() -> None:
+    """覆盖缺口：旧回归没有稳定 SKILL 目录，未检查它与动态快照共存。
+
+    运行命令：
+    uv run --locked pytest -q \
+        src/cade/tests/test_context_contract.py::test_dynamic_user_context_stays_after_retained_history
+
+    预期：目录和历史前缀逐字节不变。NOTES、RECENT_VALIDATION 只保留最新值，
+    并位于完整工具结果之后。原始历史和快照来源保持不变。
+    """
+    system_context = ContextBlock(
+        source=ContextBlockSource.ENVIRONMENT,
+        priority=ContextPriority.CONTEXT,
+        content="Runtime system context",
+        target=ContextBlockTarget.SYSTEM,
+        provenance="runtime:environment",
+    )
+    system_instruction = ContextBlock(
+        source=ContextBlockSource.INSTRUCTION,
+        priority=ContextPriority.INSTRUCTION,
+        content="Project system instruction",
+        target=ContextBlockTarget.SYSTEM,
+        provenance="project:instruction",
+    )
+    notes = ContextBlock(
+        source=ContextBlockSource.NOTES,
+        priority=ContextPriority.CONTEXT,
+        content="Old request note snapshot",
+        provenance="session:notes",
+        scope="runtime",
+    )
+    skill_catalog = ContextBlock(
+        source=ContextBlockSource.SKILL,
+        priority=ContextPriority.CONTEXT,
+        content="Stable skill catalog entry. " * 120,
+        provenance="runtime:skills",
+        scope="runtime",
+    )
+    selected = SelectedContext([system_context, skill_catalog, system_instruction])
+    assembler = DefaultRequestAssembler(context_collectors=selected.freeze())
+    context = AgentContext(
+        messages=[
+            SystemMessage(content="Base system instruction"),
+            UserMessage(content="Retained task"),
+            AssistantMessage(
+                content=[
+                    ToolCallContent(
+                        id="retained-call",
+                        name="read",
+                        arguments={"path": "example.txt"},
+                    )
+                ]
+            ),
+            ToolResultMessage(
+                tool_call_id="retained-call",
+                tool_name="read",
+                content="Retained tool result",
+            ),
+            AssistantMessage(content=[TextContent(text="Retained answer")]),
+        ],
+        context_policy=policy(),
+    )
+    original_messages = tuple(message.model_dump_json() for message in context.messages)
+
+    first = assembler.assemble(context, current_step=1, options=None)
+    first.require_sendable()
+    assert not any("snapshot" in str(message) for message in first.wire_messages)
+
+    stale_notes = notes
+    stale_validation = ContextBlock(
+        source=ContextBlockSource.RECENT_VALIDATION,
+        priority=ContextPriority.CONTEXT,
+        content="Old validation snapshot",
+        provenance="session:validation",
+        scope="runtime",
+    )
+    selected.blocks = [
+        system_context,
+        skill_catalog,
+        stale_notes,
+        stale_validation,
+        system_instruction,
+    ]
+    second = assembler.assemble(context, current_step=2, options=None)
+    second.require_sendable()
+
+    latest_notes = ContextBlock(
+        source=ContextBlockSource.NOTES,
+        priority=ContextPriority.CONTEXT,
+        content="Current request note snapshot",
+        provenance="session:notes",
+        scope="runtime",
+    )
+    latest_validation = ContextBlock(
+        source=ContextBlockSource.RECENT_VALIDATION,
+        priority=ContextPriority.CONTEXT,
+        content="Current validation snapshot",
+        provenance="session:validation",
+        scope="runtime",
+    )
+    selected.blocks = [
+        system_context,
+        skill_catalog,
+        latest_notes,
+        latest_validation,
+        system_instruction,
+    ]
+    third = assembler.assemble(context, current_step=3, options=None)
+    third.require_sendable()
+
+    first_wire = first.wire_messages
+    second_wire = second.wire_messages
+    third_wire = third.wire_messages
+    assert [message["role"] for message in first_wire[:3]] == [
+        "system",
+        "system",
+        "system",
+    ]
+    assert [message["content"] for message in first_wire[:3]] == [
+        "Base system instruction",
+        "Project system instruction",
+        "Runtime system context",
+    ]
+    skill_text = f"[skill]\n{skill_catalog.content}"
+    assert first_wire[3]["content"] == skill_text
+    assert first_wire[4]["content"] == "Retained task"
+    retained_prefix_length = len(first_wire)
+    retained_prefix = wire_message_bytes(first_wire)
+    assert wire_message_bytes(second_wire[:retained_prefix_length]) == retained_prefix
+    assert wire_message_bytes(third_wire[:retained_prefix_length]) == retained_prefix
+
+    assert first_wire[5]["role"] == "assistant"
+    tool_calls = first_wire[5]["tool_calls"]
+    assert isinstance(tool_calls, list)
+    assert tool_calls[0]["id"] == "retained-call"
+    assert first_wire[6] == {
+        "role": "tool",
+        "tool_call_id": "retained-call",
+        "content": "Retained tool result",
+    }
+    assert first_wire[7]["content"] == "Retained answer"
+
+    stale_notes_text = "[notes]\nOld request note snapshot"
+    stale_validation_text = "[recent_validation]\nOld validation snapshot"
+    latest_notes_text = "[notes]\nCurrent request note snapshot"
+    latest_validation_text = "[recent_validation]\nCurrent validation snapshot"
+    assert second_wire[-2]["content"] == stale_notes_text
+    assert second_wire[-1]["content"] == stale_validation_text
+    assert third_wire[-2]["content"] == latest_notes_text
+    assert third_wire[-1]["content"] == latest_validation_text
+    assert sum(message.get("content") == skill_text for message in third_wire) == 1
+    assert (
+        sum(message.get("content") == latest_notes_text for message in third_wire) == 1
+    )
+    assert (
+        sum(message.get("content") == latest_validation_text for message in third_wire)
+        == 1
+    )
+    assert all(
+        stale not in str(message)
+        for message in third_wire
+        for stale in (stale_notes_text, stale_validation_text)
+    )
+    assert third_wire[-2]["role"] == third_wire[-1]["role"] == "user"
+    note_trace = next(trace for trace in third.context_trace if trace.source == "notes")
+    validation_trace = next(
+        trace for trace in third.context_trace if trace.source == "recent_validation"
+    )
+    assert note_trace.provenance == "session:notes"
+    assert validation_trace.provenance == "session:validation"
+    assert tuple(message.model_dump_json() for message in context.messages) == (
+        original_messages
     )
 
 
@@ -181,9 +377,9 @@ def test_special_token_literals_do_not_bypass_context_budget(marker: str) -> Non
         priority=ContextPriority.INSTRUCTION,
         content="a " * 100 + marker,
     )
-    assert block.get_token_count() == 106
+    assert block.get_token_count() == 200 + len(marker)
     assembly = DefaultRequestAssembler(
-        context_sections=SelectedContext([block]).sections()
+        context_collectors=SelectedContext([block]).freeze()
     ).assemble(
         AgentContext(messages=[UserMessage(content="Task")], context_policy=policy(90)),
         current_step=1,
@@ -198,7 +394,7 @@ def test_special_token_literals_do_not_bypass_context_budget(marker: str) -> Non
 def test_safe_budget_is_not_next_turn_soft_target() -> None:
     blocks = selected_blocks()
     assembler = DefaultRequestAssembler(
-        context_sections=SelectedContext(blocks).sections()
+        context_collectors=SelectedContext(blocks).freeze()
     )
     context = AgentContext(messages=[UserMessage(content="Task")])
     baseline = assembler.assemble(context, current_step=1, options=None)
@@ -222,7 +418,7 @@ def test_unassemblable_context_terminates_without_provider_call(
     else:
         blocks[0].content = "Required selected context " * 4000
     assembler = DefaultRequestAssembler(
-        context_sections=SelectedContext(blocks).sections()
+        context_collectors=SelectedContext(blocks).freeze()
     )
     context = AgentContext(messages=messages, context_policy=policy())
     projection = assembler.assemble(context, current_step=1, options=None)
@@ -251,10 +447,9 @@ def test_unassemblable_context_terminates_without_provider_call(
 
 
 def test_section_failure_does_not_send_partial_context() -> None:
-    sections = (
-        make_state_section(
-            "environment", "environment", ContextBlockSource.ENVIRONMENT
-        ),
+    registry = ContextCollectorRegistry()
+    registry.register_section(
+        make_state_section("environment", "environment", ContextBlockSource.ENVIRONMENT)
     )
     result = asyncio.run(
         collect_loop_result(
@@ -266,7 +461,9 @@ def test_section_failure_does_not_send_partial_context() -> None:
             ),
             AgentLoopConfig(
                 provider=UncalledProvider(),
-                request_assembler=DefaultRequestAssembler(context_sections=sections),
+                request_assembler=DefaultRequestAssembler(
+                    context_collectors=registry.freeze()
+                ),
                 rollover_context=ContextWindowRollover().rollover_messages,
             ),
         )
@@ -283,7 +480,10 @@ def test_rollover_refreshes_catalog_and_preserves_latest_durable_state(
     memory.mkdir(parents=True)
     entry = memory / "lesson.md"
     entry.write_text("# Before rollover\n\nOld catalog hint.\n", encoding="utf-8")
-    sections = (ContextSection("memory", MemoryCatalogCollector().collect),)
+    registry = ContextCollectorRegistry()
+    registry.register_section(
+        make_collector_section("memory", MemoryCatalogCollector())
+    )
     manager = ContextManager()
     context = AgentContext(
         messages=[
@@ -298,7 +498,7 @@ def test_rollover_refreshes_catalog_and_preserves_latest_durable_state(
         context_manager=manager,
         context_policy=policy(4096),
     )
-    assembler = DefaultRequestAssembler(context_sections=sections)
+    assembler = DefaultRequestAssembler(context_collectors=registry.freeze())
     first = assembler.assemble(context, current_step=1, options=None)
     assert "Before rollover" in str(first.wire_messages)
     rolled = ContextWindowRollover().rollover_messages(

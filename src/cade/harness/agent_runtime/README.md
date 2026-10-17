@@ -1,49 +1,32 @@
-# Cade Harness Agent Runtime — 运行时调度与上下文管线
+# Runtime scheduling and context
 
-`agent_runtime` 是 Harness 的执行驱动中枢，专注于解决：**如何管理多轮 Agent 循环中的工具门控拦截、长程会话中的无摘要换窗滚动、外部异步取消以及多任务排队运行控制。**
+`agent_runtime` coordinates tool gates, context rollover without model summaries, cancellation, and queued execution.
 
----
+## Execution flow
 
-## 1. 核心架构与驱动流水线
-
-```
-                   用户输入 / SessionRunController
-                                │
-                                ▼
-                       AgentHarness.run()
-                                │
-                                ▼ (多轮迭代)
-        ┌────────────────────────────────────────────────┐
-        │  1. 检查 ContextWindowRollover (无摘要平滑换窗)   │
-        │  2. 组装请求前缀与当前目录                     │
-        │  3. 调用 Provider.stream()                     │
-        │  4. ToolGate 拦截与权限审查                     │
-        │     - 前置 Hook / 审计                         │
-        │     - PermissionEngine 判定                    │
-        │     - HITL / AutoReviewer 审批                 │
-        │     - 后置 Hook / 审计                         │
-        │  5. 记录追加事件到 SessionRecorder              │
-        └────────────────────────────────────────────────┘
+```text
+User input / SessionRunController
+  → AgentHarness.run()
+    → Check ContextWindowRollover
+    → Assemble request prefix and current directory
+    → Provider.stream()
+    → ToolGate: pre-hook, permissions, approval, post-hook, audit
+    → Persist events through SessionRecorder
 ```
 
-### 核心文件与机制
-- **通用运行时核心 ([harness.py](harness.py))**：`AgentHarness` 类提供完整的长程任务推进逻辑、事件流派发与错误恢复。
-- **工具门控系统 ([tool_gate.py](tool_gate.py))**：充当所有工具调用的安全防火墙，统一执行参数合法性校验、权限判定、审批回调与前/后置 Hook。
-- **无损换窗滚动 ([context_window.py](context_window.py))**：
-  - `ContextWindowRollover`：当上下文 Token 逼近模型上限时，不采用容易造成信息失真或幻觉的递归摘要，而是直接开启全新、干净的工作窗口，仅保留关键事实，旧记录完全交给 `history` 工具按需查阅。
-- **运行状态与排队控制 ([run_control.py](run_control.py))**：提供 `SessionRunController`，管理忙时消息通道（排队、立即打断或丢弃）与会话执行锁。
-- **子代理运行时 ([subagents.py](subagents.py))**：管理子代理生命周期与会话拓扑。
-- **取消机制 ([cancellation.py](cancellation.py))**：提供轻量协作式的 `CancellationToken`。
+### Files
 
----
+- [harness.py](harness.py): `AgentHarness`, long-running execution, events, and recovery.
+- [tool_gate.py](tool_gate.py): argument validation, permissions, approval callbacks, and hooks.
+- [context_window.py](context_window.py): `ContextWindowRollover`, which starts a new working window, retains required facts, and leaves original content available through `history` instead of recursively summarizing it.
+- [run_control.py](run_control.py): `SessionRunController`, busy-input lanes and session execution ownership.
+- [subagents.py](subagents.py): child lifecycle and session topology.
+- [cancellation.py](cancellation.py): cooperative `CancellationToken`.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **无失真换窗原则**：严禁在上下文滚动时强制注入模糊的“模型自生成摘要”，避免由于递归摘要产生的幻觉在后续轮次中级联放大。
-- **工具执行必须经由 ToolGate**：任何工具执行均不得绕过 ToolGate 直接调用 `run()`，必须严格执行安全拦截与审计。
+Do not inject mandatory model-generated summaries during rollover. Preserve original evidence and explicit recovery references instead. All tool execution must pass through ToolGate for checks and auditing; do not call handlers directly to bypass it.
 
----
+## Submodules
 
-## 3. 子模块分工
-
-- **[prompting/](prompting/README.md)**：提示词动态拼装器、工具使用规范编译与 Token 预算分配。
+[prompting/](prompting/README.md) builds runtime prefixes and tool guidance. Request assembly owns budget admission.

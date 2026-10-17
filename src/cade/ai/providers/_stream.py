@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import AsyncIterable, AsyncIterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Protocol
 
 import orjson
@@ -89,14 +89,14 @@ def _tool_arguments(value: object) -> ToolArguments | None:
 # ── 流式事件解码 ──
 
 
-async def chat_stream_to_events(
-    stream: AsyncIterable[_ChatCompletionChunk],
-) -> AsyncIterator[TextDelta | ReasoningDelta | ToolCallEvent | UsageUpdate]:
+def chat_stream_to_events(
+    stream: Iterable[_ChatCompletionChunk],
+) -> Iterator[TextDelta | ReasoningDelta | ToolCallEvent | UsageUpdate]:
     """将 Chat Completions 流式 chunk 转换为统一事件流。"""
     calls: dict[int, dict[str, str]] = defaultdict(
         lambda: {"id": "", "name": "", "arguments": ""}
     )
-    async for chunk in stream:
+    for chunk in stream:
         usage = getattr(chunk, "usage", None)
         if usage is not None:
             yield UsageUpdate(

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
-from cade.coding_agent.tools.file_handlers import read_project_text_file
+from cade.coding_agent.tools.read import read_project_text_file
 
 """用户输入中的显式 @file 引用解析。"""
 

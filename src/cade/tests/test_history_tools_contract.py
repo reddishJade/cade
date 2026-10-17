@@ -216,7 +216,7 @@ class TestHistoryToolsContract:
             symlink_file.symlink_to(outside_file)
         except OSError as exc:
             if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
-                pytest.skip("Windows 当前账号缺少创建符号链接的权限")
+                pytest.skip("The current Windows account cannot create symbolic links")
             raise
 
         history = SessionHistory(sessions_dir, project_root=tmp_path)

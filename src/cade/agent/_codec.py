@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 import orjson
@@ -16,12 +15,13 @@ from cade.agent.messages import (
 )
 from cade.agent.types import (
     ContentBlock,
+    FileContent,
     ImageContent,
+    ShellCallOutputContent,
     TextContent,
     ThinkingContent,
     ToolCallContent,
-    ToolResultContentBlock,
-    tool_content_text,
+    ToolResultContent,
 )
 
 BRANCH_SUMMARY_PREFIX = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n"
@@ -37,12 +37,7 @@ def _convert_one(m: AgentMessage) -> dict[str, Any]:
         return {"role": "system", "content": str(m.content)}
 
     if isinstance(m, UserMessage):
-        return {
-            "role": "user",
-            "content": _content_parts(m.content)
-            if isinstance(m.content, list)
-            else m.content,
-        }
+        return {"role": "user", "content": m.content}
 
     if isinstance(m, AssistantMessage):
         return _convert_assistant(m)
@@ -65,31 +60,40 @@ def _convert_tool_result(m: ToolResultMessage) -> dict[str, Any]:
     return {
         "role": "tool",
         "tool_call_id": m.tool_call_id,
-        "content": _content_parts(m.content)
-        if isinstance(m.content, list)
-        and any(isinstance(b, ImageContent) for b in m.content)
-        else tool_content_text(m.content),
+        "content": _tool_result_content_text(m.content),
     }
 
 
-def _content_parts(content: Sequence[ToolResultContentBlock]) -> list[dict[str, Any]]:
-    """将结构化内容转换为通用消息字段；二进制数据不进入文本。"""
-    parts: list[dict[str, Any]] = []
-    for block in content:
-        if isinstance(block, ImageContent):
-            source = block.source or {}
-            if source.get("type") == "base64":
-                if not isinstance(source.get("data"), str) or not source["data"]:
-                    raise ValueError("Image content requires base64 data")
-                url = f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}"
+def _tool_result_content_text(content: object) -> str:
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, TextContent):
+                parts.append(item.text)
+            elif isinstance(item, ImageContent):
+                parts.append(_image_result_summary(item))
+            elif isinstance(item, FileContent):
+                parts.append(_file_result_summary(item))
+            elif isinstance(item, ShellCallOutputContent):
+                parts.append(str(item.output))
+            elif isinstance(item, ToolResultContent):
+                parts.append(item.content)
             else:
-                url = source.get("url")
-            if not isinstance(url, str) or not url:
-                raise ValueError("Image content requires base64 data or a URL")
-            parts.append({"type": "image_url", "image_url": {"url": url}})
-        else:
-            parts.append({"type": "text", "text": tool_content_text([block])})
-    return parts
+                parts.append(str(item))
+        return "".join(parts)
+    return str(content)
+
+
+def _image_result_summary(content: ImageContent) -> str:
+    source = content.source or {}
+    media_type = source.get("media_type")
+    suffix = f": {media_type}" if isinstance(media_type, str) else ""
+    return f"[image result{suffix}]"
+
+
+def _file_result_summary(content: FileContent) -> str:
+    identity = content.filename or content.file_id or "unnamed"
+    return f"[file result: {identity}]"
 
 
 def _convert_block(block: ContentBlock) -> dict[str, Any] | None:

@@ -12,10 +12,10 @@ import jsonschema
 from jsonschema.validators import validator_for
 
 from cade.agent.types import (
-    AgentToolResult,
+    AGENT_CONTENT_BLOCKS_METADATA_KEY,
     FileContent,
     ImageContent,
-    TextContent,
+    ToolOutput,
 )
 from cade.harness.observability.audit import redact_json, redact_text
 from cade.harness.session import JsonValue
@@ -26,7 +26,7 @@ MCP_RESULT_METADATA_KEY = "mcp_result"
 def convert_mcp_tool_result(
     response: Mapping[str, object],
     output_schema: object,
-) -> AgentToolResult:
+) -> ToolOutput:
     """校验 MCP 调用结果并映射为宿主工具输出。"""
     content = response.get("content", [])
     rendered_parts: list[str] = []
@@ -92,10 +92,13 @@ def convert_mcp_tool_result(
         "protocolErrors": redact_json(protocol_errors),
     }
     metadata: dict[str, object] = {MCP_RESULT_METADATA_KEY: details}
+    if host_blocks:
+        metadata[AGENT_CONTENT_BLOCKS_METADATA_KEY] = host_blocks
+
     text = "\n".join(part for part in rendered_parts if part)
-    return AgentToolResult(
-        content=[TextContent(text=redact_text(text)), *host_blocks],
-        details=metadata,
+    return ToolOutput(
+        redact_text(text),
+        metadata=metadata,
         is_error=is_error or bool(protocol_errors),
     )
 

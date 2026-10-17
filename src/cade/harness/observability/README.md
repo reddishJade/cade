@@ -1,40 +1,27 @@
-# Cade Harness Observability — 审计、全链路追踪与 Hooks
+# Auditing, correlation, and hooks
 
-`observability` 模块负责全系统的透明度与可观测性，专注于解决：**如何完整、安全地记录 Agent 的每一个决策与工具执行（含自动凭据脱敏），并为内外部扩展提供强类型的事件流钩子。**
+`observability` records decisions and tool execution with credential redaction and typed lifecycle hooks.
 
----
+## Event flow
 
-## 1. 核心架构与观察体系
-
-```
-                   Agent / ToolGate / Provider
-                                │
-                                ▼
-                       HookManager (内部事件)
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
- JsonlAuditLogger        RuntimeCorrelation      ExternalHookRunner
-(追加写结构化审计)        (全链路追踪 Trace ID)    (执行系统级外部脚本)
-        │
-        ▼ (自动正则过滤)
-    redact_text
- (屏蔽 API Key / Token)
+```text
+Agent / ToolGate / Provider
+  → HookManager
+    → JsonlAuditLogger: structured append-only records
+    → RuntimeCorrelation: trace identifiers
+    → ExternalHookRunner: host commands
+  → redact_text: mask known key and token patterns
 ```
 
-### 核心模块与文件
-- **审计日志与安全脱敏 ([audit.py](audit.py))**：
-  - `JsonlAuditLogger`：以原子追加方式将结构化事件记录到本地 JSONL 审计文件。
-  - `redact_text` / `redact_json`：工具输出、审计、外部 hook 与 MCP 共享脱敏规则，遮蔽已识别的 `sk-...`、Bearer token 和敏感字段赋值。
-- **全链路追踪上下文 ([correlation.py](correlation.py))**：维护跨会话、跨轮次、跨子代理调用的关联上下文（`RuntimeCorrelation`、`EventCorrelation`）。
-- **进程内生命周期 Hooks ([hooks.py](hooks.py))**：提供 `HookManager`，以 `HookRecord` 分发 `before_agent_start`、`before_provider_request`、`pre_tool`、`post_tool` 等生命周期回调，支持同步处理和后台命令执行。
-- **进程外命令钩子 ([external_hooks.py](external_hooks.py))**：驱动外部 Shell 命令（如提交前执行 `git status` 检查或外部审查通知），并收集执行诊断信息。
+### Files
 
----
+- [audit.py](audit.py): `JsonlAuditLogger` appends JSONL records; `redact_text` masks known API key, authorization header, and private-key patterns before logging or external delivery.
+- [correlation.py](correlation.py): `RuntimeCorrelation` and `EventCorrelation` link sessions, turns, and child runs.
+- [hooks.py](hooks.py): `HookManager` dispatches `HookRecord` callbacks for `before_agent_start`, `before_provider_request`, `pre_tool`, `post_tool`, and other events, supporting synchronous handlers and background execution.
+- [external_hooks.py](external_hooks.py): run external commands and collect diagnostics.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **架构正交隔离约束**：
-  - `observability` 只负责审计记录与事件分发，**严禁重新导出（re-export）** `harness.security` 的权限类型；
-  - `security` 模块也仅能调用审计的公共打点接口，两层实现细节互不耦合。
-- **审计失败不得阻断主流程**：审计日志写入异常或非关键 External Hook 执行失败，应记录诊断信息而非导致正在运行的业务任务直接崩溃。
+Keep auditing and event dispatch separate from permission decisions. Do not re-export `harness.security` types or couple implementation details across those boundaries.
+
+Audit write failures and noncritical external hook failures must produce diagnostics rather than crash the task. Explicit hook failure policies still apply.

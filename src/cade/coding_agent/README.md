@@ -1,76 +1,52 @@
-# Cade Coding Agent — 编码产品装配与特化运行时
+# Coding product assembly
 
-`coding_agent` 是 Cade 核心软件工程能力的产品层，专注于解决：**如何将底层的通用运行时（`harness`）、思考循环（`agent`）与大模型能力（`ai`）装配为一个具备文件编辑、代码检索、Shell 隔离执行、自动审批与三执行模式管控的成熟编码助手。**
+`coding_agent` assembles Harness, Agent, and AI capabilities into a coding assistant with file editing, search, shell execution, approval, and execution modes.
 
----
+## Assembly flow
 
-## 1. 核心分层与装配架构
-
-```
-                 TUI / exec / Web Server / External Script
-                                │
-                                ▼
-                       build_app(project_root)
-                                │
-                        [assembly 子包]
-         ┌──────────────────────┼──────────────────────┐
-         ▼                      ▼                      ▼
-  resolve_config()      build_shared_infra()    build_tool_registry()
-  (配置合并与发现)       (会话/记忆/MCP/审计)     (工作区文件/Shell/搜索)
-         │                      │                      │
-         └──────────────────────┼──────────────────────┘
-                                ▼
-                       CodingAgentHarness
-                   (注入 NOTE.md 前沿、换窗管理)
-                                │
-                                ▼
-                      Agent Loop (思考循环)
+```text
+TUI / exec / web / Python
+  → build_app(project_root)
+  → assembly: configuration, shared infrastructure, tool registry
+  → CodingAgentHarness: NOTE context and rollover
+  → Agent loop
 ```
 
-### 核心能力与组件
-- **统一应用门面 ([app.py](app.py))**：定义 `CadeApp` 数据类与装配工厂 `build_app()`，向上层消费方隐藏复杂的底层注入流程。
-- **特化运行时 ([harness.py](harness.py))**：`CodingAgentHarness` 继承自 `AgentHarness`，增加对项目根目录 `NOTE.md`（短程执行前沿）的生命周期注入、多轮换窗边界处理及自动审查模型（Auto Reviewer）挂接。
-- **三执行模式控制 ([execution_modes.py](execution_modes.py))**：
-  - `plan`：只读模式，阻断一切文件修改与写操作 Shell。
-  - `build`：自主构建模式，执行写操作时由独立的 Reviewer 模型非交互式自动审批。
-  - `act`：人机协同模式，遇需审批动作中断并主动向用户请示。
-- **工具注册表装配 ([registry.py](registry.py))**：提供 `build_project_scoped_registry`，组装工作区读写、搜索、Shell、子代理与动态 MCP 工具。
+### Components
 
----
+- [app.py](app.py): `CadeApp` and `build_app()` expose the assembled product.
+- [harness.py](harness.py): `CodingAgentHarness` adds NOTE lifecycle context, rollover handling, and automatic review integration to `AgentHarness`.
+- [execution_modes.py](execution_modes.py): Plan restricts project writes, Build permits structured project edits with automatic shell review, and Act routes reviewable actions to the user. See [Modes](../../../docs/guide/modes.md) for boundaries.
+- [assembly/registry.py](assembly/registry.py): `build_project_scoped_registry` assembles files, search, shell, subagents, and MCP tools.
 
-## 2. 架构不变量与设计禁忌
+## Invariants
 
-- **产品层定位**：本层是产品逻辑装配层，依赖 `harness`、`agent`、`ai`，通过 `CadeApp` 为运行模式和浏览器宿主提供产品服务。依赖方向是产品层 → `harness` → `agent` → `ai`。
-- **只读前置校验**：所有写操作与编辑工具必须遵守工作区路径限制，严禁在未经过 `PermissionEngine` 决策前直接触发操作系统落盘。
-- **短程与长程记忆解耦**：当前正在进行的任务步骤必须通过 `NOTE.md` 维护，少量跨会话知识通过 `.cade/memory/*.md` 按需保存，会话细节无损留存于 Session 账本中。
+Dependencies point from product to Harness, Agent, and AI. `CadeApp` serves runtime modes and browser hosts. Writes must obey workspace boundaries and permission decisions before reaching the OS.
 
----
+Use NOTE for current task state, `.cade/memory/*.md` for sourced reusable knowledge, and session records for original interaction details.
 
-## 3. 典型使用示例
+## Example
 
 ```python
 from pathlib import Path
 from cade.coding_agent.app import build_app
 
-# 为当前项目装配完整 Coding Agent 应用
+# 为当前项目装配应用
 app = build_app(project_root=Path.cwd())
 
-# 发起单轮或多轮提问
-answer = app.ask("列出当前目录中所有 Python 模块并检查代码规范。")
+# 提交任务
+answer = app.ask("List Python modules in the current directory and check code style.")
 print(answer)
 
-# 安全关闭并持久化状态
+# 关闭应用并保存状态
 app.close()
 ```
 
----
+## Submodules
 
-## 4. 子模块分工
-
-- **[assembly/](assembly/README.md)**：工厂子包，细粒度装配配置、基础设施、安全规则与工具集。
-- **[prompting/](prompting/README.md)**：系统身份提示词（`CORE_IDENTITY`）与版本规范。
-- **[tools/](tools/README.md)**：全套内置编码工具的实现（文件、检索、Shell、子代理等）。
-
-- **[interaction/](interaction/README.md)**：宿主共用的应用契约、命令操作、输入补全、模型发现与统计服务。
-- **[modes/](modes/README.md)**：TUI 交互适配器和 exec 自动化协议。
-- **[cli/](cli/README.md)**：认证、配置与持久会话的命令行入口处理。
+- [assembly/](assembly/README.md): configuration, infrastructure, security, and tools.
+- [prompting/](prompting/README.md): system identity and version guidance.
+- [tools/](tools/README.md): file, search, shell, and other coding tools.
+- [interaction/](interaction/README.md): shared commands, completion, discovery, and statistics.
+- [modes/](modes/README.md): TUI and exec adapters.
+- [cli/](cli/README.md): authentication, configuration, and session CLI operations.

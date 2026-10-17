@@ -5,14 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Protocol
 
-from cade.agent.events import (
-    ContextWindowResetEvent,
-    ToolResultEvent,
-)
 from cade.agent.messages import AgentMessage
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
-    FinalEvent,
+    ContextWindowResetStructuredEvent,
+    FinalStructuredEvent,
+    ToolResultStructuredEvent,
 )
 
 from .artifacts import offload_large_tool_result
@@ -101,19 +99,18 @@ class SessionRecorder:
         if event.type not in _DURABLE_EVENT_TYPES:
             return
         encoded = encode_session_event(event)
-        if isinstance(event, ToolResultEvent):
+        if isinstance(event, ToolResultStructuredEvent):
             data = encoded.get("data")
             if not isinstance(data, dict):
                 raise TypeError("tool result event data must be an object")
-            if isinstance(event.data.content, str):
-                preview, reference = offload_large_tool_result(
-                    self.store.artifacts_dir,
-                    event.data.content,
-                )
-                data["content"] = preview
-                if reference is not None:
-                    data["content_artifact"] = reference
-        if isinstance(event, ContextWindowResetEvent):
+            preview, reference = offload_large_tool_result(
+                self.store.artifacts_dir,
+                event.data.content,
+            )
+            data["content"] = preview
+            if reference is not None:
+                data["content_artifact"] = reference
+        if isinstance(event, ContextWindowResetStructuredEvent):
             data = encoded.get("data")
             if not isinstance(data, dict):
                 raise TypeError("context window event data must be an object")
@@ -123,7 +120,7 @@ class SessionRecorder:
             if restoration_context is not None:
                 data["restoration_context"] = restoration_context
         self.store.append("event", encoded)
-        if isinstance(event, FinalEvent) and event.data.answer:
+        if isinstance(event, FinalStructuredEvent) and event.data.answer:
             self.record_assistant(event.data.answer)
 
     def record_assistant(self, text: str) -> None:

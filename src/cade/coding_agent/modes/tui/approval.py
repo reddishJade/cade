@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from cade.agent.types import ApprovalScope, ToolInput, ToolSpec
 from cade.harness.security.permission_model.utils import command_grant_pattern
 
@@ -10,10 +12,10 @@ def tool_preview_lines(tool: ToolSpec, action_input: ToolInput) -> list[str]:
     """生成 TUI 授权预览内容。"""
     lines: list[str] = []
 
-    # Tool name
+    # 工具名称。
     lines.append(f"[bold]Tool:[/bold] {tool.name}")
 
-    # ToolInput is always dict[str, Any]
+    # ToolInput 始终为 dict[str, Any]。
     if tool.name == "edit":
         _preview_edit_file(action_input, lines)
     elif tool.name == "bash":
@@ -62,28 +64,86 @@ def approval_scope_lines(
     return lines
 
 
+_EDIT_PREVIEW_LIMIT = 200
+
+
+def _append_edit_preview(lines: list[str], name: str, text: str) -> bool:
+    """显示修改片段，并明确标记超过长度限制的内容。"""
+    marker, color = ("─", "red") if name == "old_text" else ("+", "green")
+    excerpt = text[:_EDIT_PREVIEW_LIMIT].replace("\r", r"\r").replace("\n", "¶ ")
+    lines.append(f"[{color}]{marker} {excerpt}[/{color}]")
+    if len(text) <= _EDIT_PREVIEW_LIMIT:
+        return False
+    lines.append(
+        f"[yellow]{name} truncated: showing {_EDIT_PREVIEW_LIMIT} "
+        f"of {len(text)} characters.[/yellow]"
+    )
+    return True
+
+
 def _preview_edit_file(action_input: dict, lines: list[str]) -> None:
-    """为 edit_file 工具显示文件路径和 mini diff。"""
+    """显示可审计的编辑摘要；完整内容可在审批中展开。"""
     path = action_input.get("path", "")
-    old_text = action_input.get("old_text", "")
-    new_text = action_input.get("new_text", "")
-    replace_all = action_input.get("replace_all", False)
-
     lines.append(f"[bold]File:[/bold] {path}")
-    if replace_all:
-        lines.append("[yellow]Replace all occurrences[/yellow]")
+    edits = action_input.get("edits")
+    truncated = False
+    if isinstance(edits, list):
+        lines.append(f"[bold]Replacements:[/bold] {len(edits)}")
+        for index, item in enumerate(edits, start=1):
+            if not isinstance(item, dict):
+                continue
+            old_text = str(item.get("old_text", ""))
+            new_text = str(item.get("new_text", ""))
+            lines.append(f"[dim]Edit {index}[/dim]")
+            old_cut = _append_edit_preview(lines, "old_text", old_text)
+            new_cut = _append_edit_preview(lines, "new_text", new_text)
+            truncated = truncated or old_cut or new_cut
+    else:
+        old_text = str(action_input.get("old_text", ""))
+        new_text = str(action_input.get("new_text", ""))
+        if action_input.get("replace_all", False):
+            lines.append("[yellow]Replace all occurrences[/yellow]")
+        if old_text or new_text:
+            old_cut = _append_edit_preview(lines, "old_text", old_text)
+            new_cut = _append_edit_preview(lines, "new_text", new_text)
+            truncated = old_cut or new_cut
 
-    if old_text or new_text:
-        # Show compact diff snippet
-        old_snippet = old_text[:280].replace("\n", "¶ ")
-        new_snippet = new_text[:280].replace("\n", "¶ ")
-        if old_snippet:
-            lines.append(f"[red]─ {old_snippet}[/red]")
-        if new_snippet:
-            lines.append(f"[green]+ {new_snippet}[/green]")
+    if truncated:
+        lines.append(
+            "[yellow]Press Ctrl+O to expand the complete edit text before approval.[/yellow]"
+        )
 
-        if len(old_text) > 280 or len(new_text) > 280:
-            lines.append("[dim]  (truncated, see above for full)[/dim]")
+
+def full_edit_preview_lines(action_input: ToolInput) -> list[str]:
+    """返回每项修改的无损可读表示，供审批中的完整视图使用。"""
+    lines = [
+        f"File: {action_input.get('path', '')}",
+        "Full edit text (JSON-escaped strings, including newlines and controls).",
+        "Press Ctrl+O to collapse tool details.",
+    ]
+    edits = action_input.get("edits")
+    if not isinstance(edits, list):
+        edits = [
+            {
+                "old_text": action_input.get("old_text", ""),
+                "new_text": action_input.get("new_text", ""),
+            }
+        ]
+    for index, item in enumerate(edits, start=1):
+        if not isinstance(item, dict):
+            continue
+        old_text = str(item.get("old_text", ""))
+        new_text = str(item.get("new_text", ""))
+        lines.extend(
+            (
+                f"Edit {index}",
+                f"  old_text ({len(old_text)} characters):",
+                f"  {json.dumps(old_text, ensure_ascii=False)}",
+                f"  new_text ({len(new_text)} characters):",
+                f"  {json.dumps(new_text, ensure_ascii=False)}",
+            )
+        )
+    return lines
 
 
 def _preview_bash(action_input: dict, lines: list[str]) -> None:
@@ -186,7 +246,7 @@ def _preview_write_file(action_input: dict, lines: list[str]) -> None:
     content = action_input.get("content", "")
     lines.append(f"[bold]File:[/bold] {path}")
     if content:
-        # Show first/last lines of content
+        # 显示内容的开头和结尾。
         content_lines = content.split("\n")
         display_lines: list[str] = []
         for cl in content_lines[:10]:

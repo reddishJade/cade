@@ -10,7 +10,7 @@ from typing import Protocol
 import filetype
 from PIL import Image
 
-from cade.agent.types import AgentToolResult, ImageContent, TextContent
+from cade.agent.types import ToolOutput
 
 
 class _ImageFileOperations(Protocol):
@@ -27,7 +27,7 @@ def detect_image(path: Path, operations: _ImageFileOperations) -> str | None:
 
 def read_image(
     path: Path, display_path: str, mime: str, operations: _ImageFileOperations
-) -> AgentToolResult:
+) -> str:
     data = operations.read_bytes(path)
     img = Image.open(BytesIO(data))
     orig_w, orig_h = img.width, img.height
@@ -57,9 +57,7 @@ def read_image(
         if orig_w > max_dim or orig_h > max_dim
         else ""
     )
-    return AgentToolResult(
-        content=[
-            TextContent(text=f"Read image file [{mime}]{hint}"),
-            ImageContent(source={"type": "base64", "media_type": mime, "data": b64}),
-        ],
+    return ToolOutput(
+        f"Read image file [{mime}]{hint}\nImage data is available in metadata.",
+        metadata={"image": {"mime": mime, "data": b64}},
     )

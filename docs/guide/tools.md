@@ -1,48 +1,41 @@
-# 核心工具箱与执行调度
+# Tools and execution scheduling
 
-Cade 内置了一套精简、高效且具备防并发冲突特性的编码工具链。工具层与底层执行调度器协同，确保模型在快速探索的同时，文件写入与命令执行绝对安全。
+Cade's coding tools declare execution behavior explicitly. The scheduler batches parallel tools and serializes the remaining calls.
 
----
+## Built-in tools
 
-## 1. 内置工具全景表
+| Tool | Scheduling | Key parameters | Purpose |
+| --- | --- | --- | --- |
+| `read` | Parallel read pool | `path`, `offset`, `limit` | Read file content with line ranges and pagination |
+| `edit` | Serial write barrier | `path`, `edits[]` (each `old_text`, `new_text`) | Replace matching text with stale-write checks |
+| `write` | Serial write barrier | `path`, `content` | Create a file or replace its complete contents |
+| `grep` | Optional parallel read tool | `pattern`, `path`, `glob`, `max_results`, `ignore_case`, `literal`, `context` | Search text or regular expressions, preferring ripgrep |
+| `glob` | Optional parallel read tool | `pattern`, `path`, `max_results` | Match paths with patterns such as `src/**/*.py` |
+| `find` | Optional parallel read tool | `pattern`, `path`, `max_results` | Find project files by partial filename |
+| `ls` | Optional parallel read tool | `path`, `limit` | List files and directories |
+| `bash` | Serial | `command`, `timeout_ms`, `workdir`, `purpose` | Run shell commands in the Linux sandbox or local environment |
+| `webfetch` | Serial | `url`, `format`, `timeout` | Fetch a web page and extract text or Markdown |
+| `websearch` | Serial | `query`, `numResults`, `livecrawl`, `type`, `timeout` | Search external documentation and solutions |
+| `question` | Interactive gate | `questions` array of objects with `question` and optional `header`, `multiple`, `options` | Ask the user a structured question |
+| `delegate` | Delegation | `description`, `prompt`, `mode` / `session_id` / `tasks` | Create, continue, or batch session-backed child agents |
+| `history` | Serial read | `operation`, `entry_id`, `session_id`, `offset`, `max_chars` | Search the current branch; read explicit session/entry references and ancestor context without moving the head |
+| `save_memory` | Serial write barrier | `path`, `markdown`, `sources`, `expected_content` | Validate explicit history sources and atomically save Markdown in `.cade/memory/`; valid sources do not prove a conclusion |
 
-| 工具名称 | 并发调度类别 | 核心参数 | 功能描述 |
-| :--- | :--- | :--- | :--- |
-| **`read`** | 只读并发池 | `path`, `offset`, `limit` | 读取指定文件内容，支持按行切片和大文件分页读取 |
-| **`edit`** | 串行写屏障 | `path`, `old_text`, `new_text`, `replace_all` | 基于精准定位与防脏写校验的代码块修改 |
-| **`write`** | 串行写屏障 | `path`, `content` | 创建全新文件或全量覆写指定文件内容 |
-| **`bash`** | 串行执行 | `command`, `timeout_ms`, `workdir`, `purpose` | 在 Linux 沙箱或本地隔离环境中执行 Shell 脚本 |
-| **`webfetch`** | 只读并发池 | `url`, `selector` | 抓取指定网页文档内容，提取纯文本或 Markdown |
-| **`websearch`** | 只读并发池 | `query` | 调用搜索引擎检索外部最新开源库文档与问题解法 |
-| **`question`** | 交互门控 | `question`, `options` | 向人类用户提出结构化交互问题（单选/多选/输入） |
-| **`delegate`** | 任务委托 | `description`, `prompt`, `mode` / `session_id` / `tasks` | 创建、续接或批量运行 session-backed child agent |
-| **`history`** | 串行只读工具 | `operation`, `entry_id`, `session_id`, `offset`, `max_chars` | 搜索当前 branch；按显式 Session/entry 引用读取原始事件和祖先邻域，不切换当前 head |
-| **`save_memory`** | 串行写屏障 | `path`, `markdown`, `sources`, `expected_content` | 校验显式历史来源，原子保存 `.cade/memory/` 中的 Markdown；来源存在不代表结论正确 |
+## Parallel reads and serial barriers
 
----
+A model response can contain several tool calls, such as reads of four files. Only tools with `ToolSpec.execution_mode="parallel"` enter a parallel batch. Currently, `read` and the optional `grep`, `glob`, `find`, and `ls` tools explicitly declare parallel execution. Other tools default to sequential execution.
 
-## 2. 调度机制：只读并发与写操作屏障
+The scheduler follows the tool contract rather than inferring whether a tool is read-only. Sequential tools, including `edit`, `write`, and `bash`, wait for earlier parallel work to finish. Writes run in order, preventing concurrent scheduler-managed writes to the same file.
 
-模型可以在单轮中输出多个工具调用。工具执行器按照 `ToolSpec.execution_mode` 调度它们。
+## Read-before-edit checks
 
-### 2.1 只读并发池（Read Pool）
-`ToolSpec.execution_mode="parallel"` 的工具才会进入并发批次。当前明确标记为 parallel 的是 `read`；其余工具默认 sequential。
-- 这避免把“工具是否只读”的猜测散落到调度器里，调度语义由工具契约显式声明。
+The `edit` tool checks that the model is not editing stale content:
 
-### 2.2 串行写屏障（Serial Write Barrier）
-未声明 parallel 的工具（包括 `edit`、`write`、`bash`）保持 sequential：
-- 系统强制等待前面所有的只读并发任务收敛完成；
-- 多个写操作之间严格按顺序排队执行，绝不并行，彻底杜绝两个写操作并发修改同一份代码所造成的冲突与乱序。
-
----
-
-## 3. 防脏写机制：Read-before-edit 精准校验
-
-为了杜绝 Agent 依据过时记忆修改文件导致代码被改坏，`edit` 内置了 **Read-before-edit 防脏写机制**：
-
-1. **唯一文本匹配**：`old_text` 必须在目标文件中具备唯一匹配项，避免误伤同名函数或同名代码行；
-2. **状态一致性校验**：系统会记录每次 `read` 读取时的文件版本；在 `edit` 应用修改时，若检测到该文件已经被外部编辑器或用户手动改动过，操作将被安全驳回并提示模型：
+1. Every `edits[].old_text` must match uniquely in the original file; overlapping edits are rejected.
+2. Cade records the file version when it is read. If the file changes before the edit, the operation is rejected:
    ```text
    File modified since last read. Please read again before editing.
    ```
-3. 配合快照机制，每次成功的修改均可随时通过 `/undo` 瞬时还原。
+3. Successful changes can be restored through the snapshot mechanism with `/undo`.
+
+During TUI approval, edit previews label each truncated old/new text with the displayed and original character counts. Use the existing `Ctrl+O` tool-detail toggle to show the complete, JSON-escaped replacement text before approving.

@@ -17,6 +17,9 @@ from cade.harness.security.permissions import PermissionDecision
 
 ExecutionMode = Literal["plan", "build", "act"]
 
+# 结构化搜索保持可选；默认编码工具通过 bash 组合 rg/find/ls。
+_STRUCTURED_SEARCH_TOOLS = frozenset({"glob", "find", "ls", "grep"})
+
 _PLAN_TOOLS = frozenset(
     {
         "read",
@@ -33,14 +36,17 @@ _PLAN_TOOLS = frozenset(
 
 
 class ExecutionModeState:
-    """管理显式选择的执行模式。实现 ToolGateMode 协议。"""
+    """管理当前执行模式和 plan 模式超时状态。实现 ToolGateMode 协议。"""
 
     def __init__(
         self,
+        max_plan_turns: int = 8,
         initial_mode: ExecutionMode = "act",
         approval_router: Literal["mode", "user", "auto"] = "mode",
     ) -> None:
         self._current_mode: ExecutionMode = initial_mode
+        self._plan_enter_step = 0
+        self._max_plan_turns = max_plan_turns
         self._approval_router = approval_router
 
     @property
@@ -59,6 +65,19 @@ class ExecutionModeState:
     def set_mode(self, mode: ExecutionMode) -> None:
         """设置当前执行模式。"""
         self._current_mode = mode
+        if mode == "plan":
+            self._plan_enter_step = 0
+
+    def check_plan_timeout(self) -> bool:
+        """检查 plan 模式是否超时，超时则自动切换到 build。"""
+        if self._current_mode != "plan":
+            return False
+        self._plan_enter_step += 1
+        if self._plan_enter_step < self._max_plan_turns:
+            return False
+        self._plan_enter_step = 0
+        self._current_mode = "build"
+        return True
 
     def check_call(self, call: ToolCall) -> PermissionDecision:
         # 实际动作裁决由 gate 的 ruleset、路径边界与 shell analyzer 执行。
@@ -68,7 +87,9 @@ class ExecutionModeState:
         """根据当前模式过滤工具集。"""
         if self._current_mode == "plan":
             return tuple(tool for tool in registry if tool.name in _PLAN_TOOLS)
-        return registry
+        return tuple(
+            tool for tool in registry if tool.name not in _STRUCTURED_SEARCH_TOOLS
+        )
 
 
 def parse_execution_mode(value: object) -> ExecutionMode | None:
@@ -123,6 +144,10 @@ def build_default_mode_rulesets(
     """构建 coding product 的默认执行模式规则。"""
     read_rules = (
         Rule(action="read", effect="allow"),
+        Rule(action="glob", effect="allow"),
+        Rule(action="grep", effect="allow"),
+        Rule(action="find", effect="allow"),
+        Rule(action="ls", effect="allow"),
         Rule(action="webfetch", effect="allow"),
         Rule(action="websearch", effect="allow"),
         Rule(action="question", effect="allow"),

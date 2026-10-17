@@ -215,66 +215,43 @@ def normalize_cross_provider_messages(
 def to_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """转换为 Chat Completions API 格式。tool result 使用 role:'tool'。"""
     converted: list[dict[str, Any]] = []
-    tool_images: list[dict[str, Any]] = []
     for message in messages:
         role = str(message.get("role", "user"))
         content = message.get("content")
-        if role != "tool" and tool_images:
-            converted.append({"role": "user", "content": tool_images})
-            tool_images = []
-        if role == "tool" and isinstance(content, list):
-            text = "".join(
-                str(p.get("text", ""))
-                for p in content
-                if isinstance(p, dict) and p.get("type") == "text"
-            )
-            converted.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": message.get("tool_call_id", ""),
-                    "content": text,
-                }
-            )
-            images = [
-                p
-                for p in content
-                if isinstance(p, dict) and p.get("type") == "image_url"
-            ]
-            if images:
-                tool_images.extend(
-                    [
-                        {
-                            "type": "text",
-                            "text": f"Image output from tool call {message.get('tool_call_id', '')}:",
-                        },
-                        *images,
-                    ]
-                )
-            continue
-        result: dict[str, Any] = {"role": role}
+        if "content" in message:
+            if role == "tool" and content is None:
+                result_content: str | None = ""
+            else:
+                result_content = None if content is None else str(content)
+        else:
+            result_content = ""
+
         if isinstance(content, list):
-            result["content"] = (
-                "".join(str(part.get("text", "")) for part in content)
-                if all(
-                    isinstance(part, dict) and part.get("type") == "text"
-                    for part in content
+            converted.extend(
+                _content_blocks_to_chat_messages(
+                    role,
+                    content,
+                    reasoning_content=message.get("reasoning_content"),
+                    prefix=message.get("prefix"),
                 )
-                else content
             )
         else:
-            result["content"] = (
-                "" if content is None and role == "tool" else message.get("content", "")
-            )
-        for key in ("tool_call_id", "prefix", "reasoning_content"):
-            if key in message and (
-                key != "reasoning_content" or message[key] is not None
+            result: dict[str, Any] = {
+                "role": role,
+                "content": result_content,
+            }
+            if "tool_calls" in message:
+                result["tool_calls"] = _normalize_chat_tool_calls(message["tool_calls"])
+            if (
+                "reasoning_content" in message
+                and message["reasoning_content"] is not None
             ):
-                result[key] = message[key]
-        if "tool_calls" in message:
-            result["tool_calls"] = _normalize_chat_tool_calls(message["tool_calls"])
-        converted.append(result)
-    if tool_images:
-        converted.append({"role": "user", "content": tool_images})
+                result["reasoning_content"] = message["reasoning_content"]
+            if "tool_call_id" in message:
+                result["tool_call_id"] = message["tool_call_id"]
+            if "prefix" in message:
+                result["prefix"] = message["prefix"]
+            converted.append(result)
     return converted
 
 
@@ -295,3 +272,59 @@ def _normalize_chat_tool_calls(tool_calls: object) -> list[dict[str, Any]]:
             fixed_call["function"] = fixed_function
         normalized.append(fixed_call)
     return normalized
+
+
+def _content_blocks_to_chat_messages(
+    role: str,
+    content: list,
+    reasoning_content: str | None = None,
+    prefix: bool | None = None,
+) -> list[dict[str, Any]]:
+    """将内容块列表转换为 Chat Completions 格式。"""
+    converted: list[dict[str, Any]] = []
+    assistant_tool_calls = []
+    text_parts = []
+    for part in content:
+        if not isinstance(part, dict):
+            text_parts.append(str(part))
+            continue
+        if part.get("type") == "tool_result":
+            converted.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": str(part.get("tool_use_id", "")),
+                    "content": str(part.get("content", "")),
+                }
+            )
+        elif part.get("type") == "tool_use":
+            assistant_tool_calls.append(
+                {
+                    "id": str(part.get("id", "")),
+                    "type": "function",
+                    "function": {
+                        "name": str(part.get("name", "")),
+                        "arguments": orjson.dumps(part.get("input", {})).decode(),
+                    },
+                }
+            )
+        elif part.get("type") == "text":
+            text_parts.append(str(part.get("text", "")))
+    if assistant_tool_calls:
+        msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": "".join(text_parts) or None,
+            "tool_calls": assistant_tool_calls,
+        }
+        if reasoning_content is not None:
+            msg["reasoning_content"] = reasoning_content
+        if prefix is not None:
+            msg["prefix"] = prefix
+        converted.insert(0, msg)
+    elif text_parts:
+        msg = {"role": role, "content": "".join(text_parts)}
+        if reasoning_content is not None and role == "assistant":
+            msg["reasoning_content"] = reasoning_content
+        if prefix is not None and role == "assistant":
+            msg["prefix"] = prefix
+        converted.insert(0, msg)
+    return converted

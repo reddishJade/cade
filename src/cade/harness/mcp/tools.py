@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from cade.agent.types import AgentToolResult, ToolInput, ToolSpec
+from cade.agent.types import ToolInput, ToolSpec
 
 from . import client as _mcp_mod
 from .results import convert_mcp_tool_result
@@ -72,7 +72,7 @@ class McpServerConfig(BaseModel):
 
 @dataclass(frozen=True)
 class McpToolMetadata:
-    """Metadata preserved on ToolSpec for MCP tools."""
+    """ToolSpec 中保留的 MCP 工具元数据。"""
 
     server_name: str
     server_slug: str
@@ -471,7 +471,7 @@ def _make_handler(
     def handler(
         args: ToolInput,
         on_update: Callable[[str], None] | None = None,
-    ) -> AgentToolResult:
+    ) -> str:
         client_instance = ref.get_or_create()
         progress_updates: list[dict[str, object]] = []
 
@@ -499,10 +499,10 @@ def _make_handler(
         result = convert_mcp_tool_result(response, output_schema)
         if not progress_updates:
             return result
-        merged = dict(result.details) if isinstance(result.details, dict) else {}
+        metadata = getattr(result, "metadata", {})
+        merged = dict(metadata)
         merged["mcp_progress"] = progress_updates
-        result.details = merged
-        return result
+        return type(result)(str(result), metadata=merged, is_error=result.is_error)
 
     return handler
 
@@ -526,10 +526,9 @@ def _format_progress_update(
 def _detect_collisions(
     tools_by_server: dict[str, list[dict[str, Any]]],
 ) -> set[str]:
-    """Detect host_tool_id collisions and return set of (server, tool) to disable.
+    """检测 host_tool_id 冲突，返回需要禁用的工具集合。
 
-    Returns set of "server_name:original_tool_name" strings for all
-    tools involved in collisions.
+    集合元素为 “server_name:original_tool_name”，包含所有冲突工具。
     """
     host_ids: dict[str, list[tuple[str, str]]] = {}
     for server_name, tool_list in tools_by_server.items():

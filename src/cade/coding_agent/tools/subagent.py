@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 from uuid import uuid4
 
-from cade.agent.types import AgentToolResult, SubagentRenderIntent, ToolSpec
+from cade.agent.types import SubagentRenderIntent, ToolOutput, ToolSpec
 from cade.harness.agent_runtime.cancellation import CancellationToken
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.subagents import (
@@ -62,7 +62,7 @@ class _SubagentHandler:
         self,
         data: dict[str, Any],
         on_update: Callable[[str], None] | None = None,
-    ) -> str | AgentToolResult:
+    ) -> str:
         tasks_or_error = _parse_tasks(data)
         if isinstance(tasks_or_error, str):
             return tasks_or_error
@@ -96,7 +96,7 @@ class _SubagentHandler:
             return text, tuple(run.run_id for run in runs)
 
         text, run_ids = async_run(execute())
-        return AgentToolResult(
+        return ToolOutput(
             text,
             render_intent=SubagentRenderIntent(
                 batch_id=batch_id,
@@ -113,7 +113,7 @@ class _SubagentContinueHandler:
         self,
         data: dict[str, Any],
         on_update: Callable[[str], None] | None = None,
-    ) -> str | AgentToolResult:
+    ) -> str:
         session_id = str(data.get("session_id", "")).strip()
         prompt = str(data.get("prompt", "")).strip()
         if not session_id or not prompt:
@@ -127,7 +127,7 @@ class _SubagentContinueHandler:
         )
         if result.status != "completed":
             raise RuntimeError(_format_continuation(result))
-        return AgentToolResult(
+        return ToolOutput(
             _format_continuation(result),
             render_intent=SubagentRenderIntent(
                 batch_id=result.run_id,
@@ -137,7 +137,7 @@ class _SubagentContinueHandler:
 
 
 class _DelegateHandler:
-    """Single model-facing entry point for child creation and continuation."""
+    """面向模型的子会话创建与续接统一入口。"""
 
     def __init__(self, manager: SubagentSessionManager) -> None:
         self.manager = manager
@@ -148,7 +148,7 @@ class _DelegateHandler:
         self,
         data: dict[str, Any],
         on_update: Callable[[str], None] | None = None,
-    ) -> str | AgentToolResult:
+    ) -> str:
         if str(data.get("session_id", "")).strip():
             return self._continue(data, on_update)
         return self._create(data, on_update)
@@ -221,7 +221,7 @@ def bind_subagent_runtime(
 def build_subagent_tools(
     manager: SubagentSessionManager,
 ) -> tuple[ToolSpec, ...]:
-    """Expose one delegate primitive over the child-session runtime."""
+    """通过一个 delegate 工具提供子会话运行时能力。"""
     return (_build_delegate_tool(manager),)
 
 

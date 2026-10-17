@@ -20,7 +20,7 @@ def run_tool_command(command: str, app: InteractionApp) -> str:
     if tool_name == "list":
         return _tool_list(registry)
 
-    # ── Direct execution ──
+    # ── 直接执行 ──
     selected = _resolve_tool(tool_name, registry)
 
     if selected is None:

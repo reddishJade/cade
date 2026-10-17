@@ -6,13 +6,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
 import platform
+import uuid
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Mapping
-from contextlib import aclosing
-from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import AsyncIterator, Iterator, Mapping
+from inspect import isawaitable
+from typing import Any
 
 from cade.ai.cache import CacheUsage
 from cade.ai.events import (
@@ -32,16 +35,49 @@ from cade.ai.types import (
 from cade.ai.usage import UsageAccumulator, UsageTotals
 
 from ._codec import make_schema_strict
+from ._runtime import ProviderRuntime
 from ._stream import parse_tool_arguments
-
-if TYPE_CHECKING:
-    from openai import AsyncOpenAI
-
 
 _LOGGER = logging.getLogger(__name__)
 
 OPENAI_RESPONSES_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 CHATGPT_BACKEND_BASE_URL = "https://chatgpt.com/backend-api"
+_CODEX_PROTOCOL_VERSION = "0.163.0"
+_CODEX_RESPONSES_LITE_MODELS = frozenset(
+    {
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+    }
+)
+_PROMPT_CACHE_KEY_MAX_LENGTH = 64
+
+
+def _next_response_event(iterator: Iterator[Any]) -> tuple[bool, Any | None]:
+    """在线程中读取同步事件流，避免阻塞 agent 的异步事件循环。"""
+    try:
+        return True, next(iterator)
+    except StopIteration:
+        return False, None
+
+
+async def _iterate_response_events(response_stream: Any) -> AsyncIterator[Any]:
+    """统一迭代 SDK 的异步流与兼容客户端提供的同步流。"""
+    if hasattr(response_stream, "__aiter__"):
+        async for event in response_stream:
+            yield event
+        return
+
+    iterator = iter(response_stream)
+    while True:
+        has_event, event = await asyncio.to_thread(_next_response_event, iterator)
+        if not has_event:
+            return
+        yield event
 
 
 class ProviderRequestError(RuntimeError):
@@ -68,6 +104,12 @@ def _codex_user_agent() -> str:
     release = platform.release() or "unknown"
     machine = platform.machine() or "unknown"
     return f"cade-agent ({system} {release}; {machine})"
+
+
+def _codex_cache_session_id(session_id: str) -> str:
+    if len(session_id) <= _PROMPT_CACHE_KEY_MAX_LENGTH:
+        return session_id
+    return hashlib.sha256(session_id.encode()).hexdigest()
 
 
 def _format_openai_error(exc: BaseException) -> ProviderRequestError:
@@ -219,16 +261,12 @@ def to_responses_input(
 
         if role == "tool":
             call_id = str(msg.get("tool_call_id") or "")
-            output = (
-                _responses_content(content)
-                if isinstance(content, list)
-                else (str(content) if content is not None else "")
-            )
+            output_str = str(content) if content is not None else ""
             items.append(
                 {
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": output,
+                    "output": output_str,
                 }
             )
             continue
@@ -269,7 +307,7 @@ def to_responses_input(
                 {
                     "type": "message",
                     "role": "user",
-                    "content": _responses_content(content),
+                    "content": content,
                 }
             )
         else:
@@ -283,26 +321,6 @@ def to_responses_input(
             )
 
     return items
-
-
-def _responses_content(content: list) -> list[dict[str, Any]]:
-    """将通用文本与图片字段映射为 Responses 内容块。"""
-    parts: list[dict[str, Any]] = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            parts.append({"type": "input_text", "text": block.get("text", "")})
-        elif isinstance(block, dict) and block.get("type") == "image_url":
-            image = block.get("image_url", {})
-            parts.append(
-                {
-                    "type": "input_image",
-                    "image_url": image["url"],
-                    "detail": image.get("detail", "auto"),
-                }
-            )
-        else:
-            parts.append(block)
-    return parts
 
 
 def to_responses_text_config(
@@ -367,16 +385,30 @@ def _unseen_reasoning_suffix(previous: str, complete: str) -> str:
 
 
 class OpenAIResponsesProvider:
-    """OpenAI Responses API provider。"""
-
-    transport: ClassVar[str] = "openai_responses"
+    """OpenAI Responses API 适配器。"""
 
     def __init__(
         self,
         config: ProviderConfig,
+        *,
+        client: Any | None = None,
+        runtime: ProviderRuntime | None = None,
     ) -> None:
         self.config = config
+        self.transport = "openai_responses"
         self._usage = UsageAccumulator(config.model)
+        self.runtime = runtime or ProviderRuntime()
+        self._client = client
+        self._current_options: StreamOptions | None = None
+        self._metrics: dict[str, object] = {
+            "transport": self.transport,
+            "sent_messages": 0,
+            "cached_tokens": 0,
+            "cache_hit_rate": 0.0,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 0,
+            "reasoning_tokens": 0,
+        }
         self._last_response_id: str | None = None
 
     @property
@@ -400,6 +432,10 @@ class OpenAIResponsesProvider:
         return self.config.context_window
 
     @property
+    def metrics(self) -> dict[str, object]:
+        return self._metrics
+
+    @property
     def usage_totals(self) -> UsageTotals:
         return self._usage.totals
 
@@ -407,19 +443,22 @@ class OpenAIResponsesProvider:
     def cache_hit_rate(self) -> float | None:
         return self._usage.cache_hit_rate
 
-    def _get_client_and_headers(self) -> tuple[AsyncOpenAI, dict[str, str]]:
-        """为当次请求构建 OpenAI SDK 客户端。"""
+    def _get_client_and_headers(self) -> tuple[Any, dict[str, str]]:
+        """构建或复用 OpenAI SDK 客户端。"""
+        if self._client is not None:
+            return self._client, {}
+
         from openai import AsyncOpenAI as _OpenAIClient
 
         api_key = self.config.api_key
         base_url = self.config.base_url or OPENAI_RESPONSES_DEFAULT_BASE_URL
         headers: dict[str, str] = {}
 
-        account_id = self.config.account_id
+        account_id = self.config.extra.get("account_id")
         if account_id:
             headers["chatgpt-account-id"] = str(account_id)
-        if self.config.originator:
-            headers["originator"] = str(self.config.originator)
+        if self.config.extra.get("originator"):
+            headers["originator"] = str(self.config.extra["originator"])
         else:
             headers["originator"] = "cade"
 
@@ -441,15 +480,13 @@ class OpenAIResponsesProvider:
         tools: list[ToolDefinition],
         options: StreamOptions | None = None,
         **kwargs: Any,
-    ) -> AsyncGenerator[ProviderEvent, None]:
+    ) -> AsyncIterator[ProviderEvent]:
+        self._current_options = options
         from openai import APIError
 
         try:
-            async with aclosing(
-                self._stream(messages, tuple(tools), options)
-            ) as stream:
-                async for event in stream:
-                    yield event
+            async for event in self._stream(messages, tuple(tools)):
+                yield event
         except APIError as exc:
             raise _format_openai_error(exc) from exc
 
@@ -457,10 +494,10 @@ class OpenAIResponsesProvider:
         self,
         messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
-        options: StreamOptions | None,
-    ) -> AsyncGenerator[ProviderEvent, None]:
+    ) -> AsyncIterator[ProviderEvent]:
+        owns_client = self._client is None
         client, extra_headers = self._get_client_and_headers()
-        async with client:
+        try:
             instructions, input_messages = extract_responses_instructions(messages)
             responses_input = to_responses_input(input_messages)
             responses_tools = to_responses_tools(tools, strict=self._strict_tools())
@@ -484,7 +521,7 @@ class OpenAIResponsesProvider:
                     params["text"] = text_conf
 
             # 应用上下文参数
-            opts = options
+            opts = self._current_options
             reasoning: dict[str, str] = {}
             if self.config.reasoning_effort:
                 reasoning["effort"] = self.config.reasoning_effort
@@ -515,11 +552,13 @@ class OpenAIResponsesProvider:
 
             self._finalize_request_params(params)
 
-            async with aclosing(
-                self._decode_responses_stream(client, params)
-            ) as stream:
-                async for event in stream:
-                    yield event
+            self._metrics["sent_messages"] = len(input_messages)
+
+            async for event in self._decode_responses_stream(client, params):
+                yield event
+        finally:
+            if owns_client:
+                await client.close()
 
     def _finalize_request_params(self, params: dict[str, Any]) -> None:
         """允许专用 transport 在发送前补充 Responses 请求参数。"""
@@ -530,11 +569,13 @@ class OpenAIResponsesProvider:
 
     async def _decode_responses_stream(
         self,
-        client: AsyncOpenAI,
+        client: Any,
         params: dict[str, Any],
-    ) -> AsyncGenerator[ProviderEvent, None]:
+    ) -> AsyncIterator[ProviderEvent]:
         """调用 client.responses.create 并流式解码事件。"""
-        response_stream = await client.responses.create(**params)
+        response_stream = client.responses.create(**params)
+        if isawaitable(response_stream):
+            response_stream = await response_stream
 
         function_calls: dict[str, dict[str, str]] = defaultdict(
             lambda: {"id": "", "name": "", "arguments": ""}
@@ -545,134 +586,135 @@ class OpenAIResponsesProvider:
         accumulated_reasoning: dict[str, str] = defaultdict(str)
         last_response_id: str | None = None
 
-        async with response_stream:
-            async for event in response_stream:
-                event_type = _response_value(event, "type", "")
+        async for event in _iterate_response_events(response_stream):
+            event_type = _response_value(event, "type", "")
 
-                if event_type == "response.output_text.delta":
-                    delta_text = _response_value(event, "delta", "")
-                    if delta_text:
-                        accumulated_text += str(delta_text)
-                        yield TextDelta(chunk=str(delta_text))
+            if event_type == "response.output_text.delta":
+                delta_text = _response_value(event, "delta", "")
+                if delta_text:
+                    accumulated_text += str(delta_text)
+                    yield TextDelta(chunk=str(delta_text))
 
-                elif event_type in (
-                    "response.reasoning_text.delta",
-                    "response.reasoning_summary_text.delta",
-                    "response.reasoning.delta",
-                ):
-                    delta_text = _response_value(event, "delta", "")
-                    if delta_text:
-                        key = _reasoning_item_key(event)
-                        accumulated_reasoning[key] += str(delta_text)
-                        yield ReasoningDelta(chunk=str(delta_text))
-
-                elif event_type in (
-                    "response.reasoning_text.done",
-                    "response.reasoning_summary_text.done",
-                ):
-                    complete_text = str(_response_value(event, "text", "") or "")
+            elif event_type in (
+                "response.reasoning_text.delta",
+                "response.reasoning_summary_text.delta",
+                "response.reasoning.delta",
+            ):
+                delta_text = _response_value(event, "delta", "")
+                if delta_text:
                     key = _reasoning_item_key(event)
+                    accumulated_reasoning[key] += str(delta_text)
+                    yield ReasoningDelta(chunk=str(delta_text))
+
+            elif event_type in (
+                "response.reasoning_text.done",
+                "response.reasoning_summary_text.done",
+            ):
+                complete_text = str(_response_value(event, "text", "") or "")
+                key = _reasoning_item_key(event)
+                suffix = _unseen_reasoning_suffix(
+                    accumulated_reasoning[key], complete_text
+                )
+                if suffix:
+                    accumulated_reasoning[key] += suffix
+                    yield ReasoningDelta(chunk=suffix)
+
+            elif event_type in (
+                "response.output_item.added",
+                "response.output_item.done",
+            ):
+                item = _response_value(event, "item")
+                item_type = _response_value(item, "type", "") if item else ""
+                if item_type == "reasoning":
+                    key = _reasoning_item_key(event, _reasoning_item_key(item))
+                    complete_text = _reasoning_summary_text(item)
                     suffix = _unseen_reasoning_suffix(
                         accumulated_reasoning[key], complete_text
                     )
                     if suffix:
                         accumulated_reasoning[key] += suffix
                         yield ReasoningDelta(chunk=suffix)
+                elif item_type == "function_call":
+                    raw_item_id = str(_response_value(item, "id", "") or "")
+                    call_id = str(_response_value(item, "call_id", "") or raw_item_id)
+                    if raw_item_id:
+                        item_to_call_id[raw_item_id] = call_id
+                    name = str(_response_value(item, "name", "") or "")
+                    if call_id and call_id not in ordered_call_ids:
+                        ordered_call_ids.append(call_id)
+                    function_calls[call_id]["id"] = call_id
+                    function_calls[call_id]["name"] = name
 
-                elif event_type in (
-                    "response.output_item.added",
-                    "response.output_item.done",
-                ):
-                    item = _response_value(event, "item")
-                    item_type = _response_value(item, "type", "") if item else ""
-                    if item_type == "reasoning":
-                        key = _reasoning_item_key(event, _reasoning_item_key(item))
-                        complete_text = _reasoning_summary_text(item)
-                        suffix = _unseen_reasoning_suffix(
-                            accumulated_reasoning[key], complete_text
+            elif event_type == "response.function_call_arguments.delta":
+                raw_id = str(
+                    _response_value(event, "call_id", "")
+                    or _response_value(event, "item_id", "")
+                )
+                call_id = item_to_call_id.get(raw_id, raw_id)
+                delta_args = _response_value(event, "delta", "")
+                if call_id and delta_args:
+                    if call_id not in ordered_call_ids:
+                        ordered_call_ids.append(call_id)
+                    function_calls[call_id]["arguments"] += str(delta_args)
+
+            elif event_type == "response.function_call_arguments.done":
+                raw_id = str(
+                    _response_value(event, "call_id", "")
+                    or _response_value(event, "item_id", "")
+                )
+                call_id = item_to_call_id.get(raw_id, raw_id)
+                full_args = _response_value(event, "arguments")
+                if call_id and full_args is not None:
+                    function_calls[call_id]["arguments"] = str(full_args)
+
+            elif event_type in (
+                "response.completed",
+                "response.done",
+                "response.incomplete",
+            ):
+                resp = _response_value(event, "response")
+                if resp:
+                    last_response_id = _response_value(resp, "id")
+                    response_output = _response_value(resp, "output", ())
+                    if isinstance(response_output, (list, tuple)):
+                        for output_index, item in enumerate(response_output):
+                            if _response_value(item, "type", "") != "reasoning":
+                                continue
+                            key = f"output:{output_index}"
+                            complete_text = _reasoning_summary_text(item)
+                            suffix = _unseen_reasoning_suffix(
+                                accumulated_reasoning[key], complete_text
+                            )
+                            if suffix:
+                                accumulated_reasoning[key] += suffix
+                                yield ReasoningDelta(chunk=suffix)
+                    usage = _response_value(resp, "usage")
+                    if usage:
+                        prompt_tokens = _response_int(usage, "input_tokens")
+                        completion_tokens = _response_int(usage, "output_tokens")
+                        input_details = _response_value(usage, "input_tokens_details")
+                        cached_tokens = _response_int(input_details, "cached_tokens")
+                        output_details = _response_value(usage, "output_tokens_details")
+                        reasoning_tokens = _response_int(
+                            output_details, "reasoning_tokens"
                         )
-                        if suffix:
-                            accumulated_reasoning[key] += suffix
-                            yield ReasoningDelta(chunk=suffix)
-                    elif item_type == "function_call":
-                        raw_item_id = str(_response_value(item, "id", "") or "")
-                        call_id = str(
-                            _response_value(item, "call_id", "") or raw_item_id
+
+                        self._metrics["cached_tokens"] = cached_tokens
+                        self._metrics["reasoning_tokens"] = reasoning_tokens
+
+                        cache_usage = CacheUsage(
+                            hit_tokens=cached_tokens,
+                            miss_tokens=max(0, prompt_tokens - cached_tokens),
                         )
-                        if raw_item_id:
-                            item_to_call_id[raw_item_id] = call_id
-                        name = str(_response_value(item, "name", "") or "")
-                        if call_id and call_id not in ordered_call_ids:
-                            ordered_call_ids.append(call_id)
-                        function_calls[call_id]["id"] = call_id
-                        function_calls[call_id]["name"] = name
-
-                elif event_type == "response.function_call_arguments.delta":
-                    raw_id = str(
-                        _response_value(event, "call_id", "")
-                        or _response_value(event, "item_id", "")
-                    )
-                    call_id = item_to_call_id.get(raw_id, raw_id)
-                    delta_args = _response_value(event, "delta", "")
-                    if call_id and delta_args:
-                        if call_id not in ordered_call_ids:
-                            ordered_call_ids.append(call_id)
-                        function_calls[call_id]["arguments"] += str(delta_args)
-
-                elif event_type == "response.function_call_arguments.done":
-                    raw_id = str(
-                        _response_value(event, "call_id", "")
-                        or _response_value(event, "item_id", "")
-                    )
-                    call_id = item_to_call_id.get(raw_id, raw_id)
-                    full_args = _response_value(event, "arguments")
-                    if call_id and full_args is not None:
-                        function_calls[call_id]["arguments"] = str(full_args)
-
-                elif event_type in (
-                    "response.completed",
-                    "response.done",
-                    "response.incomplete",
-                ):
-                    resp = _response_value(event, "response")
-                    if resp:
-                        last_response_id = _response_value(resp, "id")
-                        response_output = _response_value(resp, "output", ())
-                        if isinstance(response_output, (list, tuple)):
-                            for output_index, item in enumerate(response_output):
-                                if _response_value(item, "type", "") != "reasoning":
-                                    continue
-                                key = f"output:{output_index}"
-                                complete_text = _reasoning_summary_text(item)
-                                suffix = _unseen_reasoning_suffix(
-                                    accumulated_reasoning[key], complete_text
-                                )
-                                if suffix:
-                                    accumulated_reasoning[key] += suffix
-                                    yield ReasoningDelta(chunk=suffix)
-                        usage = _response_value(resp, "usage")
-                        if usage:
-                            prompt_tokens = _response_int(usage, "input_tokens")
-                            completion_tokens = _response_int(usage, "output_tokens")
-                            input_details = _response_value(
-                                usage, "input_tokens_details"
-                            )
-                            cached_tokens = _response_int(
-                                input_details, "cached_tokens"
-                            )
-                            cache_usage = CacheUsage(
-                                hit_tokens=cached_tokens,
-                                miss_tokens=max(0, prompt_tokens - cached_tokens),
-                            )
-                            self._usage.record(
-                                prompt_tokens=prompt_tokens,
-                                completion_tokens=completion_tokens,
-                                cache_usage=cache_usage,
-                            )
-                            yield UsageUpdate(
-                                input_tokens=prompt_tokens,
-                                output_tokens=completion_tokens,
-                            )
+                        self._usage.record(
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            cache_usage=cache_usage,
+                        )
+                        yield UsageUpdate(
+                            input_tokens=prompt_tokens,
+                            output_tokens=completion_tokens,
+                        )
 
         if last_response_id:
             self._last_response_id = last_response_id
@@ -700,10 +742,23 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
 
     supports_output_token_limit = False
 
-    transport = "openai_codex"
+    def __init__(
+        self,
+        config: ProviderConfig,
+        *,
+        client: Any | None = None,
+        runtime: ProviderRuntime | None = None,
+    ) -> None:
+        super().__init__(config, client=client, runtime=runtime)
+        self.transport = "openai_codex"
+        self._metrics["transport"] = self.transport
+        self._default_session_id = str(uuid.uuid4())
 
-    def _get_client_and_headers(self) -> tuple[AsyncOpenAI, dict[str, str]]:
-        """构建与 pi 行为一致的 ChatGPT Codex SDK 客户端。"""
+    def _get_client_and_headers(self) -> tuple[Any, dict[str, str]]:
+        """获取 ChatGPT Codex 客户端和请求头。"""
+        if self._client is not None:
+            return self._client, self._codex_headers()
+
         import os
 
         from openai import AsyncOpenAI as _OpenAIClient
@@ -724,10 +779,13 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
             "Accept": "text/event-stream",
             "Content-Type": "application/json",
             "OpenAI-Beta": "responses=experimental",
+            "version": _CODEX_PROTOCOL_VERSION,
             "User-Agent": _codex_user_agent(),
-            "originator": str(self.config.originator or "cade"),
+            "originator": str(self.config.extra.get("originator") or "cade"),
         }
-        account_id = self.config.account_id
+        if self.config.model in _CODEX_RESPONSES_LITE_MODELS:
+            headers["x-openai-internal-codex-responses-lite"] = "true"
+        account_id = self.config.extra.get("account_id")
         if account_id:
             headers["chatgpt-account-id"] = str(account_id)
         return headers
@@ -736,9 +794,42 @@ class OpenAICodexResponsesProvider(OpenAIResponsesProvider):
         params.pop("stream_options", None)
         params["store"] = False
         params["include"] = ["reasoning.encrypted_content"]
-        params["parallel_tool_calls"] = True
+        uses_responses_lite = self.config.model in _CODEX_RESPONSES_LITE_MODELS
+        params["parallel_tool_calls"] = not uses_responses_lite
         params.setdefault("tool_choice", "auto")
-        if self.config.thinking:
+
+        options = self._current_options
+        requested_session_id = (
+            options.session_id
+            if options and options.session_id
+            else self._default_session_id
+        )
+        session_id = _codex_cache_session_id(requested_session_id)
+        request_headers = params.setdefault("extra_headers", {})
+        for header in ("session-id", "thread-id"):
+            for existing in tuple(request_headers):
+                if existing.lower() == header:
+                    del request_headers[existing]
+            request_headers[header] = session_id
+        params["prompt_cache_key"] = session_id
+
+        if uses_responses_lite:
+            instructions = params.pop("instructions", None) or ""
+            tools = params.pop("tools", [])
+            params["input"] = [
+                {"type": "additional_tools", "role": "developer", "tools": tools},
+                {
+                    "type": "message",
+                    "role": "developer",
+                    "content": [{"type": "input_text", "text": instructions}],
+                },
+                *params.get("input", []),
+            ]
+            reasoning = params.setdefault("reasoning", {})
+            reasoning.setdefault("effort", self.config.reasoning_effort or "none")
+            reasoning.setdefault("summary", "auto")
+            reasoning["context"] = "all_turns"
+        elif self.config.thinking:
             reasoning = params.setdefault("reasoning", {})
             reasoning.setdefault("summary", "auto")
 

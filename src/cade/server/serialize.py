@@ -12,13 +12,11 @@ from datetime import date, datetime
 from pathlib import PurePath
 from typing import Any
 
-from cade.agent.events import ToolResultEvent
-from cade.agent.types import tool_content_text
 from cade.harness.agent_runtime import AgentHarnessEvent
 
 # 长文本（如审批 transcript）只推送头部，避免撑爆浏览器内存
 _TRUNCATE_LONG_TEXT = 12_000
-_FINAL_MESSAGES_LIMIT = 200
+_RUN_STATE_MESSAGES_LIMIT = 200
 
 
 def to_jsonable(value: Any) -> Any:
@@ -54,8 +52,6 @@ def event_to_dict(event: AgentHarnessEvent) -> dict[str, Any]:
     payload = to_jsonable(event)
     if not isinstance(payload, dict):
         raise TypeError("serialized harness event must be an object")
-    if isinstance(event, ToolResultEvent):
-        payload["data"]["content"] = tool_content_text(event.data.content)
     return _trim_event(payload)
 
 
@@ -74,6 +70,11 @@ def _trim_event(payload: dict[str, Any]) -> dict[str, Any]:
         data["replacement"] = []
     if event_type == "final":
         messages = data.get("messages")
-        if isinstance(messages, list) and len(messages) > _FINAL_MESSAGES_LIMIT:
-            data["messages"] = messages[:_FINAL_MESSAGES_LIMIT]
+        if isinstance(messages, list) and len(messages) > _RUN_STATE_MESSAGES_LIMIT:
+            data["messages"] = messages[:_RUN_STATE_MESSAGES_LIMIT]
+        run_state = data.get("run_state")
+        if isinstance(run_state, dict):
+            msgs = run_state.get("messages")
+            if isinstance(msgs, list) and len(msgs) > _RUN_STATE_MESSAGES_LIMIT:
+                run_state["messages"] = msgs[:_RUN_STATE_MESSAGES_LIMIT]
     return payload

@@ -1,11 +1,11 @@
 # Cade
 
-Cade 是在你的项目目录中工作的终端编码 Agent：输入任务、查看进度、审批操作，退出后继续上次工作。
-运行机制、状态归属和代码入口见 [架构说明](docs/architecture.md)。
+Cade is a terminal coding agent that works in your project directory. Submit tasks, review progress, approve operations, and resume work after you exit.
+For runtime behavior, state ownership, and code entry points, see the [architecture](docs/architecture.md).
 
-## 安装和启动
+## Install and start
 
-需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)。
+You need Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
@@ -13,38 +13,38 @@ cd /path/to/your/project
 cade
 ```
 
-当前命令安装 `main` 开发版；首个版本标签发布后，安装说明将固定到标签。[版本与发布](docs/guide/releases.md) 记录发布规则。
+This command follows `main` rather than a pinned version. After the first release, the installation instructions will use a release tag. See [Versions and releases](docs/guide/releases.md) for the release policy.
 
-首次启动会引导你选择账户登录或 API key，并配置模型。推荐保存为个人默认配置，以便在其他项目中直接启动；也可以选择仅保存到当前项目。之后使用 `cade login` 更换登录方式，或 `cade setup` 重新配置 provider。[安装与环境准备](docs/guide/install.md) 包含 Linux Shell sandbox 的依赖说明。
+On first startup, Cade guides you through account login or API key authentication and model configuration. Save personal defaults to use them across projects, or save settings only for the current project. Use `cade login` to change authentication or `cade setup` to configure the provider again. See [Installation and environment setup](docs/guide/install.md) for Linux shell sandbox dependencies.
 
-输入第一条任务，例如：
+Enter your first task, for example:
 
 ```text
-阅读 README 和项目入口，用三点说明这个项目如何运行。
+Read the README and project entry point. Explain how the project runs in three points.
 ```
 
-默认 Act 模式允许读取和搜索；写文件和执行 Shell 时按权限规则申请批准。准备让 Cade 实现修改时，可以输入 `/mode build`；只想先调查方案时，可以输入 `/mode plan`。[模式与权限](docs/guide/modes.md) 解释各模式的自动执行范围和切换规则。
+The default Act mode allows reading and searching. File writes and shell commands require approval according to permission rules. Enter `/mode build` to implement changes or `/mode plan` to investigate an approach first. See [Modes and permissions](docs/guide/modes.md) for automatic execution rules and mode switching.
 
-## 每天使用
+## Daily use
 
-| 操作 | 使用方式 |
+| Action | How to use it |
 | --- | --- |
-| 提交任务 | 输入文本，按 Enter |
-| 引用文件 | 输入 `@` 查找项目文件 |
-| 查找命令 | 输入 `/`；↑/↓ 选择，Enter 接受，再按 Enter 执行 |
-| 输入多行 | Ctrl+J 换行 |
-| 任务进行时追加任务 | Enter 排队，当前任务完成后执行 |
-| 任务进行时纠偏 | Alt+Enter 把指导送入当前任务 |
-| 停止任务 | 输入为空时按 Ctrl+C；有内容时先清空输入 |
-| 浏览对话历史 | 滚轮或终端翻页快捷键（常见为 Shift+PageUp/PageDown） |
-| 展开思考 / 工具结果 | Ctrl+T / Ctrl+O |
-| 执行 Shell | `!git status`，仍经过权限审批 |
+| Submit a task | Enter text and press Enter |
+| Reference a file | Enter `@` to find project files |
+| Find a command | Enter `/`; select with ↑/↓, press Enter to accept, then press Enter to run |
+| Enter multiple lines | Press Ctrl+J for a new line |
+| Add a task during a run | Press Enter to queue it until the current task finishes |
+| Steer the current task | Press Alt+Enter to send guidance to the current task |
+| Stop a task | Press Ctrl+C with an empty input; clear existing input first |
+| Browse conversation history | Use the scroll wheel or terminal page shortcuts, commonly Shift+PageUp/PageDown |
+| Expand reasoning or tool results | Press Ctrl+T or Ctrl+O |
+| Run a shell command | Enter `!git status`; permission approval still applies |
 
-欢迎区列出常用操作；补全、审批和任务运行时，输入框下方显示对应提示。Alt+Enter 在一些终端中通过 Esc、Enter 实现；空闲时这个组合用于换行。也可以使用 `/steer 你的指导` 提交纠偏。纠偏在下一次模型请求前生效，已执行的工具结果继续保留。
+The welcome area lists common actions. Hints below the input change during completion, approval, and task execution. Some terminals send Alt+Enter as Esc followed by Enter; when idle, this combination inserts a new line. You can also enter `/steer YOUR_GUIDANCE`. Guidance takes effect before the next model request. Results from completed tools remain in the conversation.
 
-TUI 支持 `/queue 消息` 显式排队。`/queue steer|followup|interrupt` 可以调整忙时 Enter 的行为。
+The TUI supports explicit queuing with `/queue MESSAGE`. Use `/queue steer|followup|interrupt` to change what Enter does while a task is running.
 
-## 继续上次工作
+## Resume work
 
 ```bash
 cade -c                 # 继续当前项目最近的任务
@@ -52,24 +52,24 @@ cade --resume           # 从历史会话中选择
 cade --session ID       # 恢复指定会话
 ```
 
-项目会话列表为空时，`cade -c` 会提示你开始新任务。在界面内也可以使用 `/resume` 选择会话、`/new` 开始新会话。输入 `/exit` 退出，或在空闲且输入为空时，三秒内连续按两次 Ctrl+C。
+If the project has no sessions, `cade -c` prompts you to start a new task. In the interface, use `/resume` to select a session or `/new` to start one. Enter `/exit` to quit. When idle with an empty input, you can also press Ctrl+C twice within three seconds.
 
-退出后会显示耗时和可复制的恢复命令。会话默认保存在项目的 `.cade/sessions/`。详细恢复、分支和上下文管理见 [会话说明](docs/guide/sessions.md)。
+On exit, Cade shows elapsed time and a copyable resume command. Sessions are stored in the project's `.cade/sessions/` directory by default. See [Sessions](docs/guide/sessions.md) for recovery, branching, and context management.
 
-## 更多入口和配置
+## Other entry points and configuration
 
 ```bash
-cade exec "检查最近修改"     # 单次任务与自动化
-cade web --open              # 浏览器工作台
+cade exec "Review recent changes"     # 单次任务与自动化
+cade web --open                       # 浏览器工作台
 ```
 
-- [第一次任务到继续上次工作](docs/guide/quickstart.md)
-- [命令与快捷操作](docs/guide/slash-commands.md) · [启动参数与自动化 exec](docs/guide/cli.md)
-- [模型与 provider](docs/guide/providers.md) · [配置](docs/guide/configuration.md)
-- [技能](docs/guide/skills.md) · [MCP](docs/guide/mcp.md) · [Hooks](docs/guide/hooks.md)
-- [完整使用指南](docs/guide/README.md) · [架构说明](docs/architecture.md)
+- [From your first task to resuming work](docs/guide/quickstart.md)
+- [Commands and shortcuts](docs/guide/slash-commands.md) · [CLI options and exec automation](docs/guide/cli.md)
+- [Models and providers](docs/guide/providers.md) · [Configuration](docs/guide/configuration.md)
+- [Skills](docs/guide/skills.md) · [MCP](docs/guide/mcp.md) · [Hooks](docs/guide/hooks.md)
+- [User guide](docs/guide/README.md) · [Architecture](docs/architecture.md)
 
-## 开发与 Python 调用
+## Development and Python integration
 
 ```bash
 git clone https://github.com/reddishJade/cade.git
@@ -78,7 +78,7 @@ uv sync --extra dev
 uv run cade
 ```
 
-所有包代码位于 `src/cade/`。开发检查和提交规范见 [AGENTS.md](AGENTS.md)。Python 集成可以直接调用 `build_app`；运行时入口和生命周期见 [架构说明](docs/architecture.md)。
+Package code lives in `src/cade/`. See [AGENTS.md](AGENTS.md) for development checks and contribution rules. Python integrations can call `build_app` directly. See the [architecture](docs/architecture.md) for runtime entry points and lifecycle.
 
 ```python
 from pathlib import Path
@@ -86,7 +86,7 @@ from cade.coding_agent.app import build_app
 
 app = build_app(project_root=Path.cwd())
 try:
-    print(app.ask("列出当前目录的 Python 文件。"))
+    print(app.ask("List the Python files in the current directory."))
 finally:
     app.close()
 ```

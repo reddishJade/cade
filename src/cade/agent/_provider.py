@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from time import perf_counter
+from typing import cast
 
 from cade.agent.config import AgentContext, AgentLoopConfig
 from cade.agent.events import (
     AgentEvent,
-    ReasoningDeltaEvent,
-    ResponseMetricsData,
+    MessageUpdateEvent,
     ResponseMetricsEvent,
-    TextDeltaEvent,
+    ThinkingUpdateEvent,
     UsageUpdateEvent,
 )
 from cade.agent.messages import AssistantMessage
@@ -48,6 +48,12 @@ from cade.ai.providers.base import StreamProvider
 from cade.ai.types import StreamOptions, ToolDefinition
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _ProviderResponse:
+    message: AssistantMessage
+    stop_reason: StopReason
 
 
 @dataclass
@@ -98,15 +104,13 @@ class _ResponseTiming:
         ):
             tps = self.output_tokens / duration
         return ResponseMetricsEvent(
-            data=ResponseMetricsData(
-                ttft_seconds=(
-                    self.first_token_at - self.started
-                    if self.first_token_at is not None
-                    else None
-                ),
-                tokens_per_second=tps,
-                completed=completed,
-            )
+            ttft_seconds=(
+                self.first_token_at - self.started
+                if self.first_token_at is not None
+                else None
+            ),
+            tokens_per_second=tps,
+            completed=completed,
         )
 
 
@@ -123,7 +127,7 @@ async def call_provider(
     provider: StreamProvider,
     current_step: int = 0,
     assembly: RequestAssembly | None = None,
-) -> AssistantMessage | None:
+) -> _ProviderResponse | None:
     """调用 provider；若流式生成期间被打断则返回 None。"""
     if config.max_llm_calls is not None and metrics.llm_calls >= config.max_llm_calls:
         raise LlmCallLimitReached
@@ -141,21 +145,21 @@ async def call_provider(
 
     started = perf_counter()
     metrics.llm_calls += 1
-    response = await _stream_response(
+    events = await _collect_provider_events(
         provider,
         list(assembly.wire_messages),
         list(assembly.tools),
         assembly.options,
         emit,
         signal,
-        metrics,
     )
     elapsed = round((perf_counter() - started) * 1000, 3)
     metrics.model_latencies_ms.append(elapsed)
-    if response is None:
+    if events is None:
         return None
+    response = _provider_events_to_response(events, metrics, lambda _event: None)
     context.context_manager.record_provider_usage(
-        response.usage, request_succeeded=response.stop_reason != "error"
+        response.message.usage, request_succeeded=response.stop_reason != "error"
     )
     return response
 
@@ -164,33 +168,39 @@ def _is_cancelled(signal: CancellationSignal | None) -> bool:
     return signal is not None and signal.is_cancelled()
 
 
-async def _aclose_stream(stream: AsyncGenerator[ProviderEvent, None]) -> None:
-    """取消后关闭原生生成器，并保留收尾失败的诊断。"""
+def _abort_inflight_stream(provider: StreamProvider) -> None:
+    """尽力中止在途 HTTP 流：关闭底层连接使阻塞读取立刻失败。"""
+    abort = getattr(provider, "abort_active_stream", None)
+    if not callable(abort):
+        return
     try:
-        await stream.aclose()
+        abort()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        logger.debug("failed to abort the active provider stream", exc_info=True)
+
+
+async def _aclose_stream(stream_iter: AsyncIterator[ProviderEvent]) -> None:
+    """尽快关闭异步流迭代器，让底层生成器的清理逻辑及时执行。"""
+    aclose = getattr(stream_iter, "aclose", None)
+    if not callable(aclose):
+        return
+    try:
+        await cast(Awaitable[None], aclose())
     except (OSError, RuntimeError, TypeError, ValueError):
         logger.debug("failed to close the provider stream", exc_info=True)
 
 
-async def _stream_response(
+async def _collect_provider_events(
     provider: StreamProvider,
     llm_messages: list[Message],
     tool_definitions: list[ToolDefinition],
     options: StreamOptions | None,
     emit: Callable[[AgentEvent], None],
-    signal: CancellationSignal | None,
-    metrics: AgentLoopMetrics,
-) -> AssistantMessage | None:
-    """单次消费响应流，同时发布增量并构建最终消息；取消时丢弃未完成响应。"""
+    signal: CancellationSignal | None = None,
+) -> list[ProviderEvent] | None:
+    """逐事件收集 provider 流；取消时中止在途请求并返回 None。"""
+    events: list[ProviderEvent] = []
     text_parts: list[str] = []
-    reasoning_parts: list[str] = []
-    tool_calls: list[ToolCallContent] = []
-    stop_reason: StopReason = "end_turn"
-    input_tokens = 0
-    output_tokens = 0
-    has_usage = False
-    final_content: str | None = None
-    provider_failure: ProviderFailure | None = None
     timing = _ResponseTiming()
     try:
         kwargs = {}
@@ -199,45 +209,27 @@ async def _stream_response(
         stream_iter = provider.stream(llm_messages, tool_definitions, **kwargs)
 
         async def consume() -> None:
-            nonlocal stop_reason, input_tokens, output_tokens, has_usage
-            nonlocal final_content, provider_failure
             async for event in stream_iter:
                 if _is_cancelled(signal):
+                    _abort_inflight_stream(provider)
                     await _aclose_stream(stream_iter)
                     return
+                events.append(event)
                 if timing.observe(event):
                     emit(timing.event(completed=False))
                 if isinstance(event, TextDelta):
-                    text_parts.append(event.chunk)
-                    if event.chunk:
-                        emit(TextDeltaEvent(data=event.chunk))
+                    _append_text_delta(text_parts, event, emit)
                     await asyncio.sleep(0)
                 elif isinstance(event, ReasoningDelta):
-                    reasoning_parts.append(event.chunk)
-                    emit(ReasoningDeltaEvent(data=event.chunk))
+                    emit(ThinkingUpdateEvent(reasoning_content=event.chunk))
                     await asyncio.sleep(0)
-                elif isinstance(event, ToolCallEvent):
-                    tool_calls.extend(_tool_call_content_blocks(event))
                 elif isinstance(event, UsageUpdate):
-                    input_tokens += event.input_tokens
-                    output_tokens += event.output_tokens
-                    has_usage = True
                     emit(
                         UsageUpdateEvent(
-                            data={
-                                "input_tokens": event.input_tokens,
-                                "output_tokens": event.output_tokens,
-                            }
+                            input_tokens=event.input_tokens,
+                            output_tokens=event.output_tokens,
                         )
                     )
-                elif isinstance(event, ProviderFailure):
-                    provider_failure = event
-                    stop_reason = "error"
-                    final_content = f"Provider error: {event.message}"
-                else:
-                    stop_reason = event.stop_reason or "end_turn"
-                    if event.content:
-                        final_content = event.content
 
         # 无事件的在途请求也必须响应取消，不能依赖下一条流事件唤醒。
         pending = asyncio.create_task(consume())
@@ -245,6 +237,7 @@ async def _stream_response(
             while not pending.done():
                 if _is_cancelled(signal):
                     pending.cancel()
+                    _abort_inflight_stream(provider)
                     await asyncio.gather(pending, return_exceptions=True)
                     await _aclose_stream(stream_iter)
                     return None
@@ -256,6 +249,7 @@ async def _stream_response(
             if not pending.done():
                 pending.cancel()
                 await asyncio.gather(pending, return_exceptions=True)
+        return events
     except (
         LookupError,
         OSError,
@@ -263,40 +257,83 @@ async def _stream_response(
         TimeoutError,
         TypeError,
         ValueError,
-    ) as exc:
+    ) as e:
         if _is_cancelled(signal):
             # 打断触发的连接关闭会使阻塞读取抛出异常，属预期路径。
             return None
-        provider_failure = ProviderFailure(
-            message=str(exc) or type(exc).__name__,
-            exception_type=type(exc).__name__,
-            status_code=_exception_status_code(exc),
+        events.append(
+            ProviderFailure(
+                message=str(e) or type(e).__name__,
+                exception_type=type(e).__name__,
+                status_code=_exception_status_code(e),
+            )
         )
-        stop_reason = "error"
-        final_content = f"Provider error: {provider_failure.message}"
         timing.succeeded = False
+        return events
     finally:
         emit(timing.event(completed=True, cancelled=_is_cancelled(signal)))
 
+
+def _provider_events_to_response(
+    events: list[ProviderEvent],
+    metrics: AgentLoopMetrics,
+    emit: Callable[[AgentEvent], None],
+) -> _ProviderResponse:
+    text_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_calls_found: list[ToolCallContent] = []
+    stop_reason: StopReason = "end_turn"
+    input_tokens = 0
+    output_tokens = 0
+    has_usage = False
+    final_content: str | None = None
+    provider_failure: ProviderFailure | None = None
+
+    for event in events:
+        if isinstance(event, TextDelta):
+            _append_text_delta(text_parts, event, emit)
+        elif isinstance(event, ReasoningDelta):
+            reasoning_parts.append(event.chunk)
+            emit(ThinkingUpdateEvent(reasoning_content=event.chunk))
+        elif isinstance(event, ToolCallEvent):
+            tool_calls_found.extend(_tool_call_content_blocks(event))
+        elif isinstance(event, UsageUpdate):
+            metrics.input_tokens += event.input_tokens
+            metrics.output_tokens += event.output_tokens
+            input_tokens += event.input_tokens
+            output_tokens += event.output_tokens
+            has_usage = True
+        elif isinstance(event, ProviderFailure):
+            provider_failure = event
+            stop_reason = "error"
+            final_content = f"Provider error: {event.message}"
+        if isinstance(event, FinalMessage):
+            stop_reason = event.stop_reason or "end_turn"
+            if event.content:
+                final_content = event.content
+
     if final_content and not text_parts:
         text_parts.append(final_content)
-    content: list[ContentBlock] = [TextContent(text="".join(text_parts)), *tool_calls]
+
+    content_blocks: list[ContentBlock] = [TextContent(text="".join(text_parts))]
+    content_blocks.extend(tool_calls_found)
     usage = None
     if has_usage:
-        metrics.input_tokens += input_tokens
-        metrics.output_tokens += output_tokens
         usage = {
             "prompt_tokens": input_tokens,
             "completion_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
         }
-    return AssistantMessage(
-        content=content,
-        reasoning_content="".join(reasoning_parts) if reasoning_parts else None,
+    return _ProviderResponse(
+        message=AssistantMessage(
+            content=content_blocks,
+            reasoning_content="".join(reasoning_parts) if reasoning_parts else None,
+            stop_reason=stop_reason,
+            error_message=final_content if stop_reason == "error" else None,
+            provider_failure=provider_failure,
+            usage=usage,
+        ),
         stop_reason=stop_reason,
-        error_message=final_content if stop_reason == "error" else None,
-        provider_failure=provider_failure,
-        usage=usage,
     )
 
 
@@ -312,6 +349,25 @@ def _exception_status_code(exc: BaseException) -> int | None:
                 return value
         current = current.__cause__
     return None
+
+
+def _append_text_delta(
+    text_parts: list[str],
+    event: TextDelta,
+    emit: Callable[[AgentEvent], None],
+) -> None:
+    text_parts.append(event.chunk)
+    emit(
+        _message_update_event(
+            AssistantMessage(
+                content=[TextContent(text="".join(text_parts))],
+            )
+        )
+    )
+
+
+def _message_update_event(message: AssistantMessage) -> MessageUpdateEvent:
+    return MessageUpdateEvent(message=message)
 
 
 def _tool_call_content_blocks(event: ToolCallEvent) -> list[ToolCallContent]:

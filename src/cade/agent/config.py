@@ -16,9 +16,11 @@ from cade.agent.types import (
     ToolArguments,
     ToolCallContent,
     ToolExecutionMode,
+    ToolResultContentBlock,
+    ToolResultDetails,
 )
 from cade.ai.providers.base import StreamProvider
-from cade.ai.types import StreamOptions
+from cade.ai.types import StreamOptions, ThinkingLevel
 
 from .context_manager import ContextManager
 from .context_policy import ContextPolicy
@@ -29,6 +31,7 @@ from .request import DefaultRequestAssembler, RequestAssembler, RequestAssembly
 class LoopRunState(BaseModel):
     """Agent 循环运行时状态，由 agent_loop.py 持有并更新。"""
 
+    first_turn: bool = True
     last_tool_signature: str | None = None
     repeated_tool_count: int = 0
     consecutive_idle_steps: int = 0
@@ -74,7 +77,24 @@ class BeforeToolCallResult(BaseModel):
     suggestion: str = ""
     approval_denied: bool = False
     args: ToolArguments | None = None
-    on_result: Callable[[AgentToolResult], None] | None = None
+    model_config = ConfigDict(extra="forbid")
+
+
+class AfterToolCallContext(BaseModel):
+    assistant_message: AssistantMessage
+    tool_call: ToolCallContent
+    args: ToolArguments
+    result: AgentToolResult
+    is_error: bool
+    context: AgentContext
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+
+class AfterToolCallResult(BaseModel):
+    content: list[ToolResultContentBlock] | None = None
+    details: ToolResultDetails | None = None
+    is_error: bool | None = None
+    terminate: bool | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -86,12 +106,22 @@ class ShouldStopAfterTurnContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AgentLoopTurnUpdate(BaseModel):
+    context: AgentContext | None = None
+    thinking_level: ThinkingLevel = "off"
+    model_config = ConfigDict(extra="forbid")
+
+
 # ── Callable type aliases（引用本模块上下文类型）──
 
 
 type BeforeToolCallHook = Callable[
     [BeforeToolCallContext, CancellationSignal | None], BeforeToolCallResult | None
 ]
+type AfterToolCallHook = Callable[
+    [AfterToolCallContext, CancellationSignal | None], AfterToolCallResult | None
+]
+type PrepareNextTurnHook = Callable[[], AgentLoopTurnUpdate | None]
 type ShouldStopAfterTurnHook = Callable[[ShouldStopAfterTurnContext], bool]
 type CompletionVerifier = Callable[[list[AgentMessage]], Awaitable[str | None]]
 
@@ -129,6 +159,8 @@ class AgentLoopConfig(BaseModel):
     )
 
     before_tool_call: BeforeToolCallHook | None = None
+    after_tool_call: AfterToolCallHook | None = None
+    prepare_next_turn: PrepareNextTurnHook | None = None
     should_stop_after_turn: ShouldStopAfterTurnHook | None = None
     completion_verifier: CompletionVerifier | None = None
 

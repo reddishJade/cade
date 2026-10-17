@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...agent.types import AgentToolResult, TextContent, ToolCallContent
+from ...agent.config import AfterToolCallContext
+from ...agent.types import TextContent
 from ..observability import HookCorrelationFields, HookManager, HookRecord
 
 
@@ -16,13 +17,13 @@ def emit_hook(
 
 def emit_tool_hook(
     hook_manager: HookManager | None,
-    tool_call: ToolCallContent,
-    result: AgentToolResult,
+    ctx: AfterToolCallContext,
     action_input: str,
     result_text: str,
     correlation: HookCorrelationFields,
 ) -> None:
-    if result.is_error:
+    tool_call = ctx.tool_call
+    if ctx.is_error:
         emit_hook(
             hook_manager,
             HookRecord(
@@ -46,7 +47,7 @@ def emit_tool_hook(
     )
 
 
-def tool_result_text(result: AgentToolResult) -> str:
-    if not result.content:
+def tool_result_text(ctx: AfterToolCallContext) -> str:
+    if not ctx.result or not ctx.result.content:
         return ""
-    return "".join(c.text for c in result.content if isinstance(c, TextContent))
+    return "".join(c.text for c in ctx.result.content if isinstance(c, TextContent))

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from typing import Protocol
 
 from cade.agent.messages import AgentMessage, UserMessage
@@ -139,13 +139,13 @@ class InteractionApp(ModelControlApp, ToolRegistryApp, Protocol):
     @property
     def session_store(self) -> SessionStore: ...
 
-    def aask_stream(
+    def ask_stream(
         self,
         question: str | None,
         mode: ExecutionMode | None = None,
         *,
         display_question: str | None = None,
-    ) -> AsyncIterator[AgentHarnessEvent]: ...
+    ) -> Iterator[AgentHarnessEvent]: ...
 
     def restore_session(self) -> None: ...
 

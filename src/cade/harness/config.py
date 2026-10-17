@@ -113,7 +113,7 @@ class ProviderRuntimeConfig(BaseModel):
         default_factory=ModelOptionsRuntimeConfig
     )
     model_profiles: dict[
-        Literal["subagent", "fallback", "reviewer"],
+        Literal["subagent", "fallback", "reviewer", "judge", "refiner"],
         ModelProfileRuntimeConfig,
     ] = Field(default_factory=dict)
 

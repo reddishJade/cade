@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator
 from typing import Any
 
-from cade.ai.types import StreamOptions, ToolDefinition
+from cade.ai.types import ProviderConfig, ToolDefinition
 
-from ._codec import to_chat_tools
+from ._codec import to_chat_messages, to_chat_tools
 from ._compat import OpenAICompatProvider
+from ._runtime import ProviderRuntime
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
@@ -16,14 +18,31 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 class DeepSeekProvider(OpenAICompatProvider):
     """DeepSeek Chat API 适配。"""
 
-    transport = "deepseek_chat"
-
-    def _build_chat_params(
+    def __init__(
         self,
-        api_messages: list[dict[str, Any]],
+        config: ProviderConfig,
+        *,
+        client: Any | None = None,
+        runtime: ProviderRuntime | None = None,
+    ) -> None:
+        super().__init__(
+            config,
+            transport="deepseek_chat",
+            client=client,
+            runtime=runtime,
+        )
+        self._metrics["prompt_cache_hit_tokens"] = 0
+        self._metrics["prompt_cache_miss_tokens"] = 0
+
+    def _stream_sync(
+        self,
+        messages: list[dict[str, Any]],
         tools: tuple[ToolDefinition, ...],
-        options: StreamOptions | None,
-    ) -> dict[str, Any]:
+    ) -> Iterator[Any]:
+        cleaned_messages = self._clean_reasoning_content(messages)
+        api_messages = to_chat_messages(cleaned_messages)
+
+        strict_tools = self.config.extra.get("strict_tools", False)
         effective_format = self.config.response_format
         if effective_format and effective_format.get("type") == "json_object":
             api_messages = self._ensure_json_word(api_messages)
@@ -31,7 +50,7 @@ class DeepSeekProvider(OpenAICompatProvider):
         params: dict[str, Any] = {
             "model": self.config.model,
             "messages": api_messages,
-            "tools": to_chat_tools(tools, strict=self.config.strict_tools),
+            "tools": to_chat_tools(tools, strict=strict_tools),
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -39,9 +58,9 @@ class DeepSeekProvider(OpenAICompatProvider):
         if effective_format:
             params["response_format"] = effective_format
 
-        self._build_thinking_params(params, options=options)
+        self._build_thinking_params(params)
 
-        return params
+        yield from self._call_chat_api(params, len(api_messages))
 
     def _clean_reasoning_content(
         self, messages: list[dict[str, Any]]

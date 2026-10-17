@@ -1,7 +1,6 @@
-"""Coding product tool registry builder.
+"""编码产品工具注册表构建器。
 
-The product layer owns tool composition decisions: which tools belong to each
-group, how they are constructed, and which runtime values they receive.
+产品层决定工具分组、构建方式和所需的运行时参数。
 """
 
 from __future__ import annotations
@@ -13,11 +12,14 @@ from typing import TYPE_CHECKING
 from cade.agent.types import ToolSpec
 from cade.coding_agent.tools import (
     build_bash_tool,
+    build_edit_tool,
+    build_glob_tools,
+    build_grep_tool,
     build_question_tool,
-    build_read_file_tool,
+    build_read_tool,
     build_webfetch_tool,
     build_websearch_tool,
-    build_write_file_tools,
+    build_write_tool,
 )
 from cade.harness.execution_env import Shell
 
@@ -35,15 +37,17 @@ def build_project_scoped_registry(
 ) -> tuple[ToolSpec, ...]:
     registry: tuple[ToolSpec, ...] = ()
     registry += (
-        build_read_file_tool(
+        build_read_tool(
             project_root,
             cancel_event=cancel_event,
         ),
     )
-    registry += build_write_file_tools(
-        project_root,
-        cancel_event=cancel_event,
+    registry += (
+        build_write_tool(project_root, cancel_event=cancel_event),
+        build_edit_tool(project_root, cancel_event=cancel_event),
     )
+    registry += build_glob_tools(project_root, cancel_event=cancel_event)
+    registry += (build_grep_tool(project_root, cancel_event=cancel_event),)
     registry += (build_webfetch_tool(), build_websearch_tool())
     registry += (build_question_tool(),)
     registry += (

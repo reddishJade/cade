@@ -14,8 +14,7 @@ from cade.harness.config import AgentConfig
 from cade.harness.security import PermissionPolicy
 from cade.harness.security.permission_model import Rule
 
-from .config import RuntimeContextProvider
-from .tool_gate import GateConfig
+from .config import GateConfig, RuntimeContextProvider
 
 
 @dataclass(frozen=True)

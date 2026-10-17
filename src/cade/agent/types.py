@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
+import queue
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -155,51 +159,6 @@ type ToolResultContentBlock = (
 )
 
 
-def tool_content_text(content: object) -> str:
-    """生成工具内容的文本投影，不展开图片或文件的二进制数据。"""
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, TextContent):
-                parts.append(item.text)
-            elif isinstance(item, ImageContent):
-                parts.append(_image_result_summary(item))
-            elif isinstance(item, FileContent):
-                parts.append(_file_result_summary(item))
-            elif isinstance(item, ShellCallOutputContent):
-                parts.append(str(item.output))
-            elif isinstance(item, ToolResultContent):
-                parts.append(item.content)
-            elif isinstance(item, dict):
-                kind = item.get("type")
-                if kind == "text":
-                    parts.append(str(item.get("text", "")))
-                elif kind == "image":
-                    parts.append(
-                        _image_result_summary(ImageContent.model_validate(item))
-                    )
-                elif kind == "file":
-                    parts.append(_file_result_summary(FileContent.model_validate(item)))
-                else:
-                    parts.append(str(item))
-            else:
-                parts.append(str(item))
-        return "".join(parts)
-    return str(content)
-
-
-def _image_result_summary(content: ImageContent) -> str:
-    source = content.source or {}
-    media_type = source.get("media_type")
-    suffix = f": {media_type}" if isinstance(media_type, str) else ""
-    return f"[image result{suffix}]"
-
-
-def _file_result_summary(content: FileContent) -> str:
-    identity = content.filename or content.file_id or "unnamed"
-    return f"[file result: {identity}]"
-
-
 class AgentToolResult:
     content: list[ToolResultContentBlock]
     details: ToolResultDetails | None = None
@@ -209,15 +168,13 @@ class AgentToolResult:
 
     def __init__(
         self,
-        content: str | list[ToolResultContentBlock] | None = None,
+        content: list[ToolResultContentBlock] | None = None,
         details: ToolResultDetails | None = None,
         is_error: bool = False,
         terminate: bool = False,
         render_intent: ToolRenderIntent | None = None,
     ) -> None:
-        self.content = (
-            [TextContent(text=content)] if isinstance(content, str) else (content or [])
-        )
+        self.content = content or []
         self.details = details
         self.is_error = is_error
         self.terminate = terminate
@@ -229,9 +186,7 @@ type ToolUpdateCallback = Callable[[AgentToolResult], None]
 
 ToolInput = dict[str, Any]
 ToolPathExtractor = Callable[[Mapping[str, object]], tuple[str, ...]]
-ActionHandler = Callable[
-    [ToolInput, Callable[[str], None] | None], str | AgentToolResult
-]
+ActionHandler = Callable[[ToolInput, Callable[[str], None] | None], str]
 HITLResult = Any
 ApprovalScope = Literal["once", "session", "permanent"]
 
@@ -251,6 +206,38 @@ class ApprovalRequest:
 
 
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
+
+
+@dataclass(frozen=True)
+class CitationSource:
+    """模型可引用的本地证据来源。"""
+
+    kind: Literal["file", "search"]
+    path: str
+    start_line: int
+    end_line: int
+    text: str
+
+
+class ToolOutput(str):
+    """带结构化元数据的工具输出文本。"""
+
+    metadata: dict[str, object]
+    is_error: bool
+    render_intent: ToolRenderIntent | None
+
+    def __new__(
+        cls,
+        content: str,
+        metadata: Mapping[str, object] | None = None,
+        is_error: bool = False,
+        render_intent: ToolRenderIntent | None = None,
+    ) -> Self:
+        output = str.__new__(cls, content)
+        output.metadata = dict(metadata) if metadata else {}
+        output.is_error = is_error
+        output.render_intent = render_intent
+        return output
 
 
 @dataclass(frozen=True)
@@ -283,6 +270,10 @@ def _materialize_json_value(value: object) -> object:
     return value
 
 
+AGENT_CONTENT_BLOCKS_METADATA_KEY = "agent_content_blocks"
+CITATION_SOURCES_METADATA_KEY = "citation_sources"
+
+
 def stringify_tool_input(action_input: ToolInput) -> str:
     return json.dumps(action_input, ensure_ascii=False, sort_keys=True)
 
@@ -299,6 +290,9 @@ class AgentTool(Protocol):
     def name(self) -> str: ...
 
     @property
+    def label(self) -> str: ...
+
+    @property
     def description(self) -> str: ...
 
     @property
@@ -307,6 +301,9 @@ class AgentTool(Protocol):
     @property
     def execution_mode(self) -> ToolExecutionMode | None: ...
 
+    @property
+    def examples(self) -> list[dict[str, object]]: ...
+
     async def execute(
         self,
         tool_call_id: str,
@@ -314,3 +311,87 @@ class AgentTool(Protocol):
         signal: CancellationSignal | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult: ...
+
+
+class ToolSpecAdapter:
+    """ToolSpec → AgentTool 适配器（无 redaction，可用于子代理等场景）。"""
+
+    def __init__(self, spec: ToolSpec) -> None:
+        self._spec = spec
+
+    @property
+    def name(self) -> str:
+        return self._spec.name
+
+    @property
+    def label(self) -> str:
+        return self._spec.name
+
+    @property
+    def description(self) -> str:
+        return self._spec.description
+
+    @property
+    def parameters(self) -> Mapping[str, object]:
+        return self._spec.schema or {}
+
+    @property
+    def execution_mode(self) -> ToolExecutionMode | None:
+        return self._spec.execution_mode
+
+    @property
+    def examples(self) -> list[dict[str, object]]:
+        return []
+
+    async def execute(
+        self,
+        tool_call_id: str,
+        params: ToolArguments,
+        signal: CancellationSignal | None = None,
+        on_update: ToolUpdateCallback | None = None,
+    ) -> AgentToolResult:
+        def _text_update(text: str) -> None:
+            if on_update is not None:
+                on_update(AgentToolResult(content=[TextContent(text=text)]))
+
+        content = await self._execute_handler(dict(params), _text_update)
+        metadata = getattr(content, "metadata", None)
+        render_intent = getattr(content, "render_intent", None)
+        return AgentToolResult(
+            content=[TextContent(text=str(content))],
+            details=metadata if isinstance(metadata, dict) else None,
+            is_error=bool(getattr(content, "is_error", False)),
+            render_intent=render_intent,
+        )
+
+    async def _execute_handler(
+        self,
+        params: ToolInput,
+        on_update: Callable[[str], None] | None,
+    ) -> str:
+        """在独立 daemon 线程中执行同步 handler，并轮询收取结果。"""
+        outcomes: queue.SimpleQueue[str | Exception] = queue.SimpleQueue()
+        context = contextvars.copy_context()
+
+        def run_handler() -> None:
+            try:
+                result = context.run(self._spec.handler, params, on_update)
+            except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                outcomes.put(exc)
+            else:
+                outcomes.put(result)
+
+        threading.Thread(
+            target=run_handler,
+            name=f"cade-tool-{self.name}",
+            daemon=True,
+        ).start()
+        while True:
+            try:
+                outcome = outcomes.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+                continue
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome

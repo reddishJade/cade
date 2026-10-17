@@ -5,20 +5,20 @@ CadeApp 数据类和 build_app 编排函数。装配逻辑委托给 assembly 子
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, TextDelta
 from cade.ai.models import get_model_context_window
 from cade.ai.providers.registry import (
-    build_provider,
+    ModelProfileConfig,
+    ProviderSettings,
+    build_provider_bundle,
 )
-from cade.ai.types import ProviderConfig
 from cade.coding_agent.execution_modes import ExecutionMode
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.harness.agent_runtime import (
@@ -44,19 +44,20 @@ if TYPE_CHECKING:
 
 
 def _bound_context_window(
-    profile: ProviderConfig, requested: int | None
-) -> ProviderConfig:
+    profile: ModelProfileConfig, requested: int | None
+) -> ModelProfileConfig:
     """窗口覆盖值不能超过模型已知的真实窗口。
 
     显式请求超限时报错；切换模型时沿用的旧覆盖值超限则丢弃，回到模型默认窗口。
     """
     window = profile.context_window
-    limit = get_model_context_window(profile.model, transport=profile.transport)
+    limit = get_model_context_window(profile.chat_model, transport=profile.transport)
     if window is None or limit is None or window <= limit:
         return profile
     if requested:
         raise ValueError(
-            f"context window {window} exceeds the {limit} supported by {profile.model}"
+            f"context window {window} exceeds the {limit} supported by "
+            f"{profile.chat_model}"
         )
     return replace(profile, context_window=None)
 
@@ -72,7 +73,7 @@ class CadeApp:
     mcp_runtime: McpRuntimeRegistry | None = None
     subagents: SubagentSessionManager | None = None
     session_recorder: SessionRecorder | None = None
-    _model_profiles: dict[str, ProviderConfig] | None = None
+    _model_profiles: dict[str, Any] | None = None
     _runtime_config: CadeRuntimeConfig | None = None
     _env_files: tuple[Path, ...] = ()
     _closers: tuple[Callable[[], None], ...] = ()
@@ -90,18 +91,15 @@ class CadeApp:
         context_window: int | None = None,
     ) -> str:
         """切换主/子 agent 模型；`context_window` 为 0 时恢复模型默认窗口。"""
+        from cade.ai.providers.registry import ModelProfileConfig, ModelProfileProto
         from cade.ai.resolver import ModelResolver, provider_for_transport
 
         if profile not in {"main", "subagent"}:
             raise ValueError("profile must be main or subagent")
         if self._model_profiles is None or self._runtime_config is None:
             raise RuntimeError("model configuration is not available")
-        sync_reviewer = (
-            profile == "main"
-            and self.agent.auto_approval_callback is not None
-            and "reviewer" not in self._model_profiles
-        )
-        current = self._model_profiles[profile]
+        sync_reviewer = profile == "main" and "reviewer" not in self._model_profiles
+        current = self._model_profiles.get(profile) or ModelProfileConfig()
         resolution = ModelResolver.resolve(
             model_or_alias=model,
             transport=transport,
@@ -116,7 +114,7 @@ class CadeApp:
             "/" not in model
             and transport is None
             and (
-                resolution.model == current.model
+                resolution.model == current.chat_model
                 or ModelResolver.infer_provider(resolution.model) is None
             )
         ):
@@ -159,16 +157,28 @@ class CadeApp:
             config, selected, resolution.model, options, self._env_files
         )
         new_cfg = _bound_context_window(new_cfg, context_window)
-        resolved_model = new_cfg.model
-        new_provider = build_provider(new_cfg)
-        new_reviewer = build_provider(new_cfg) if sync_reviewer else None
+        resolved_model = new_cfg.chat_model
+        profiles: dict[str, ModelProfileProto] = {
+            "main": self._model_profiles["main"],
+            profile: new_cfg,
+        }
+        if sync_reviewer:
+            profiles["reviewer"] = new_cfg
+
+        bundle = build_provider_bundle(
+            ProviderSettings(
+                env_files=self._env_files,
+                model_profiles=profiles,
+            )
+        )
+        new_provider = bundle.llms.get(profile, bundle.llm)
         if profile == "main":
             self.agent.replace_primary_provider(new_provider)
-            if new_reviewer is not None:
+            if sync_reviewer:
                 reviewer = self.agent.auto_approval_callback
                 replace_provider = getattr(reviewer, "replace_provider", None)
                 if callable(replace_provider):
-                    replace_provider(new_reviewer)
+                    replace_provider(bundle.llms["reviewer"])
         elif self.subagents is None:
             raise RuntimeError("subagent runtime is not configured")
         else:
@@ -183,7 +193,7 @@ class CadeApp:
             (
                 config
                 for config in (self._model_profiles or {}).values()
-                if config.model == active.model
+                if config.chat_model == active.model
                 and (
                     config.transport == active.transport
                     or config.transport == "custom"
@@ -191,16 +201,14 @@ class CadeApp:
                 )
                 and config.base_url == active.base_url
             ),
-            None,
+            ModelProfileConfig(),
         )
         info: dict[str, str] = {
             "model": active.model,
             "base_url": active.base_url,
             "transport": active.transport,
             "profile": "main",
-            "provider": active_profile.provider
-            if active_profile is not None
-            else "openai",
+            "provider": active_profile.provider,
         }
         if active.thinking:
             info["thinking"] = "on"
@@ -220,14 +228,20 @@ class CadeApp:
 
     def instruction_paths(self) -> tuple[Path, ...]:
         """从当前指令收集器读取实际可用的文件来源，不改变上下文状态。"""
-        from cade.agent.context import ContextCollectionInput
+        from cade.agent.context import (
+            ContextCollectionInput,
+            FrozenContextCollectorRegistry,
+        )
         from cade.agent.request import DefaultRequestAssembler
 
         assembler = self.agent.composition.request_assembler
         if not isinstance(assembler, DefaultRequestAssembler):
             return ()
+        collectors = assembler.context_collectors
+        if not isinstance(collectors, FrozenContextCollectorRegistry):
+            return ()
         paths: list[Path] = []
-        for section in assembler.context_sections:
+        for section in collectors.sections:
             if section.section_id == "agents":
                 for block in section.collect(ContextCollectionInput()):
                     if block.provenance and block.provenance != "inline instruction":
@@ -257,39 +271,22 @@ class CadeApp:
         *,
         display_question: str | None = None,
     ) -> Iterator[AgentHarnessEvent]:
-        from cade.harness.agent_runtime.agent_helpers import aiter_to_sync_iter
-
-        yield from aiter_to_sync_iter(
-            self.aask_stream(question, mode=mode, display_question=display_question),
-            self.agent.cancellation_token,
-        )
-
-    async def aask_stream(
-        self,
-        question: str | None,
-        mode: ExecutionMode | None = None,
-        *,
-        display_question: str | None = None,
-    ) -> AsyncGenerator[AgentHarnessEvent, None]:
-        """统一运行与记录入口；同步调用只在外层转换消费方式。"""
         recorder = self.session_recorder
         if recorder is None:
             raise RuntimeError("session recorder is not configured")
         recorder.bind_agent(self.agent)
         if question is not None:
             self.agent.followup(
-                UserMessage(content=question), display_text=display_question
+                UserMessage(content=question),
+                display_text=display_question,
             )
-        async with aclosing(
-            self.agent.arun_stream(
-                None,
-                mode=mode,
-                display_question=display_question,
-            )
-        ) as stream:
-            async for event in stream:
-                recorder.record_event(event)
-                yield event
+        for event in self.agent.run_stream(
+            None,
+            mode=mode,
+            display_question=display_question,
+        ):
+            recorder.record_event(event)
+            yield event
 
     def ask_side_question(self, question: str) -> Iterator[str]:
         """用独立 provider 回答旁支问题，主会话保留原运行状态。"""
@@ -298,9 +295,13 @@ class CadeApp:
 
         request = self.agent.prepare_read_only_request(question)
         request.require_sendable()
-        if self._model_profiles is None:
-            raise RuntimeError("model configuration is not available")
-        provider = build_provider(self._model_profiles["main"])
+        profiles = self._model_profiles or {}
+        provider = build_provider_bundle(
+            ProviderSettings(
+                env_files=self._env_files,
+                model_profiles={"main": profiles["main"]} if "main" in profiles else {},
+            )
+        ).llm
 
         async def answer() -> AsyncIterator[str]:
             streamed = False
@@ -391,9 +392,12 @@ def build_app(
     )
 
     model_profiles = resolve_model_profiles(cfg.runtime_config, cfg.env_files)
-    primary_provider = build_provider(model_profiles["main"])
-    subagent_provider = build_provider(model_profiles["subagent"])
-    fallback_provider = build_provider(model_profiles["fallback"])
+    providers = build_provider_bundle(
+        ProviderSettings(
+            env_files=cfg.env_files,
+            model_profiles=model_profiles,
+        )
+    )
     external_hook_runner = (
         ExternalHookRunner(cfg.runtime_config.hooks.entries, project_root)
         if cfg.runtime_config.hooks.entries
@@ -408,7 +412,7 @@ def build_app(
         subagents,
     ) = _assembly.build_tool_registry(
         project_root=project_root,
-        subagent_provider=subagent_provider,
+        subagent_provider=providers.llms.get("subagent", providers.llm),
         runtime_config=cfg.runtime_config,
         session_recorder=infra.session_recorder,
         cancel_event=infra.cancellation_token,
@@ -423,16 +427,17 @@ def build_app(
         from cade.harness.security import AutoApprovalReviewer
 
         auto_reviewer = AutoApprovalReviewer(
-            build_provider(model_profiles.get("reviewer", model_profiles["main"])),
+            providers.llms.get("reviewer", providers.llm),
             timeout_seconds=float(security.auto_review_timeout_seconds),
             max_workers=cfg.agent_config.tool_workers,
         )
         auto_approval_callback = auto_reviewer
         closers = (*closers, auto_reviewer.close)
 
+    fallback_provider = providers.llms.get("fallback")
     agent = build_agent(
         project_root=project_root,
-        llm=primary_provider,
+        llm=providers.llm,
         registry=registry_state,
         config=cfg.agent_config,
         audit_path=cfg.audit_path,

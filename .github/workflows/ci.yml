@@ -1,13 +1,23 @@
 name: CI
 
 on:
+  workflow_call:
+    inputs:
+      revision:
+        description: 待检查的提交。留空时使用触发事件的默认提交。
+        required: false
+        type: string
+        default: ""
+      upload-artifacts:
+        description: 保存本次检查生成的发布包。
+        required: false
+        type: boolean
+        default: false
   pull_request:
   push:
     branches:
       - main
       - dev
-    tags:
-      - "v*"
 
 permissions:
   contents: read
@@ -17,24 +27,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
           version: "0.12.19"
           python-version: "3.12"
           enable-cache: true
-      - name: Check release tag against package version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: test "$GITHUB_REF_NAME" = "v$(uv version --short)"
+      - name: Check public source boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .githooks/pre-push
+          blocked="$(git ls-files -- benchmarks .cade \
+            e2e-results benchmark-results eval-results evals)"
+          if [[ -n "$blocked" ]]; then
+            printf 'Internal assets must stay outside the public tree:\n%s\n' "$blocked" >&2
+            exit 1
+          fi
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - name: Install development dependencies
         run: uv sync --locked --extra dev
       - name: Ruff lint check
-        run: uv run --locked ruff check src/
+        run: uv run --locked ruff check src/cade/
       - name: Ruff format check
-        run: uv run --locked ruff format --check src/
+        run: uv run --locked ruff format --check src/cade/
       - name: Pyright type check
-        run: uv run --locked pyright src/
+        run: uv run --locked pyright src/cade/
       - name: Regression tests
         if: hashFiles('src/cade/tests/**/test_*.py') != ''
         run: uv run --locked pytest -q src/cade/tests
@@ -42,3 +63,15 @@ jobs:
         run: uv run --locked cade --help
       - name: Build distributions
         run: uv build --no-sources
+      - name: Calculate distribution checksums
+        if: inputs.upload-artifacts
+        working-directory: dist
+        run: sha256sum *.whl *.tar.gz > SHA256SUMS
+      - name: Upload distributions
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

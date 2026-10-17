@@ -1,8 +1,36 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 
+import pytest
+
+from cade.agent.context import (
+    ContextBlock,
+    ContextBlockSource,
+    ContextCollectionInput,
+    ContextCollectorRegistry,
+    FrozenContextCollectorRegistry,
+    make_state_section,
+)
+from cade.agent.request import DefaultRequestAssembler
+from cade.ai.events import (
+    FinalMessage,
+    Message,
+    ProviderEvent,
+    TextDelta,
+    ToolCall,
+    ToolCallEvent,
+)
+from cade.ai.providers.base import Provider
+from cade.ai.providers.registry import ModelProfileConfig, ProviderBundle
+from cade.ai.types import StreamOptions, ToolDefinition
+from cade.ai.usage import UsageTotals
+from cade.coding_agent import app as app_module
+from cade.coding_agent.app import build_app
+from cade.coding_agent.assembly import registry as registry_module
 from cade.coding_agent.assembly.security import (
     external_directories_from_security,
     mode_rulesets_from_runtime_config,
@@ -10,6 +38,9 @@ from cade.coding_agent.assembly.security import (
     sandbox_policy_from_security,
     sensitive_path_overrides_from_security,
 )
+from cade.harness.agent_runtime import AgentComposition
+from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
+from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.config import (
     CadeRuntimeConfig,
     ExecutionModesRuntimeConfig,
@@ -21,7 +52,9 @@ from cade.harness.config import (
     SecurityRuntimeConfig,
     SecuritySensitivePathOverride,
 )
+from cade.harness.execution_env import ExecutionResult, Shell, SubprocessShell
 from cade.harness.security import Action, StaticPolicyEvaluator, Target
+from cade.harness.session import SessionInbox, SessionStore
 
 
 class TestAssemblySecurityContract:
@@ -160,3 +193,218 @@ class TestAssemblySecurityContract:
         assert len(overrides) == 1
         assert overrides[0].path == (tmp_path / ".env.local").resolve()
         assert overrides[0].access == "read"
+
+
+class _WorkingDirectoryProvider(Provider):
+    def __init__(self, *, call_bash: bool) -> None:
+        super().__init__()
+        self._model = "gpt-4o-mini"
+        self._base_url = "https://provider.invalid"
+        self._transport = "openai_chat"
+        self._thinking = False
+        self._context_window = 128_000
+        self.call_bash = call_bash
+        self.requests: list[tuple[list[Message], list[ToolDefinition]]] = []
+
+    @property
+    def usage_totals(self) -> UsageTotals:
+        return UsageTotals()
+
+    @property
+    def cache_hit_rate(self) -> float | None:
+        return None
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        options: StreamOptions | None = None,
+        **kwargs: object,
+    ) -> AsyncIterator[ProviderEvent]:
+        self.requests.append((list(messages), list(tools)))
+        if self.call_bash and len(self.requests) == 1:
+            yield ToolCallEvent(
+                calls=[ToolCall(id="pwd-call", name="bash", input={"command": "pwd"})]
+            )
+            yield FinalMessage(content="", stop_reason="tool_use")
+            return
+        yield TextDelta(chunk="Task finished.")
+        yield FinalMessage(content="Task finished.", stop_reason="end_turn")
+
+
+class _RecordingShell:
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], Path]] = []
+        self.outputs: list[str] = []
+        self._shell = SubprocessShell()
+
+    def run(
+        self,
+        argv: list[str],
+        cwd: Path,
+        timeout: int = 30_000,
+        cancel_event: threading.Event | None = None,
+        on_progress: Callable[[str], None] | None = None,
+        env: dict[str, str] | None = None,
+    ) -> ExecutionResult:
+        self.calls.append((argv, cwd))
+        result = self._shell.run(
+            argv,
+            cwd,
+            timeout=timeout,
+            cancel_event=cancel_event,
+            on_progress=on_progress,
+            env=env,
+        )
+        self.outputs.append(result.output)
+        return result
+
+
+def _capture_collector_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[ContextCollectionInput]:
+    inputs: list[ContextCollectionInput] = []
+    original_collect = FrozenContextCollectorRegistry.collect
+
+    def collect(
+        registry: FrozenContextCollectorRegistry,
+        input: ContextCollectionInput,
+    ) -> list[ContextBlock]:
+        inputs.append(input)
+        return original_collect(registry, input)
+
+    monkeypatch.setattr(FrozenContextCollectorRegistry, "collect", collect)
+    return inputs
+
+
+@pytest.fixture
+def working_directory_root() -> Iterator[Path]:
+    """把应用装配的工作区与会话限制在仓库证据目录中。"""
+    root = Path(__file__).resolve().parents[3] / "e2e-results"
+    root.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="cwd-contract-", dir=root) as directory:
+        yield Path(directory)
+
+
+class TestHarnessWorkingDirectoryContract:
+    """通过真实装配和本地 pwd 验证目录契约，provider 使用受控边界。
+
+    覆盖宿主目录与项目目录不同的缺口，不验证服务协议或沙箱启动。
+    运行：uv run --locked pytest -q src/cade/tests/test_assembly_contract.py
+    旧版向 provider 和 collector 发送宿主 cwd；回归应在该断言失败。
+    """
+
+    @pytest.mark.asyncio
+    async def test_app_uses_project_root_for_context_and_default_shell_cwd(
+        self,
+        working_directory_root: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        host_cwd = Path.cwd()
+        project_root = working_directory_root / "task-workspace"
+        project_root.mkdir()
+        provider = _WorkingDirectoryProvider(call_bash=True)
+        shell = _RecordingShell()
+        collector_inputs = _capture_collector_inputs(monkeypatch)
+        profiles = {
+            "main": ModelProfileConfig(
+                transport="openai_chat",
+                chat_model=provider.model,
+            ),
+            "subagent": ModelProfileConfig(
+                transport="openai_chat",
+                chat_model=provider.model,
+            ),
+        }
+        bundle = ProviderBundle(
+            llm=provider,
+            llms={"main": provider, "subagent": provider},
+        )
+        monkeypatch.setattr(
+            app_module,
+            "resolve_model_profiles",
+            lambda *_args, **_kwargs: profiles,
+        )
+        monkeypatch.setattr(
+            app_module,
+            "build_provider_bundle",
+            lambda _settings: bundle,
+        )
+
+        def build_recording_shell(
+            _project_root: Path,
+            _security: SecurityRuntimeConfig,
+        ) -> Shell:
+            return shell
+
+        monkeypatch.setattr(
+            registry_module,
+            "build_shell_from_security",
+            build_recording_shell,
+        )
+
+        app = build_app(
+            project_root=project_root,
+            runtime_config=CadeRuntimeConfig(),
+            sessions_dir=working_directory_root / "sessions",
+        )
+        try:
+            await app.agent.run_async("Run pwd and report its output.")
+        finally:
+            app.close()
+
+        assert Path.cwd() == host_cwd
+        assert len(provider.requests) == 2
+        request_text = str(provider.requests[0][0])
+        assert f"cwd={project_root.resolve()}" in request_text
+        assert f'"cwd": "{project_root.resolve()}"' in request_text
+        assert collector_inputs[0].project_root == project_root
+        assert collector_inputs[0].cwd == project_root
+        assert any(tool.name == "bash" for tool in provider.requests[0][1])
+        assert len(shell.calls) == 1
+        assert shell.calls[0][1] == project_root.resolve()
+        assert str(project_root.resolve()) in shell.outputs[0]
+        assert str(project_root.resolve()) in str(provider.requests[1][0])
+        assert Path.cwd() == host_cwd
+
+    @pytest.mark.asyncio
+    async def test_harness_without_project_root_falls_back_to_host_cwd(
+        self,
+        working_directory_root: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        host_cwd = Path.cwd()
+        provider = _WorkingDirectoryProvider(call_bash=False)
+        collector_inputs = _capture_collector_inputs(monkeypatch)
+        context_collectors = ContextCollectorRegistry()
+        context_collectors.register_section(
+            make_state_section(
+                "environment",
+                "environment",
+                ContextBlockSource.ENVIRONMENT,
+            )
+        )
+        composition = AgentComposition.create(
+            primary_provider=provider,
+            fallback_provider=None,
+            registry=(),
+            config=CadeRuntimeConfig().agent,
+            gate=GateConfig(),
+            request_assembler=DefaultRequestAssembler(
+                context_collectors=context_collectors.freeze()
+            ),
+            runtime_context_provider=None,
+        )
+        inbox = SessionInbox(SessionStore(working_directory_root / "sessions"))
+        harness = AgentHarness(
+            composition,
+            AgentRuntimeConfig(session_inbox=inbox),
+        )
+
+        await harness.run_async("Report the current directory.")
+
+        assert len(provider.requests) == 1
+        assert f'"cwd": "{host_cwd}"' in str(provider.requests[0][0])
+        assert collector_inputs[0].project_root is None
+        assert collector_inputs[0].cwd == host_cwd
+        assert Path.cwd() == host_cwd

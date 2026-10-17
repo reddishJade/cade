@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/dev|refs/heads/main)
+      if [[ "$local_sha" =~ ^0+$ ]]; then
+        printf 'Do not delete dev or main.\n' >&2
+        exit 1
+      fi
+      if [[ ! "$remote_sha" =~ ^0+$ ]] &&
+        ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+        printf 'Only fast-forward pushes are allowed for dev and main. Fetch before pushing.\n' >&2
+        exit 1
+      fi
+      if [[ "$remote_ref" == refs/heads/main ]]; then
+        remote_dev_sha="$(git ls-remote --exit-code "$2" refs/heads/dev | cut -f1)"
+        if [[ "$local_sha" != "$remote_dev_sha" ]]; then
+          printf 'Promote only the current remote dev commit to main. Push dev first.\n' >&2
+          exit 1
+        fi
+      fi
+      ;;
+  esac
+  if [[ "$local_sha" =~ ^0+$ ]]; then
+    continue
+  fi
+  case "$remote_ref" in
+    refs/heads/internal/*|refs/heads/backup/*|refs/heads/eval)
+      printf 'Keep internal branches in cade-internal: %s\n' "$remote_ref" >&2
+      exit 1
+      ;;
+  esac
+  if ! git rev-parse --verify 'refs/remotes/origin/dev^{commit}' >/dev/null 2>&1; then
+    printf 'Fetch origin/dev before pushing.\n' >&2
+    exit 1
+  fi
+  blocked="$(git log --format= --name-only --no-renames --diff-filter=ACM \
+    "$local_sha" --not --remotes=origin -- \
+    benchmarks .cade e2e-results benchmark-results eval-results evals)"
+  if [[ -n "$blocked" ]]; then
+    printf 'New public history contains internal assets:\n%s\n' "$blocked" >&2
+    exit 1
+  fi
+done

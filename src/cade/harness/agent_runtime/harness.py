@@ -8,15 +8,14 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import AsyncGenerator, Callable, Iterator
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Callable, Iterator
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
-from cade.agent.config import AgentContext, BeforeToolCallContext
+from cade.agent.config import AfterToolCallContext, AgentContext, BeforeToolCallContext
 from cade.agent.messages import AssistantMessage
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, ToolInput
 from cade.ai.events import ToolCall
@@ -48,10 +47,14 @@ from .config import (
 )
 from .events import (
     AgentHarnessEvent,
+    _StreamTranslationState,
+    translate_event,
 )
 from .fallback import FallbackWithRetryPrimary
+from .message_codec import messages_from_run_state
 from .result import (
     AgentHarnessResult,
+    RunState,
     build_structured_result,
     final_event,
 )
@@ -125,11 +128,15 @@ class AgentHarness:
             else gate_runtime.correlation or RuntimeCorrelation(gate_runtime.session_id)
         )
         self._hook_manager = gate_runtime.hook_manager
+        self.external_directories = gate.external_directories
+        self.sensitive_path_overrides = gate.sensitive_path_overrides
+        self.hook_constraint_providers = gate.hook_constraint_providers
         self._gate = supplied_gate or ToolGate(
             mode_state=self._build_gate_mode(),
-            config=gate,
             user_approval_callback=gate_runtime.user_approval_callback,
             auto_approval_callback=gate_runtime.auto_approval_callback,
+            permission_policy=gate.permission_policy,
+            approval_policy=gate.approval_policy,
             hook_manager=gate_runtime.hook_manager,
             external_hook_runner=gate_runtime.external_hook_runner,
             external_hooks_subagent=gate_runtime.external_hooks_subagent,
@@ -137,10 +144,20 @@ class AgentHarness:
             correlation=self._correlation,
             audit_logger=gate_runtime.audit_logger,
             session_id=gate_runtime.session_id,
+            restricted_dirs=gate.restricted_dirs,
+            hook_constraint_providers=gate.hook_constraint_providers,
             project_root=runtime.project_root,
+            external_directories=gate.external_directories,
+            sensitive_path_overrides=gate.sensitive_path_overrides,
             session_grant_store=gate_runtime.session_grant_store,
             session_grant_store_provider=gate_runtime.session_grant_store_provider,
             permanent_grant_store=gate_runtime.permanent_grant_store,
+            user_rulesets=gate.user_rulesets,
+            default_mode_rulesets=gate.default_mode_rulesets,
+            mode_fallbacks=gate.mode_fallbacks,
+            shell_unresolved_policies=gate.shell_unresolved_policies,
+            shell_mutation_policies=gate.shell_mutation_policies,
+            tool_path_extractors=gate.tool_path_extractors,
         )
         self.audit_logger = gate_runtime.audit_logger
         self._context_manager = ContextManager()
@@ -186,7 +203,7 @@ class AgentHarness:
         mode = self._build_gate_mode()
         return {
             "environment": {
-                "cwd": str(Path.cwd()),
+                "cwd": str(self._effective_working_directory()),
                 "project_root": str(self.project_root)
                 if self.project_root is not None
                 else None,
@@ -199,6 +216,10 @@ class AgentHarness:
             },
             "mode": {"current_mode": mode.current_mode},
         }
+
+    def _effective_working_directory(self) -> Path:
+        """返回模型和上下文收集器使用的工作目录。"""
+        return self.project_root if self.project_root is not None else Path.cwd()
 
     def _build_loop_config_extras(self) -> dict:
         """子类可返回额外的 build_loop_config 参数。"""
@@ -274,7 +295,8 @@ class AgentHarness:
         )
         assistant_message = AssistantMessage(content=[tool_call])
         context = AgentContext(messages=deepcopy(self._history))
-        before = self._gate.build_before_tool_hook((tool,))(
+        snapshot = self._gate.snapshot_for((tool,))
+        before = self._gate.build_before_tool_hook(snapshot)(
             BeforeToolCallContext(
                 assistant_message=assistant_message,
                 tool_call=tool_call,
@@ -301,8 +323,24 @@ class AgentHarness:
                 content=[TextContent(text=f"{type(exc).__name__}: {exc}")],
                 is_error=True,
             )
-        if before is not None and before.on_result is not None:
-            before.on_result(result)
+        after = self._gate.build_after_tool_hook()(
+            AfterToolCallContext(
+                assistant_message=assistant_message,
+                tool_call=tool_call,
+                args=arguments,
+                result=result,
+                is_error=result.is_error,
+                context=context,
+            ),
+            None,
+        )
+        if after is not None:
+            if after.content is not None:
+                result.content = after.content
+            if after.details is not None:
+                result.details = after.details
+            if after.is_error is not None:
+                result.is_error = after.is_error
         return result
 
     def replace_primary_provider(self, provider: ModelProvider) -> str:
@@ -322,7 +360,7 @@ class AgentHarness:
                 raise RuntimeError("cannot replace composition during an active run")
             composition = self._composition.with_permission_policy(policy)
             self._composition = composition
-            self._gate.replace_config(composition.gate)
+            self._gate.set_permission_policy(composition.gate.permission_policy)
         return composition.generation_id
 
     def inject(self, msg: AgentMessage) -> SubmitOutcome:
@@ -378,7 +416,13 @@ class AgentHarness:
         handle = self.active_run()
         if handle is None:
             return False
-        return handle.interrupt(reason) is not None
+        outcome = handle.interrupt(reason)
+        if outcome is None:
+            return False
+        abort = getattr(self._provider, "abort_active_stream", None)
+        if callable(abort):
+            abort()
+        return True
 
     def has_pending_input(self) -> bool:
         """返回 durable inbox 是否存在需要启动的新输入。"""
@@ -452,6 +496,11 @@ class AgentHarness:
     def set_resumed_notice(self, notice: str) -> None:
         self._resumed_notice = notice
 
+    def load_run_state(self, run_state: RunState) -> None:
+        self._context_manager.replace_history(messages_from_run_state(run_state))
+        self._context_manager.invalidate_token_anchor()
+        self._reset_provider_conversation_state()
+
     def history_messages(self) -> list[AgentMessage]:
         return list(self._history)
 
@@ -472,7 +521,7 @@ class AgentHarness:
             tools=self._gate.adapt_tools(registry),
             state=self._build_context_snapshot_state(),
             project_root=self.project_root,
-            cwd=Path.cwd(),
+            cwd=self._effective_working_directory(),
             context_policy=resolve_context_policy(provider, composition.config),
         )
         return composition.request_assembler.assemble(
@@ -496,6 +545,7 @@ class AgentHarness:
                 ),
             ],
             project_root=self.project_root,
+            cwd=self._effective_working_directory(),
             context_policy=resolve_context_policy(self.provider, composition.config),
         )
         return composition.request_assembler.assemble(
@@ -527,7 +577,7 @@ class AgentHarness:
         question: str | None,
         *,
         display_question: str | None = None,
-    ) -> AsyncGenerator[AgentHarnessEvent, None]:
+    ) -> AsyncIterator[AgentHarnessEvent]:
         if question is not None:
             self.followup(
                 UserMessage(content=question),
@@ -543,15 +593,12 @@ class AgentHarness:
             if not turn_messages:
                 return
             question_text = _turn_text(turn_messages)
-            async with aclosing(
-                self._arun_claimed_turn(
-                    question_text,
-                    turn_messages,
-                    run_handle,
-                )
-            ) as stream:
-                async for event in stream:
-                    yield event
+            async for event in self._arun_claimed_turn(
+                question_text,
+                turn_messages,
+                run_handle,
+            ):
+                yield event
         finally:
             if self._run_controller.active_run() is run_handle:
                 run_handle.begin_finishing()
@@ -562,7 +609,7 @@ class AgentHarness:
         question: str,
         turn_messages: list[AgentMessage],
         run_handle: ActiveRunHandle,
-    ) -> AsyncGenerator[AgentHarnessEvent, None]:
+    ) -> AsyncIterator[AgentHarnessEvent]:
         from .tool_hooks import emit_hook as _emit_hook
 
         with self._composition_lock:
@@ -618,6 +665,7 @@ class AgentHarness:
                 ),
             )
 
+            translation_state = _StreamTranslationState(correlation=self._correlation)
             context = AgentContext(
                 messages=self._context_manager.history_messages(),
                 request_prefix=context_messages,
@@ -625,36 +673,27 @@ class AgentHarness:
                 context_manager=self._context_manager,
                 state=context_snapshot_state,
                 project_root=self.project_root,
-                cwd=Path.cwd(),
+                cwd=self._effective_working_directory(),
             )
             result: AgentLoopResult | None = None
-            async with aclosing(
-                run_agent_loop(
-                    turn_messages,
-                    context,
-                    loop_config,
-                    signal=self.cancellation_token,
-                    steer_queue=run_handle.claim_step_input,
-                    finish_steering=run_handle.finish_step_input,
-                    reopen_steering=run_handle.reopen_step_input,
-                )
-            ) as stream:
-                async for event in stream:
-                    if isinstance(event, AgentLoopResult):
-                        result = event
-                        continue
-                    tool_call_id = (
-                        event.data.id
-                        if event.type == "tool_use"
-                        else event.data.tool_call_id
-                        if event.type == "tool_update"
-                        else event.data.tool_use_id
-                        if event.type == "tool_result"
-                        else ""
-                    )
-                    yield replace(
-                        event, correlation=self._correlation.snapshot(tool_call_id)
-                    )
+            async for event in run_agent_loop(
+                turn_messages,
+                context,
+                loop_config,
+                signal=self.cancellation_token,
+                steer_queue=run_handle.claim_step_input,
+                finish_steering=run_handle.finish_step_input,
+                reopen_steering=run_handle.reopen_step_input,
+            ):
+                if isinstance(event, AgentLoopResult):
+                    result = event
+                    continue
+                translated = translate_event(event, translation_state)
+                if translated is not None:
+                    for te in (
+                        translated if isinstance(translated, list) else [translated]
+                    ):
+                        yield te
 
             if result is None:
                 raise RuntimeError("agent loop completed without a result")

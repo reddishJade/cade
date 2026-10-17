@@ -12,12 +12,7 @@ from typing import TYPE_CHECKING, cast
 from prompt_toolkit.formatted_text import AnyFormattedText
 from prompt_toolkit.utils import get_cwidth
 
-from cade.agent.types import (
-    ToolInput,
-    ToolRenderIntent,
-    parse_tool_render_intent,
-    tool_content_text,
-)
+from cade.agent.types import ToolInput, ToolRenderIntent, parse_tool_render_intent
 from cade.coding_agent.interaction.tools import final_stop_reason
 from cade.harness.security.shell_analyzer import analyze_shell_command
 
@@ -45,7 +40,7 @@ _ANSI_RESET = "\x1b[0m"
 if TYPE_CHECKING:
     from cade.harness.agent_runtime.events import (
         AgentHarnessEvent,
-        FinalEvent,
+        FinalStructuredEvent,
     )
     from cade.harness.security import HITLResult
     from cade.harness.session import SessionEntry
@@ -63,6 +58,7 @@ class _HitlRequest:
     preview: list[str]
     event: Event
     result: HITLResult | None = None
+    full_preview: list[str] | None = None
 
 
 @dataclass
@@ -296,7 +292,7 @@ class _TuiState:
             self._record_tool_result(
                 str(data.get("tool_use_id", "")),
                 str(data.get("status", "ok")),
-                tool_content_text(data.get("content", "")),
+                str(data.get("content", "")),
                 str(data.get("permission_notice") or ""),
                 parse_tool_render_intent(data.get("render_intent")),
             )
@@ -348,7 +344,7 @@ class _TuiState:
             self._record_tool_result(
                 event.data.tool_use_id,
                 event.data.status,
-                tool_content_text(event.data.content),
+                event.data.content,
                 event.data.permission_notice or "",
                 event.data.render_intent,
             )
@@ -712,7 +708,13 @@ class _TuiState:
             return []
         lines: list[str] = []
         lines.append("? Authorization request")
-        for line in self.pending_hitl.preview:
+        request = self.pending_hitl
+        preview = (
+            request.full_preview
+            if not self.tool_collapsed and request.full_preview is not None
+            else request.preview
+        )
+        for line in preview:
             lines.append(f"  {line}")
         return lines
 
@@ -865,7 +867,7 @@ class _TuiState:
 
     # ── 回合结束 ──
 
-    def _finish_answer(self, event: FinalEvent) -> None:
+    def _finish_answer(self, event: FinalStructuredEvent) -> None:
         self._finish_thinking()
 
         self._commit_streaming_answer()

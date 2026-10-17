@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from cade.agent.events import EventCorrelation
+
+@dataclass(frozen=True)
+class EventCorrelation:
+    """可序列化的事件关联字段。"""
+
+    timestamp: str = ""
+    session_id: str = ""
+    turn_id: str = ""
+    request_id: str = ""
+    tool_call_id: str = ""
 
 
 class HookCorrelationFields(TypedDict):

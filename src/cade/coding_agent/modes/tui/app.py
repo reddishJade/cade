@@ -41,9 +41,6 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import CheckboxList, RadioList, TextArea
 
-from cade.agent.events import (
-    ToolUseEvent,
-)
 from cade.agent.messages import UserMessage
 from cade.coding_agent.interaction.app_contract import InteractionApp
 from cade.coding_agent.interaction.approval import (
@@ -77,13 +74,17 @@ from cade.coding_agent.interaction.tools import (
 )
 from cade.coding_agent.tools.question import CUSTOM_OPTION_LABEL
 from cade.harness.agent_runtime import AgentHarnessEvent, BusyMessageMode, SubmitStatus
-from cade.harness.agent_runtime.async_worker import IsolatedAsyncWorker
 from cade.harness.agent_runtime.events import (
-    FinalEvent,
+    FinalStructuredEvent,
+    ToolUseStructuredEvent,
 )
 from cade.harness.snapshot import SnapshotStore, SnapshotUnsupportedError
 
-from .approval import approval_scope_lines, tool_preview_lines
+from .approval import (
+    approval_scope_lines,
+    full_edit_preview_lines,
+    tool_preview_lines,
+)
 from .chrome import TUI_STYLES, compact_path, fit_text, status_line, welcome_text
 from .command_output import TerminalCommandOutput
 from .commands import run_host_command
@@ -240,7 +241,6 @@ class _CadeTui:
         self._last_stream_refresh = 0.0
         self._stream_refresh_handle: TimerHandle | None = None
         self._working_refresh_handle: TimerHandle | None = None
-        self._agent_worker = IsolatedAsyncWorker(name="cade-tui-agent")
         self._agent_event_queue: Queue[AgentHarnessEvent] = Queue()
         self._agent_event_queue_lock = threading.Lock()
         self._agent_event_drain_lock = threading.Lock()
@@ -411,7 +411,7 @@ class _CadeTui:
             height=1,
             style="class:status",
         )
-        # ── Application ──
+        # ── 应用 ──
         self._application = Application(
             layout=Layout(
                 HSplit(
@@ -445,7 +445,7 @@ class _CadeTui:
         self._inline_renderer = InlineRenderer(self._application.renderer)
         self._application.renderer = self._inline_renderer
 
-        # ── Wire agent hooks ──
+        # ── 连接 Agent 钩子 ──
         agent = getattr(self._agent_app, "agent", None)
         if agent is not None:
             if getattr(agent, "approval_policy", "on-request") == "on-request":
@@ -488,14 +488,6 @@ class _CadeTui:
         try:
             self._application.run()
         finally:
-            from cade.harness.security import HITLResult
-
-            if self._state.pending_hitl is not None:
-                self._complete_approval(HITLResult("deny", "once"))
-            if self._state.pending_question_choice is not None:
-                self._complete_question_choice([])
-            self._agent_app.agent.interrupt("TUI is closing")
-            self._agent_worker.close()
             print_exit_summary(
                 self._store,
                 perf_counter() - started_at,
@@ -939,7 +931,12 @@ class _CadeTui:
             if token is not None:
                 token.reset()
         self._refresh()
-        self._agent_worker.submit(self._run_turn(expanded_text, text))
+        thread = threading.Thread(
+            target=self._run_turn,
+            args=(expanded_text, text),
+            daemon=True,
+        )
+        thread.start()
 
     def _run_command(self, text: str, *, preserve_running: bool = False) -> None:
         """执行斜杠命令；实时命令不得结束正在运行的 agent 回合。"""
@@ -1717,7 +1714,7 @@ class _CadeTui:
             f"Resumed {selected.title} ({selected.id}). Continue your task below."
         )
 
-    # ── HITL ──
+    # ── 用户审批 ──
 
     def _question_prompt_callback(
         self, questions: list[dict[str, object]]
@@ -1842,20 +1839,31 @@ class _CadeTui:
     def _approval_callback(self, approval: ApprovalRequest) -> HITLResult:
         from cade.harness.security import HITLResult
 
+        scope_preview = [
+            _strip_rich_markup(line)
+            for line in approval_scope_lines(
+                approval.tool, approval.action_input, approval.allowed_scopes
+            )
+        ]
         request = _HitlRequest(
             tool_name=approval.tool.name,
             preview=[
-                _strip_rich_markup(line)
-                for line in (
-                    tool_preview_lines(approval.tool, approval.action_input)
-                    + approval_scope_lines(
-                        approval.tool,
-                        approval.action_input,
-                        approval.allowed_scopes,
-                    )
-                )
+                *(
+                    _strip_rich_markup(line)
+                    for line in tool_preview_lines(approval.tool, approval.action_input)
+                ),
+                *scope_preview,
             ],
             event=Event(),
+            full_preview=(
+                [
+                    "Tool: edit",
+                    *full_edit_preview_lines(approval.action_input),
+                    *scope_preview,
+                ]
+                if approval.tool.name == "edit"
+                else None
+            ),
         )
         self._state.pending_hitl = request
 
@@ -1884,7 +1892,11 @@ class _CadeTui:
         if self._state.running or not self._agent_app.agent.has_pending_input():
             return
         self._start_working()
-        self._agent_worker.submit(self._run_turn(None, None))
+        threading.Thread(
+            target=self._run_turn,
+            args=(None, None),
+            daemon=True,
+        ).start()
 
     def _accept_approval_choice(self) -> None:
         choice = self._approval_choices.current_value
@@ -1915,7 +1927,7 @@ class _CadeTui:
 
     # ── Turn 执行 ──
 
-    async def _run_turn(self, text: str | None, display_text: str | None) -> None:
+    def _run_turn(self, text: str | None, display_text: str | None) -> None:
         snapshot = self._snapshot_store
         _snapshot_ctx = _enter_snapshot_ctx(snapshot, self._store.session_id)
         turn_log_start = len(self._state.log)
@@ -1924,14 +1936,14 @@ class _CadeTui:
         tool_names: list[str] = []
         try:
             self._last_stream_refresh = 0.0
-            async for event in self._agent_app.aask_stream(
+            for event in self._agent_app.ask_stream(
                 text,
                 mode=self._interaction_state.mode,
                 display_question=display_text,
             ):
-                if isinstance(event, (FinalEvent,)):
+                if isinstance(event, (FinalStructuredEvent,)):
                     answer = event.data.answer
-                if isinstance(event, (ToolUseEvent,)):
+                if isinstance(event, (ToolUseStructuredEvent,)):
                     tool_names.append(event.data.name)
                 self._dispatch_agent_event(event)
         except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
