@@ -474,8 +474,7 @@ def _resolved_config_event(
     app: Any, config: CadeRuntimeConfig, args: argparse.Namespace
 ) -> dict[str, object]:
     info = app.get_model_info()
-    provider = app.agent.provider
-    active = getattr(provider, "active_provider", provider)
+    active = app.agent.provider
     policy = resolve_context_policy(active, config.agent)
     context_window = policy.physical_window
     token_budget = policy.input_budget

@@ -386,7 +386,6 @@ class TestHarnessWorkingDirectoryContract:
         )
         composition = AgentComposition.create(
             primary_provider=provider,
-            fallback_provider=None,
             registry=(),
             config=CadeRuntimeConfig().agent,
             gate=GateConfig(),

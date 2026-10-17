@@ -144,7 +144,6 @@ def current_effort_options(app: object) -> tuple[str, ...]:
     """返回当前 active provider 支持的 reasoning effort 选项。"""
     agent = getattr(app, "agent", None)
     provider = getattr(agent, "provider", None) if agent else None
-    provider = getattr(provider, "active_provider", provider)
     transport = getattr(provider, "transport", "") if provider else ""
     model = getattr(provider, "model", "") if provider else ""
     return reasoning_effort_levels_for_transport(transport, model)

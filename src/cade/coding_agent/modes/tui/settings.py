@@ -390,8 +390,7 @@ def _rollover_notice(app: object) -> str | None:
     agent = getattr(app, "agent", None)
     if agent is None:
         return None
-    provider = agent.provider
-    active = getattr(provider, "active_provider", provider)
+    active = agent.provider
     policy = resolve_context_policy(active, agent.composition.config)
     snapshot = compute_context_summary(agent).snapshot
     used = snapshot.total_input_tokens if snapshot is not None else 0

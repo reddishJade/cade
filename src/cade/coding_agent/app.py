@@ -187,8 +187,7 @@ class CadeApp:
         return resolved_model
 
     def get_model_info(self) -> dict[str, str]:
-        provider = self.agent.provider
-        active = getattr(provider, "active_provider", provider)
+        active = self.agent.provider
         active_profile = next(
             (
                 config
