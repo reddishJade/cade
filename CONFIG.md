@@ -34,7 +34,7 @@ Defaults are stored separately from authentication:
 | `tool_stream` | bool | `true` | Stream tool calls |
 | `response_format` | object/null | `null` | Structured response format |
 
-`provider.model_profiles` supports `subagent`, `fallback`, `reviewer`, `judge`, and `refiner`. Role objects can override `provider`, `model`, `reasoning_effort`, and request options. Omitted fields inherit the main model. String-valued role settings and a `main` role are not accepted. The main model uses the default fields.
+`provider.model_profiles` supports `subagent`, `reviewer`, `judge`, and `refiner`. Role objects can override `provider`, `model`, `reasoning_effort`, and request options. Omitted fields inherit the main model. String-valued role settings and a `main` role are not accepted. The main model uses the default fields.
 
 Credentials first use the selected provider's stored authentication, then its dedicated environment variable or `.env`. Keys are not borrowed from other providers. See the [configuration guide](docs/guide/configuration.md) for complete examples.
 

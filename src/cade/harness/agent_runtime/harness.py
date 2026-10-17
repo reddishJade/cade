@@ -50,7 +50,6 @@ from .events import (
     _StreamTranslationState,
     translate_event,
 )
-from .fallback import FallbackWithRetryPrimary
 from .message_codec import messages_from_run_state
 from .result import (
     AgentHarnessResult,
@@ -113,7 +112,7 @@ class AgentHarness:
     ) -> None:
         self._composition_lock = Lock()
         self._composition = composition
-        self._provider = _provider_for(composition)
+        self._provider = composition.primary_provider
         gate = composition.gate
         gate_runtime = runtime.gate
         self.project_root = runtime.project_root
@@ -350,7 +349,7 @@ class AgentHarness:
                 raise RuntimeError("cannot replace composition during an active run")
             composition = self._composition.with_primary_provider(provider)
             self._composition = composition
-            self._provider = _provider_for(composition)
+            self._provider = composition.primary_provider
         return composition.generation_id
 
     def replace_permission_policy(self, policy: PermissionPolicy | None) -> str:
@@ -740,10 +739,3 @@ def _turn_text(messages: list[AgentMessage]) -> str:
             if isinstance(block, TextContent) and block.text
         )
     return "\n\n".join(parts)
-
-
-def _provider_for(composition: AgentComposition) -> ModelProvider:
-    fallback = composition.fallback_provider
-    if fallback is None:
-        return composition.primary_provider
-    return FallbackWithRetryPrimary(composition.primary_provider, fallback)

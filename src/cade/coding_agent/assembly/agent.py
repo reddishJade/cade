@@ -116,7 +116,7 @@ def build_agent(
     context_window_controller: ContextWindowController | None = None,
     cancellation_token: CancellationToken | None = None,
     context_rollover: ContextWindowRollover | None = None,
-    fallback_provider: ModelProvider | None = None,
+    judge_provider: ModelProvider | None = None,
     hook_constraint_providers: tuple[PolicyEvaluator, ...] = (),
     skill_registry: SkillRegistry | None = None,
     external_hook_runner: ExternalHookRunner | None = None,
@@ -211,7 +211,6 @@ def build_agent(
     )
     composition = AgentComposition.create(
         primary_provider=llm,
-        fallback_provider=fallback_provider,
         registry=registry,
         config=config,
         gate=gate,
@@ -224,6 +223,7 @@ def build_agent(
 
     return CodingAgentHarness(
         composition=composition,
+        judge_provider=judge_provider,
         runtime=CodingAgentRuntimeConfig(
             initial_mode=runtime_config.execution_modes.default_mode,
             approval_router=runtime_config.security.approval_router,

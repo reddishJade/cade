@@ -43,7 +43,6 @@ HookFailurePolicy = Literal["ignore", "warn", "fail"]
 
 PROFILE_MAIN = "main"
 PROFILE_SUBAGENT = "subagent"
-PROFILE_FALLBACK = "fallback"
 DEFAULT_PROMPT_MODULES: tuple[str, ...] = (
     "identity",
     "tool_discipline",
@@ -113,7 +112,7 @@ class ProviderRuntimeConfig(BaseModel):
         default_factory=ModelOptionsRuntimeConfig
     )
     model_profiles: dict[
-        Literal["subagent", "fallback", "reviewer", "judge", "refiner"],
+        Literal["subagent", "reviewer", "judge", "refiner"],
         ModelProfileRuntimeConfig,
     ] = Field(default_factory=dict)
 

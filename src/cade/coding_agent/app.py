@@ -187,8 +187,7 @@ class CadeApp:
         return resolved_model
 
     def get_model_info(self) -> dict[str, str]:
-        provider = self.agent.provider
-        active = getattr(provider, "active_provider", provider)
+        active = self.agent.provider
         active_profile = next(
             (
                 config
@@ -434,7 +433,6 @@ def build_app(
         auto_approval_callback = auto_reviewer
         closers = (*closers, auto_reviewer.close)
 
-    fallback_provider = providers.llms.get("fallback")
     agent = build_agent(
         project_root=project_root,
         llm=providers.llm,
@@ -448,7 +446,11 @@ def build_app(
         context_rollover=infra.context_rollover,
         context_window_controller=infra.context_window_controller,
         cancellation_token=infra.cancellation_token,
-        fallback_provider=fallback_provider,
+        judge_provider=(
+            providers.llms["judge"]
+            if "judge" in cfg.runtime_config.provider.model_profiles
+            else None
+        ),
         skill_registry=skill_registry,
         external_hook_runner=external_hook_runner,
         session_history=infra.session_history,

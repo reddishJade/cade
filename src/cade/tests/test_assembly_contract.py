@@ -386,7 +386,6 @@ class TestHarnessWorkingDirectoryContract:
         )
         composition = AgentComposition.create(
             primary_provider=provider,
-            fallback_provider=None,
             registry=(),
             config=CadeRuntimeConfig().agent,
             gate=GateConfig(),
@@ -408,3 +407,152 @@ class TestHarnessWorkingDirectoryContract:
         assert collector_inputs[0].project_root is None
         assert collector_inputs[0].cwd == host_cwd
         assert Path.cwd() == host_cwd
+
+
+class _GoalRoutingProvider(_WorkingDirectoryProvider):
+    """根据请求类型返回主任务或 Goal 验收结果。"""
+
+    def __init__(self, model: str) -> None:
+        super().__init__(call_bash=False)
+        self._model = model
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        options: StreamOptions | None = None,
+        **kwargs: object,
+    ) -> AsyncIterator[ProviderEvent]:
+        self.requests.append((list(messages), list(tools)))
+        is_judgment = any(
+            message.get("role") == "user"
+            and "Has this stop condition been satisfied?" in str(message.get("content"))
+            for message in messages
+        )
+        if is_judgment:
+            yield FinalMessage(
+                content='{"ok": true, "reason": "Completion verified."}',
+                stop_reason="end_turn",
+            )
+        else:
+            yield FinalMessage(content="Task finished.", stop_reason="end_turn")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("configured_judge", "switch_main"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+async def test_goal_uses_configured_judge_or_current_main(
+    configured_judge: bool,
+    switch_main: bool,
+    working_directory_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Goal 验收使用显式 judge；省略时跟随主模型切换。"""
+    main = _GoalRoutingProvider("gpt-4o-mini")
+    judge = _GoalRoutingProvider("gpt-4o")
+    switched = _GoalRoutingProvider("gpt-4.1-mini")
+    profiles = {
+        "main": ModelProfileConfig(chat_model=main.model),
+        "subagent": ModelProfileConfig(chat_model=main.model),
+        "judge": ModelProfileConfig(chat_model=judge.model),
+    }
+    bundle = ProviderBundle(
+        llm=main,
+        llms={"main": main, "subagent": main, "judge": judge},
+    )
+    monkeypatch.setattr(app_module, "resolve_model_profiles", lambda *_args: profiles)
+    monkeypatch.setattr(app_module, "build_provider_bundle", lambda _settings: bundle)
+    config = CadeRuntimeConfig.model_validate(
+        {"provider": {"model_profiles": {"judge": {"model": judge.model}}}}
+        if configured_judge
+        else {}
+    )
+    root = working_directory_root / "judge-workspace"
+    root.mkdir()
+    app = build_app(
+        project_root=root,
+        runtime_config=config,
+        sessions_dir=working_directory_root / "sessions",
+    )
+    try:
+        if switch_main:
+            app.agent.replace_primary_provider(switched)
+        app.agent.set_goal("Task finished.")
+        await app.agent.run_async("Finish the task.")
+        assert app.agent.goal_condition is None
+    finally:
+        app.close()
+
+    active_main = switched if switch_main else main
+    assert len(active_main.requests) == (1 if configured_judge else 2)
+    assert len(judge.requests) == (1 if configured_judge else 0)
+    assert len(main.requests) == (0 if switch_main else 1 if configured_judge else 2)
+    if switch_main:
+        assert len(switched.requests) == (1 if configured_judge else 2)
+
+
+class _UnauthorizedModelError(RuntimeError):
+    status_code = 401
+
+
+class _FailingSelectedProvider(_WorkingDirectoryProvider):
+    """在每次模型请求中模拟不可重试的鉴权失败。"""
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition],
+        options: StreamOptions | None = None,
+        **kwargs: object,
+    ) -> AsyncIterator[ProviderEvent]:
+        self.requests.append((list(messages), list(tools)))
+        yield TextDelta(chunk="")
+        raise _UnauthorizedModelError("Selected model authentication failed")
+
+
+def test_config_rejects_automatic_model_fallback() -> None:
+    """移除的辅助模型角色必须在配置加载时明确报错。"""
+    with pytest.raises(ValueError, match="fallback"):
+        CadeRuntimeConfig.model_validate(
+            {"provider": {"model_profiles": {"fallback": {"model": "other-model"}}}}
+        )
+
+
+@pytest.mark.asyncio
+async def test_failed_main_model_never_uses_backup_provider(
+    working_directory_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """连续模型失败保持所选 Provider，禁止隐式模型切换。"""
+    selected = _FailingSelectedProvider(call_bash=False)
+    unused = _WorkingDirectoryProvider(call_bash=False)
+    profiles = {
+        "main": ModelProfileConfig(chat_model=selected.model),
+        "subagent": ModelProfileConfig(chat_model=selected.model),
+    }
+    bundle = ProviderBundle(
+        llm=selected,
+        llms={"main": selected, "subagent": selected, "fallback": unused},
+    )
+    monkeypatch.setattr(app_module, "resolve_model_profiles", lambda *_args: profiles)
+    monkeypatch.setattr(app_module, "build_provider_bundle", lambda _settings: bundle)
+
+    root = working_directory_root / "no-model-fallback"
+    root.mkdir()
+    app = build_app(
+        project_root=root,
+        runtime_config=CadeRuntimeConfig(),
+        sessions_dir=working_directory_root / "sessions",
+    )
+    try:
+        assert app.agent.provider is selected
+        for attempt in range(4):
+            await app.agent.run_async(f"Request {attempt}")
+            assert app.agent.provider is selected
+    finally:
+        app.close()
+
+    assert len(selected.requests) == 4
+    assert unused.requests == []

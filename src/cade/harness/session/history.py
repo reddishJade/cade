@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from cade.agent.types import ToolInput, ToolSpec
@@ -13,47 +13,16 @@ from cade.agent.types import ToolInput, ToolSpec
 from .artifacts import resolve_history_event_content
 from .schema import SESSION_EVENT_SCHEMA_VERSION
 from .store import build_session_branch, read_session_entries
+from .types import SessionEntry
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-
-
-@dataclass(frozen=True)
-class HistoryEntry:
-    """用于召回的一条原始 session 记录。"""
-
-    id: str
-    parent_id: str | None
-    type: str
-    content: object
-    created_at: str
-    artifacts_dir: Path | None = field(default=None, repr=False, compare=False)
-
-    @property
-    def text(self) -> str:
-        claimed = _claimed_display_text(self.content)
-        if claimed is not None:
-            return claimed
-        resolved = resolve_history_event_content(self.content, self.artifacts_dir)
-        if isinstance(resolved, str):
-            return resolved
-        return json.dumps(resolved, ensure_ascii=False, sort_keys=True)
-
-    @property
-    def search_text(self) -> str:
-        """返回不解析外置 artifact 的有界检索文本。"""
-        claimed = _claimed_display_text(self.content)
-        if claimed is not None:
-            return claimed
-        if isinstance(self.content, str):
-            return self.content
-        return json.dumps(self.content, ensure_ascii=False, sort_keys=True)
 
 
 @dataclass(frozen=True)
 class HistoryRead:
     """一条历史记录的可分页原文。"""
 
-    entry: HistoryEntry
+    entry: SessionEntry
     offset: int
     content: str
     total_chars: int
@@ -89,7 +58,7 @@ class SessionHistory:
         self.session_id: str | None = None
         self.project_root = project_root.resolve()
 
-    def get_entry(self, session_id: str, entry_id: str) -> HistoryEntry | None:
+    def get_entry(self, session_id: str, entry_id: str) -> SessionEntry | None:
         """按稳定来源定位 entry，不受当前 head 或会话切换影响。"""
         return next(
             (entry for entry in self._entries(session_id) if entry.id == entry_id),
@@ -108,13 +77,13 @@ class SessionHistory:
         limit: int = 5,
         include_artifacts: bool = False,
         include_derived: bool = False,
-    ) -> list[HistoryEntry]:
+    ) -> list[SessionEntry]:
         """按关键词相关性搜索当前 branch。"""
         terms = _tokens(query)
         if not terms:
             return []
         phrase = query.strip().casefold()
-        scored: list[tuple[int, int, HistoryEntry]] = []
+        scored: list[tuple[int, int, SessionEntry]] = []
         branch = self._branch()
         retrieval_calls = _retrieval_call_ids(branch)
         for index, entry in enumerate(branch):
@@ -122,7 +91,9 @@ class SessionHistory:
                 entry, retrieval_calls
             ):
                 continue
-            text = (entry.text if include_artifacts else entry.search_text).casefold()
+            text = self._entry_text(
+                entry, include_artifacts=include_artifacts
+            ).casefold()
             matches = sum(min(text.count(term), 3) for term in terms)
             if matches == 0:
                 continue
@@ -140,7 +111,7 @@ class SessionHistory:
         before: int = 3,
         after: int | None = None,
         session_id: str | None = None,
-    ) -> list[HistoryEntry]:
+    ) -> list[SessionEntry]:
         """返回指定记录附近的 branch 原文。"""
         if session_id is not None and after is not None:
             raise ValueError(
@@ -187,7 +158,7 @@ class SessionHistory:
         )
         if entry is None:
             return None
-        text = entry.text
+        text = self._entry_text(entry)
         safe_offset = min(max(offset, 0), len(text))
         safe_limit = min(max(max_chars, 1), 20_000)
         return HistoryRead(
@@ -221,7 +192,7 @@ class SessionHistory:
             )
         return windows[-min(max(limit, 1), 100) :]
 
-    def _branch(self) -> list[HistoryEntry]:
+    def _branch(self) -> list[SessionEntry]:
         session_id = self.session_id
         if session_id is None:
             return []
@@ -232,20 +203,9 @@ class SessionHistory:
             if entries and entries[-1].head_id is None
             else None
         )
-        branch = build_session_branch(entries, legacy_head)
-        return [
-            HistoryEntry(
-                id=entry.id,
-                parent_id=entry.parent_id,
-                type=entry.type,
-                content=entry.content,
-                created_at=entry.created_at,
-                artifacts_dir=self.artifacts_dir,
-            )
-            for entry in branch
-        ]
+        return build_session_branch(entries, legacy_head)
 
-    def _entries(self, session_id: str) -> list[HistoryEntry]:
+    def _entries(self, session_id: str) -> list[SessionEntry]:
         """只读取许可目录中的指定会话，并检查 workspace 所属关系。"""
         if not _SESSION_ID.fullmatch(session_id):
             raise ValueError(f"invalid session id: {session_id!r}")
@@ -267,17 +227,23 @@ class SessionHistory:
                 or Path(owner).resolve() != self.project_root
             ):
                 raise ValueError("History session does not belong to this workspace")
-        return [
-            HistoryEntry(
-                id=entry.id,
-                parent_id=entry.parent_id,
-                type=entry.type,
-                content=entry.content,
-                created_at=entry.created_at,
-                artifacts_dir=self.artifacts_dir,
-            )
-            for entry in entries
-        ]
+        return entries
+
+    def _entry_text(
+        self, entry: SessionEntry, *, include_artifacts: bool = True
+    ) -> str:
+        """按需还原 artifact 文本；索引检索只使用有界预览。"""
+        claimed = _claimed_display_text(entry.content)
+        if claimed is not None:
+            return claimed
+        content = (
+            resolve_history_event_content(entry.content, self.artifacts_dir)
+            if include_artifacts
+            else entry.content
+        )
+        if isinstance(content, str):
+            return content
+        return json.dumps(content, ensure_ascii=False, sort_keys=True)
 
     def _head_id(self, session_id: str) -> str | None:
         index_dir = (
@@ -360,7 +326,9 @@ def build_history_tools(history: SessionHistory) -> tuple[ToolSpec, ...]:
             return "No matching history entry."
         return f"[session_id={session_id or history.session_id}]\n" + "\n\n".join(
             _render_entry(
-                entry, query=str(data.get("query", "")) if operation == "search" else ""
+                entry,
+                history._entry_text(entry),
+                query=str(data.get("query", "")) if operation == "search" else "",
             )
             for entry in entries
         )
@@ -439,8 +407,7 @@ def _default_artifacts_dir(sessions_dir: Path) -> Path:
     return sessions_dir / "session_artifacts"
 
 
-def _render_entry(entry: HistoryEntry, *, query: str = "") -> str:
-    content = entry.text
+def _render_entry(entry: SessionEntry, content: str, *, query: str = "") -> str:
     match = re.search(re.escape(query), content, re.IGNORECASE) if query else None
     if match is not None and len(content) > 2000:
         offset = max(0, match.start() - 400)
@@ -481,7 +448,7 @@ def _tokens(text: str) -> tuple[str, ...]:
     )
 
 
-def _retrieval_call_ids(branch: list[HistoryEntry]) -> set[str]:
+def _retrieval_call_ids(branch: list[SessionEntry]) -> set[str]:
     """先识别检索调用，再过滤其回显；不能依赖事件落盘顺序。"""
     calls: set[str] = set()
     for entry in branch:
@@ -494,7 +461,7 @@ def _retrieval_call_ids(branch: list[HistoryEntry]) -> set[str]:
     return calls
 
 
-def _primary_search_entry(entry: HistoryEntry, retrieval_calls: set[str]) -> bool:
+def _primary_search_entry(entry: SessionEntry, retrieval_calls: set[str]) -> bool:
     """搜索默认只召回原始对话和工具事实，派生复制可显式查询。"""
     if entry.type in {"user", "assistant"}:
         return True
@@ -530,7 +497,7 @@ def _primary_search_entry(entry: HistoryEntry, retrieval_calls: set[str]) -> boo
     return kind == "final"
 
 
-def _entry_priority(entry: HistoryEntry) -> int:
+def _entry_priority(entry: SessionEntry) -> int:
     if _claimed_display_text(entry.content) is not None:
         return 20
     if entry.type in {"user", "assistant"}:

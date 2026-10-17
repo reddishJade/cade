@@ -17,9 +17,8 @@ from cade.agent.types import (
     ImageContent,
     ToolOutput,
 )
+from cade.harness.observability.audit import redact_json, redact_text
 from cade.harness.session import JsonValue
-
-from .client import redact_mcp_text
 
 MCP_RESULT_METADATA_KEY = "mcp_result"
 
@@ -80,19 +79,17 @@ def convert_mcp_tool_result(
         )
 
     details = {
-        "content": _redacted_json_value(raw_content),
-        "structuredContent": _redacted_json_value(structured_content),
-        "outputSchema": _redacted_json_value(output_schema),
+        "content": redact_json(raw_content),
+        "structuredContent": redact_json(structured_content),
+        "outputSchema": redact_json(output_schema),
         "validation": {
             "status": validation_status,
             "error": (
-                redact_mcp_text(validation_error)
-                if validation_error is not None
-                else None
+                redact_text(validation_error) if validation_error is not None else None
             ),
         },
         "isError": is_error,
-        "protocolErrors": _redacted_json_value(protocol_errors),
+        "protocolErrors": redact_json(protocol_errors),
     }
     metadata: dict[str, object] = {MCP_RESULT_METADATA_KEY: details}
     if host_blocks:
@@ -100,7 +97,7 @@ def convert_mcp_tool_result(
 
     text = "\n".join(part for part in rendered_parts if part)
     return ToolOutput(
-        redact_mcp_text(text),
+        redact_text(text),
         metadata=metadata,
         is_error=is_error or bool(protocol_errors),
     )
@@ -200,7 +197,7 @@ def _image_block(
         "type": "base64",
         "media_type": mime_type,
         "data": data,
-        "annotations": _redacted_json_value(block.get("annotations")),
+        "annotations": redact_json(block.get("annotations")),
     }
     return (
         f"[MCP image content: {mime_type}; data preserved in structured result]",
@@ -226,7 +223,7 @@ def _audio_block(
     source = {
         "type": "base64",
         "media_type": mime_type,
-        "annotations": _redacted_json_value(block.get("annotations")),
+        "annotations": redact_json(block.get("annotations")),
     }
     return (
         f"[MCP audio content: {mime_type}; data preserved as file content]",
@@ -254,14 +251,14 @@ def _resource_link_block(
         )
         return rendered, None, error
     mime_type = block.get("mimeType")
-    redacted_uri = redact_mcp_text(uri)
-    redacted_name = redact_mcp_text(name)
+    redacted_uri = redact_text(uri)
+    redacted_name = redact_text(name)
     source = {
         "type": "url",
         "url": redacted_uri,
         "media_type": mime_type if isinstance(mime_type, str) else None,
-        "annotations": _redacted_json_value(block.get("annotations")),
-        "description": _redacted_json_value(block.get("description")),
+        "annotations": redact_json(block.get("annotations")),
+        "description": redact_json(block.get("description")),
     }
     return (
         f"[MCP resource link: {redacted_name} ({redacted_uri})]",
@@ -300,7 +297,7 @@ def _embedded_resource_block(
     text = normalized.get("text")
     blob = normalized.get("blob")
     if isinstance(text, str):
-        data = redact_mcp_text(text)
+        data = redact_text(text)
         source_type = "text"
     elif isinstance(blob, str):
         data = blob
@@ -314,12 +311,12 @@ def _embedded_resource_block(
         return rendered, None, error
 
     mime_type = normalized.get("mimeType")
-    redacted_uri = redact_mcp_text(uri)
+    redacted_uri = redact_text(uri)
     source = {
         "type": source_type,
         "uri": redacted_uri,
         "media_type": mime_type if isinstance(mime_type, str) else None,
-        "annotations": _redacted_json_value(normalized.get("annotations")),
+        "annotations": redact_json(normalized.get("annotations")),
     }
     return (
         f"[MCP embedded resource: {redacted_uri}]",
@@ -342,7 +339,7 @@ def _unsupported_block(
     diagnostic = {
         "index": index,
         "reason": reason,
-        "block": _redacted_json_value(block),
+        "block": redact_json(block),
     }
     rendered = json.dumps(diagnostic, ensure_ascii=False, sort_keys=True)
     return f"[unsupported MCP content block] {rendered}", None, reason
@@ -353,16 +350,3 @@ def _filename_from_uri(uri: str) -> str:
     path = urlparse(uri).path
     name = PurePosixPath(path).name
     return name or uri
-
-
-def _redacted_json_value(value: object) -> object:
-    """递归脱敏可进入宿主详情模型的 JSON 值。"""
-    if isinstance(value, str):
-        return redact_mcp_text(value)
-    if value is None or isinstance(value, int | float | bool):
-        return value
-    if isinstance(value, list | tuple):
-        return [_redacted_json_value(item) for item in value]
-    if isinstance(value, Mapping):
-        return {str(key): _redacted_json_value(item) for key, item in value.items()}
-    return redact_mcp_text(str(value))

@@ -1,6 +1,5 @@
 from .history import (
     ContextWindowRecord,
-    HistoryEntry,
     HistoryRead,
     SessionHistory,
     build_history_tools,
@@ -12,7 +11,6 @@ from .types import JsonValue, SessionEntry, SessionInfoView, TreeNode
 
 __all__ = [
     "ContextWindowRecord",
-    "HistoryEntry",
     "HistoryRead",
     "InboxLane",
     "JsonValue",

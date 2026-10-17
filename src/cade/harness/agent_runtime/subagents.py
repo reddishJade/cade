@@ -81,21 +81,18 @@ class SubagentSessionManager:
         self,
         *,
         provider: ModelProvider,
-        coding_tools: tuple[ToolSpec, ...],
-        research_tools: tuple[ToolSpec, ...],
+        tools: tuple[ToolSpec, ...],
         system_prompts: Mapping[str, str],
         parent_store: SessionStore,
     ) -> None:
         self._provider = provider
-        self._coding_tools = coding_tools
-        self._research_tools = research_tools
+        self._tools = tools
         self._system_prompts = dict(system_prompts)
         self._parent_store = parent_store
         self._composition_provider: Callable[[], AgentComposition] | None = None
         self._parent_gate: ToolGate | None = None
         self._parent_cancellation: CancellationToken | None = None
         self._activations: dict[str, _ChildActivation] = {}
-        self._owned_children: dict[str, set[str]] = {}
         self._lock = RLock()
         self._closed = False
         self._closing = False
@@ -287,17 +284,16 @@ class SubagentSessionManager:
         parent_composition = composition_provider()
         with self._lock:
             provider = self._provider
-        registry = self._registry_for(
-            subagent_type,
-            allowed_names=(descriptor.tool_names if descriptor is not None else None),
-        )
+        registry = self._tools
+        if descriptor is not None:
+            allowed = frozenset(descriptor.tool_names)
+            registry = tuple(tool for tool in registry if tool.name in allowed)
         system_prompt = self._system_prompts.get(
             subagent_type,
             self._system_prompts["default"],
         )
         composition = AgentComposition.create(
             primary_provider=provider,
-            fallback_provider=None,
             registry=registry,
             config=parent_composition.config,
             gate=parent_composition.gate,
@@ -483,27 +479,10 @@ class SubagentSessionManager:
             error=error,
         )
 
-    def _registry_for(
-        self,
-        subagent_type: str,
-        allowed_names: tuple[str, ...] | None = None,
-    ) -> tuple[ToolSpec, ...]:
-        registry = (
-            self._coding_tools if subagent_type == "coding" else self._research_tools
-        )
-        if allowed_names is None:
-            return registry
-        allowed = frozenset(allowed_names)
-        return tuple(tool for tool in registry if tool.name in allowed)
-
     def _register_activation(self, activation: _ChildActivation) -> None:
         descriptor = activation.descriptor
         with self._lock:
             self._activations[descriptor.child_session_id] = activation
-            self._owned_children.setdefault(
-                descriptor.parent_session_id,
-                set(),
-            ).add(descriptor.child_session_id)
         activation.recorder.record_subagent_activation(
             SubagentActivationEvent(
                 child_session_id=descriptor.child_session_id,
@@ -524,11 +503,6 @@ class SubagentSessionManager:
             if current is not activation:
                 return
             self._activations.pop(descriptor.child_session_id, None)
-            owned = self._owned_children.get(descriptor.parent_session_id)
-            if owned is not None:
-                owned.discard(descriptor.child_session_id)
-                if not owned:
-                    self._owned_children.pop(descriptor.parent_session_id, None)
         activation.recorder.record_subagent_activation(
             SubagentActivationEvent(
                 child_session_id=descriptor.child_session_id,

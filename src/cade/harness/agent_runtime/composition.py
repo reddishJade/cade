@@ -23,7 +23,6 @@ class AgentComposition:
 
     generation_id: str
     primary_provider: ModelProvider
-    fallback_provider: ModelProvider | None
     registry: tuple[ToolSpec, ...]
     config: AgentConfig
     gate: GateConfig
@@ -35,7 +34,6 @@ class AgentComposition:
         cls,
         *,
         primary_provider: ModelProvider,
-        fallback_provider: ModelProvider | None,
         registry: tuple[ToolSpec, ...],
         config: AgentConfig,
         gate: GateConfig,
@@ -46,7 +44,6 @@ class AgentComposition:
         return cls(
             generation_id=uuid4().hex,
             primary_provider=primary_provider,
-            fallback_provider=fallback_provider,
             registry=_freeze_registry(registry),
             config=config.model_copy(deep=True),
             gate=_freeze_gate(gate),
