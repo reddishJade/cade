@@ -14,6 +14,8 @@ import pytest
 from cade.agent.request import DefaultRequestAssembler
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, Message, ProviderEvent, ToolCall, ToolCallEvent
+from cade.ai.providers.base import Provider
+from cade.ai.usage import UsageTotals
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.coding_agent.execution_modes import (
     ExecutionModeState,
@@ -28,16 +30,27 @@ from cade.harness.config import AgentConfig
 from cade.harness.session import SessionInbox, SessionStore
 
 
-class _TenStepProvider:
+class _TenStepProvider(Provider):
     """每次发送唯一 read 调用，十次后结束；记录模型调用时的实际模式。"""
 
-    model = "mock-read-provider"
-    context_window = 32_000
-
     def __init__(self) -> None:
+        super().__init__()
+        self._model = "gpt-4o-mini"
+        self._base_url = "https://provider.invalid"
+        self._transport = "openai_chat"
+        self._thinking = False
+        self._context_window = 32_000
         self.calls = 0
         self.modes: list[str] = []
         self.current_mode: Callable[[], str] = lambda: "plan"
+
+    @property
+    def usage_totals(self) -> UsageTotals:
+        return UsageTotals()
+
+    @property
+    def cache_hit_rate(self) -> float | None:
+        return None
 
     async def stream(
         self,
