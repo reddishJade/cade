@@ -9,6 +9,7 @@ from cade.agent.messages import AssistantMessage
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent
 from cade.coding_agent.execution_modes import ExecutionModeState
 from cade.harness.agent_runtime.tool_gate import ToolGate
+from cade.harness.security.permission_model import ApprovalResult
 from cade.harness.security.permissions import PermissionEngineResult
 
 
@@ -37,6 +38,7 @@ def test_same_call_id_interleaved_approvals_keep_independent_audits(
             decision="allow",
             blocked=False,
             source=str(args["tag"]),
+            approval_result=ApprovalResult(decision="allow", scope="once"),
             metadata={
                 "approval_reviewer": "auto_review",
                 "approval_decision": "allow",
