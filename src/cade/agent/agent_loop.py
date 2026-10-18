@@ -12,7 +12,7 @@ Cade 的类型化 Agent 循环。模块本身不持有运行状态。
   内层循环：换窗 → 模型调用 → 错误重试 → max_tokens 续写
     → stream_assistant_response()
     → execute_tool_calls()（按 execution_mode 串行/并行）
-    → watchdog 检查 → prepare_next_turn / should_stop_after_turn
+    → watchdog 检查 → should_stop_after_turn
 """
 
 from __future__ import annotations
@@ -368,12 +368,6 @@ async def _run_loop(
                 termination_reason=TerminationReason.WATCHDOG,
                 watchdog_reason=idle_watchdog_reason,
             )
-
-        # ── prepare_next_turn 钩子 ──
-        if config.prepare_next_turn:
-            update = config.prepare_next_turn()
-            if update and update.context:
-                current_context = update.context
 
         # ── should_stop_after_turn 钩子 ──
         if config.should_stop_after_turn:
