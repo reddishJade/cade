@@ -360,9 +360,10 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleared() -> (
-    None
-):
+@pytest.mark.parametrize("retry_first", [False, True])
+async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleared(
+    retry_first: bool,
+) -> None:
     """覆盖缺口：临时快照会从下一次真实循环请求中消失。
 
     运行本模块；受控 provider 可先失败一次再完成。独立比较请求字节前缀和
@@ -381,6 +382,9 @@ async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleare
             **kwargs: object,
         ) -> AsyncIterator[ProviderEvent]:
             self.requests.append(messages)
+            if retry_first and len(self.requests) == 1:
+                yield FinalMessage("Temporary provider error", "error")
+                return
             yield FinalMessage("ACK", "end_turn")
 
     old = ContextBlock(
@@ -400,6 +404,7 @@ async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleare
         provider=provider,
         request_assembler=DefaultRequestAssembler(context_collectors=selected.freeze()),
         rollover_context=ContextWindowRollover().rollover_messages,
+        retry_backoff_base=0,
     )
     for step, blocks in enumerate(([old], [old], [current], [], []), start=1):
         selected.blocks = blocks
@@ -420,6 +425,10 @@ async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleare
             assert wire_message_bytes(provider.requests[-1][: len(previous)]) == (
                 wire_message_bytes(previous)
             )
+    if retry_first:
+        assert wire_message_bytes(provider.requests[0]) == wire_message_bytes(
+            provider.requests[1]
+        )
     assert old.content in contexts[0].content
     assert current.content in contexts[1].content
     assert "supersedes earlier" in contexts[1].content

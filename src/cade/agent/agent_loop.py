@@ -689,6 +689,7 @@ async def _run_inner_loop(
                 message, state.step_retries, config, emit
             )
             if should_retry:
+                prepared_assembly = None
                 continue
             if fallback_message is not None:
                 context.messages.append(fallback_message)
