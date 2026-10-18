@@ -488,8 +488,9 @@ class SessionStore:
                     and assistant_text is None
                 ):
                     data = e.content.get("data")
-                    if isinstance(data, dict) and isinstance(data.get("answer"), str):
-                        assistant_text = _collapse_text(data["answer"])
+                    answer = data.get("answer") if isinstance(data, dict) else None
+                    if isinstance(answer, str):
+                        assistant_text = _collapse_text(answer)
             summary = (
                 _make_conversation_summary(user_text, assistant_text)
                 if user_text
