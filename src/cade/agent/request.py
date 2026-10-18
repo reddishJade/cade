@@ -156,13 +156,14 @@ class DefaultRequestAssembler:
         admission_budget = (
             policy.admission_target if policy and token_budget > 0 else token_budget
         )
-        context.messages[:] = context.context_manager.normalize_messages(
-            context.messages
-        )
-        context_blocks = self._collect(context, list(context.messages))
+        # Request preparation must not rewrite persisted or running session facts.
+        # Repair malformed tool pairs in a local projection only.
+        effective_messages = context.context_manager.normalize_messages(context.messages)
+        effective_context = context.model_copy(update={"messages": effective_messages})
+        context_blocks = self._collect(effective_context, list(effective_messages))
         base_messages = [
             *context.request_prefix,
-            *context.messages,
+            *effective_messages,
         ]
         obsolete_ids = superseded_state_ids(base_messages)
         protected_ids = current_durable_ids(base_messages) | frozenset(
@@ -188,7 +189,7 @@ class DefaultRequestAssembler:
             )
             evidence_omitted = tuple(dict.fromkeys((*evidence_omitted, *omitted)))
         tool_definitions = _tools_to_definitions(context.tools)
-        source_digests = history_fingerprints(context.messages)
+        source_digests = history_fingerprints(effective_messages)
         local_tokens = 0
         estimate_source = "local"
 
@@ -332,7 +333,7 @@ class DefaultRequestAssembler:
         )
         mandatory_messages = [
             *context.request_prefix,
-            *mandatory_history(context.messages, protected_ids),
+            *mandatory_history(effective_messages, protected_ids),
             *[
                 SystemMessage(content=b.content)
                 if b.target == ContextBlockTarget.SYSTEM
@@ -354,7 +355,7 @@ class DefaultRequestAssembler:
         if policy is not None:
             if token_budget > 0 and mandatory_tokens > token_budget:
                 rotation_blocked_reason = "mandatory_input_exceeds_budget"
-            elif not policy.can_reclaim_history(context.messages, protected_ids):
+            elif not policy.can_reclaim_history(effective_messages, protected_ids):
                 rotation_blocked_reason = "no_reclaimable_history"
         messages = result.messages
         assembly_error = None
@@ -390,14 +391,14 @@ class DefaultRequestAssembler:
             rotation_blocked_reason=rotation_blocked_reason,
             mandatory_estimated_tokens=mandatory_tokens,
             source_message_digests=(
-                history_fingerprints([*context.messages, result.context_message])
+                history_fingerprints([*effective_messages, result.context_message])
                 if result.context_message is not None
                 else source_digests
             ),
             working_omitted=working_omitted,
             assembly_error=assembly_error,
             context_snapshot=_context_snapshot(
-                context,
+                effective_context,
                 result.messages,
                 result.blocks_used,
                 protected_ids,
