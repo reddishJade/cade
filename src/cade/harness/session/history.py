@@ -11,7 +11,7 @@ from pathlib import Path
 from cade.agent.types import ToolInput, ToolSpec
 
 from .artifacts import resolve_history_event_content
-from .schema import SESSION_EVENT_SCHEMA_VERSION
+from .schema import supports_session_event_schema
 from .store import build_session_branch, read_session_entries
 from .types import SessionEntry
 
@@ -518,7 +518,7 @@ def _claimed_display_text(content: object) -> str | None:
     """从 inbox claim 提取适合召回和展示的用户原文。"""
     if not isinstance(content, dict) or content.get("type") != "inbox/claimed":
         return None
-    if content.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION:
+    if not supports_session_event_schema(content.get("schema_version")):
         return None
     data = content.get("data")
     if not isinstance(data, dict):

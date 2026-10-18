@@ -8,6 +8,7 @@ from typing import Any
 from ...agent.messages import (
     AgentMessage,
     AssistantMessage,
+    ContextMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
@@ -42,6 +43,8 @@ def _message_from_provider_dict(item: dict[str, Any]) -> AgentMessage | None:
     """恢复单条 provider 消息。"""
     role = str(item.get("role", ""))
     content = item.get("content", "")
+    if role == "context":
+        return ContextMessage.model_validate(item)
     if role == "system":
         return SystemMessage(content=_content_to_text(content))
     if role == "user":

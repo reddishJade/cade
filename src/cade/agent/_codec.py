@@ -9,6 +9,7 @@ import orjson
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
+    ContextMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
@@ -36,7 +37,7 @@ def _convert_one(m: AgentMessage) -> dict[str, Any]:
     if isinstance(m, SystemMessage):
         return {"role": "system", "content": str(m.content)}
 
-    if isinstance(m, UserMessage):
+    if isinstance(m, UserMessage | ContextMessage):
         return {"role": "user", "content": m.content}
 
     if isinstance(m, AssistantMessage):

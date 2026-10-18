@@ -49,7 +49,7 @@ Budgets use tokens. The physical context window comes from model metadata, `prov
 | `agent.rollover_trigger_ratio` | `0.95` | Trigger cap as a fraction of the physical window, bounded by the effective input budget |
 | `agent.reserve_tokens` | `16384` | Output reserve, also sent as an output limit on supported transports |
 | `agent.headroom_tokens` | `null` | Automatic margin: 2% of the physical window, capped at 8192; 1024 if the window is unknown |
-| `agent.evidence_token_budget` | `null` | Automatic tool evidence quota: the smaller of 32000 and the effective input budget; 32000 if the window is unknown |
+| `agent.evidence_token_budget` | `null` | Stable per-tool-result admission limit: the smaller of 32000 and the effective input budget; 32000 if the window is unknown. This does not cap the combined tool history. |
 | `agent.working_set_token_budget` | `null` | Automatic recent-interaction quota: the smaller of 4096 and one-quarter of the input budget; 4096 if the window is unknown; zero disables this quota |
 | `agent.next_turn_input_tokens` | `1024` | Reserve for new calls and evidence, capped at one-eighth of the trigger budget |
 | `agent.tool_workers` | `4` | Maximum concurrency for tool batches declared parallel |

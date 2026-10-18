@@ -40,12 +40,13 @@ from cade.agent.context import ContextBlockTarget
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
+    ContextMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
 )
 from cade.agent.types import TextContent, ToolCallContent
-from cade.ai.events import Message, ProviderEvent
+from cade.ai.events import FinalMessage, Message, ProviderEvent
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.harness.agent_runtime.context_window import ContextWindowRollover
 from cade.harness.agent_runtime.result import build_structured_result
@@ -193,8 +194,8 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
     uv run --locked pytest -q \
         src/cade/tests/test_context_contract.py::test_dynamic_user_context_stays_after_retained_history
 
-    预期：目录和历史前缀逐字节不变。NOTES、RECENT_VALIDATION 只保留最新值，
-    并位于完整工具结果之后。原始历史和快照来源保持不变。
+    预期：目录和历史前缀逐字节不变。所选事实完整进入一条待提交快照，
+    位于完整工具结果之后。组装不修改原始历史或快照来源。
     """
     system_context = ContextBlock(
         source=ContextBlockSource.ENVIRONMENT,
@@ -332,24 +333,21 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
     stale_validation_text = "[recent_validation]\nOld validation snapshot"
     latest_notes_text = "[notes]\nCurrent request note snapshot"
     latest_validation_text = "[recent_validation]\nCurrent validation snapshot"
-    assert second_wire[-2]["content"] == stale_notes_text
-    assert second_wire[-1]["content"] == stale_validation_text
-    assert third_wire[-2]["content"] == latest_notes_text
-    assert third_wire[-1]["content"] == latest_validation_text
+    assert second.context_message is not None
+    assert third.context_message is not None
+    assert stale_notes_text in second_wire[-1]["content"]
+    assert stale_validation_text in second_wire[-1]["content"]
+    assert latest_notes_text in third_wire[-1]["content"]
+    assert latest_validation_text in third_wire[-1]["content"]
     assert sum(message.get("content") == skill_text for message in third_wire) == 1
-    assert (
-        sum(message.get("content") == latest_notes_text for message in third_wire) == 1
-    )
-    assert (
-        sum(message.get("content") == latest_validation_text for message in third_wire)
-        == 1
-    )
+    assert third.context_message.content.count(latest_notes_text) == 1
+    assert third.context_message.content.count(latest_validation_text) == 1
     assert all(
         stale not in str(message)
         for message in third_wire
         for stale in (stale_notes_text, stale_validation_text)
     )
-    assert third_wire[-2]["role"] == third_wire[-1]["role"] == "user"
+    assert second_wire[-1]["role"] == third_wire[-1]["role"] == "user"
     note_trace = next(trace for trace in third.context_trace if trace.source == "notes")
     validation_trace = next(
         trace for trace in third.context_trace if trace.source == "recent_validation"
@@ -359,6 +357,172 @@ def test_dynamic_user_context_stays_after_retained_history() -> None:
     assert tuple(message.model_dump_json() for message in context.messages) == (
         original_messages
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleared() -> (
+    None
+):
+    """覆盖缺口：临时快照会从下一次真实循环请求中消失。
+
+    运行本模块；受控 provider 可先失败一次再完成。独立比较请求字节前缀和
+    事实消息数，验证重试、变化、去重及删除，不推断服务缓存命中率。
+    """
+
+    class Provider:
+        def __init__(self) -> None:
+            self.requests: list[list[Message]] = []
+
+        async def stream(
+            self,
+            messages: list[Message],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            self.requests.append(messages)
+            yield FinalMessage("ACK", "end_turn")
+
+    old = ContextBlock(
+        source=ContextBlockSource.RECENT_VALIDATION,
+        priority=ContextPriority.CONTEXT,
+        content="Previous validation passed.",
+    )
+    current = ContextBlock(
+        source=ContextBlockSource.RECENT_VALIDATION,
+        priority=ContextPriority.CONTEXT,
+        content="Current validation failed.",
+    )
+    selected = SelectedContext([old])
+    provider = Provider()
+    manager = ContextManager()
+    config = AgentLoopConfig(
+        provider=provider,
+        request_assembler=DefaultRequestAssembler(context_collectors=selected.freeze()),
+        rollover_context=ContextWindowRollover().rollover_messages,
+    )
+    for step, blocks in enumerate(([old], [old], [current], [], []), start=1):
+        selected.blocks = blocks
+        result = await collect_loop_result(
+            [UserMessage(content=f"Task {step}")],
+            AgentContext(
+                messages=manager.history_messages(),
+                context_manager=manager,
+                context_policy=policy(64_000),
+            ),
+            config,
+        )
+        assert result.termination_reason == TerminationReason.COMPLETED
+        contexts = [m for m in result.surface if isinstance(m, ContextMessage)]
+        assert len(contexts) == (1, 1, 2, 3, 3)[step - 1]
+        if step > 1:
+            previous = provider.requests[-2]
+            assert wire_message_bytes(provider.requests[-1][: len(previous)]) == (
+                wire_message_bytes(previous)
+            )
+    assert old.content in contexts[0].content
+    assert current.content in contexts[1].content
+    assert "supersedes earlier" in contexts[1].content
+    assert "no longer apply" in contexts[2].content
+    assert "Previous validation passed." in str(provider.requests[-1])
+    assert "Current validation failed." in str(provider.requests[-1])
+
+
+def test_tool_evidence_prefix_is_stable_when_new_results_arrive() -> None:
+    """覆盖滚动配额改写旧正文的缺口；新结果不能改变已准入的请求前缀。"""
+    context = AgentContext(
+        messages=[UserMessage(content="Task"), *tool_group("old", "OLD " * 500)],
+        context_policy=ContextPolicy(
+            physical_window=10_000,
+            output_reserve=0,
+            headroom_tokens=0,
+            evidence_token_budget=600,
+            next_turn_input_tokens=0,
+        ),
+    )
+    assembler = DefaultRequestAssembler()
+    first = assembler.assemble(context, current_step=1, options=None)
+    first.require_sendable()
+    context.messages.extend(tool_group("new", "NEW " * 500))
+    original = [message.model_dump() for message in context.messages]
+    second = assembler.assemble(context, current_step=2, options=None)
+    second.require_sendable()
+
+    assert wire_message_bytes(second.wire_messages[: len(first.wire_messages)]) == (
+        wire_message_bytes(first.wire_messages)
+    )
+    results = [m for m in second.messages if isinstance(m, ToolResultMessage)]
+    assert all("Preview is incomplete" in str(message.content) for message in results)
+    assert "OLD" in str(results[0].content) and "NEW" in str(results[1].content)
+    assert [message.model_dump() for message in context.messages] == original
+    assert second.estimated_tokens < second.context_policy.admission_target
+
+
+def test_explicit_evidence_reclamation_still_prioritizes_recent_results() -> None:
+    """窗口压力仍可回收旧正文；稳定准入不能绕过显式回收预算。"""
+    history = [*tool_group("old", "OLD " * 500), *tool_group("new", "NEW " * 500)]
+    projected, omitted = policy().project_evidence(history, token_budget=600)
+    results = [
+        message for message in projected if isinstance(message, ToolResultMessage)
+    ]
+    assert omitted == ("old", "new")
+    assert "OLD" not in str(results[0].content)
+    assert "NEW" in str(results[1].content)
+    assert "OLD" in str(history[1].content)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("automatic_rollover", [False, True])
+async def test_window_pressure_rotates_before_rewriting_cached_evidence(
+    automatic_rollover: bool,
+) -> None:
+    """回收能掩盖总窗口压力；自动换窗必须按回收前预测触发一次。"""
+
+    class Provider:
+        def __init__(self) -> None:
+            self.requests: list[list[Message]] = []
+
+        async def stream(
+            self,
+            messages: list[Message],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            self.requests.append(messages)
+            yield FinalMessage("ACK", "end_turn")
+
+    provider = Provider()
+    context = AgentContext(
+        messages=[
+            UserMessage(content="Completed task " * 2000),
+            AssistantMessage(content=[TextContent(text="Completed answer " * 2000)]),
+            UserMessage(content="Current task"),
+            *tool_group("old", "Old evidence " * 1000),
+            *tool_group("current", "Current evidence " * 1000),
+        ]
+    )
+    context_policy = ContextPolicy(
+        physical_window=8192,
+        output_reserve=0,
+        headroom_tokens=0,
+        next_turn_input_tokens=0,
+        automatic_rollover=automatic_rollover,
+    )
+    result = await collect_loop_result(
+        [],
+        context,
+        AgentLoopConfig(
+            provider=provider,
+            context_policy=context_policy,
+            rollover_context=ContextWindowRollover().rollover_messages,
+        ),
+    )
+    assert result.termination_reason == TerminationReason.COMPLETED
+    assert result.metrics is not None
+    assert result.metrics.context_window_resets == int(automatic_rollover)
+    assert len(provider.requests) == 1
+    assert ("context-window-reset" in str(provider.requests[0])) == automatic_rollover
 
 
 @pytest.mark.parametrize(

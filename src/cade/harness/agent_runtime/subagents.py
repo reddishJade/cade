@@ -302,6 +302,7 @@ class SubagentSessionManager:
         )
         recorder = SessionRecorder(child_store)
         hooks = SignalHookManager()
+        hooks.register("on_agent_event", recorder.record_model_event)
         hooks.register("before_provider_request", recorder.record_provider_request)
         child_gate = parent_gate.fork_for_subagent(
             child_store.session_id,

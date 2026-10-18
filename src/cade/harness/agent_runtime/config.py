@@ -237,6 +237,7 @@ def _build_before_provider_request_closure(
                     "assembly": {
                         "current_step": assembly.current_step,
                         "estimated_tokens": assembly.estimated_tokens,
+                        "unreclaimed_input_tokens": assembly.unreclaimed_input_tokens,
                         "local_estimated_tokens": assembly.local_estimated_tokens,
                         "token_estimate_source": assembly.token_estimate_source,
                         "context_policy": (

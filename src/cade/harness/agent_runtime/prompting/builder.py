@@ -4,9 +4,9 @@
 职责边界：
 - 固定文本：agent 身份、工具纪律、搜索策略与环境信息（装配时生成）
 - 操作指南：从当次启用的工具集合生成
-- 当前目录：每次请求读取目录条目
+- 当前目录：由独立动态 section 提供，不改写系统前缀
 
-不属于本模块（由动态 section 收集器管理）：
+不属于系统前缀（由动态 section 收集器管理）：
 - 项目指令 → InstructionCollector
 - 验证事实 → coding_agent.validation.ValidationCollector
 - 笔记文件 → NotesCollector
@@ -20,6 +20,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from cade.agent.context import (
+    ContextBlock,
+    ContextBlockSource,
+    ContextBlockTarget,
+    ContextCollectionInput,
+    ContextPriority,
+    ContextSection,
+)
 from cade.agent.types import ToolSpec
 from cade.harness.config import DEFAULT_PROMPT_MODULES
 
@@ -71,7 +79,7 @@ def build_runtime_context_provider(
     shell_spec: ShellInfo | None = None,
     identity: str = "",
 ) -> Callable[[tuple[ToolSpec, ...]], list[str]]:
-    """装配固定前缀，返回按请求读取当前目录的上下文入口。"""
+    """装配固定前缀；可变目录清单由独立事实 section 收集。"""
     root = project_root.resolve()
     enabled = set(modules or DEFAULT_PROMPT_MODULES)
     stable_prompt = _stable_prompt(enabled, identity)
@@ -87,8 +95,6 @@ def build_runtime_context_provider(
             match module:
                 case "environment":
                     dynamic_parts.append(environment)
-                case "cwd":
-                    dynamic_parts.append(_cwd_info(root))
         dynamic_prompt = "\n\n".join(dynamic_parts)
         full_parts: list[str] = []
         if stable_prompt.strip():
@@ -130,6 +136,26 @@ def _environment_info(project_root: Path, shell_spec: ShellInfo | None = None) -
         )
     lines.append("</environment>")
     return "\n".join(lines)
+
+
+def make_directory_context_section(project_root: Path) -> ContextSection:
+    """把当前目录作为请求末尾的事实快照，避免改变已缓存的系统前缀。"""
+    root = project_root.resolve()
+
+    def collect(input: ContextCollectionInput) -> list[ContextBlock]:
+        return [
+            ContextBlock(
+                source=ContextBlockSource.ENVIRONMENT,
+                priority=ContextPriority.CONTEXT,
+                target=ContextBlockTarget.USER_CONTEXT,
+                content=_cwd_info(root),
+                block_id="working_directory",
+                provenance=str(root),
+                scope="runtime",
+            )
+        ]
+
+    return ContextSection("cwd", collect)
 
 
 def _cwd_info(project_root: Path) -> str:

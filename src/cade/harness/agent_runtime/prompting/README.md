@@ -1,6 +1,6 @@
 # Runtime prefixes
 
-[build_runtime_context_provider](builder.py) generates identity and rules at assembly and captures workspace root, shell, and environment. Its callback reads the current directory for each request, builds guidance from the enabled tools, joins selected modules, and retains boundary markers.
+[build_runtime_context_provider](builder.py) generates identity and rules at assembly and captures workspace root, shell, and environment. Its callback builds guidance from the enabled tools, joins selected prefix modules, and retains boundary markers. The `cwd` section recollects directory entries for each request. Changed entries append factual context snapshots; they do not rewrite system instructions.
 
 [tools.py](tools.py) generates operational guidance. API schemas declare tool names, descriptions, and parameters. [citations.py](citations.py) supplies factual source citation formatting. The prefix builder controls directory display limits.
 

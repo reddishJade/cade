@@ -13,17 +13,25 @@ import pytest
 
 from cade.agent.messages import (
     AgentMessage,
+    ContextMessage,
     UserMessage,
 )
 from cade.agent.types import TextContent
+from cade.harness.agent_runtime.events import ContextStructuredEvent
 from cade.harness.session import (
     InboxLane,
     SessionHistory,
     SessionInbox,
     SessionStore,
 )
+from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import replay_session
 from cade.harness.session.store import read_session_entries
+from cade.harness.session.surface import (
+    InvalidSessionSurfaceError,
+    encode_surface_messages,
+    project_session_surface,
+)
 
 
 class DummyReplayAgent:
@@ -167,6 +175,51 @@ def test_replay_session_restores_history_via_surface(tmp_path: Path) -> None:
     assert isinstance(agent.history[1].content[0], TextContent)
     assert agent.history[1].content[0].text == "Hello! I am ready to help."
     assert "resumed" in agent.resumed_notice.lower()
+
+
+def test_version_two_session_can_continue_with_durable_runtime_context(
+    tmp_path: Path,
+) -> None:
+    """覆盖版本 2 会话续写版本 3 的缺口，直接检查文件重放及分支入口。"""
+    store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    user_id = store.append(
+        "event",
+        {
+            "schema_version": 2,
+            "type": "inbox/claimed",
+            "data": {
+                "message": encode_surface_messages(
+                    [UserMessage(content="Existing task")]
+                ),
+                "display_text": "Existing task",
+            },
+        },
+    )
+    context = ContextMessage(content="Current runtime context: validation passed.")
+    recorder = SessionRecorder(store)
+    event = ContextStructuredEvent("runtime_context", 1, context)
+    recorder.record_event(event)
+    recorder.record_event(event)
+    store.append("assistant", "Done")
+    agent = DummyReplayAgent()
+    replay_session(agent, store)
+    assert agent.history[0] == UserMessage(content="Existing task")
+    assert agent.history[1] == context
+    assert len(agent.history) == 3
+    assert store.fork_from_entry(user_id).build_branch() == []
+    assert SessionInbox(store).pending_count() == 0
+    store.append(
+        "event",
+        {
+            "schema_version": 2,
+            "type": "runtime_context",
+            "data": context.model_dump(mode="json"),
+        },
+    )
+    with pytest.raises(
+        InvalidSessionSurfaceError, match="unsupported runtime context schema"
+    ):
+        project_session_surface(store.build_branch())
 
 
 def test_session_history_around_and_anchor_scoping(tmp_path: Path) -> None:

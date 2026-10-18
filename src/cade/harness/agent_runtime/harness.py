@@ -16,6 +16,7 @@ from threading import Lock
 from uuid import uuid4
 
 from cade.agent.config import AfterToolCallContext, AgentContext, BeforeToolCallContext
+from cade.agent.events import AgentEvent
 from cade.agent.messages import AssistantMessage
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, ToolInput
 from cade.ai.events import ToolCall
@@ -31,7 +32,7 @@ from ...agent.messages import (
 from ...agent.request import RequestAssembly
 from ...agent.results import AgentLoopResult
 from ...agent.types import ApprovalCallback, ToolSpec
-from ..observability import HookRecord, RuntimeCorrelation
+from ..observability import HookRecord, RuntimeCorrelation, hook_correlation_fields
 from ..security.approval import ApprovalPolicy, ApprovalsReviewer
 from ..security.permission_model import GrantStore
 from ..security.permissions import PermissionDecision, PermissionPolicy
@@ -48,6 +49,7 @@ from .config import (
 from .events import (
     AgentHarnessEvent,
     _StreamTranslationState,
+    is_model_fact_event,
     translate_event,
 )
 from .message_codec import messages_from_run_state
@@ -665,6 +667,29 @@ class AgentHarness:
             )
 
             translation_state = _StreamTranslationState(correlation=self._correlation)
+            translated_events: dict[
+                int, AgentHarnessEvent | list[AgentHarnessEvent] | None
+            ] = {}
+
+            def on_event(event: AgentEvent) -> None:
+                translated = translate_event(event, translation_state)
+                translated_events[id(event)] = translated
+                if translated is None:
+                    return
+                for fact in (
+                    translated if isinstance(translated, list) else [translated]
+                ):
+                    if is_model_fact_event(fact):
+                        _emit_hook(
+                            self._hook_manager,
+                            HookRecord(
+                                "on_agent_event",
+                                metadata={"event": fact},
+                                **hook_correlation_fields(fact.correlation),
+                            ),
+                        )
+
+            loop_config.on_event = on_event
             context = AgentContext(
                 messages=self._context_manager.history_messages(),
                 request_prefix=context_messages,
@@ -687,7 +712,7 @@ class AgentHarness:
                 if isinstance(event, AgentLoopResult):
                     result = event
                     continue
-                translated = translate_event(event, translation_state)
+                translated = translated_events.pop(id(event))
                 if translated is not None:
                     for te in (
                         translated if isinstance(translated, list) else [translated]

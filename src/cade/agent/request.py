@@ -22,6 +22,7 @@ from .context import (
     ContextBlockSource,
     ContextBlockTarget,
     ContextCollectionInput,
+    ContextPriority,
     DefaultContextAssembler,
     FrozenContextCollectorRegistry,
     _block_to_text,
@@ -38,7 +39,13 @@ from .context_policy import (
     protected_working_set,
     superseded_state_ids,
 )
-from .messages import AgentMessage, SystemMessage, ToolResultMessage, UserMessage
+from .messages import (
+    AgentMessage,
+    ContextMessage,
+    SystemMessage,
+    ToolResultMessage,
+    UserMessage,
+)
 from .types import AgentTool, materialize_json_mapping
 
 if TYPE_CHECKING:
@@ -72,7 +79,9 @@ class RequestAssembly:
     tools: tuple[ToolDefinition, ...]
     context_trace: tuple[RequestContextTrace, ...]
     current_step: int
+    context_message: ContextMessage | None = None
     estimated_tokens: int = 0
+    unreclaimed_input_tokens: int = 0
     token_budget: int = 0
     budget_remaining: int = 0
     options: StreamOptions | None = None
@@ -206,6 +215,7 @@ class DefaultRequestAssembler:
             calibrate_tokens=calibrate_tokens,
         )
         result = self.context_assembler.assemble(assembly_input)
+        unreclaimed_input_tokens = result.total_tokens
         evidence_reclaimed_tokens = 0
         if (
             policy is not None
@@ -316,6 +326,10 @@ class DefaultRequestAssembler:
                 or admitted[m.tool_call_id].content != m.content
             )
         )
+        current_context = next(
+            (m for m in reversed(result.messages) if isinstance(m, ContextMessage)),
+            None,
+        )
         mandatory_messages = [
             *context.request_prefix,
             *mandatory_history(context.messages, protected_ids),
@@ -324,7 +338,11 @@ class DefaultRequestAssembler:
                 if b.target == ContextBlockTarget.SYSTEM
                 else UserMessage(content=_block_to_text(b))
                 for b in result.blocks_used
+                if b.target == ContextBlockTarget.SYSTEM
+                or b.source == ContextBlockSource.SKILL
+                or b.priority == ContextPriority.INSTRUCTION
             ],
+            *([current_context] if current_context is not None else []),
         ]
         mandatory_tokens = _estimate_base_tokens(
             ContextAssemblyInput(
@@ -356,7 +374,9 @@ class DefaultRequestAssembler:
                 _context_trace(result.blocks_used) + _tool_trace(tool_definitions)
             ),
             current_step=current_step,
+            context_message=result.context_message,
             estimated_tokens=result.total_tokens,
+            unreclaimed_input_tokens=unreclaimed_input_tokens,
             token_budget=token_budget,
             budget_remaining=token_budget - result.total_tokens
             if token_budget > 0
@@ -369,12 +389,16 @@ class DefaultRequestAssembler:
             evidence_reclaimed_tokens=evidence_reclaimed_tokens,
             rotation_blocked_reason=rotation_blocked_reason,
             mandatory_estimated_tokens=mandatory_tokens,
-            source_message_digests=source_digests,
+            source_message_digests=(
+                history_fingerprints([*context.messages, result.context_message])
+                if result.context_message is not None
+                else source_digests
+            ),
             working_omitted=working_omitted,
             assembly_error=assembly_error,
             context_snapshot=_context_snapshot(
                 context,
-                assembly_input.messages,
+                result.messages,
                 result.blocks_used,
                 protected_ids,
                 policy,
@@ -416,17 +440,26 @@ def _context_snapshot(
     blocked_reason: str | None,
 ) -> ContextSnapshot:
     """复用请求计量函数按生命周期归因，整体预测与本地分项分别标注来源。"""
-    prefix_length = len(context.request_prefix)
-    history = projected[prefix_length:]
-    latest_user = latest_task_message(history)
-    durable_ids = {id(m) for m in protected_working_set(history, protected_ids)}
+    latest_user = latest_task_message(context.messages)
+    latest_context = next(
+        (m for m in reversed(projected) if isinstance(m, ContextMessage)), None
+    )
+    durable_ids = {id(m) for m in protected_working_set(projected, protected_ids)}
     if latest_user is not None:
         durable_ids.add(id(latest_user))
-    fixed = list(projected[:prefix_length])
+    if latest_context is not None:
+        durable_ids.add(id(latest_context))
+    fixed_context = {
+        _block_to_text(block)
+        for block in blocks
+        if block.source == ContextBlockSource.SKILL
+        or block.priority == ContextPriority.INSTRUCTION
+    }
+    fixed: list[AgentMessage] = []
     durable: list[AgentMessage] = []
     working: list[AgentMessage] = []
     evidence: list[AgentMessage] = []
-    for message in history:
+    for message in projected:
         if id(message) in durable_ids:
             durable.append(message)
         elif isinstance(message, SystemMessage):
@@ -434,23 +467,16 @@ def _context_snapshot(
                 working.append(message)
             else:
                 fixed.append(message)
+        elif (
+            isinstance(message, UserMessage)
+            and isinstance(message.content, str)
+            and message.content in fixed_context
+        ):
+            fixed.append(message)
         elif isinstance(message, ToolResultMessage):
             evidence.append(message)
         else:
             working.append(message)
-    for block in blocks:
-        rendered = (
-            SystemMessage(content=block.content)
-            if block.target == ContextBlockTarget.SYSTEM
-            else UserMessage(content=_block_to_text(block))
-        )
-        if block.source in {
-            ContextBlockSource.NOTES,
-            ContextBlockSource.RECENT_VALIDATION,
-        }:
-            durable.append(rendered)
-        else:
-            fixed.append(rendered)
     fixed_tokens = _estimate_base_tokens(
         ContextAssemblyInput(
             system_prompt=context.system_prompt, tools=list(context.tools)

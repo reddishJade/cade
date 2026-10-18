@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Protocol
+from typing import Protocol, cast
+from weakref import WeakValueDictionary
 
 from cade.agent.messages import AgentMessage
 from cade.harness.agent_runtime.events import (
@@ -11,6 +12,7 @@ from cade.harness.agent_runtime.events import (
     ContextWindowResetStructuredEvent,
     FinalStructuredEvent,
     ToolResultStructuredEvent,
+    is_model_fact_event,
 )
 
 from .artifacts import offload_large_tool_result
@@ -23,16 +25,6 @@ from .subagent_runs import (
 )
 from .surface import encode_surface_messages
 from .types import JsonValue
-
-_DURABLE_EVENT_TYPES = frozenset(
-    {
-        "assistant",
-        "tool_use",
-        "tool_result",
-        "context_window_reset",
-        "final",
-    }
-)
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
     "provider",
@@ -86,6 +78,9 @@ class SessionRecorder:
     ) -> None:
         self.store = store
         self._context_window_state_provider = context_window_state_provider
+        self._recorded_events: WeakValueDictionary[int, AgentHarnessEvent] = (
+            WeakValueDictionary()
+        )
 
     def bind_agent(
         self,
@@ -95,8 +90,17 @@ class SessionRecorder:
         agent.session_id = session_id
         agent.set_history_session_id(session_id)
 
+    def record_model_event(self, record: ProviderRequestRecord) -> None:
+        """在生产事件的线程同步记录事实，不依赖 UI 是否消费事件。"""
+        if record.metadata is not None:
+            self.record_event(cast(AgentHarnessEvent, record.metadata["event"]))
+
     def record_event(self, event: AgentHarnessEvent) -> None:
-        if event.type not in _DURABLE_EVENT_TYPES:
+        if not is_model_fact_event(event) and not isinstance(
+            event, FinalStructuredEvent
+        ):
+            return
+        if self._recorded_events.get(id(event)) is event:
             return
         encoded = encode_session_event(event)
         if isinstance(event, ToolResultStructuredEvent):
@@ -120,6 +124,7 @@ class SessionRecorder:
             if restoration_context is not None:
                 data["restoration_context"] = restoration_context
         self.store.append("event", encoded)
+        self._recorded_events[id(event)] = event
         if isinstance(event, FinalStructuredEvent) and event.data.answer:
             self.record_assistant(event.data.answer)
 

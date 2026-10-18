@@ -24,6 +24,7 @@ from cade.ai.types import StreamOptions, ThinkingLevel
 
 from .context_manager import ContextManager
 from .context_policy import ContextPolicy
+from .events import AgentEvent
 from .messages import AgentMessage, AssistantMessage, ToolResultMessage
 from .request import DefaultRequestAssembler, RequestAssembler, RequestAssembly
 
@@ -190,5 +191,7 @@ class AgentLoopConfig(BaseModel):
 
     is_tool_productive: IsToolProductiveHook | None = None
     before_provider_request: BeforeProviderRequestHook | None = None
+    # 入队前同步调用；回调异常会中止循环。
+    on_event: Callable[[AgentEvent], None] | None = None
 
     options: StreamOptions | None = None

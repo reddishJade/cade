@@ -11,6 +11,7 @@ from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
     BranchSummaryMessage,
+    ContextMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
@@ -18,7 +19,7 @@ from cade.agent.messages import (
 from cade.agent.types import ToolCallContent
 from cade.ai.events import ProviderReplayPayload
 
-from .schema import SESSION_EVENT_SCHEMA_VERSION
+from .schema import SESSION_EVENT_SCHEMA_VERSION, supports_session_event_schema
 from .types import JsonValue, SessionEntry
 
 
@@ -41,6 +42,7 @@ _MESSAGE_TYPES = {
     "assistant": AssistantMessage,
     "tool_result": ToolResultMessage,
     "branch_summary": BranchSummaryMessage,
+    "context": ContextMessage,
 }
 
 
@@ -111,8 +113,18 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
 
         event_type = record.content.get("type")
         data = record.content.get("data")
-        if event_type == "inbox/claimed":
+        if event_type == "runtime_context":
             if record.content.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION:
+                raise InvalidSessionSurfaceError("unsupported runtime context schema")
+            try:
+                messages.append(ContextMessage.model_validate(data))
+            except ValidationError as exc:
+                raise InvalidSessionSurfaceError(
+                    "invalid runtime context message"
+                ) from exc
+            continue
+        if event_type == "inbox/claimed":
+            if not supports_session_event_schema(record.content.get("schema_version")):
                 raise InvalidSessionSurfaceError("unsupported inbox claim event schema")
             if not isinstance(data, dict):
                 raise InvalidSessionSurfaceError(
@@ -234,6 +246,8 @@ def _message_kind(message: AgentMessage) -> str:
         return "system"
     if isinstance(message, UserMessage):
         return "user"
+    if isinstance(message, ContextMessage):
+        return "context"
     if isinstance(message, AssistantMessage):
         return "assistant"
     if isinstance(message, ToolResultMessage):

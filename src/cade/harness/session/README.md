@@ -19,10 +19,12 @@ Agent / user events
 - [replay.py](replay.py): ordered replay reconstructs messages and tool history.
 - [history.py](history.py): the `history` tool provides `list_windows`, `search`, paginated `read`, and `around`. Explicit `session_id` locates original entries across sessions. Explicit-session `around` follows ancestors with `before` and rejects `after`; active-branch queries support both directions.
 - [inbox.py](inbox.py): `SessionInbox` persists input arriving during execution.
-- [surface.py](surface.py): derives active model-visible messages and applies rollover replacements.
+- [surface.py](surface.py): reconstructs active source messages and applies rollover replacements.
 
 Exact reads do not depend on the `session_index.json` navigation cache. Default local storage uses physical location for ownership, allowing workspace moves without changing old `project_path` values. Shared/custom storage validates the first JSONL record's workspace binding. Directory links resolving outside the workspace use external-storage validation.
 
 ## Invariants
 
-Do not overwrite persisted event nodes. Undo and rewind use branch changes or new events. Session records are authoritative for recoverable execution state; do not maintain hidden persistent state that cannot be reconstructed from them. Event appends must protect existing records when a process exits unexpectedly.
+Do not overwrite persisted event nodes. Undo and rewind use branch changes or new events. Session records are authoritative for recoverable execution state; do not maintain hidden persistent state that cannot be reconstructed from them. Event appends must protect existing records when a process exits unexpectedly. Model facts are recorded synchronously through `on_agent_event`; delivering the same event to a host does not append it again.
+
+Event schema version 3 adds `runtime_context` facts. Readers also accept version 2 records.

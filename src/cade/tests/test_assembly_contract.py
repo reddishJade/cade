@@ -7,14 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from cade.agent._codec import convert_to_llm
 from cade.agent.context import (
     ContextBlock,
     ContextBlockSource,
     ContextCollectionInput,
     ContextCollectorRegistry,
+    ContextPriority,
+    ContextSection,
     FrozenContextCollectorRegistry,
     make_state_section,
 )
+from cade.agent.messages import ContextMessage
 from cade.agent.request import DefaultRequestAssembler
 from cade.ai.events import (
     FinalMessage,
@@ -31,6 +35,7 @@ from cade.ai.usage import UsageTotals
 from cade.coding_agent import app as app_module
 from cade.coding_agent.app import build_app
 from cade.coding_agent.assembly import registry as registry_module
+from cade.coding_agent.assembly.agent import build_hook_manager
 from cade.coding_agent.assembly.security import (
     external_directories_from_security,
     mode_rulesets_from_runtime_config,
@@ -39,7 +44,11 @@ from cade.coding_agent.assembly.security import (
     sensitive_path_overrides_from_security,
 )
 from cade.harness.agent_runtime import AgentComposition
-from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
+from cade.harness.agent_runtime.config import (
+    AgentRuntimeConfig,
+    GateConfig,
+    GateRuntimeConfig,
+)
 from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.config import (
     CadeRuntimeConfig,
@@ -55,6 +64,8 @@ from cade.harness.config import (
 from cade.harness.execution_env import ExecutionResult, Shell, SubprocessShell
 from cade.harness.security import Action, StaticPolicyEvaluator, Target
 from cade.harness.session import SessionInbox, SessionStore
+from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.surface import project_session_surface
 
 
 class TestAssemblySecurityContract:
@@ -407,6 +418,79 @@ class TestHarnessWorkingDirectoryContract:
         assert collector_inputs[0].project_root is None
         assert collector_inputs[0].cwd == host_cwd
         assert Path.cwd() == host_cwd
+
+
+@pytest.mark.asyncio
+async def test_model_facts_are_durable_before_send_and_not_recorded_twice(
+    working_directory_root: Path,
+) -> None:
+    """覆盖缺口：UI 消费晚于请求时，模型事实仍须先落盘。
+
+    运行本模块；使用真实装配、会话与受控 provider。在每次发送边界独立
+    重放磁盘日志并比较完整消息，消费端再次记录同一事件不得复制事实。
+    """
+    store = SessionStore(working_directory_root / "sessions")
+    recorder = SessionRecorder(store)
+
+    class Provider(_WorkingDirectoryProvider):
+        async def stream(
+            self,
+            messages: list[Message],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            restored = project_session_surface(store.build_branch())
+            assert any(isinstance(m, ContextMessage) for m in restored.messages)
+            assert convert_to_llm(list(restored.messages)) == messages
+            async for event in super().stream(messages, tools, options, **kwargs):
+                yield event
+
+    provider = Provider(call_bash=False)
+    context_collectors = ContextCollectorRegistry()
+    context_collectors.register_section(
+        ContextSection(
+            "environment",
+            lambda input: [
+                ContextBlock(
+                    source=ContextBlockSource.ENVIRONMENT,
+                    priority=ContextPriority.CONTEXT,
+                    content=str(input.state["environment"]),
+                )
+            ],
+        )
+    )
+    harness = AgentHarness(
+        AgentComposition.create(
+            primary_provider=provider,
+            registry=(),
+            config=CadeRuntimeConfig().agent,
+            gate=GateConfig(),
+            request_assembler=DefaultRequestAssembler(
+                context_collectors=context_collectors.freeze()
+            ),
+            runtime_context_provider=None,
+        ),
+        AgentRuntimeConfig(
+            session_inbox=SessionInbox(store),
+            gate=GateRuntimeConfig(
+                hook_manager=build_hook_manager(
+                    None, recorder, working_directory_root, subagent=False
+                )
+            ),
+        ),
+    )
+    harness.session_id = store.session_id
+    for question in ("First task", "Second task"):
+        async for event in harness.arun_stream(question):
+            recorder.record_event(event)
+    facts = [entry.content for entry in store.build_branch() if entry.type == "event"]
+    assert (
+        sum(isinstance(f, dict) and f.get("type") == "runtime_context" for f in facts)
+        == 1
+    )
+    assert sum(isinstance(f, dict) and f.get("type") == "assistant" for f in facts) == 2
+    assert len(provider.requests) == 2
 
 
 class _GoalRoutingProvider(_WorkingDirectoryProvider):

@@ -19,6 +19,8 @@ from typing import cast
 from cade.agent.config import AgentContext, AgentLoopConfig
 from cade.agent.events import (
     AgentEvent,
+    MessageEndEvent,
+    MessageStartEvent,
     MessageUpdateEvent,
     ResponseMetricsEvent,
     ThinkingUpdateEvent,
@@ -143,6 +145,10 @@ async def call_provider(
     context.context_manager.record_request(assembly)
     if config.before_provider_request:
         config.before_provider_request(assembly)
+    if assembly.context_message is not None:
+        emit(MessageStartEvent(message=assembly.context_message))
+        emit(MessageEndEvent(message=assembly.context_message))
+        context.messages.append(assembly.context_message)
 
     started = perf_counter()
     metrics.llm_calls += 1

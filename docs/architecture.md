@@ -70,13 +70,13 @@ Normal completion, cancellation, step limits, model call limits, watchdog stops,
 
 With a goal configured, an independent judge checks existing messages and tool evidence when the main loop tries to stop. If the condition is unmet, feedback returns to the loop. Goal state stores conditions, pause status, and acceptance attempts, with limits on repeated checks. Impossible goals, unavailable acceptance, and exhausted attempts produce distinct notices. A normal `completed` result means the loop ended normally; evidence and goal acceptance establish task success.
 
-`CadeApp` passes harness events to `SessionRecorder` before yielding them to hosts. Direct harness callers must record stable output themselves. Application shutdown cancels and waits for subagents, releases children, and then closes shared dependencies such as MCP. A child wait timeout interrupts shutdown and retains its dependencies.
+The harness records model-history facts synchronously through configured session hooks before delivering events to hosts. Direct harness callers must configure these hooks for pre-send durability. `CadeApp` also records final run metadata. Application shutdown cancels and waits for subagents, releases children, and then closes shared dependencies such as MCP. A child wait timeout interrupts shutdown and retains its dependencies.
 
 ## Requests and context
 
 [`RequestAssembler`](../src/cade/agent/request.py) combines the runtime system prefix, current session surface, dynamic context blocks, tool schemas, and options into `RequestAssembly`. The provider and pre-send audit consume the same assembly. Goal judges and automatic approval reviewers have separate model-call paths and service-owned request boundaries.
 
-User input, steering, and runtime injections pass through the inbox. `request_prefix` supplies the system prefix. Context entry points recollect project instructions, NOTE, verification facts, skill catalogs, and runtime state for every request. A section returns complete dynamic blocks with sources, injection targets, ordering priorities, and audit information. Sections select content; the assembler injects selected blocks in full and reclaims history and tool evidence to meet budgets.
+User input, steering, and explicit runtime injections pass through the inbox. `request_prefix` supplies the system prefix. Context entry points recollect project instructions, NOTE, verification facts, skill catalogs, and runtime state for every request. A section returns complete dynamic blocks with sources, injection targets, ordering priorities, and audit information. Sections select content; the assembler injects selected blocks in full and reclaims history and tool evidence to meet budgets. Changed factual user-context snapshots enter history as `ContextMessage` values, rather than disappearing before the next response is replayed.
 
 API schemas declare tool names, descriptions, and parameters. Prefix tool guidance uses the same enabled tool set as the schema for that request. Read-only side questions do not receive tool guidance.
 
@@ -92,7 +92,7 @@ Automatic rollover retains the current user request, persistent state, and bound
 | --- | --- | --- |
 | Transcript and artifacts | Session store; `.cade/sessions/` and `.cade/session_artifacts/` by default | Append session facts and complete tool content for replay and branching |
 | Inbox | `SessionInbox`, using the same store | Persist pending input and inserted/claimed/discarded lifecycle |
-| Surface | Session replay and active run | Model-visible history for the current branch, replaced on rollover |
+| Surface | Session replay and active run | Replayable branch history, replaced on rollover |
 | RequestAssembly | Request assembler, per request | Final wire messages, tools, options, budget, and source trace |
 | Composition | Harness, in-process snapshot | Run configuration linked to requests by generation ID |
 | Active run, cancellation, and connections | Run controller, providers, MCP, and runtime services | In-process resources reestablished after recovery |
@@ -102,7 +102,7 @@ Automatic rollover retains the current user request, persistent state, and bound
 
 [`replay_session()`](../src/cade/harness/session/replay.py) rebuilds messages, run metadata, goal, and context state for the active branch. Inbox replay rebuilds pending input. Recovered runs issue new requests using current assembled services. Hosts reestablish tools, connections, and active tasks from the old process. Tool side effects and event recording are separate operations; if the process exits between them, recovery must check workspace and external state.
 
-Session records distinguish final user-visible `assistant` entries from model responses and events such as `tool_use`, `tool_result`, and `final`. `provider_request` stores the request fingerprint, size, parameters, composition ID, and trace. `final` stores the answer, counters, termination details, and recovery metadata. Existing semantic events reconstruct messages and tool arguments.
+Session records distinguish final user-visible `assistant` entries from model responses and events such as `tool_use`, `tool_result`, `runtime_context`, and `final`. `provider_request` stores the request fingerprint, size, parameters, composition ID, and trace. `final` stores the answer, counters, termination details, and recovery metadata. Existing semantic events reconstruct messages and tool arguments.
 
 `context_window_reset` stores a typed replacement, source entry IDs, and an increasing generation. Replay checks that sources belong to the current branch prefix, validates message structure and tool pairing, and replaces the surface in log order. The original transcript remains. See the [context policy](context-policy.md) for validation scope and request fingerprints.
 

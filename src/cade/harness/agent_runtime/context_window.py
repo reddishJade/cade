@@ -19,6 +19,7 @@ from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
     BranchSummaryMessage,
+    ContextMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
@@ -73,6 +74,8 @@ class ContextWindowRollover:
         protected_ids = current_durable_ids(messages)
         skills: dict[str, AgentMessage] = {}
         for message in messages:
+            if isinstance(message, ContextMessage):
+                continue
             content = (
                 message.content if not isinstance(message, BranchSummaryMessage) else ""
             )

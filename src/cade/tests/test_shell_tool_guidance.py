@@ -6,6 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from cade.agent.config import AgentContext
+from cade.agent.context import ContextCollectorRegistry
+from cade.agent.messages import SystemMessage, UserMessage
+from cade.agent.request import DefaultRequestAssembler
 from cade.coding_agent.tools import shell_adapter
 from cade.coding_agent.tools.bash import build_bash_tool
 from cade.coding_agent.tools.edit import build_edit_tool
@@ -13,6 +17,7 @@ from cade.coding_agent.tools.read import build_read_tool
 from cade.coding_agent.tools.shell_adapter import ShellSpec, detect_shell
 from cade.coding_agent.tools.write import build_write_tool
 from cade.harness.agent_runtime.prompting import build_runtime_context_provider
+from cade.harness.agent_runtime.prompting.builder import make_directory_context_section
 
 
 def test_default_shell_prefers_bash_over_user_login_shell(
@@ -118,3 +123,31 @@ def test_tool_discipline_distinguishes_read_edit_write_and_bash(
     assert '<shell tool="bash" name="bash" syntax="posix" />' in prompt
     for example in ("cat file.txt", "Get-Content", "Common file commands", "cd src"):
         assert example not in prompt
+
+
+def test_directory_changes_do_not_rewrite_system_prefix(tmp_path: Path) -> None:
+    """目录事实必须保持新鲜，但新增文件不能改写此前的系统指令。"""
+    provide = build_runtime_context_provider(tmp_path)
+    before = provide(())
+    (tmp_path / "new-module.py").write_text("VALUE = 1\n")
+    assert provide(()) == before
+
+
+def test_directory_snapshot_is_fresh_after_retained_history(tmp_path: Path) -> None:
+    """目录条目保留在当前事实中，新增条目只改变历史之后的快照。"""
+    provide = build_runtime_context_provider(tmp_path)
+    context = AgentContext(
+        request_prefix=[SystemMessage(content=part) for part in provide(())],
+        messages=[UserMessage(content="Current task")],
+    )
+    registry = ContextCollectorRegistry()
+    registry.register_section(make_directory_context_section(tmp_path))
+    assembler = DefaultRequestAssembler(context_collectors=registry.freeze())
+    first = assembler.assemble(context, current_step=1, options=None)
+    (tmp_path / "new-module.py").write_text("VALUE = 1\n")
+    second = assembler.assemble(context, current_step=2, options=None)
+    assert first.wire_messages[:-1] == second.wire_messages[:-1]
+    assert "new-module.py" not in str(first.wire_messages)
+    assert "new-module.py" in str(second.wire_messages[-1])
+    assert second.wire_messages[-1]["role"] == "user"
+    assert context.messages == [UserMessage(content="Current task")]

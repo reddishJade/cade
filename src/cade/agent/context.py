@@ -14,6 +14,7 @@ from cade.agent._codec import convert_to_llm
 from cade.agent._context_window import estimate_tokens, estimate_wire_message_tokens
 from cade.agent.messages import (
     AgentMessage,
+    ContextMessage,
     SystemMessage,
     UserMessage,
 )
@@ -104,6 +105,8 @@ class ContextAssemblyInput:
 @dataclass
 class ContextAssemblyResult:
     messages: list[AgentMessage] = field(default_factory=list)
+    # 仅本次新增的事实；发送前提交，纯组装不修改历史。
+    context_message: ContextMessage | None = None
     blocks_used: list[ContextBlock] = field(default_factory=list)
     total_tokens: int = 0
     token_budget: int = 0
@@ -232,18 +235,10 @@ class DefaultContextAssembler:
         base_tokens = _estimate_base_tokens(input, messages)
         budget = input.token_budget
 
-        if not input.context_blocks:
-            return ContextAssemblyResult(
-                messages=messages,
-                total_tokens=base_tokens,
-                token_budget=budget,
-                budget_remaining=budget - base_tokens if budget > 0 else 0,
-                base_tokens=base_tokens,
-            )
-
         # 这里只生成完整投影；请求边界回收历史后检查安全预算。
         used_blocks = sorted(input.context_blocks, key=lambda block: block.priority)
 
+        trailing_user_blocks: list[ContextBlock] = []
         if used_blocks:
             system_blocks = [
                 b for b in used_blocks if b.target == ContextBlockTarget.SYSTEM
@@ -285,17 +280,29 @@ class DefaultContextAssembler:
                 ]
                 messages[insert_idx:insert_idx] = prefix_user_messages
 
-            if trailing_user_blocks:
-                trailing_user_messages = [
-                    UserMessage(content=_block_to_text(b)) for b in trailing_user_blocks
-                ]
-                # 动态 USER_CONTEXT 快照追加到完整历史之后。
-                messages.extend(trailing_user_messages)
+        previous = next(
+            (m for m in reversed(input.messages) if isinstance(m, ContextMessage)),
+            None,
+        )
+        context_message = None
+        if trailing_user_blocks or previous is not None:
+            content = (
+                "Current runtime context (complete snapshot; supersedes earlier "
+                "runtime-context snapshots, which remain historical):\n\n"
+                + "\n\n".join(_block_to_text(block) for block in trailing_user_blocks)
+                if trailing_user_blocks
+                else "Current runtime context: none. Earlier runtime-context "
+                "snapshots no longer apply."
+            )
+            if previous is None or previous.content != content:
+                context_message = ContextMessage(content=content)
+                messages.append(context_message)
 
         final_total = _estimate_base_tokens(input, messages)
 
         return ContextAssemblyResult(
             messages=messages,
+            context_message=context_message,
             blocks_used=used_blocks,
             total_tokens=final_total,
             token_budget=budget,

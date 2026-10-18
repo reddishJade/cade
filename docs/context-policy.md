@@ -4,7 +4,7 @@ This page describes request projections, evidence admission, input prediction, a
 
 ## Request projection and budgets
 
-Session append events and external artifacts preserve facts. `DefaultRequestAssembler` creates a temporary projection for each model request. A `ContextBlock` is complete context that its collector has selected for the model. Requests use the current prefix and recollect each section's complete snapshot. Updated rules, NOTE, verification facts, and runtime state replace old projections. Deleted state leaves the next request. The trace records all selected blocks and collector truncation diagnostics.
+Session append events and external artifacts preserve facts. `DefaultRequestAssembler` creates a projection for each model request. A `ContextBlock` is complete context selected by its collector. Instructions remain in the prefix. Runtime user-context blocks become a `ContextMessage` committed at the send boundary, not during read-only assembly. Changed facts append a complete snapshot that supersedes earlier snapshots; unchanged facts add nothing. Deletion appends an updated or empty snapshot. Previous snapshots remain historical until explicitly reclaimed. The trace records selected blocks and collector truncation diagnostics.
 
 `ContextPriority` controls stable ordering only: INSTRUCTION comes before CONTEXT, preserving collection order within each priority. Collectors and sections decide inclusion, not priority or remaining budget.
 
@@ -26,7 +26,7 @@ Overall prediction anchors to successful provider input usage and estimates late
 
 Text differences measure decoded message bodies and tool arguments. Structured and multimodal content use conservative estimates.
 
-Tool bodies share an evidence quota newest first, bounded by input budget and `agent.evidence_token_budget`. Trimmed projections include tool-call IDs, execution status, and recovery references. Original results remain in session facts. Skill content and durable tool state are protected; multimodal content stays intact. Small bodies shorter than references stay as original text. Larger bodies use head/tail previews sized to the available evidence budget. Reference token overhead counts toward both quota and full request.
+Each tool body has a stable admission limit, bounded by input budget and `agent.evidence_token_budget`. Adding later results does not change earlier admitted bodies, preserving reusable request prefixes. Trimmed projections include tool-call IDs, execution status, and recovery references. Original results remain in session facts. Skill content and durable tool state are protected; multimodal content stays intact. Small bodies shorter than references stay as original text. Larger bodies use bounded head/tail previews. Reference token overhead counts toward both the limit and the full request.
 
 The next request is assembled after tools finish, so actual tool results participate in evidence admission. Calls not yet executed receive a bounded new-input allowance. Current tool contracts do not provide reliable output limits or historical distributions, so this uses a uniform allowance.
 
@@ -34,7 +34,7 @@ A `context_lifetime=durable` result can declare state replacement with `context_
 
 Admission uses the final request. If persistent state and new evidence exceed the predicted budget, the policy first tightens old evidence, then replaces old complete tool interactions with history indexes containing call IDs, and finally reclaims ordinary messages and old indexes from completed turns. Recent complete groups and durable groups remain.
 
-After freeing space, the policy restores recent original evidence before deciding on rollover. Each adjustment phase runs at most three times. With enough budget, arguments and results stay intact; otherwise, evidence is trimmed or complete old interactions reclaimed. Format adapters convert message formats; typed policies select and retain content.
+After freeing space, the policy restores recent original evidence. Automatic rollover uses the input prediction before pressure reclamation, so temporary trimming cannot hide a full window and repeatedly rewrite cached history. Reclamation remains available when rollover is disabled or blocked. Each adjustment phase runs at most three times. With enough budget, arguments and results stay intact; otherwise, evidence is trimmed or complete old interactions reclaimed. Format adapters convert message formats; typed policies select and retain content.
 
 The admission target includes the next-turn allowance and is a soft reclamation and rollover target. The safe input budget is the hard send boundary. If reclamation and available rollover cannot fit the request, `RequestAssembly.assembly_error` supplies diagnostics and `wire_messages` is empty. The send boundary calls `require_sendable()` to reject it. The loop ends with `context_error`, reporting estimated input, budget, and required input without calling the provider.
 
@@ -52,11 +52,11 @@ Automatic token rollover requires required input to fit and reclaimable history 
 
 TUI `/context` and the web status bar use a read-only projection from the same assembler. They show the current prediction and estimate source. `/context` also shows effective input budget and lifecycle components. Accumulated usage and costs come from providers.
 
-Components are attributed by injection location. Mixed runtime state in the current prefix counts as fixed prefix. NOTE, verification facts, current user intent, and protected tool groups count as durable. Audits record snapshots, selected-block sources, reclaimed evidence, and reasons rollover conditions were not met.
+Components are attributed by injection location. System blocks and instruction catalogs count as fixed prefix. The latest runtime-context snapshot, current user intent, and protected tool groups count as durable. Earlier snapshots count as working history. Audits record snapshots, selected-block sources, reclaimed evidence, and reasons rollover conditions were not met.
 
 ## Request audits and rollover records
 
-Before a normal agent request, `before_provider_request` receives the final `RequestAssembly` envelope. Session records store a BLAKE2b request fingerprint (32-byte digest), request size, provider information, options, composition ID, and assembly trace. These correlate requests with budget decisions. The current assembly owns the full wire payload.
+Before a normal agent request, `before_provider_request` receives the final `RequestAssembly` envelope. Session records store a BLAKE2b request fingerprint (32-byte digest), request size, provider information, options, composition ID, and assembly trace, including the pre-reclamation input prediction. These correlate requests with budget decisions. The current assembly owns the full wire payload.
 
 `context_window_reset` stores the complete typed surface replacement, source entry IDs, and generation. Replay validates source IDs against the branch prefix, increasing generation, message structure, and tool pairing. Replacement validation uses these source and structure checks; existing fingerprints describe provider requests.
 

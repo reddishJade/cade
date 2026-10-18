@@ -17,15 +17,24 @@ from cade.agent._context_window import estimate_wire_message_tokens
 from cade.agent._tool_pairing import repair_tool_pairing
 from cade.agent.agent_loop import run_agent_loop
 from cade.agent.config import AgentContext, AgentLoopConfig
+from cade.agent.context import (
+    ContextBlock,
+    ContextBlockSource,
+    ContextCollectorRegistry,
+    ContextPriority,
+    ContextSection,
+)
 from cade.agent.context_manager import history_fingerprints
 from cade.agent.context_policy import ContextPolicy
 from cade.agent.events import AgentEvent
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
+    ContextMessage,
     ToolResultMessage,
     UserMessage,
 )
+from cade.agent.request import DefaultRequestAssembler, RequestAssembler
 from cade.agent.results import AgentLoopResult
 from cade.agent.types import (
     AgentToolResult,
@@ -49,10 +58,12 @@ from cade.ai.providers.responses import (
     to_responses_input,
 )
 from cade.ai.types import ProviderConfig, StreamOptions
+from cade.harness.agent_runtime.agent_helpers import to_dict
 from cade.harness.agent_runtime.events import (
     _StreamTranslationState,
     translate_event,
 )
+from cade.harness.agent_runtime.message_codec import messages_from_provider_dicts
 from cade.harness.session import InboxLane, SessionInbox, SessionStore
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import replay_session
@@ -895,13 +906,19 @@ async def _run_and_record(
     context: AgentContext,
     provider: OpenAIResponsesProvider,
     recorder: SessionRecorder,
+    request_assembler: RequestAssembler | None = None,
 ) -> AgentLoopResult:
     result: AgentLoopResult | None = None
     events: list[AgentEvent] = []
     async for event in run_agent_loop(
         [],
         context,
-        AgentLoopConfig(provider=provider, max_steps=4, max_llm_calls=4),
+        AgentLoopConfig(
+            provider=provider,
+            max_steps=4,
+            max_llm_calls=4,
+            request_assembler=request_assembler or DefaultRequestAssembler(),
+        ),
     ):
         if isinstance(event, AgentLoopResult):
             result = event
@@ -1043,6 +1060,138 @@ async def test_agent_session_resume_replays_completed_items_through_new_provider
     assert sum(item == commentary for item in replayed_input) == 1
     assert sum(item == function for item in replayed_input) == 1
     assert sum(item == second_item for item in replayed_input) == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_snapshots_preserve_responses_prefix_across_restart_and_fork(
+    replay_workspace: Path,
+) -> None:
+    """覆盖缺口：加密回复的前置事实必须随会话恢复，不能只恢复回复本身。
+
+    运行本模块；使用上述 Responses 完成项及真实适配器、循环和文件存储。
+    独立比较发送边界的 input 前缀，并检查重启、分支及换窗的事实类型。
+    """
+    validation = {"result": "Before tool validation"}
+
+    class UpdatingEcho(_EchoTool):
+        async def execute(
+            self,
+            tool_call_id: str,
+            params: ToolArguments,
+            signal: CancellationSignal | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            validation["result"] = "After tool validation"
+            return await super().execute(tool_call_id, params, signal, on_update)
+
+    registry = ContextCollectorRegistry()
+    registry.register_section(
+        ContextSection(
+            "validation",
+            lambda input: [
+                ContextBlock(
+                    source=ContextBlockSource.RECENT_VALIDATION,
+                    priority=ContextPriority.CONTEXT,
+                    content=str(input.state["validation"]),
+                )
+            ],
+        )
+    )
+    assembler = DefaultRequestAssembler(context_collectors=registry.freeze())
+    items = [
+        _reasoning_item(),
+        _message_item("msg_check", "Checking.", "commentary"),
+        _function_item(),
+    ]
+    final = _message_item("msg_done", "Saved.", "final_answer")
+    provider, boundary = _provider(
+        [
+            _stream_for_items(items, response_id="resp_check"),
+            _stream_for_items([final], response_id="resp_done"),
+        ]
+    )
+    sessions = replay_workspace / "sessions"
+    store = SessionStore(sessions, project_root=replay_workspace)
+    inbox = SessionInbox(store)
+    inbox.insert(
+        UserMessage(content="Check the value."), InboxLane.NEXT_TURN, wake=True
+    )
+    result = await _run_and_record(
+        AgentContext(
+            messages=inbox.claim_initial("before-restart"),
+            tools=[UpdatingEcho()],
+            state={"validation": validation},
+        ),
+        provider,
+        SessionRecorder(store),
+        assembler,
+    )
+    assert result.termination_reason.value == "completed"
+    first_input = boundary.requests[0]["input"]
+    second_input = boundary.requests[1]["input"]
+    assert second_input[: len(first_input)] == first_input
+    assert second_input[len(first_input) : len(first_input) + len(items)] == items
+    assert "Before tool validation" in str(first_input[-1])
+    assert "After tool validation" in str(second_input[-1])
+    assert "Before tool validation" not in str(second_input[-1])
+
+    reopened = SessionStore(sessions, project_root=replay_workspace)
+    reopened.resume(store.current_path)
+    restored = _RestoredHistory()
+    replay_session(restored, reopened)
+    contexts = [m for m in restored.history if isinstance(m, ContextMessage)]
+    assert len(contexts) == 2
+    assert "Before tool validation" in contexts[0].content
+    assert "After tool validation" in contexts[1].content
+    assert messages_from_provider_dicts([to_dict(m) for m in contexts]) == contexts
+
+    parent_bytes = reopened.current_path.read_bytes()
+    fork = reopened.fork_into(title="Continue with runtime facts")
+    fork_inbox = SessionInbox(fork)
+    fork_inbox.insert(
+        UserMessage(content="Confirm the result."), InboxLane.NEXT_TURN, wake=True
+    )
+    next_provider, next_boundary = _provider(
+        [
+            _stream_for_items(
+                [_message_item("msg_confirm", "Confirmed.", "final_answer")],
+                response_id="resp_confirm",
+            )
+        ]
+    )
+    await _run_and_record(
+        AgentContext(
+            messages=[*restored.history, *fork_inbox.claim_initial("after-restart")],
+            state={"validation": validation},
+        ),
+        next_provider,
+        SessionRecorder(fork),
+        assembler,
+    )
+    next_input = next_boundary.requests[0]["input"]
+    assert next_input[: len(second_input)] == second_input
+    assert next_input[len(second_input)] == final
+    assert next_input[-1]["content"][0]["text"] == "Confirm the result."
+    assert reopened.current_path.read_bytes() == parent_bytes
+
+    recorder = SessionRecorder(fork)
+    recorder.record_context_window_reset(
+        window_id="new-window",
+        messages_before=len(restored.history),
+        messages_after=2,
+        replacement=[UserMessage(content="Confirm the result."), contexts[-1]],
+    )
+    after_reset = _RestoredHistory()
+    replay_session(after_reset, fork)
+    assembly = assembler.assemble(
+        AgentContext(messages=after_reset.history, state={"validation": validation}),
+        current_step=1,
+        options=None,
+    )
+    assembly.require_sendable()
+    assert assembly.context_message is None
+    assert len([m for m in assembly.messages if isinstance(m, ContextMessage)]) == 1
+    assert "Before tool validation" not in str(assembly.wire_messages)
 
 
 @pytest.mark.asyncio

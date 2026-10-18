@@ -28,7 +28,7 @@ from ...agent.events import (
     TurnStartEvent,
     UsageUpdateEvent,
 )
-from ...agent.messages import AgentMessage, AssistantMessage
+from ...agent.messages import AgentMessage, AssistantMessage, ContextMessage
 from ...agent.types import AgentToolResult
 from ..observability import EventCorrelation, RuntimeCorrelation
 
@@ -130,6 +130,14 @@ class AssistantStructuredEvent:
 
 
 @dataclass(frozen=True)
+class ContextStructuredEvent:
+    type: Literal["runtime_context"]
+    step: int
+    data: ContextMessage
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True)
 class ToolUseStructuredEvent:
     type: Literal["tool_use"]
     step: int
@@ -206,12 +214,27 @@ type AgentHarnessEvent = (
     | UsageUpdateStructuredEvent
     | ResponseMetricsStructuredEvent
     | AssistantStructuredEvent
+    | ContextStructuredEvent
     | ToolUseStructuredEvent
     | ToolUpdateStructuredEvent
     | ToolResultStructuredEvent
     | ContextWindowResetStructuredEvent
     | FinalStructuredEvent
 )
+
+
+def is_model_fact_event(event: AgentHarnessEvent) -> bool:
+    """判断事件是否改变可重放的模型历史。"""
+    return isinstance(
+        event,
+        (
+            AssistantStructuredEvent,
+            ContextStructuredEvent,
+            ToolUseStructuredEvent,
+            ToolResultStructuredEvent,
+            ContextWindowResetStructuredEvent,
+        ),
+    )
 
 
 @dataclass
@@ -310,7 +333,9 @@ def _translate_message_update(
 def _translate_message_start(
     event: MessageStartEvent,
     state: _StreamTranslationState,
-) -> MessageStartStructuredEvent:
+) -> MessageStartStructuredEvent | None:
+    if isinstance(event.message, ContextMessage):
+        return None
     return MessageStartStructuredEvent(
         "message_start",
         state.step,
@@ -351,8 +376,12 @@ def _translate_thinking_update(
 def _translate_message_end(
     event: MessageEndEvent,
     state: _StreamTranslationState,
-) -> AssistantStructuredEvent | None:
+) -> AssistantStructuredEvent | ContextStructuredEvent | None:
     msg = event.message
+    if isinstance(msg, ContextMessage):
+        return ContextStructuredEvent(
+            "runtime_context", state.step, msg, state.correlation.snapshot()
+        )
     if not isinstance(msg, AssistantMessage) or (
         not msg.content and msg.replay_payload is None
     ):

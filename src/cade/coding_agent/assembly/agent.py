@@ -39,6 +39,7 @@ from cade.harness.agent_runtime.context_window import (
     ContextWindowRollover,
 )
 from cade.harness.agent_runtime.prompting import build_runtime_context_provider
+from cade.harness.agent_runtime.prompting.builder import make_directory_context_section
 from cade.harness.config import AgentConfig, CadeRuntimeConfig
 from cade.harness.memory.catalog import MemoryCatalogCollector
 from cade.harness.observability import (
@@ -75,6 +76,7 @@ def build_hook_manager(
     subagent: bool,
 ) -> HookManager:
     manager = SignalHookManager()
+    manager.register("on_agent_event", session_recorder.record_model_event)
     manager.register(
         "before_provider_request",
         session_recorder.record_provider_request,
@@ -145,6 +147,10 @@ def build_agent(
             ),
         )
     )
+    if "cwd" in runtime_config.prompt.modules:
+        context_collectors.register_section(
+            make_directory_context_section(project_root)
+        )
     context_collectors.register_section(
         make_collector_section(
             "recent_validation",

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from ...agent._codec import convert_to_llm
-from ...agent.messages import AgentMessage, ToolResultMessage
+from ...agent.messages import AgentMessage, ContextMessage, ToolResultMessage
 from ...agent.types import ShellCallOutputContent, TextContent
 from .async_worker import IsolatedAsyncWorker
 from .cancellation import CancellationToken
@@ -25,6 +25,8 @@ T = TypeVar("T")
 
 def to_dict(msg: AgentMessage) -> dict[str, Any]:
     """将类型化消息转为 dict（保持 state.messages 的 dict 格式）。"""
+    if isinstance(msg, ContextMessage):
+        return msg.model_dump(mode="json")
     if isinstance(msg, ToolResultMessage):
         result = _tool_result_message_to_dict(msg)
         result.update(

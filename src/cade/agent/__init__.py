@@ -30,6 +30,7 @@ from .events import AgentEvent
 from .messages import (
     AgentMessage,
     AssistantMessage,
+    ContextMessage,
     SystemMessage,
     ToolResultMessage,
     UserMessage,
@@ -63,6 +64,7 @@ __all__ = [
     "ContextCollector",
     "ContextCollectorRegistry",
     "ContextManager",
+    "ContextMessage",
     "ContextPolicy",
     "ContextPriority",
     "ContextSection",

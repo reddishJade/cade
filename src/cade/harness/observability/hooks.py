@@ -21,6 +21,7 @@ HookEvent = Literal[
     "on_context_window_reset",
     "before_agent_start",
     "before_provider_request",
+    "on_agent_event",
 ]
 HookCallback = Callable[["HookRecord"], None]
 
@@ -31,6 +32,7 @@ _HOOK_EVENTS: tuple[HookEvent, ...] = (
     "on_context_window_reset",
     "before_agent_start",
     "before_provider_request",
+    "on_agent_event",
 )
 
 

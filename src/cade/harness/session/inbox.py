@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from cade.agent.messages import AgentMessage
 
-from .schema import SESSION_EVENT_SCHEMA_VERSION
+from .schema import SESSION_EVENT_SCHEMA_VERSION, supports_session_event_schema
 from .store import SessionStore
 from .surface import decode_surface_messages, encode_surface_messages
 from .types import JsonValue
@@ -62,7 +62,7 @@ class SessionInbox:
                 continue
             event_type = entry.content.get("type")
             if str(event_type).startswith("inbox/") and (
-                entry.content.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION
+                not supports_session_event_schema(entry.content.get("schema_version"))
             ):
                 raise ValueError("unsupported inbox event schema")
             data = entry.content.get("data")
@@ -166,7 +166,7 @@ def inbox_display_text(content: object) -> str | None:
     """读取 claimed 用户输入的宿主展示文本。"""
     if not isinstance(content, dict) or content.get("type") != "inbox/claimed":
         return None
-    if content.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION:
+    if not supports_session_event_schema(content.get("schema_version")):
         return None
     data = content.get("data")
     if not isinstance(data, dict):

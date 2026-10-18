@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from cade.agent.types import (
@@ -44,6 +46,15 @@ class UserMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ContextMessage(BaseModel):
+    """完整运行时事实快照；新快照替代旧状态，不代表用户意图。"""
+
+    role: Literal["context"] = "context"
+    content: str = ""
+    timestamp: int = 0
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class AssistantMessage(BaseModel):
     role: str = "assistant"
     content: list[ContentBlock] = Field(default_factory=list)
@@ -83,6 +94,7 @@ class BranchSummaryMessage(BaseModel):
 type AgentMessage = (
     SystemMessage
     | UserMessage
+    | ContextMessage
     | AssistantMessage
     | ToolResultMessage
     | BranchSummaryMessage

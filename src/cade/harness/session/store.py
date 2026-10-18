@@ -25,7 +25,7 @@ from uuid import uuid4
 import filelock
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from .schema import SESSION_EVENT_SCHEMA_VERSION
+from .schema import supports_session_event_schema
 from .types import (
     JsonValue,
     SessionEntry,
@@ -1071,7 +1071,7 @@ def _claimed_user_text(entry: SessionEntry) -> str | None:
         return None
     if entry.content.get("type") != "inbox/claimed":
         return None
-    if entry.content.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION:
+    if not supports_session_event_schema(entry.content.get("schema_version")):
         return None
     data = entry.content.get("data")
     if not isinstance(data, dict):

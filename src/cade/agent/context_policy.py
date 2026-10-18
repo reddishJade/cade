@@ -336,11 +336,9 @@ class ContextPolicy:
         *,
         token_budget: int | None = None,
     ) -> tuple[list[AgentMessage], tuple[str, ...]]:
-        """按新到旧分配工具正文预算，原文和执行状态仍保留在事实历史中。"""
+        """逐条稳定裁剪工具正文；显式总预算仅用于窗口压力回收。"""
         projected = list(messages)
-        remaining = (
-            self.evidence_budget if token_budget is None else max(0, token_budget)
-        )
+        remaining = max(0, token_budget) if token_budget is not None else None
         omitted: list[str] = []
         for index in range(len(messages) - 1, -1, -1):
             message = messages[index]
@@ -361,18 +359,22 @@ class ContextPolicy:
                 # 多模态结果由 provider 计量，不猜测图像或文件的 token 成本。
                 continue
             tokens = estimate_tokens(text)
-            if tokens <= remaining:
-                remaining -= tokens
+            available = self.evidence_budget if remaining is None else remaining
+            if tokens <= available:
+                if remaining is not None:
+                    remaining -= tokens
                 continue
             reference = evidence_reference(message)
             reference_tokens = estimate_tokens(reference)
-            preview = _evidence_preview(text, max(0, remaining - reference_tokens - 1))
+            preview = _evidence_preview(text, max(0, available - reference_tokens - 1))
             content = f"{reference}\n{preview}" if preview else reference
             # 小结果的原文比引用更省空间，不能越回收越大。
             if estimate_tokens(content) >= tokens:
-                remaining = max(0, remaining - tokens)
+                if remaining is not None:
+                    remaining = max(0, remaining - tokens)
                 continue
-            remaining = max(0, remaining - estimate_tokens(content))
+            if remaining is not None:
+                remaining = max(0, remaining - estimate_tokens(content))
             replacement = (
                 content
                 if isinstance(message.content, str)

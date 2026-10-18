@@ -24,4 +24,4 @@ Agent / ToolGate / Provider
 
 Keep auditing and event dispatch separate from permission decisions. Do not re-export `harness.security` types or couple implementation details across those boundaries.
 
-Audit write failures and noncritical external hook failures must produce diagnostics rather than crash the task. Explicit hook failure policies still apply.
+Audit write failures and noncritical external hook failures must produce diagnostics rather than crash the task. Explicit hook failure policies still apply. Session fact persistence is critical: failures stop execution instead of continuing with an unrecorded model history.

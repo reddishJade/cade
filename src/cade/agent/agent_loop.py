@@ -70,13 +70,18 @@ async def run_agent_loop(
     """实时交付循环事件，最后交付结果；关闭消费方时清理执行任务。"""
     events: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
 
+    def emit(event: AgentEvent) -> None:
+        if config.on_event is not None:
+            config.on_event(event)
+        events.put_nowait(event)
+
     async def run() -> AgentLoopResult:
         try:
             return await _run_agent_loop(
                 prompts,
                 context,
                 config,
-                events.put_nowait,
+                emit,
                 signal,
                 steer_queue,
                 finish_steering,
@@ -431,9 +436,14 @@ def _prepare_step_assembly(
         assembly = _prepare_request_context(
             context, config, new_messages, steer_queue, assembly, step
         )
+    rotation_input_tokens = (
+        max(assembly.estimated_tokens, assembly.unreclaimed_input_tokens)
+        if assembly is not None
+        else None
+    )
     if config.request_rollover_decision is not None:
         reason = config.request_rollover_decision(
-            context.messages, assembly.estimated_tokens if assembly else None
+            context.messages, rotation_input_tokens
         )
     elif config.rollover_decision is not None:
         reason = config.rollover_decision(context.messages)
@@ -442,7 +452,8 @@ def _prepare_step_assembly(
     if (
         assembly is not None
         and assembly.context_policy is not None
-        and assembly.context_policy.should_rotate(assembly.estimated_tokens)
+        and rotation_input_tokens is not None
+        and assembly.context_policy.should_rotate(rotation_input_tokens)
     ):
         reason = reason or "token_limit"
     if (

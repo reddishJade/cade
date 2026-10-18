@@ -31,7 +31,7 @@ STABLE_PROMPT_MODULE_ORDER: tuple[str, ...] = (
     "tools",
     "search_strategy",
 )
-DYNAMIC_PROMPT_MODULE_ORDER: tuple[str, ...] = ("environment", "cwd")
+DYNAMIC_PROMPT_MODULE_ORDER: tuple[str, ...] = ("environment",)
 
 
 def prompt_version() -> str:
