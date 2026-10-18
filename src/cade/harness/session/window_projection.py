@@ -57,7 +57,7 @@ def apply_rollover_spec(
     from cade.harness.agent_runtime.context_window import ContextWindowRollover
 
     if not isinstance(spec, dict):
-        raise ValueError("window projection spec must be an object")
+        raise TypeError("window projection spec must be an object")
     if (
         type(spec.get("version")) is not int
         or spec["version"] != WINDOW_PROJECTION_VERSION
@@ -66,10 +66,10 @@ def apply_rollover_spec(
         raise ValueError("unsupported context window projection version")
     preserve = spec.get("preserve_user_request")
     if not isinstance(preserve, bool):
-        raise ValueError("invalid preserve_user_request")
+        raise TypeError("invalid preserve_user_request")
     policy_data = spec.get("policy")
     if not isinstance(policy_data, dict):
-        raise ValueError("context window policy is missing")
+        raise TypeError("context window policy is missing")
     if set(policy_data) != {field.name for field in fields(ContextPolicy)}:
         raise ValueError("invalid context window policy fields")
     for name, value in policy_data.items():

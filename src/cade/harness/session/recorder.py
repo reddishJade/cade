@@ -25,8 +25,8 @@ from .subagent_runs import (
     SubagentRunEvent,
 )
 from .surface import encode_surface_messages
-from .window_projection import encode_rollover_spec
 from .types import JsonValue, SessionEntry
+from .window_projection import encode_rollover_spec
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
     "provider",
