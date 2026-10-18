@@ -36,12 +36,18 @@ class _RestoredAgent:
         self.notice = notice
 
 
-def test_unresolved_attempt_warns_without_fabricated_tool_result(tmp_path: Path) -> None:
+def test_unresolved_attempt_warns_without_fabricated_tool_result(
+    tmp_path: Path,
+) -> None:
     store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
     recorder = SessionRecorder(store)
-    recorder.record_event(ToolUseStructuredEvent(
-        "tool_use", 1, ToolCall(id="call-1", name="bash", input={"command": "touch file"})
-    ))
+    recorder.record_event(
+        ToolUseStructuredEvent(
+            "tool_use",
+            1,
+            ToolCall(id="call-1", name="bash", input={"command": "touch file"}),
+        )
+    )
     assert unresolved_tool_attempts(store.build_branch()) == ("call-1",)
     agent = _RestoredAgent()
     replay_session(agent, store)
@@ -52,12 +58,16 @@ def test_unresolved_attempt_warns_without_fabricated_tool_result(tmp_path: Path)
 def test_recorded_result_closes_unknown_attempt(tmp_path: Path) -> None:
     store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
     recorder = SessionRecorder(store)
-    recorder.record_event(ToolUseStructuredEvent(
-        "tool_use", 1, ToolCall(id="call-2", name="bash", input={"command": "pwd"})
-    ))
-    recorder.record_event(ToolResultStructuredEvent(
-        "tool_result", 1, ToolResultBlock("call-2", "success")
-    ))
+    recorder.record_event(
+        ToolUseStructuredEvent(
+            "tool_use", 1, ToolCall(id="call-2", name="bash", input={"command": "pwd"})
+        )
+    )
+    recorder.record_event(
+        ToolResultStructuredEvent(
+            "tool_result", 1, ToolResultBlock("call-2", "success")
+        )
+    )
     assert unresolved_tool_attempts(store.build_branch()) == ()
     agent = _RestoredAgent()
     replay_session(agent, store)
