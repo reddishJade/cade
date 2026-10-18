@@ -10,7 +10,6 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from cade.ai.events import ToolCall
 
-from ...agent.messages import SystemMessage, UserMessage
 from ...agent.config import (
     AfterToolCallContext,
     AfterToolCallHook,
@@ -19,6 +18,7 @@ from ...agent.config import (
     BeforeToolCallResult,
     IsToolProductiveHook,
 )
+from ...agent.messages import SystemMessage, UserMessage
 from ...agent.types import (
     AgentTool,
     AgentToolResult,
