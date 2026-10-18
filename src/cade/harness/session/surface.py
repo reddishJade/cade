@@ -145,7 +145,9 @@ def project_session_surface(
             claimed_message = claimed[0]
             source = data.get("source")
             if isinstance(claimed_message, UserMessage) and source in {
-                "user", "runtime", "subagent"
+                "user",
+                "runtime",
+                "subagent",
             }:
                 claimed_message = claimed_message.model_copy(update={"source": source})
             run_id = data.get("run_id")

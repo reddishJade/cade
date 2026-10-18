@@ -659,10 +659,14 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
     """Serialize review evidence with trusted host-assigned provenance."""
     entries: list[dict[str, object]] = []
     if ctx.context.system_prompt.strip():
-        entries.append({
-            "role": "system", "source": "runtime", "authorizes": False,
-            "content": _truncate_transcript(ctx.context.system_prompt, 8_000),
-        })
+        entries.append(
+            {
+                "role": "system",
+                "source": "runtime",
+                "authorizes": False,
+                "content": _truncate_transcript(ctx.context.system_prompt, 8_000),
+            }
+        )
     messages = [
         *ctx.context.request_prefix,
         *ctx.context.messages,
@@ -683,12 +687,16 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
         else:
             source = "tool" if role == "tool_result" else "derived"
             authorizes = False
-        entries.append({
-            "role": role, "source": source, "authorizes": authorizes,
-            "content": _truncate_transcript(
-                content, 4_000 if role == "tool_result" else 8_000
-            ),
-        })
+        entries.append(
+            {
+                "role": role,
+                "source": source,
+                "authorizes": authorizes,
+                "content": _truncate_transcript(
+                    content, 4_000 if role == "tool_result" else 8_000
+                ),
+            }
+        )
     # Remove entire old entries rather than slicing through JSON or trust metadata.
     while len(json.dumps(entries, ensure_ascii=False)) > 40_000 and len(entries) > 1:
         entries.pop(0)

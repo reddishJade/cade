@@ -45,9 +45,22 @@ def test_reviewer_evidence_roles_and_sources() -> None:
 def test_inbox_provenance_survives_replay(tmp_path: Path) -> None:
     store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
     inbox = SessionInbox(store)
-    inbox.insert(UserMessage(content="Real user"), InboxLane.NEXT_STEP, source="user", wake=True)
-    inbox.insert(UserMessage(content="Injected"), InboxLane.NEXT_STEP, source="runtime", wake=True)
+    inbox.insert(
+        UserMessage(content="Real user"), InboxLane.NEXT_STEP, source="user", wake=True
+    )
+    inbox.insert(
+        UserMessage(content="Injected"),
+        InboxLane.NEXT_STEP,
+        source="runtime",
+        wake=True,
+    )
     claimed = inbox.claim_initial("run-1")
-    assert [m.source for m in claimed if isinstance(m, UserMessage)] == ["user", "runtime"]
+    assert [m.source for m in claimed if isinstance(m, UserMessage)] == [
+        "user",
+        "runtime",
+    ]
     surface = project_session_surface(store.build_branch())
-    assert [m.source for m in surface.messages if isinstance(m, UserMessage)] == ["user", "runtime"]
+    assert [m.source for m in surface.messages if isinstance(m, UserMessage)] == [
+        "user",
+        "runtime",
+    ]
