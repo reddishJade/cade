@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from cade.agent.context_policy import ContextPolicy
 from cade.agent.types import (
     TextContent,
     ToolArguments,
@@ -188,6 +189,9 @@ class ContextWindowResetData:
     messages_after: int
     trigger: str
     replacement: tuple[AgentMessage, ...]
+    reproject_from_facts: bool = False
+    rollover_policy: ContextPolicy | None = None
+    preserve_user_request: bool = True
 
 
 @dataclass(frozen=True)
@@ -478,6 +482,9 @@ def _translate_context_window_reset(
             messages_after=event.messages_after,
             trigger=event.trigger,
             replacement=tuple(event.replacement),
+            reproject_from_facts=event.reproject_from_facts,
+            rollover_policy=event.rollover_policy,
+            preserve_user_request=event.preserve_user_request,
         ),
         state.correlation.snapshot(),
     )

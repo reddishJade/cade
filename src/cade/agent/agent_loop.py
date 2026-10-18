@@ -589,6 +589,8 @@ def _rotate_context(
             messages_after=len(context.messages),
             trigger=reason,
             replacement=list(context.messages),
+            reproject_from_facts=config.reproject_rollover_from_facts,
+            rollover_policy=context.context_policy,
         )
     )
 
