@@ -266,12 +266,16 @@ def to_responses_input(
 
         if role == "tool":
             call_id = str(msg.get("tool_call_id") or "")
-            output_str = str(content) if content is not None else ""
+            output = (
+                _responses_content(content)
+                if isinstance(content, list)
+                else (str(content) if content is not None else "")
+            )
             items.append(
                 {
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": output_str,
+                    "output": output,
                 }
             )
             continue
@@ -323,7 +327,7 @@ def to_responses_input(
                 {
                     "type": "message",
                     "role": "user",
-                    "content": content,
+                    "content": _responses_content(content),
                 }
             )
         else:
@@ -337,6 +341,26 @@ def to_responses_input(
             )
 
     return items
+
+
+def _responses_content(content: list) -> list[dict[str, Any]]:
+    """Convert canonical text/image blocks to Responses content parts."""
+    parts: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "text":
+            parts.append({"type": "input_text", "text": item.get("text", "")})
+        elif isinstance(item, dict) and item.get("type") == "image_url":
+            image = item.get("image_url", {})
+            parts.append(
+                {
+                    "type": "input_image",
+                    "image_url": image["url"],
+                    "detail": image.get("detail", "auto"),
+                }
+            )
+        else:
+            parts.append(item)
+    return parts
 
 
 def _compatible_replay_items(

@@ -33,6 +33,7 @@ from cade.agent.types import (
     AgentTool,
     AgentToolResult,
     CancellationSignal,
+    ImageContent,
     TextContent,
     ToolArguments,
     ToolCallContent,
@@ -565,6 +566,31 @@ def _tool_result_message(
         result_content = "".join(
             item.text for item in content if isinstance(item, TextContent)
         )
+    # Built-in image read tools expose the image in metadata; make it part
+    # of the model-visible tool result instead of a display-only attachment.
+    if isinstance(metadata, dict) and isinstance(image := metadata.get("image"), dict):
+        mime = image.get("mime")
+        data = image.get("data")
+        if (
+            isinstance(mime, str)
+            and mime.startswith("image/")
+            and isinstance(data, str)
+            and data
+            and not (
+                isinstance(result_content, list)
+                and any(isinstance(item, ImageContent) for item in result_content)
+            )
+        ):
+            image_block = ImageContent(
+                source={"type": "base64", "media_type": mime, "data": data}
+            )
+            result_content = (
+                [TextContent(text=result_content), image_block]
+                if isinstance(result_content, str) and result_content
+                else [image_block]
+                if isinstance(result_content, str)
+                else [*result_content, image_block]
+            )
     return ToolResultMessage(
         tool_call_id=tool_call.id,
         tool_name=tool_call.name,
