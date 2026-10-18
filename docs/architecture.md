@@ -114,7 +114,7 @@ The user or model maintains NOTE. If it differs from a rollover snapshot on reco
 
 ## Modes, permissions, and execution environment
 
-[`ExecutionModeState`](../src/cade/coding_agent/execution_modes.py) manages tool visibility, mode rules, and approval routing. [`ToolGate`](../src/cade/harness/agent_runtime/tool_gate.py) applies them to calls. The table describes built-in rules; configured rules and path boundaries also affect decisions.
+[`ExecutionModeState`](../src/cade/coding_agent/execution_modes.py) manages tool visibility, mode rules, and approval routing. [`ToolGate`](../src/cade/harness/agent_runtime/tool_gate.py) applies them to calls. Modes change only through explicit selection; Plan never exits based on the number of tool calls or model steps. The table describes built-in rules; configured rules and path boundaries also affect decisions.
 
 | Mode | Structured file writes | Shell | Default approval route |
 | --- | --- | --- | --- |

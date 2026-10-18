@@ -23,7 +23,7 @@ Enter `/mode plan`, then submit your question separately:
 
 Plan mode retains shell exploration. Confirmed read-only commands run directly. The mode policy denies analyzer-confirmed mutations. Commands whose effects cannot be determined statically go to an independent reviewer.
 
-Cade saves the resulting Markdown plan under `.cade/plans/` in the project root. Plan mode has a turn limit of eight by default. At that limit, it switches to Build and emits a mode notification.
+Cade saves the resulting Markdown plan under `.cade/plans/` in the project root. Plan mode remains active until you switch modes explicitly. Completing a plan or reaching any number of model steps never switches to Build or Act automatically.
 
 ## Build mode
 
