@@ -28,8 +28,3 @@ class ToolGateMode(Protocol):
 
     def filter_tools(self, registry: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]: ...
 
-
-class RuntimeModeState(ToolGateMode, Protocol):
-    """运行循环额外需要的模式状态能力。"""
-
-    def check_plan_timeout(self) -> bool: ...
