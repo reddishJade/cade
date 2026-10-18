@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from cade.agent.messages import AgentMessage
+from cade.agent.messages import AgentMessage, ToolResultMessage
 from cade.agent.request import DefaultRequestAssembler
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, Message, ProviderEvent
@@ -30,6 +30,7 @@ from cade.harness.agent_runtime.events import AgentHarnessEvent
 from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.config import AgentConfig
 from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.replay import unresolved_tool_attempts
 from cade.harness.session.runtime import RuntimeSession
 from cade.harness.session.store import SessionStore
 from cade.harness.session.types import JsonValue
@@ -256,6 +257,87 @@ def test_explicit_skill_activation_persists_without_host_recording(
     assert len(entries) == 2
     assert harness.activate_skill("review").status == "already_active"
     assert len(session.recorder.store.build_branch()) == 2
+
+
+@pytest.mark.asyncio
+async def test_crash_recovery_records_unknown_outcome_before_new_input(
+    tmp_path: Path,
+) -> None:
+    store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    store.append("assistant", "Initial context")
+    effect = tmp_path / "side-effect.txt"
+    script = """
+import os
+import sys
+from pathlib import Path
+from cade.agent.messages import UserMessage
+from cade.ai.events import ToolCall
+from cade.harness.agent_runtime.events import ToolUseStructuredEvent
+from cade.harness.session.inbox import SessionInbox, InboxLane
+from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.store import SessionStore
+store = SessionStore(Path(sys.argv[1]), project_root=Path(sys.argv[2]))
+store.resume(sys.argv[3])
+inbox = SessionInbox(store)
+inbox.insert(UserMessage(content='Run mutation'), InboxLane.NEXT_TURN, wake=True)
+inbox.claim_initial('crashed-run')
+SessionRecorder(store).record_event(ToolUseStructuredEvent(
+    'tool_use', 1, ToolCall(id='uncertain-call', name='mutate', input={})))
+Path(sys.argv[4]).write_text('Applied once', encoding='utf-8')
+os._exit(73)
+"""
+    result = await asyncio.to_thread(
+        subprocess.run,
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(store.sessions_dir),
+            str(tmp_path),
+            store.session_id,
+            str(effect),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 73, result.stderr
+    assert unresolved_tool_attempts(store.build_branch()) == ("uncertain-call",)
+    session = RuntimeSession(SessionRecorder(store))
+    provider = TextProvider()
+    harness = make_harness(session, provider)
+    await harness.arun("Inspect before retrying")
+    assert effect.read_text(encoding="utf-8") == "Applied once"
+    assert unresolved_tool_attempts(store.build_branch()) == ()
+    assert "Execution outcome is UNKNOWN" in str(provider.requests[0])
+    recovered = [
+        message
+        for message in session.history_messages()
+        if isinstance(message, ToolResultMessage)
+        and message.tool_call_id == "uncertain-call"
+    ]
+    assert len(recovered) == 1
+    assert recovered[0].metadata == {
+        "execution_status": "interrupted",
+        "outcome": "unknown",
+    }
+    await harness.arun("Next task")
+    facts = [entry.content for entry in store.build_branch()]
+    recovery_positions = [
+        index
+        for index, fact in enumerate(facts)
+        if isinstance(fact, dict) and fact.get("type") == "tool_result"
+    ]
+    assert len(recovery_positions) == 1
+    next_claim = next(
+        index
+        for index, fact in enumerate(facts)
+        if isinstance(fact, dict)
+        and fact.get("type") == "inbox/claimed"
+        and "Inspect before retrying" in str(fact)
+    )
+    assert recovery_positions[0] < next_claim
 
 
 def test_session_run_lock_excludes_other_process_and_releases(tmp_path: Path) -> None:

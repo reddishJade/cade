@@ -574,6 +574,7 @@ class AgentHarness:
                 run_handle = self._run_controller.begin_run(self.cancellation_token)
             try:
                 self._session.inbox.reload()
+                self._session.recover_tool_attempts()
                 history = self.history_messages()
                 turn_messages = self._run_controller.claim_initial(run_handle)
                 if not turn_messages:

@@ -8,9 +8,11 @@ from contextlib import contextmanager
 import filelock
 
 from cade.agent.messages import AgentMessage
+from cade.harness.agent_runtime.events import ToolResultBlock, ToolResultStructuredEvent
 
 from .inbox import SessionInbox
 from .recorder import SessionRecorder
+from .replay import unresolved_tool_attempts
 from .surface import project_session_surface
 
 
@@ -20,6 +22,29 @@ class RuntimeSession:
     def __init__(self, recorder: SessionRecorder) -> None:
         self.recorder = recorder
         self.inbox = SessionInbox(recorder.store)
+
+    def recover_tool_attempts(self) -> int:
+        """把未知工具结果记录为恢复事实，禁止自动重放副作用。"""
+        pending = unresolved_tool_attempts(self.recorder.store.build_branch())
+        for call_id in pending:
+            self.recorder.record_event(
+                ToolResultStructuredEvent(
+                    "tool_result",
+                    0,
+                    ToolResultBlock(
+                        call_id,
+                        "Execution outcome is UNKNOWN after interruption. "
+                        "Inspect workspace and external state before retrying; "
+                        "this recovery record does not prove execution failed.",
+                        status="error",
+                        metadata={
+                            "execution_status": "interrupted",
+                            "outcome": "unknown",
+                        },
+                    ),
+                )
+            )
+        return len(pending)
 
     def history_messages(self) -> list[AgentMessage]:
         store = self.recorder.store
