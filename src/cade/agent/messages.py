@@ -42,6 +42,8 @@ class SystemMessage(BaseModel):
 class UserMessage(BaseModel):
     role: str = "user"
     content: UserContent = ""
+    # Session origin is distinct from model role. Legacy entries default untrusted.
+    source: Literal["user", "runtime", "subagent", "unknown"] = "unknown"
     timestamp: int = 0
     model_config = ConfigDict(extra="forbid")
 

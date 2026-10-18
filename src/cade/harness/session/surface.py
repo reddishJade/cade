@@ -142,6 +142,12 @@ def project_session_surface(
                 raise InvalidSessionSurfaceError(
                     "inbox claim event must contain exactly one message"
                 )
+            claimed_message = claimed[0]
+            source = data.get("source")
+            if isinstance(claimed_message, UserMessage) and source in {
+                "user", "runtime", "subagent"
+            }:
+                claimed_message = claimed_message.model_copy(update={"source": source})
             run_id = data.get("run_id")
             if isinstance(run_id, str) and run_id and run_id != current_run_id:
                 # 新 run 关闭旧的中断批次；同 run 输入仍等完整工具结果。
@@ -154,9 +160,9 @@ def project_session_surface(
                     seen_tool_call_ids = _tool_call_ids(messages)
                 current_run_id = run_id
             if open_tool_calls:
-                deferred_inputs.append(claimed[0])
+                deferred_inputs.append(claimed_message)
             else:
-                messages.append(claimed[0])
+                messages.append(claimed_message)
             event_assistant_texts.clear()
             continue
         if event_type == "context_window_reset":

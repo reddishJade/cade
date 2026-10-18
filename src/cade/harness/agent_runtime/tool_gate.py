@@ -10,6 +10,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from cade.ai.events import ToolCall
 
+from ...agent.messages import SystemMessage, UserMessage
 from ...agent.config import (
     AfterToolCallContext,
     AfterToolCallHook,
@@ -655,25 +656,44 @@ class ToolGate:
 
 
 def _approval_transcript(ctx: BeforeToolCallContext) -> str:
-    """构建 reviewer 使用的有界会话证据，保留角色和信任边界。"""
-    entries: list[str] = []
+    """Serialize review evidence with trusted host-assigned provenance."""
+    entries: list[dict[str, object]] = []
     if ctx.context.system_prompt.strip():
-        entries.append(
-            _format_transcript_entry("system", ctx.context.system_prompt, 8_000)
-        )
+        entries.append({
+            "role": "system", "source": "policy", "authorizes": True,
+            "content": _truncate_transcript(ctx.context.system_prompt, 8_000),
+        })
     messages = [
         *ctx.context.request_prefix,
         *ctx.context.messages,
         ctx.assistant_message,
     ]
-    for message in messages[-40:]:
+    prefix_count = len(ctx.context.request_prefix)
+    for index, message in enumerate(messages[-40:]):
+        original_index = len(messages) - min(40, len(messages)) + index
         role = str(getattr(message, "role", "unknown"))
         content = _transcript_message_text(message)
         if not content or (role == "user" and content.casefold() == "continue"):
             continue
-        per_entry_limit = 4_000 if role == "tool_result" else 8_000
-        entries.append(_format_transcript_entry(role, content, per_entry_limit))
-    return _truncate_transcript("\n\n".join(entries), 40_000)
+        if isinstance(message, UserMessage):
+            source = message.source
+            authorizes = source == "user"
+        elif isinstance(message, SystemMessage):
+            authorizes = original_index < prefix_count
+            source = "policy" if authorizes else "runtime"
+        else:
+            source = "tool" if role == "tool_result" else "derived"
+            authorizes = False
+        entries.append({
+            "role": role, "source": source, "authorizes": authorizes,
+            "content": _truncate_transcript(
+                content, 4_000 if role == "tool_result" else 8_000
+            ),
+        })
+    # Remove entire old entries rather than slicing through JSON or trust metadata.
+    while len(json.dumps(entries, ensure_ascii=False)) > 40_000 and len(entries) > 1:
+        entries.pop(0)
+    return json.dumps(entries, ensure_ascii=False)
 
 
 def _transcript_message_text(message: object) -> str:
@@ -703,11 +723,6 @@ def _transcript_message_text(message: object) -> str:
     if isinstance(summary, str):
         return summary.strip()
     return ""
-
-
-def _format_transcript_entry(role: str, content: str, limit: int) -> str:
-    trust = "trusted" if role in {"system", "user"} else "untrusted"
-    return f"<{role} trust={trust}>\n{_truncate_transcript(content, limit)}\n</{role}>"
 
 
 def _truncate_transcript(text: str, limit: int) -> str:
