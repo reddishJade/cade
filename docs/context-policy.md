@@ -56,7 +56,7 @@ Components are attributed by injection location. System blocks and instruction c
 
 ## Request audits and rollover records
 
-Before a normal agent request, `before_provider_request` receives the final `RequestAssembly` envelope. Session records store a BLAKE2b request fingerprint (32-byte digest), request size, provider information, options, composition ID, and assembly trace, including the pre-reclamation input prediction. These correlate requests with budget decisions. The current assembly owns the full wire payload.
+Before a normal agent request, `before_provider_request` receives the final `RequestAssembly` envelope. Session records store the normalized messages, full tool definitions, provider information, request options, composition ID, and assembly trace. A BLAKE2b fingerprint (32-byte digest) and byte count cover this snapshot. Authentication headers, API keys, cancellation signals, and callbacks are excluded. The snapshot is independent of the assembly, so observers cannot modify the provider input through it. Audits never enter conversation projections. Full snapshots increase local transcript storage; provider adapters still own vendor-specific payload encoding.
 
 `context_window_reset` stores the complete typed surface replacement, source entry IDs, and generation. Replay validates source IDs against the branch prefix, increasing generation, message structure, and tool pairing. Replacement validation uses these source and structure checks; existing fingerprints describe provider requests.
 
