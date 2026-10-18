@@ -29,8 +29,8 @@ def test_reviewer_evidence_roles_and_sources() -> None:
         args={"command": "pwd"},
     )
     evidence = json.loads(_approval_transcript(ctx))
-    assert evidence[0]["source"] == "policy"
-    assert evidence[0]["authorizes"] is True
+    assert evidence[0]["source"] == "runtime"
+    assert evidence[0]["authorizes"] is False
     assert evidence[1]["source"] == "user"
     assert evidence[1]["authorizes"] is True
     assert evidence[2]["source"] == "runtime"
