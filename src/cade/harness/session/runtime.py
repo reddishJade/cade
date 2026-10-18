@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-import filelock
-
 from cade.agent.messages import AgentMessage
 from cade.harness.agent_runtime.events import ToolResultBlock, ToolResultStructuredEvent
 
@@ -56,13 +54,5 @@ class RuntimeSession:
     @contextmanager
     def run_lock(self) -> Iterator[None]:
         """拒绝同一持久会话的并发运行，不阻塞异步事件循环。"""
-        path = self.recorder.store.current_path
-        lock = filelock.FileLock(str(path.with_suffix(".run.lock")), timeout=0)
-        try:
-            lock.acquire()
-        except filelock.Timeout as exc:
-            raise RuntimeError("session already has an active run") from exc
-        try:
+        with self.recorder.store.run_lock():
             yield
-        finally:
-            lock.release()

@@ -16,7 +16,8 @@ import logging
 import os
 import re
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
@@ -223,6 +224,15 @@ def _read_log_tail(path: Path) -> tuple[TreeEntryModel | None, int]:
         return None, valid_end
 
 
+def _acquire_run_lock(path: Path) -> filelock.BaseFileLock:
+    lock = filelock.FileLock(str(path.resolve().with_suffix(".run.lock")), timeout=0)
+    try:
+        lock.acquire()
+    except filelock.Timeout as exc:
+        raise RuntimeError("session already has an active run") from exc
+    return lock
+
+
 class SessionStore:
     """管理会话事件树、日志分支和展示索引。"""
 
@@ -257,6 +267,35 @@ class SessionStore:
         _ensure_private_directory(self.artifacts_dir)
 
     # ── 公共 API ──
+
+    @property
+    def current_path(self) -> Path:
+        return self._current_path
+
+    @current_path.setter
+    def current_path(self, value: Path) -> None:
+        if not hasattr(self, "_current_path"):
+            self._current_path = value
+            return
+        with self._lock:
+            if value == self._current_path:
+                return
+            with self.run_lock():
+                target_lock = _acquire_run_lock(value)
+                try:
+                    self._current_path = value
+                finally:
+                    target_lock.release()
+
+    @contextmanager
+    def run_lock(self) -> Iterator[None]:
+        """串行保护完整运行和分支操作，追加输入仍可使用存储锁。"""
+        with self._lock:
+            lock = _acquire_run_lock(self.current_path)
+        try:
+            yield
+        finally:
+            lock.release()
 
     @property
     def session_id(self) -> str:
@@ -305,7 +344,7 @@ class SessionStore:
 
     def fork_into(self, title: str = "", summary: str = "") -> SessionStore:
         """从当前 head 分叉，创建新会话（新文件，拷贝 entry）。"""
-        with self._lock:
+        with self.run_lock(), self._lock:
             parent = self.ensure_metadata()
             fork_path = self._new_path()
             if self.current_path.exists():
@@ -380,7 +419,7 @@ class SessionStore:
         """回退指定轮次：将 head_id 往回移动。"""
         if turns < 1:
             raise ValueError("turns must be positive")
-        with self._lock:
+        with self.run_lock(), self._lock:
             branch = self.build_branch()
             user_indices: list[int] = []
             seen_runs: set[str] = set()
@@ -549,7 +588,7 @@ class SessionStore:
 
     def jump_to_entry(self, entry_id: str) -> bool:
         """将导航意图追加到日志，索引丢失后仍可恢复回退位置。"""
-        with self._lock:
+        with self.run_lock(), self._lock:
             if not any(
                 entry.id == entry_id and entry.type != "head"
                 for entry in self.read_entries()
@@ -562,7 +601,7 @@ class SessionStore:
         self, entry_id: str, title: str = "", summary: str = ""
     ) -> SessionStore:
         """在指定用户输入之前分叉，保留该位置之前的完整历史前缀。"""
-        with self._lock:
+        with self.run_lock(), self._lock:
             branch = self.build_branch()
             start = next(
                 (index for index, entry in enumerate(branch) if entry.id == entry_id),
