@@ -61,7 +61,7 @@ class CodingAgentHarness(AgentHarness):
             initial_mode=runtime.initial_mode, approval_router=runtime.approval_router
         )
         self._session_history = runtime.session_history
-        self._goal_session_id = runtime.gate.session_id
+        self._goal_session_id = runtime.session.recorder.store.session_id
         super().__init__(composition, runtime)
         self._goal = GoalController(
             lambda: judge_provider if judge_provider is not None else self.provider

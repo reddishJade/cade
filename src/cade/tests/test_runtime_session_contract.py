@@ -412,6 +412,21 @@ async def test_request_snapshot_is_durable_reproducible_and_isolated(
     )
     await harness.arun("Original input")
     assert provider.requests[0][0]["content"] == "Original input"
+    await harness.arun("Second task")
+    await make_harness(session, provider).arun("Third task")
+    requests = [
+        entry.content
+        for entry in session.recorder.store.build_branch()
+        if isinstance(entry.content, dict)
+        and entry.content.get("type") == "provider_request"
+    ]
+    request_ids = [fact["correlation"]["request_id"] for fact in requests]
+    turn_ids = [fact["correlation"]["turn_id"] for fact in requests]
+    assert len(set(request_ids)) == len(set(turn_ids)) == 3
+    assert all(
+        fact["correlation"]["session_id"] == session.recorder.store.session_id
+        for fact in requests
+    )
 
 
 def test_request_snapshot_preserves_builtins_but_excludes_transport_credentials() -> (
