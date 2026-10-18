@@ -215,9 +215,45 @@ def normalize_cross_provider_messages(
 def to_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """转换为 Chat Completions API 格式。tool result 使用 role:'tool'。"""
     converted: list[dict[str, Any]] = []
+    pending_tool_images: list[dict[str, Any]] = []
     for message in messages:
         role = str(message.get("role", "user"))
         content = message.get("content")
+        if role != "tool" and pending_tool_images:
+            converted.append({"role": "user", "content": pending_tool_images})
+            pending_tool_images = []
+        if role == "tool" and isinstance(content, list):
+            text = "".join(
+                str(part.get("text", ""))
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+            converted.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": message.get("tool_call_id", ""),
+                    "content": text,
+                }
+            )
+            images = [
+                part
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "image_url"
+            ]
+            if images:
+                pending_tool_images.extend(
+                    [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Image output from tool call "
+                                f"{message.get('tool_call_id', '')}:"
+                            ),
+                        },
+                        *images,
+                    ]
+                )
+            continue
         if "content" in message:
             if role == "tool" and content is None:
                 result_content: str | None = ""
@@ -252,6 +288,8 @@ def to_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if "prefix" in message:
                 result["prefix"] = message["prefix"]
             converted.append(result)
+    if pending_tool_images:
+        converted.append({"role": "user", "content": pending_tool_images})
     return converted
 
 

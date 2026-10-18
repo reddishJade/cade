@@ -61,8 +61,39 @@ def _convert_tool_result(m: ToolResultMessage) -> dict[str, Any]:
     return {
         "role": "tool",
         "tool_call_id": m.tool_call_id,
-        "content": _tool_result_content_text(m.content),
+        "content": (
+            _structured_tool_content(m.content)
+            if isinstance(m.content, list)
+            and any(isinstance(item, ImageContent) for item in m.content)
+            else _tool_result_content_text(m.content)
+        ),
     }
+
+
+def _structured_tool_content(content: list) -> list[dict[str, Any]]:
+    """保留工具结果的图片，与文本共同传给 provider。"""
+    parts: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, ImageContent):
+            source = item.source or {}
+            if source.get("type") == "base64":
+                data = source.get("data")
+                media_type = source.get("media_type", "image/png")
+                if not isinstance(data, str) or not data:
+                    raise ValueError("Image content requires base64 data")
+                if not isinstance(media_type, str) or not media_type.startswith(
+                    "image/"
+                ):
+                    raise ValueError("Image content requires a valid media type")
+                url = f"data:{media_type};base64,{data}"
+            else:
+                url = source.get("url")
+                if not isinstance(url, str) or not url:
+                    raise ValueError("Image content requires a URL or base64 data")
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        else:
+            parts.append({"type": "text", "text": _tool_result_content_text([item])})
+    return parts
 
 
 def _tool_result_content_text(content: object) -> str:
