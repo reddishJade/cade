@@ -15,8 +15,8 @@ from cade.agent.request import DefaultRequestAssembler
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, Message, ProviderEvent, ToolCall, ToolCallEvent
 from cade.ai.providers.base import Provider
-from cade.ai.usage import UsageTotals
 from cade.ai.types import StreamOptions, ToolDefinition
+from cade.ai.usage import UsageTotals
 from cade.coding_agent.execution_modes import (
     ExecutionModeState,
     build_default_mode_rulesets,
