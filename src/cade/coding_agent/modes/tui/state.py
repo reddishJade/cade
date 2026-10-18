@@ -253,13 +253,33 @@ class _TuiState:
         self.pending_hitl = None
         self.running = False
         self.working = False
-        for record in records:
+        for index, record in enumerate(records):
             if record.type == "assistant":
                 text = str(record.content).strip()
                 if text:
                     self.log.append(_LogEntry("cade", text, markdown=True))
             elif record.type == "event" and isinstance(record.content, Mapping):
-                self._restore_event(record.content)
+                content = record.content
+                if content.get("type") == "final":
+                    data = content.get("data")
+                    answer = data.get("answer") if isinstance(data, Mapping) else None
+                    if isinstance(answer, str) and answer.strip():
+                        # Older transcripts copied this answer into an immediately
+                        # following assistant entry. Render either representation once.
+                        following = (
+                            records[index + 1] if index + 1 < len(records) else None
+                        )
+                        legacy_copy = (
+                            following is not None
+                            and following.type == "assistant"
+                            and str(following.content).strip() == answer.strip()
+                        )
+                        if not legacy_copy:
+                            self.log.append(
+                                _LogEntry("cade", answer.strip(), markdown=True)
+                            )
+                else:
+                    self._restore_event(content)
 
     def _restore_event(self, content: Mapping[str, object]) -> None:
         event_type = content.get("type")

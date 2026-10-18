@@ -481,6 +481,16 @@ class SessionStore:
                     user_text = _collapse_text(claimed_text)
                 elif e.type == "assistant" and assistant_text is None:
                     assistant_text = _collapse_text(str(e.content))
+                elif (
+                    e.type == "event"
+                    and isinstance(e.content, dict)
+                    and e.content.get("type") == "final"
+                    and assistant_text is None
+                ):
+                    data = e.content.get("data")
+                    answer = data.get("answer") if isinstance(data, dict) else None
+                    if isinstance(answer, str):
+                        assistant_text = _collapse_text(answer)
             summary = (
                 _make_conversation_summary(user_text, assistant_text)
                 if user_text
