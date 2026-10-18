@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from dataclasses import replace
 from uuid import uuid4
 
@@ -276,14 +276,18 @@ class CodingAgentHarness(AgentHarness):
         mode: ExecutionMode | None = None,
         *,
         display_question: str | None = None,
-    ) -> AsyncIterator[AgentHarnessEvent]:
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
         if mode is not None:
             self._mode.set_mode(mode)
-        async for event in super().arun_stream(
+        stream = super().arun_stream(
             question,
             display_question=display_question,
-        ):
-            yield event
+        )
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            await stream.aclose()
 
     # ── 技能激活内部 ──
 

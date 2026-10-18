@@ -11,8 +11,9 @@ from cade.harness.agent_runtime.context_window import (
     ContextWindowRollover,
 )
 from cade.harness.config import CadeRuntimeConfig, resolve_config_path
-from cade.harness.session import SessionHistory, SessionInbox, SessionStore
+from cade.harness.session import SessionHistory, SessionStore
 from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.runtime import RuntimeSession
 
 from ..working_note import capture_working_note
 
@@ -23,8 +24,11 @@ class SharedInfra:
     context_window_controller: ContextWindowController
     context_rollover: ContextWindowRollover
     session_history: SessionHistory
-    session_inbox: SessionInbox
-    session_recorder: SessionRecorder
+    session: RuntimeSession
+
+    @property
+    def session_recorder(self) -> SessionRecorder:
+        return self.session.recorder
 
 
 def build_shared_infra(
@@ -59,12 +63,11 @@ def build_shared_infra(
         artifacts_dir=session_recorder.store.artifacts_dir,
         project_root=project_root,
     )
-    session_inbox = SessionInbox(session_recorder.store)
+    session = RuntimeSession(session_recorder)
     return SharedInfra(
         cancellation_token=cancellation_token,
         context_window_controller=context_window_controller,
         context_rollover=context_rollover,
         session_history=session_history,
-        session_inbox=session_inbox,
-        session_recorder=session_recorder,
+        session=session,
     )

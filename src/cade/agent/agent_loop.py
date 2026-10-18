@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 
 from cade.agent.types import CancellationSignal, TextContent, ToolCallContent
 from cade.ai.providers.base import StreamProvider
@@ -66,7 +66,7 @@ async def run_agent_loop(
     steer_queue: Callable[[], list[AgentMessage]] | None = None,
     finish_steering: Callable[[], list[AgentMessage]] | None = None,
     reopen_steering: Callable[[], None] | None = None,
-) -> AsyncIterator[AgentEvent | AgentLoopResult]:
+) -> AsyncGenerator[AgentEvent | AgentLoopResult, None]:
     """实时交付循环事件，最后交付结果；关闭消费方时清理执行任务。"""
     events: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
 

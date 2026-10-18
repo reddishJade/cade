@@ -27,7 +27,9 @@ from cade.coding_agent.state import CodingRunState
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import GateConfig
 from cade.harness.config import AgentConfig
-from cade.harness.session import SessionInbox, SessionStore
+from cade.harness.session import SessionStore
+from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.runtime import RuntimeSession
 
 
 class _TenStepProvider(Provider):
@@ -117,7 +119,9 @@ async def test_plan_persists_through_ten_tool_steps(tmp_path: Path) -> None:
     harness = CodingAgentHarness(
         composition,
         CodingAgentRuntimeConfig(
-            session_inbox=SessionInbox(SessionStore(tmp_path / "sessions")),
+            session=RuntimeSession(
+                SessionRecorder(SessionStore(tmp_path / "sessions"))
+            ),
             initial_mode="plan",
         ),
     )

@@ -207,7 +207,6 @@ def test_version_two_session_can_continue_with_durable_runtime_context(
     recorder = SessionRecorder(store)
     event = ContextStructuredEvent("runtime_context", 1, context)
     recorder.record_event(event)
-    recorder.record_event(event)
     store.append("assistant", "Done")
     agent = DummyReplayAgent()
     replay_session(agent, store)

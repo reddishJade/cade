@@ -63,8 +63,9 @@ from cade.harness.config import (
 )
 from cade.harness.execution_env import ExecutionResult, Shell, SubprocessShell
 from cade.harness.security import Action, StaticPolicyEvaluator, Target
-from cade.harness.session import SessionInbox, SessionStore
+from cade.harness.session import SessionStore
 from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.runtime import RuntimeSession
 from cade.harness.session.surface import project_session_surface
 
 
@@ -405,10 +406,12 @@ class TestHarnessWorkingDirectoryContract:
             ),
             runtime_context_provider=None,
         )
-        inbox = SessionInbox(SessionStore(working_directory_root / "sessions"))
+        session = RuntimeSession(
+            SessionRecorder(SessionStore(working_directory_root / "sessions"))
+        )
         harness = AgentHarness(
             composition,
-            AgentRuntimeConfig(session_inbox=inbox),
+            AgentRuntimeConfig(session=session),
         )
 
         await harness.run_async("Report the current directory.")
@@ -421,13 +424,13 @@ class TestHarnessWorkingDirectoryContract:
 
 
 @pytest.mark.asyncio
-async def test_model_facts_are_durable_before_send_and_not_recorded_twice(
+async def test_runtime_owns_facts_and_final_without_consumer_recording(
     working_directory_root: Path,
 ) -> None:
     """覆盖缺口：UI 消费晚于请求时，模型事实仍须先落盘。
 
     运行本模块；使用真实装配、会话与受控 provider。在每次发送边界独立
-    重放磁盘日志并比较完整消息，消费端再次记录同一事件不得复制事实。
+    重放磁盘日志并比较完整消息；消费端不参与事实或终态提交。
     """
     store = SessionStore(working_directory_root / "sessions")
     recorder = SessionRecorder(store)
@@ -474,10 +477,10 @@ async def test_model_facts_are_durable_before_send_and_not_recorded_twice(
             runtime_context_provider=None,
         ),
         AgentRuntimeConfig(
-            session_inbox=SessionInbox(store),
+            session=RuntimeSession(recorder),
             gate=GateRuntimeConfig(
                 hook_manager=build_hook_manager(
-                    None, recorder, working_directory_root, subagent=False
+                    None, working_directory_root, subagent=False
                 )
             ),
         ),
@@ -485,13 +488,21 @@ async def test_model_facts_are_durable_before_send_and_not_recorded_twice(
     harness.session_id = store.session_id
     for question in ("First task", "Second task"):
         async for event in harness.arun_stream(question):
-            recorder.record_event(event)
+            if event.type == "final":
+                facts = [entry.content for entry in store.build_branch()]
+                assert any(
+                    isinstance(fact, dict) and fact.get("type") == "final"
+                    for fact in facts
+                )
+                assert harness.active_run() is not None
+        assert harness.active_run() is None
     facts = [entry.content for entry in store.build_branch() if entry.type == "event"]
     assert (
         sum(isinstance(f, dict) and f.get("type") == "runtime_context" for f in facts)
         == 1
     )
     assert sum(isinstance(f, dict) and f.get("type") == "assistant" for f in facts) == 2
+    assert sum(isinstance(f, dict) and f.get("type") == "final" for f in facts) == 2
     assert len(provider.requests) == 2
 
 
