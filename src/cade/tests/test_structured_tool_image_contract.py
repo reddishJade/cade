@@ -11,7 +11,6 @@ from cade.agent.types import ImageContent, TextContent, ToolCallContent
 from cade.ai.providers._codec import to_chat_messages
 from cade.ai.providers.responses import to_responses_input
 
-
 IMAGE_DATA = "aGVsbG8="
 IMAGE_URL = f"data:image/png;base64,{IMAGE_DATA}"
 
