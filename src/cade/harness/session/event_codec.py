@@ -25,6 +25,7 @@ from cade.harness.agent_runtime.events import (
     UsageUpdateStructuredEvent,
 )
 from cade.harness.session.surface import encode_surface_messages
+from cade.harness.session.window_projection import encode_rollover_spec
 
 from .schema import SESSION_EVENT_SCHEMA_VERSION
 
@@ -108,13 +109,23 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             "type": "tool_result",
         }
     if isinstance(event, ContextWindowResetStructuredEvent):
-        return {
+        data: dict[str, Any] = {
             "window_id": event.data.window_id,
             "messages_removed": event.data.messages_removed,
             "messages_after": event.data.messages_after,
             "trigger": event.data.trigger,
-            "replacement": encode_surface_messages(list(event.data.replacement)),
         }
+        if event.data.reproject_from_facts:
+            data["rollover_spec"] = encode_rollover_spec(
+                event.data.rollover_policy,
+                preserve_user_request=event.data.preserve_user_request,
+            )
+        else:
+            # External/custom rollover functions lack a replayable policy contract.
+            data["replacement"] = encode_surface_messages(
+                list(event.data.replacement)
+            )
+        return data
     if isinstance(event, UsageUpdateStructuredEvent):
         return dict(event.data)
     if isinstance(event, ResponseMetricsStructuredEvent):
