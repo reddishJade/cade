@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 import pytest
@@ -21,6 +21,7 @@ from cade.coding_agent.execution_modes import (
 )
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.coding_agent.runtime import CodingAgentRuntimeConfig
+from cade.coding_agent.state import CodingRunState
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import GateConfig
 from cade.harness.config import AgentConfig
@@ -36,6 +37,7 @@ class _TenStepProvider:
     def __init__(self) -> None:
         self.calls = 0
         self.modes: list[str] = []
+        self.current_mode: Callable[[], str] = lambda: "plan"
 
     async def stream(
         self,
@@ -110,6 +112,7 @@ async def test_plan_persists_through_ten_tool_steps(tmp_path: Path) -> None:
     assert provider.calls == 11
     assert provider.modes == ["plan"] * 11
     assert len(executed) == 10
+    assert isinstance(result.run_state, CodingRunState)
     assert result.run_state.current_mode == "plan"
     assert harness.current_mode == "plan"
     harness.set_mode("build")
