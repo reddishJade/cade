@@ -60,7 +60,9 @@ class _TenStepProvider:
             )
             yield FinalMessage(content="", stop_reason="tool_use")
         else:
-            yield FinalMessage(content="Investigation complete.", stop_reason="end_turn")
+            yield FinalMessage(
+                content="Investigation complete.", stop_reason="end_turn"
+            )
 
 
 def test_only_explicit_selection_changes_mode() -> None:
