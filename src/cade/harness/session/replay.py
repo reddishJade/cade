@@ -70,7 +70,42 @@ def replay_session(
         )
     if restoration_notice:
         notice = f"{notice}\n\n{restoration_notice}"
+    unresolved = unresolved_tool_attempts(records)
+    if unresolved:
+        notice = (
+            f"{notice}\n\nRecovery warning: {len(unresolved)} prior tool "
+            "invocation(s) have no recorded result. Their filesystem or external "
+            "side effects are UNKNOWN. Inspect current state and the original "
+            "session history before repeating those operations; a missing result "
+            "does not prove that the action failed."
+        )
     agent.set_resumed_notice(notice)
+
+
+def unresolved_tool_attempts(records: list[SessionEntry]) -> tuple[str, ...]:
+    """Find attempted tools without results in the current logged window.
+
+    Tool-use is emitted before permission review and execution. It proves only
+    that an action was attempted; absence of a result leaves the outcome unknown.
+    A context-window reset explicitly closes the preceding model-visible window.
+    """
+    pending: dict[str, str] = {}
+    for record in records:
+        if record.type != "event" or not isinstance(record.content, dict):
+            continue
+        event_type = record.content.get("type")
+        data = record.content.get("data")
+        if event_type == "context_window_reset":
+            pending.clear()
+        elif event_type == "tool_use" and isinstance(data, dict):
+            call_id = data.get("id")
+            if isinstance(call_id, str) and call_id:
+                pending[call_id] = call_id
+        elif event_type == "tool_result" and isinstance(data, dict):
+            call_id = data.get("tool_use_id")
+            if isinstance(call_id, str):
+                pending.pop(call_id, None)
+    return tuple(pending)
 
 
 def latest_run_state(records: list[SessionEntry]) -> object | None:
