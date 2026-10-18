@@ -133,13 +133,9 @@ def build_provider_bundle(settings: ProviderSettings) -> ProviderBundle:
 def _build_llm_profiles(
     settings: ProviderSettings,
 ) -> dict[str, ModelProvider]:
-    """构造所有 model profile 的 provider 实例。"""
+    """只为调用方实际选择的角色构造实例；其他角色由宿主继承 main。"""
     profile_settings = dict(settings.model_profiles)
     profile_settings.setdefault("main", ModelProfileConfig())
-    profile_settings.setdefault("subagent", profile_settings["main"])
-    profile_settings.setdefault("reviewer", profile_settings["main"])
-    profile_settings.setdefault("judge", profile_settings["main"])
-    profile_settings.setdefault("refiner", profile_settings["main"])
     return {
         name: _build_llm_profile(
             profile,

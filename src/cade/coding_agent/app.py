@@ -99,7 +99,7 @@ class CadeApp:
         if self._model_profiles is None or self._runtime_config is None:
             raise RuntimeError("model configuration is not available")
         sync_reviewer = profile == "main" and "reviewer" not in self._model_profiles
-        current = self._model_profiles.get(profile) or ModelProfileConfig()
+        current = self._model_profiles.get(profile) or self._model_profiles["main"]
         resolution = ModelResolver.resolve(
             model_or_alias=model,
             transport=transport,
