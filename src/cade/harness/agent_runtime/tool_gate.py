@@ -204,7 +204,6 @@ class ToolGate:
         self._session_grant_store = session_grant_store
         self._session_grant_store_provider = session_grant_store_provider
         self._permanent_grant_store = permanent_grant_store
-        self._last_perm_results: dict[str, PermissionEngineResult] = {}
 
     def _resolve_session_store(self) -> GrantStore | None:
         if self._session_grant_store_provider is not None:
@@ -435,24 +434,25 @@ class ToolGate:
                 decision,
                 tool_call.id,
             )
-            permission_result = self._precheck_permission(
+            permission = self._precheck_permission(
                 tool_call.name,
                 args,
                 decision,
                 snapshot,
-                tool_call.id,
                 approval_transcript=_approval_transcript(ctx),
                 approval_turn_id=self._correlation.turn_id,
             )
-            if permission_result is not None:
-                perm_result = self._last_perm_results.pop(tool_call.id, None)
-                if perm_result is not None:
-                    self._audit_blocked(
-                        tool_call,
-                        args,
-                        perm_result,
-                    )
-                return permission_result
+            if permission.blocked:
+                self._audit_blocked(tool_call, args, permission)
+                suggestion = permission.remediation or ""
+                if permission.metadata:
+                    suggestion = str(permission.metadata.get("suggestion", suggestion))
+                return BeforeToolCallResult(
+                    block=True,
+                    reason=permission.reason,
+                    suggestion=suggestion,
+                    approval_denied=_approval_denied(permission),
+                )
 
             ctx.args = args
             emit_hook(
@@ -464,9 +464,10 @@ class ToolGate:
                     **self._hook_correlation_fields(tool_call.id),
                 ),
             )
-            if args != original_args:
-                return BeforeToolCallResult(args=args)
-            return None
+            return BeforeToolCallResult(
+                args=args if args != original_args else None,
+                permission_result=permission,
+            )
 
         return before_tool
 
@@ -483,7 +484,11 @@ class ToolGate:
                 result_text,
                 self._hook_correlation_fields(ctx.tool_call.id),
             )
-            perm_result = self._last_perm_results.pop(ctx.tool_call.id, None)
+            perm_result = (
+                ctx.permission_result
+                if isinstance(ctx.permission_result, PermissionEngineResult)
+                else None
+            )
             permission_notice = _permission_notice(perm_result)
             if permission_notice is not None:
                 details = (
@@ -594,11 +599,10 @@ class ToolGate:
         args: dict[str, Any],
         execution_decision: PermissionDecision,
         snapshot: ToolGateSnapshot,
-        tool_call_id: str,
         *,
         approval_transcript: str = "",
         approval_turn_id: str = "",
-    ) -> BeforeToolCallResult | None:
+    ) -> PermissionEngineResult:
         action_profiles: dict[str, tuple[str, str]] = {}
         path_extractors = dict(snapshot.tool_path_extractors)
         for spec in snapshot.tool_map.values():
@@ -638,18 +642,7 @@ class ToolGate:
             approval_transcript=approval_transcript,
             approval_turn_id=approval_turn_id,
         )
-        self._last_perm_results[tool_call_id] = result
-        if result.blocked:
-            suggestion = result.remediation or ""
-            if result.metadata:
-                suggestion = str(result.metadata.get("suggestion", suggestion))
-            return BeforeToolCallResult(
-                block=True,
-                reason=result.reason,
-                suggestion=suggestion,
-                approval_denied=_approval_denied(result),
-            )
-        return None
+        return result
 
 
 # ── 模块级辅助 ──

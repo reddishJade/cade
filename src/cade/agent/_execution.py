@@ -364,6 +364,9 @@ async def _execute_one_impl(
         content,
         config,
         signal,
+        permission_result=before_result.permission_result
+        if before_result is not None
+        else None,
     )
 
     result_msg = _tool_result_message(
@@ -527,6 +530,8 @@ def _run_after_tool_hook(
     content: list[ToolResultContentBlock],
     config: AgentLoopConfig,
     signal: CancellationSignal | None,
+    *,
+    permission_result: object | None = None,
 ) -> tuple[list[ToolResultContentBlock], bool, bool]:
     if not config.after_tool_call:
         return content, is_error, terminate
@@ -537,6 +542,7 @@ def _run_after_tool_hook(
         result=tool_result,
         is_error=is_error,
         context=current_context,
+        permission_result=permission_result,
     )
     after_result = config.after_tool_call(after_ctx, signal)
     if after_result is None:

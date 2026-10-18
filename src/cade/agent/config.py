@@ -78,6 +78,8 @@ class BeforeToolCallResult(BaseModel):
     suggestion: str = ""
     approval_denied: bool = False
     args: ToolArguments | None = None
+    # Opaque host-owned evidence bound to this invocation; never keyed globally.
+    permission_result: Annotated[object | None, SkipValidation] = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -88,6 +90,7 @@ class AfterToolCallContext(BaseModel):
     result: AgentToolResult
     is_error: bool
     context: AgentContext
+    permission_result: Annotated[object | None, SkipValidation] = None
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
