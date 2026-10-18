@@ -91,7 +91,7 @@ class CadeApp:
         context_window: int | None = None,
     ) -> str:
         """切换主/子 agent 模型；`context_window` 为 0 时恢复模型默认窗口。"""
-        from cade.ai.providers.registry import ModelProfileConfig, ModelProfileProto
+        from cade.ai.providers.registry import ModelProfileProto
         from cade.ai.resolver import ModelResolver, provider_for_transport
 
         if profile not in {"main", "subagent"}:
@@ -99,7 +99,7 @@ class CadeApp:
         if self._model_profiles is None or self._runtime_config is None:
             raise RuntimeError("model configuration is not available")
         sync_reviewer = profile == "main" and "reviewer" not in self._model_profiles
-        current = self._model_profiles.get(profile) or ModelProfileConfig()
+        current = self._model_profiles.get(profile) or self._model_profiles["main"]
         resolution = ModelResolver.resolve(
             model_or_alias=model,
             transport=transport,

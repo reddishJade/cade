@@ -92,5 +92,4 @@ def resolve_model_profiles(
         profiles[role] = resolve_model_profile(
             config, provider, model, {**options, **fields}, env_files
         )
-    profiles.setdefault("subagent", main)
     return profiles
