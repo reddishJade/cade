@@ -41,7 +41,9 @@ def test_chat_keeps_all_tool_outputs_before_synthetic_image_message() -> None:
         tool_call_id="a",
         content=[
             TextContent(text="Screenshot"),
-            ImageContent(source={"type": "base64", "media_type": "image/png", "data": IMAGE_DATA}),
+            ImageContent(
+                source={"type": "base64", "media_type": "image/png", "data": IMAGE_DATA}
+            ),
         ],
     )
     text_result = ToolResultMessage(tool_call_id="b", content="Other output")
@@ -50,7 +52,10 @@ def test_chat_keeps_all_tool_outputs_before_synthetic_image_message() -> None:
     assert [message["role"] for message in chat] == ["tool", "tool", "user"]
     assert chat[0]["content"] == "Screenshot"
     assert chat[1]["content"] == "Other output"
-    assert chat[-1]["content"][1] == {"type": "image_url", "image_url": {"url": IMAGE_URL}}
+    assert chat[-1]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": IMAGE_URL},
+    }
 
 
 def test_responses_function_output_preserves_image_payload() -> None:
@@ -58,7 +63,9 @@ def test_responses_function_output_preserves_image_payload() -> None:
         tool_call_id="a",
         content=[
             TextContent(text="Screenshot"),
-            ImageContent(source={"type": "base64", "media_type": "image/png", "data": IMAGE_DATA}),
+            ImageContent(
+                source={"type": "base64", "media_type": "image/png", "data": IMAGE_DATA}
+            ),
         ],
     )
     output = to_responses_input(convert_to_llm([result]))
