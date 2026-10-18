@@ -262,15 +262,13 @@ class _TuiState:
                 content = record.content
                 if content.get("type") == "final":
                     data = content.get("data")
-                    answer = (
-                        data.get("answer")
-                        if isinstance(data, Mapping)
-                        else None
-                    )
+                    answer = data.get("answer") if isinstance(data, Mapping) else None
                     if isinstance(answer, str) and answer.strip():
                         # Older transcripts copied this answer into an immediately
                         # following assistant entry. Render either representation once.
-                        following = records[index + 1] if index + 1 < len(records) else None
+                        following = (
+                            records[index + 1] if index + 1 < len(records) else None
+                        )
                         legacy_copy = (
                             following is not None
                             and following.type == "assistant"
