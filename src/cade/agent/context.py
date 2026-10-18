@@ -502,6 +502,16 @@ class InstructionCollector:
 
         return blocks
 
+    def source_paths(self) -> tuple[Path, ...]:
+        """返回当前实际收集到的文件来源，排除内联指令。"""
+        paths: list[Path] = []
+        for block in self.collect(ContextCollectionInput()):
+            if block.provenance and block.provenance != "inline instruction":
+                path = Path(block.provenance)
+                if path not in paths:
+                    paths.append(path)
+        return tuple(paths)
+
     def _normalise_cwd(self, cwd: Path, root: Path) -> Path:
         resolved = cwd.resolve()
         try:
