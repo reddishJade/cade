@@ -322,7 +322,9 @@ class SubagentSessionManager:
                 project_root=child_store.project_root,
             ),
         )
-        surface = project_session_surface(child_store.build_branch())
+        surface = project_session_surface(
+            child_store.build_branch(), artifacts_dir=child_store.artifacts_dir
+        )
         if surface.messages:
             harness.load_history(list(surface.messages))
         active_descriptor = descriptor or SubagentDescriptor(

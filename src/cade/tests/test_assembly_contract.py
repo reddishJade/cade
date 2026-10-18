@@ -440,7 +440,9 @@ async def test_model_facts_are_durable_before_send_and_not_recorded_twice(
             options: StreamOptions | None = None,
             **kwargs: object,
         ) -> AsyncIterator[ProviderEvent]:
-            restored = project_session_surface(store.build_branch())
+            restored = project_session_surface(
+                store.build_branch(), artifacts_dir=store.artifacts_dir
+            )
             assert any(isinstance(m, ContextMessage) for m in restored.messages)
             assert convert_to_llm(list(restored.messages)) == messages
             async for event in super().stream(messages, tools, options, **kwargs):

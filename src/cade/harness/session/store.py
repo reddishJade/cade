@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import shutil
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
@@ -278,6 +279,15 @@ class SessionStore:
             self._append_entry(entry)
             self._save_head_id(entry_id)
             return entry_id
+
+    def append_derived(
+        self,
+        record_type: str,
+        content: Callable[[list[SessionEntry]], JsonValue],
+    ) -> str:
+        """在同一锁内读取分支并追加派生事实，避免引用过期的 head。"""
+        with self._lock:
+            return self.append(record_type, content(self.build_branch()))
 
     def read_entries(self) -> list[SessionEntry]:
         """读取当前会话的全部 entry。"""
@@ -555,7 +565,7 @@ class SessionStore:
             copied = branch[:start]
             from .surface import project_session_surface
 
-            project_session_surface(copied)
+            project_session_surface(copied, artifacts_dir=self.artifacts_dir)
             parent = self.ensure_metadata()
             fork_path = self._new_path()
             with _open_private_text(fork_path, append=False) as f:

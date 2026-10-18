@@ -16,8 +16,15 @@ from cade.agent.messages import (
     ContextMessage,
     UserMessage,
 )
-from cade.agent.types import TextContent
-from cade.harness.agent_runtime.events import ContextStructuredEvent
+from cade.agent.types import TextContent, ToolCallContent
+from cade.harness.agent_runtime.events import (
+    AssistantStructuredEvent,
+    AssistantTextBlock,
+    AssistantToolUseBlock,
+    ContextStructuredEvent,
+    ToolResultBlock,
+    ToolResultStructuredEvent,
+)
 from cade.harness.session import (
     InboxLane,
     SessionHistory,
@@ -31,6 +38,7 @@ from cade.harness.session.surface import (
     InvalidSessionSurfaceError,
     encode_surface_messages,
     project_session_surface,
+    validate_tool_pairing,
 )
 
 
@@ -220,6 +228,79 @@ def test_version_two_session_can_continue_with_durable_runtime_context(
         InvalidSessionSurfaceError, match="unsupported runtime context schema"
     ):
         project_session_surface(store.build_branch())
+
+
+def test_new_run_claim_closes_interrupted_batch_before_new_context(
+    tmp_path: Path,
+) -> None:
+    """覆盖中断批次把后续用户输入移到回复之后的缺口。
+
+    运行本模块；真实文件记录部分工具结果、同 run 的 steering 和新 run。
+    独立检查完整角色顺序及工具配对，旧未完成调用只能失效，不能伪造结果。
+    """
+    store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
+    inbox = SessionInbox(store)
+    recorder = SessionRecorder(store)
+    inbox.insert(UserMessage(content="Original task"), InboxLane.NEXT_TURN, wake=True)
+    inbox.claim_initial("original-run")
+    recorder.record_event(
+        AssistantStructuredEvent(
+            "assistant",
+            1,
+            (
+                AssistantToolUseBlock("done", "echo", {}),
+                AssistantToolUseBlock("interrupted", "echo", {}),
+            ),
+        )
+    )
+    recorder.record_event(
+        ToolResultStructuredEvent(
+            "tool_result", 1, ToolResultBlock("done", "Complete output")
+        )
+    )
+    inbox.insert(
+        UserMessage(content="Earlier steering"), InboxLane.NEXT_STEP, wake=False
+    )
+    inbox.claim_next_step("original-run")
+    inbox.insert(UserMessage(content="Resume the task"), InboxLane.NEXT_TURN, wake=True)
+    inbox.claim_initial("new-run")
+    snapshot = ContextMessage(content="Current runtime context after interruption")
+    recorder.record_event(ContextStructuredEvent("runtime_context", 1, snapshot))
+    recorder.record_event(
+        AssistantStructuredEvent(
+            "assistant", 1, (AssistantTextBlock("Recovered answer"),)
+        )
+    )
+    inbox.insert(UserMessage(content="Next task"), InboxLane.NEXT_TURN, wake=True)
+    inbox.claim_initial("third-run")
+
+    surface = project_session_surface(store.build_branch())
+    messages = list(surface.messages)
+    assert [m.role for m in messages] == [
+        "user",
+        "assistant",
+        "tool_result",
+        "user",
+        "user",
+        "context",
+        "assistant",
+        "user",
+    ]
+    assert [m.content for m in messages if isinstance(m, UserMessage)] == [
+        "Original task",
+        "Earlier steering",
+        "Resume the task",
+        "Next task",
+    ]
+    assert messages[5] == snapshot
+    assert [
+        b.id
+        for m in messages
+        if m.role == "assistant"
+        for b in m.content
+        if isinstance(b, ToolCallContent)
+    ] == ["done"]
+    validate_tool_pairing(messages)
 
 
 def test_session_history_around_and_anchor_scoping(tmp_path: Path) -> None:

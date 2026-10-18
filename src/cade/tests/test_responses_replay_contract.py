@@ -67,6 +67,7 @@ from cade.harness.agent_runtime.message_codec import messages_from_provider_dict
 from cade.harness.session import InboxLane, SessionInbox, SessionStore
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import replay_session
+from cade.harness.session.surface import InvalidSessionSurfaceError
 
 
 def _reasoning_item() -> dict[str, ProviderJsonValue]:
@@ -1063,8 +1064,10 @@ async def test_agent_session_resume_replays_completed_items_through_new_provider
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("large_result", [False, True])
 async def test_runtime_snapshots_preserve_responses_prefix_across_restart_and_fork(
     replay_workspace: Path,
+    large_result: bool,
 ) -> None:
     """覆盖缺口：加密回复的前置事实必须随会话恢复，不能只恢复回复本身。
 
@@ -1082,6 +1085,10 @@ async def test_runtime_snapshots_preserve_responses_prefix_across_restart_and_fo
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
             validation["result"] = "After tool validation"
+            if large_result:
+                return AgentToolResult(
+                    content=[TextContent(text="Tool evidence row\n" * 4000)]
+                )
             return await super().execute(tool_call_id, params, signal, on_update)
 
     registry = ContextCollectorRegistry()
@@ -1144,6 +1151,17 @@ async def test_runtime_snapshots_preserve_responses_prefix_across_restart_and_fo
     assert "Before tool validation" in contexts[0].content
     assert "After tool validation" in contexts[1].content
     assert messages_from_provider_dicts([to_dict(m) for m in contexts]) == contexts
+    artifacts = list(store.artifacts_dir.glob("*.txt"))
+    if large_result:
+        assert len(artifacts) == 1
+        artifact = artifacts[0]
+        missing = artifact.with_suffix(".missing")
+        artifact.rename(missing)
+        try:
+            with pytest.raises(InvalidSessionSurfaceError, match="artifact is missing"):
+                replay_session(_RestoredHistory(), reopened)
+        finally:
+            missing.rename(artifact)
 
     parent_bytes = reopened.current_path.read_bytes()
     fork = reopened.fork_into(title="Continue with runtime facts")
@@ -1181,6 +1199,8 @@ async def test_runtime_snapshots_preserve_responses_prefix_across_restart_and_fo
         messages_after=2,
         replacement=[UserMessage(content="Confirm the result."), contexts[-1]],
     )
+    for artifact in artifacts:
+        artifact.unlink()
     after_reset = _RestoredHistory()
     replay_session(after_reset, fork)
     assembly = assembler.assemble(

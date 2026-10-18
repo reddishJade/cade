@@ -1,12 +1,14 @@
-"""从 session 事实事件投影模型可见的当前 surface。"""
+"""从会话事实重建当前窗口的原始消息来源。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from pydantic import ValidationError
 
+from cade.agent._tool_pairing import repair_tool_pairing
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -19,6 +21,7 @@ from cade.agent.messages import (
 from cade.agent.types import ToolCallContent
 from cade.ai.events import ProviderReplayPayload
 
+from .artifacts import resolve_tool_result_artifact
 from .schema import SESSION_EVENT_SCHEMA_VERSION, supports_session_event_schema
 from .types import JsonValue, SessionEntry
 
@@ -88,7 +91,9 @@ def decode_surface_messages(value: object) -> list[AgentMessage]:
     return messages
 
 
-def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
+def project_session_surface(
+    records: list[SessionEntry], *, artifacts_dir: Path | None = None
+) -> SessionSurface:
     """依次应用 transcript facts 与 surface replacement。"""
     messages: list[AgentMessage] = []
     pending_tool_calls: list[ToolCallContent] = []
@@ -96,8 +101,10 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
     deferred_inputs: list[AgentMessage] = []
     seen_tool_call_ids: set[str] = set()
     event_assistant_texts: list[str] = []
+    tool_artifacts: dict[str, object] = {}
     generation = 0
     replacement_entry_id: str | None = None
+    current_run_id: str | None = None
 
     for record_index, record in enumerate(records):
         if record.type == "user":
@@ -135,6 +142,17 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
                 raise InvalidSessionSurfaceError(
                     "inbox claim event must contain exactly one message"
                 )
+            run_id = data.get("run_id")
+            if isinstance(run_id, str) and run_id and run_id != current_run_id:
+                # 新 run 关闭旧的中断批次；同 run 输入仍等完整工具结果。
+                if open_tool_calls:
+                    messages = repair_tool_pairing(messages)
+                    messages.extend(deferred_inputs)
+                    deferred_inputs.clear()
+                    pending_tool_calls.clear()
+                    open_tool_calls.clear()
+                    seen_tool_call_ids = _tool_call_ids(messages)
+                current_run_id = run_id
             if open_tool_calls:
                 deferred_inputs.append(claimed[0])
             else:
@@ -164,6 +182,7 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
             open_tool_calls.clear()
             deferred_inputs.clear()
             seen_tool_call_ids = _tool_call_ids(messages)
+            tool_artifacts.clear()
             event_assistant_texts.clear()
             continue
 
@@ -185,6 +204,8 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
                 open_tool_calls.add(event.id)
                 seen_tool_call_ids.add(event.id)
         elif isinstance(event, ToolResultMessage):
+            if isinstance(data, dict) and data.get("content_artifact") is not None:
+                tool_artifacts[event.tool_call_id] = data["content_artifact"]
             _append_tool_result(messages, event, pending_tool_calls)
             open_tool_calls.discard(event.tool_call_id)
             if not open_tool_calls:
@@ -193,6 +214,18 @@ def project_session_surface(records: list[SessionEntry]) -> SessionSurface:
 
     # 崩溃可能留下未完成工具批次，已 claim 的输入不能因此消失。
     messages.extend(deferred_inputs)
+    for index, message in enumerate(messages):
+        if not isinstance(message, ToolResultMessage):
+            continue
+        reference = tool_artifacts.get(message.tool_call_id)
+        if reference is None:
+            continue
+        content = resolve_tool_result_artifact(artifacts_dir, reference)
+        if content is None:
+            raise InvalidSessionSurfaceError(
+                "Tool result artifact is missing or invalid; preview is not replayable."
+            )
+        messages[index] = message.model_copy(update={"content": content})
     return SessionSurface(
         messages=tuple(messages),
         generation=generation,
@@ -421,7 +454,17 @@ def _append_tool_result(
     if pending:
         messages.append(AssistantMessage(content=list(pending)))
         pending.clear()
-    messages.append(result)
+    name = next(
+        (
+            block.name
+            for message in reversed(messages)
+            if isinstance(message, AssistantMessage)
+            for block in message.content
+            if isinstance(block, ToolCallContent) and block.id == result.tool_call_id
+        ),
+        "",
+    )
+    messages.append(result.model_copy(update={"tool_name": name}))
 
 
 def _tool_call_ids(messages: list[AgentMessage]) -> set[str]:

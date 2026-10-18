@@ -24,7 +24,7 @@ from .subagent_runs import (
     SubagentRunEvent,
 )
 from .surface import encode_surface_messages
-from .types import JsonValue
+from .types import JsonValue, SessionEntry
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
     "provider",
@@ -118,12 +118,12 @@ class SessionRecorder:
             data = encoded.get("data")
             if not isinstance(data, dict):
                 raise TypeError("context window event data must be an object")
-            replacement = list(event.data.replacement)
-            data.update(self._surface_metadata(replacement))
             restoration_context = self._context_window_state()
             if restoration_context is not None:
                 data["restoration_context"] = restoration_context
-        self.store.append("event", encoded)
+            self._append_surface_event(encoded, data)
+        else:
+            self.store.append("event", encoded)
         self._recorded_events[id(event)] = event
         if isinstance(event, FinalStructuredEvent) and event.data.answer:
             self.record_assistant(event.data.answer)
@@ -143,20 +143,17 @@ class SessionRecorder:
         replacement: list[AgentMessage],
     ) -> str:
         """追加一次完整 surface replacement，不修改既有 transcript。"""
-        metadata = self._surface_metadata(replacement)
         data: dict[str, JsonValue] = {
             "window_id": window_id,
             "trigger": "manual",
             "messages_before": messages_before,
             "messages_after": messages_after,
             "replacement": encode_surface_messages(replacement),
-            **metadata,
         }
         restoration_context = self._context_window_state()
         if restoration_context is not None:
             data["restoration_context"] = restoration_context
-        return self.store.append(
-            "event",
+        return self._append_surface_event(
             {
                 "schema_version": SESSION_EVENT_SCHEMA_VERSION,
                 "type": "context_window_reset",
@@ -164,6 +161,7 @@ class SessionRecorder:
                 "data": data,
                 "correlation": {},
             },
+            data,
         )
 
     def _context_window_state(self) -> dict[str, JsonValue] | None:
@@ -178,11 +176,17 @@ class SessionRecorder:
             raise TypeError("context window restoration state must be an object")
         return encoded
 
-    def _surface_metadata(
-        self,
-        replacement: list[AgentMessage],
-    ) -> dict[str, JsonValue]:
-        branch = self.store.build_branch()
+    def _append_surface_event(
+        self, event: dict[str, JsonValue], data: dict[str, JsonValue]
+    ) -> str:
+        def content(branch: list[SessionEntry]) -> JsonValue:
+            data.update(self._surface_metadata(branch))
+            return event
+
+        return self.store.append_derived("event", content)
+
+    @staticmethod
+    def _surface_metadata(branch: list[SessionEntry]) -> dict[str, JsonValue]:
         generations = [
             data.get("generation", 0)
             for entry in branch

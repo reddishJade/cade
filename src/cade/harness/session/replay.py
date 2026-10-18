@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Protocol
 
 from cade.agent.messages import AgentMessage
@@ -41,7 +42,7 @@ def replay_session(
     agent.session_id = store.session_id
     agent.set_history_session_id(store.session_id)
     records = store.build_branch()
-    surface = project_session_surface(records)
+    surface = project_session_surface(records, artifacts_dir=store.artifacts_dir)
     agent.load_history(list(surface.messages))
     run_state = latest_run_state(records)
     if run_state is not None:
@@ -118,6 +119,8 @@ def latest_restoration_context(records: list[SessionEntry]) -> object | None:
     return None
 
 
-def records_to_agent_messages(records: list[SessionEntry]) -> list[AgentMessage]:
-    """将 session 事实账本投影为 provider 使用的消息历史。"""
-    return list(project_session_surface(records).messages)
+def records_to_agent_messages(
+    records: list[SessionEntry], *, artifacts_dir: Path | None = None
+) -> list[AgentMessage]:
+    """将事实账本与工件投影为模型历史，不以展示预览替换正文。"""
+    return list(project_session_surface(records, artifacts_dir=artifacts_dir).messages)
