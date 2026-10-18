@@ -158,7 +158,9 @@ class DefaultRequestAssembler:
         )
         # Request preparation must not rewrite persisted or running session facts.
         # Repair malformed tool pairs in a local projection only.
-        effective_messages = context.context_manager.normalize_messages(context.messages)
+        effective_messages = context.context_manager.normalize_messages(
+            context.messages
+        )
         effective_context = context.model_copy(update={"messages": effective_messages})
         context_blocks = self._collect(effective_context, list(effective_messages))
         base_messages = [
