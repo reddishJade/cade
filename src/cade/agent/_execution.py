@@ -312,7 +312,7 @@ async def _execute_one_impl(
     if is_cancelled(signal):
         return _error_result(tool_call, cancel_reason(signal))
 
-    before_result = _run_before_tool_hook(
+    before_result = await _run_before_tool_hook(
         current_context, assistant_message, tool_call, args, config, signal
     )
     if before_result is not None and before_result.block:
@@ -402,7 +402,7 @@ def _error_result(
     )
 
 
-def _run_before_tool_hook(
+async def _run_before_tool_hook(
     current_context: AgentContext,
     assistant_message: AssistantMessage,
     tool_call: ToolCallContent,
@@ -418,7 +418,29 @@ def _run_before_tool_hook(
         args=args,
         context=current_context,
     )
-    return config.before_tool_call(ctx, signal)
+    # Permission review may synchronously await the independent reviewer model.
+    # Keep the agent's event loop responsive, including while calls run in parallel.
+    hook_task = asyncio.create_task(
+        asyncio.to_thread(config.before_tool_call, ctx, signal)
+    )
+    if signal is None:
+        return await hook_task
+    cancel_waiter = asyncio.create_task(_wait_cancellation(signal))
+    try:
+        done, _ = await asyncio.wait(
+            {hook_task, cancel_waiter}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if cancel_waiter in done:
+            # Cancelling an asyncio wrapper does not stop the underlying thread,
+            # but its late approval must never start a tool after interruption.
+            hook_task.cancel()
+            return BeforeToolCallResult(block=True, reason=cancel_reason(signal))
+        result = hook_task.result()
+        if is_cancelled(signal):
+            return BeforeToolCallResult(block=True, reason=cancel_reason(signal))
+        return result
+    finally:
+        cancel_waiter.cancel()
 
 
 async def _run_tool_handler(
