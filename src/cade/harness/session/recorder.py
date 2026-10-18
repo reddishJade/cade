@@ -126,7 +126,9 @@ class SessionRecorder:
             self.store.append("event", encoded)
         self._recorded_events[id(event)] = event
         if isinstance(event, FinalStructuredEvent) and event.data.answer:
-            self.record_assistant(event.data.answer)
+            # The final event owns the displayed answer. Preserve the historical
+            # standalone assistant entry reader for existing sessions/partial saves.
+            self.store.update_summary()
 
     def record_assistant(self, text: str) -> None:
         if not text.strip():
