@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cade.agent.config import AgentContext, AfterToolCallContext, BeforeToolCallContext
+from cade.agent.config import AfterToolCallContext, AgentContext, BeforeToolCallContext
 from cade.agent.messages import AssistantMessage
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent
 from cade.coding_agent.execution_modes import ExecutionModeState
