@@ -8,12 +8,16 @@ from cade.agent.types import ToolCallContent
 
 def test_request_repair_does_not_mutate_source_history() -> None:
     dangling = ToolCallContent(id="missing", name="read", arguments={"path": "a.py"})
-    context = AgentContext(messages=[
-        UserMessage(content="Inspect a.py"),
-        AssistantMessage(content=[dangling]),
-        UserMessage(content="Continue after interruption"),
-        ToolResultMessage(tool_call_id="orphan", tool_name="read", content="orphan"),
-    ])
+    context = AgentContext(
+        messages=[
+            UserMessage(content="Inspect a.py"),
+            AssistantMessage(content=[dangling]),
+            UserMessage(content="Continue after interruption"),
+            ToolResultMessage(
+                tool_call_id="orphan", tool_name="read", content="orphan"
+            ),
+        ]
+    )
     before = [m.model_dump_json() for m in context.messages]
     assembler = DefaultRequestAssembler()
     first = assembler.assemble(context, current_step=1, options=None)
