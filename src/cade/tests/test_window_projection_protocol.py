@@ -32,10 +32,14 @@ from cade.harness.session.surface import (
 from cade.harness.session.window_projection import encode_rollover_spec
 
 
-def _session(tmp_path: Path, tool_output: str = "A result") -> tuple[SessionStore, SessionRecorder]:
+def _session(
+    tmp_path: Path, tool_output: str = "A result"
+) -> tuple[SessionStore, SessionRecorder]:
     store = SessionStore(tmp_path / "sessions", project_root=tmp_path)
     inbox = SessionInbox(store)
-    inbox.insert(UserMessage(content="Inspect source"), lane=InboxLane.NEXT_TURN, wake=True)
+    inbox.insert(
+        UserMessage(content="Inspect source"), lane=InboxLane.NEXT_TURN, wake=True
+    )
     inbox.claim_initial("run-1")
     recorder = SessionRecorder(store)
     recorder.record_event(
@@ -94,10 +98,22 @@ def test_auto_rollover_replays_window_from_facts(tmp_path: Path) -> None:
     assert "replacement" not in data
     assert data["rollover_spec"] == encode_rollover_spec(policy)
     assert data["source_entry_ids"] == [entry.id for entry in branch[:-1]]
-    assert list(project_session_surface(branch, artifacts_dir=store.artifacts_dir).messages) == expected
+    assert (
+        list(
+            project_session_surface(branch, artifacts_dir=store.artifacts_dir).messages
+        )
+        == expected
+    )
 
     # A fork before the boundary reconstructs the original facts, not the new window.
-    fork = store.fork_from_entry(branch[0].id)
+    claimed = next(
+        entry
+        for entry in branch
+        if entry.type == "event"
+        and isinstance(entry.content, dict)
+        and entry.content.get("type") == "inbox/claimed"
+    )
+    fork = store.fork_from_entry(claimed.id)
     assert not any(
         e.type == "event"
         and isinstance(e.content, dict)
@@ -123,7 +139,11 @@ def test_manual_rollover_preserves_retention_choice_and_multiple_generations(
         rollover_policy=policy,
         preserve_user_request=True,
     )
-    assert list(project_session_surface(store.build_branch(), artifacts_dir=store.artifacts_dir).messages) == repair_tool_pairing(first)
+    assert list(
+        project_session_surface(
+            store.build_branch(), artifacts_dir=store.artifacts_dir
+        ).messages
+    ) == repair_tool_pairing(first)
 
     second = ContextWindowRollover().rollover_messages(
         _source(store),
@@ -178,7 +198,10 @@ def test_large_tool_artifact_is_hydrated_before_rollover(tmp_path: Path) -> None
     )
     restored = _source(store)
     assert restored == expected
-    assert next(m for m in restored if isinstance(m, ToolResultMessage)).content == full_text
+    assert (
+        next(m for m in restored if isinstance(m, ToolResultMessage)).content
+        == full_text
+    )
 
 
 def test_legacy_replacement_still_replays_without_recipe(tmp_path: Path) -> None:

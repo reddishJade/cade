@@ -75,13 +75,15 @@ def apply_rollover_spec(
     for name, value in policy_data.items():
         if name in _INT_FIELDS and type(value) is not int:
             raise ValueError(f"invalid context window policy {name}")
-        if name in _OPTIONAL_INT_FIELDS and value is not None and type(value) is not int:
+        if (
+            name in _OPTIONAL_INT_FIELDS
+            and value is not None
+            and type(value) is not int
+        ):
             raise ValueError(f"invalid context window policy {name}")
         if name in _BOOL_FIELDS and type(value) is not bool:
             raise ValueError(f"invalid context window policy {name}")
-        if name == "trigger_ratio" and (
-            type(value) not in (int, float)
-        ):
+        if name == "trigger_ratio" and (type(value) not in (int, float)):
             raise ValueError("invalid context window policy trigger_ratio")
     policy = ContextPolicy(**policy_data)
     rolled = ContextWindowRollover().rollover_messages(

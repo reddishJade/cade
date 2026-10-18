@@ -122,9 +122,7 @@ def _event_payload(event: AgentHarnessEvent) -> object:
             )
         else:
             # External/custom rollover functions lack a replayable policy contract.
-            data["replacement"] = encode_surface_messages(
-                list(event.data.replacement)
-            )
+            data["replacement"] = encode_surface_messages(list(event.data.replacement))
         return data
     if isinstance(event, UsageUpdateStructuredEvent):
         return dict(event.data)
