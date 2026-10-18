@@ -660,7 +660,7 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
     entries: list[dict[str, object]] = []
     if ctx.context.system_prompt.strip():
         entries.append({
-            "role": "system", "source": "policy", "authorizes": True,
+            "role": "system", "source": "runtime", "authorizes": False,
             "content": _truncate_transcript(ctx.context.system_prompt, 8_000),
         })
     messages = [
@@ -668,9 +668,7 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
         *ctx.context.messages,
         ctx.assistant_message,
     ]
-    prefix_count = len(ctx.context.request_prefix)
-    for index, message in enumerate(messages[-40:]):
-        original_index = len(messages) - min(40, len(messages)) + index
+    for message in messages[-40:]:
         role = str(getattr(message, "role", "unknown"))
         content = _transcript_message_text(message)
         if not content or (role == "user" and content.casefold() == "continue"):
@@ -679,8 +677,9 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
             source = message.source
             authorizes = source == "user"
         elif isinstance(message, SystemMessage):
-            authorizes = original_index < prefix_count
-            source = "policy" if authorizes else "runtime"
+            # Prefix text can contain workspace facts; it cannot grant authority.
+            authorizes = False
+            source = "runtime"
         else:
             source = "tool" if role == "tool_result" else "derived"
             authorizes = False
