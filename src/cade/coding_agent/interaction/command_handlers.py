@@ -316,11 +316,6 @@ def _replace_context_window(
         ctx.output.write("Context-window rollover is not configured.")
         return False
 
-    load_history = getattr(agent, "load_history", None)
-    if not callable(load_history):
-        ctx.output.write("Agent does not support history replacement.")
-        return False
-
     from cade.harness.agent_runtime.config import resolve_context_policy
     from cade.harness.agent_runtime.context_window import ContextWindowRollover
 
@@ -342,8 +337,6 @@ def _replace_context_window(
         after_msgs = messages_from_provider_dicts(next_window)
     after_tokens = estimate_message_tokens(after_msgs)
 
-    cast(Callable[[list[AgentMessage]], None], load_history)(after_msgs)
-
     window_id = str(getattr(rollover, "last_window_id", "") or "")
     if not window_id:
         raise RuntimeError("context rollover did not produce a window id")
@@ -356,6 +349,7 @@ def _replace_context_window(
         rollover_policy=rollover_policy,
         preserve_user_request=preserve_user_request,
     )
+    agent.restore_history_metadata(after_msgs)
 
     retention = (
         "Retained the latest user request."
@@ -550,7 +544,7 @@ def cmd_skill(cmd: str, ctx: CommandContext) -> bool:
     if len(parts) < 2 or not parts[1].strip():
         ctx.output.write("Usage: /skill NAME [prompt]")
         return False
-    result = activate_skill(ctx.app, ctx.store, parts[1].strip(), mode=ctx.state.mode)
+    result = activate_skill(ctx.app, parts[1].strip(), mode=ctx.state.mode)
     ctx.output.write(result.message)
     if result.status in {"activated", "already_active"} and len(parts) == 3:
         prompt = parts[2].strip()

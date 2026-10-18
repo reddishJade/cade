@@ -1,7 +1,4 @@
-"""会话级上下文管理器。
-
-持有活动历史与 provider 输入 token 校准锚点；请求预算和审计由请求组装器提供。
-"""
+"""请求 token 校准锚点与窗口观测状态，不持有会话消息。"""
 
 from __future__ import annotations
 
@@ -36,9 +33,8 @@ class _RequestTokenAnchor:
 
 @dataclass
 class ContextManager:
-    """会话上下文的唯一可变状态边界。"""
+    """保存可丢弃的请求估算状态，消息由调用方持有。"""
 
-    history: list[AgentMessage] = field(default_factory=list)
     last_prompt_tokens: int | None = None
     last_rotation_reason: str | None = None
     _provider_key: tuple[object, ...] | None = field(default=None, repr=False)
@@ -118,22 +114,6 @@ class ContextManager:
             return max(1, anchor.prompt_tokens + delta), True
         return anchor.prompt_tokens + added_tokens, True
 
-    def history_messages(self) -> list[AgentMessage]:
-        return list(self.history)
-
-    def replace_history(
-        self,
-        messages: Sequence[AgentMessage],
-        *,
-        normalize: bool = True,
-    ) -> list[AgentMessage]:
-        """替换历史并在进入 session surface 前修复工具配对。"""
-        replacement = list(messages)
-        if normalize:
-            replacement = repair_tool_pairing(replacement)
-        self.history[:] = replacement
-        return self.history_messages()
-
     def normalize_messages(
         self,
         messages: Sequence[AgentMessage],
@@ -141,26 +121,12 @@ class ContextManager:
         """在 provider 请求前返回已修复工具配对的消息投影。"""
         return repair_tool_pairing(list(messages))
 
-    def append(self, messages: Sequence[AgentMessage]) -> None:
-        if not messages:
-            return
-        self.history.extend(messages)
-        self.history[:] = repair_tool_pairing(self.history)
-
-    def complete_rollover(
-        self,
-        messages: Sequence[AgentMessage],
-        *,
-        reason: str = "token_limit",
-    ) -> list[AgentMessage]:
-        """提交新活动窗口并重置窗口级动态状态。"""
-        replacement = self.replace_history(messages)
+    def complete_rollover(self, *, reason: str = "token_limit") -> None:
+        """新窗口不能沿用旧请求的估算锚点。"""
         self.invalidate_token_anchor()
         self.last_rotation_reason = reason
-        return replacement
 
     def clear(self) -> None:
-        self.history.clear()
         self.last_rotation_reason = None
         self.invalidate_token_anchor()
 

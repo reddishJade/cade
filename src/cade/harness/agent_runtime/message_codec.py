@@ -19,7 +19,6 @@ from ...agent.types import (
     ToolCallContent,
     parse_tool_render_intent,
 )
-from .result import RunState
 
 
 def messages_from_provider_dicts(
@@ -32,11 +31,6 @@ def messages_from_provider_dicts(
         if message is not None:
             restored.append(message)
     return restored
-
-
-def messages_from_run_state(run_state: RunState) -> list[AgentMessage]:
-    """从可序列化运行状态恢复模型可见消息。"""
-    return messages_from_provider_dicts(run_state.messages)
 
 
 def _message_from_provider_dict(item: dict[str, Any]) -> AgentMessage | None:

@@ -80,7 +80,7 @@ User input, steering, and explicit runtime injections pass through the inbox. `r
 
 API schemas declare tool names, descriptions, and parameters. Prefix tool guidance uses the same enabled tool set as the schema for that request. Read-only side questions do not receive tool guidance.
 
-`ContextManager` owns session history, input usage anchors, and the last rollover reason, including for standalone Agent calls. `ContextPolicy` subtracts output reserve and safety margin from the model's physical window and budgets input, tool evidence, and new messages. Prediction uses successful provider input usage plus estimated local differences, or local estimates when the anchor is invalid. Providers report actual usage; request projections control admission and early rollover.
+The session log owns cross-run history. Each run receives a fresh projection and owns its working messages; `AgentLoopResult.surface` returns that working window to standalone callers. `ContextManager` holds only disposable input usage anchors and the last rollover reason. `ContextPolicy` subtracts output reserve and safety margin from the model's physical window and budgets input, tool evidence, and new messages. Prediction uses successful provider input usage plus estimated local differences, or local estimates when the anchor is invalid. Providers report actual usage; request projections control admission and early rollover.
 
 Large tool results become previews with recovery references in requests. Complete results remain in transcripts or artifacts and are restored before request projection. The latest successful durable state for a `context_key` is protected; older versions become history indexes. If required context exceeds the safe input budget, assembly fails explicitly with `context_error` instead of sending an incomplete request. Rollover also requires reclaimable history. Model window size and required input bound the policy's effective range.
 
@@ -92,7 +92,7 @@ Automatic rollover retains the current user request, persistent state, and bound
 | --- | --- | --- |
 | Transcript and artifacts | Session store; `.cade/sessions/` and `.cade/session_artifacts/` by default | Append session facts and complete tool content for replay and branching |
 | Inbox | `SessionInbox`, using the same store | Persist pending input and inserted/claimed/discarded lifecycle |
-| Surface | Session replay and active run | Replayable branch history, replaced on rollover |
+| Surface | Session projection; active run owns its working copy | Derive cross-run history from facts; replace the working window on rollover |
 | RequestAssembly | Request assembler, per request | Final wire messages, tools, options, budget, and source trace |
 | Composition | Harness, in-process snapshot | Run configuration linked to requests by generation ID |
 | Active run, cancellation, and connections | Run controller, providers, MCP, and runtime services | In-process resources reestablished after recovery |
@@ -100,7 +100,7 @@ Automatic rollover retains the current user request, persistent state, and bound
 | Memory | Markdown in workspace `.cade/memory/` | Verifiable cross-session knowledge read when needed |
 | File snapshots | SnapshotStore; `.cade/snapshots/` by default | TUI user-turn changes and undo evidence |
 
-[`replay_session()`](../src/cade/harness/session/replay.py) rebuilds messages, run metadata, goal, and context state for the active branch. Inbox replay rebuilds pending input. Recovered runs issue new requests using current assembled services. Hosts reestablish tools, connections, and active tasks from the old process. Tool side effects and event recording are separate operations; if the process exits between them, recovery must check workspace and external state.
+[`replay_session()`](../src/cade/harness/session/replay.py) restores run metadata, goal, context notices, and message-derived product state for the active branch. It does not install another mutable history. Runtime continuations and goal feedback use persisted inbox claims, so subsequent projections retain these inputs. Inbox replay rebuilds pending input. Recovered runs issue new requests using current assembled services. Hosts reestablish tools, connections, and active tasks from the old process. Tool side effects and event recording are separate operations; if the process exits between them, recovery must check workspace and external state.
 
 Session records distinguish final user-visible `assistant` entries from model responses and events such as `tool_use`, `tool_result`, `runtime_context`, and `final`. `provider_request` stores the request fingerprint, size, parameters, composition ID, and trace. `final` stores the answer, counters, termination details, and recovery metadata. Existing semantic events reconstruct messages and tool arguments.
 

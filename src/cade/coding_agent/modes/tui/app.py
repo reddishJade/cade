@@ -897,7 +897,6 @@ class _CadeTui:
             skill_name, remaining_text = skill_invocation
             activation = activate_skill(
                 self._agent_app,
-                self._store,
                 skill_name,
                 mode=self._interaction_state.mode,
             )

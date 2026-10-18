@@ -406,18 +406,20 @@ async def test_runtime_context_is_append_only_deduplicated_and_explicitly_cleare
         rollover_context=ContextWindowRollover().rollover_messages,
         retry_backoff_base=0,
     )
+    history: list[AgentMessage] = []
     for step, blocks in enumerate(([old], [old], [current], [], []), start=1):
         selected.blocks = blocks
         result = await collect_loop_result(
             [UserMessage(content=f"Task {step}")],
             AgentContext(
-                messages=manager.history_messages(),
+                messages=history,
                 context_manager=manager,
                 context_policy=policy(64_000),
             ),
             config,
         )
         assert result.termination_reason == TerminationReason.COMPLETED
+        history = result.surface
         contexts = [m for m in result.surface if isinstance(m, ContextMessage)]
         assert len(contexts) == (1, 1, 2, 3, 3)[step - 1]
         if step > 1:
@@ -677,7 +679,8 @@ def test_rollover_refreshes_catalog_and_preserves_latest_durable_state(
     rolled = ContextWindowRollover().rollover_messages(
         context.messages, policy=policy()
     )
-    context.messages = manager.complete_rollover(rolled)
+    context.messages = rolled
+    manager.complete_rollover()
     entry.write_text("# After rollover\n\nNew catalog hint.\n", encoding="utf-8")
     second = assembler.assemble(context, current_step=2, options=None)
     second.require_sendable()
