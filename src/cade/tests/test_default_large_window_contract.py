@@ -19,8 +19,10 @@ from cade.harness.config import AgentConfig
 @pytest.mark.parametrize("physical_window", [128_000, 272_000, 1_000_000])
 def test_default_long_context_rotation_boundary(physical_window: int) -> None:
     provider = SimpleNamespace(
-        model="gpt-5.6-luna", transport="openai_codex",
-        context_window=physical_window, supports_output_token_limit=False,
+        model="gpt-5.6-luna",
+        transport="openai_codex",
+        context_window=physical_window,
+        supports_output_token_limit=False,
     )
     policy = resolve_context_policy(provider, AgentConfig())
     expected_headroom = min(8192, max(1, physical_window // 50))
@@ -44,7 +46,9 @@ def test_explicit_disable_prevents_default_rollover() -> None:
 
 
 def test_default_large_window_keeps_current_task_on_rollover() -> None:
-    provider = SimpleNamespace(context_window=272_000, supports_output_token_limit=False)
+    provider = SimpleNamespace(
+        context_window=272_000, supports_output_token_limit=False
+    )
     policy = resolve_context_policy(provider, AgentConfig())
     messages = [
         UserMessage(content="Prior task"),
