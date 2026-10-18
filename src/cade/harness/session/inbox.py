@@ -10,7 +10,7 @@ from threading import Lock
 from typing import Literal, cast
 from uuid import uuid4
 
-from cade.agent.messages import AgentMessage
+from cade.agent.messages import AgentMessage, UserMessage
 
 from .schema import SESSION_EVENT_SCHEMA_VERSION, supports_session_event_schema
 from .store import SessionStore
@@ -123,7 +123,7 @@ class SessionInbox:
                     remaining.append(item)
             self._items = remaining
             self._record_claimed(claimed, run_id)
-        return [item.message for item in claimed]
+        return [_claimed_message(item) for item in claimed]
 
     def claim_next_step(self, run_id: str) -> list[AgentMessage]:
         """claim 当前所有 next-step 输入。"""
@@ -133,7 +133,7 @@ class SessionInbox:
                 item for item in self._items if item.lane is InboxLane.NEXT_TURN
             )
             self._record_claimed(claimed, run_id)
-        return [item.message for item in claimed]
+        return [_claimed_message(item) for item in claimed]
 
     def discard_all(self, reason: str) -> None:
         """显式丢弃当前 session 的所有 pending input。"""
@@ -160,6 +160,13 @@ class SessionInbox:
                 "event",
                 _event("inbox/claimed", item, run_id=run_id),
             )
+
+
+def _claimed_message(item: InboxItem) -> AgentMessage:
+    """Annotate messages from the inbox's durable source, not their role text."""
+    if isinstance(item.message, UserMessage):
+        return item.message.model_copy(update={"source": item.source})
+    return item.message
 
 
 def inbox_display_text(content: object) -> str | None:
