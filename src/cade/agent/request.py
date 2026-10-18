@@ -156,8 +156,8 @@ class DefaultRequestAssembler:
         admission_budget = (
             policy.admission_target if policy and token_budget > 0 else token_budget
         )
-        # Request preparation must not rewrite persisted or running session facts.
-        # Repair malformed tool pairs in a local projection only.
+        # 请求准备不得改写已持久化或运行中的会话事实；
+        # 只在本次投影里修复不完整的工具调用对。
         effective_messages = context.context_manager.normalize_messages(
             context.messages
         )

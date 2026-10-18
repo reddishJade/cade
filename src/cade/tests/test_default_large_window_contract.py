@@ -1,6 +1,6 @@
-"""Default long-context admission and rollover boundary regression tests.
+"""默认长上下文准入与换窗边界回归测试。
 
-No external model is required; provider reports its physical context window.
+不需要外部模型，provider 直接上报物理上下文窗口。
 """
 
 from __future__ import annotations

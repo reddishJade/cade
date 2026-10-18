@@ -163,7 +163,7 @@ class SessionInbox:
 
 
 def _claimed_message(item: InboxItem) -> AgentMessage:
-    """Annotate messages from the inbox's durable source, not their role text."""
+    """按 inbox 持久化来源标注消息，不按 role 文本推断。"""
     if isinstance(item.message, UserMessage):
         return item.message.model_copy(update={"source": item.source})
     return item.message

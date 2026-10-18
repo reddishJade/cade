@@ -344,7 +344,7 @@ def to_responses_input(
 
 
 def _responses_content(content: list) -> list[dict[str, Any]]:
-    """Convert canonical text/image blocks to Responses content parts."""
+    """把规范格式的文本和图片块转成 Responses 内容项。"""
     parts: list[dict[str, Any]] = []
     for item in content:
         if isinstance(item, dict) and item.get("type") == "text":

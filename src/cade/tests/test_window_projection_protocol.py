@@ -1,4 +1,4 @@
-"""Versioned context window boundaries are decisions replayed from event facts."""
+"""上下文窗口边界是带版本的决策，由事件事实重放得出。"""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ def test_auto_rollover_replays_window_from_facts(tmp_path: Path) -> None:
         == expected
     )
 
-    # A fork before the boundary reconstructs the original facts, not the new window.
+    # 边界之前的 fork 重建原始事实，而不是新窗口。
     claimed = next(
         entry
         for entry in branch

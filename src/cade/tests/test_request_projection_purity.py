@@ -1,4 +1,4 @@
-"""Building a provider request may normalize its projection, not the history."""
+"""组装 provider 请求只规范化投影，不改写历史。"""
 
 from cade.agent.config import AgentContext
 from cade.agent.messages import AssistantMessage, ToolResultMessage, UserMessage

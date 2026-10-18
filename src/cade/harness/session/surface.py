@@ -185,8 +185,7 @@ def project_session_surface(
                 window_id = data.get("window_id")
                 if not isinstance(window_id, str) or not window_id:
                     raise InvalidSessionSurfaceError("missing window ID")
-                # Tool previews are not facts. Restore immutable artifacts before
-                # choosing the new working set, including durable tool results.
+                # 工具预览不是事实；先恢复完整产物，再选取新工作集。
                 messages = _hydrate_tool_artifacts(
                     messages, tool_artifacts, artifacts_dir
                 )
@@ -200,7 +199,7 @@ def project_session_surface(
                         "invalid replayable context window recipe"
                     ) from exc
             elif "replacement" in data:
-                # Preserve the original meaning of existing schema 2/3 logs.
+                # 保持既有 schema 2/3 日志的原始含义。
                 messages = decode_surface_messages(data["replacement"])
             else:
                 raise InvalidSessionSurfaceError(
@@ -262,7 +261,7 @@ def _hydrate_tool_artifacts(
     tool_artifacts: dict[str, object],
     artifacts_dir: Path | None,
 ) -> list[AgentMessage]:
-    """Use full tool facts for replay instead of the bounded log preview."""
+    """用完整工具结果重放，不用日志中的有界预览。"""
     result = list(messages)
     for index, message in enumerate(result):
         if not isinstance(message, ToolResultMessage):

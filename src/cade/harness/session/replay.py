@@ -83,11 +83,10 @@ def replay_session(
 
 
 def unresolved_tool_attempts(records: list[SessionEntry]) -> tuple[str, ...]:
-    """Find attempted tools without results in the current logged window.
+    """查找当前日志窗口中无结果的工具调用。
 
-    Tool-use is emitted before permission review and execution. It proves only
-    that an action was attempted; absence of a result leaves the outcome unknown.
-    A context-window reset explicitly closes the preceding model-visible window.
+    工具调用在权限审查和执行前就写入日志，只能说明调用发生过；缺少结果时
+    无法判断实际结果。换窗事件明确结束前一个模型可见窗口。
     """
     pending: dict[str, str] = {}
     for record in records:

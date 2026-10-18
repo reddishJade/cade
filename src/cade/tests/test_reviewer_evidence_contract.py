@@ -1,4 +1,4 @@
-"""Reviewer authorization respects durable user vs runtime provenance."""
+"""Reviewer 授权只认 user 来源，与 runtime 来源区分。"""
 
 import json
 from pathlib import Path

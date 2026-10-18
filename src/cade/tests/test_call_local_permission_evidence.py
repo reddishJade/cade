@@ -82,7 +82,7 @@ def test_same_call_id_interleaved_approvals_keep_independent_audits(
     second, second_permission = attempt("second")
     assert first_permission is not second_permission
 
-    # Finish the second invocation first, despite an identical tool-call ID.
+    # 两个调用共享同一个 tool_call ID，但先完成第二个。
     after(second, None)
     after(first, None)
     assert [record.approval_rationale for record in records] == [

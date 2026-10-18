@@ -1,4 +1,4 @@
-"""Long-running approval reviews must not block the agent's event loop."""
+"""耗时的审批审查不得阻塞 agent 事件循环。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ async def test_synchronous_approval_runs_off_event_loop() -> None:
             None,
         )
     )
-    # A synchronous hook would prevent this independent coroutine from running.
+    # 同步钩子会阻止这个独立协程运行。
     await asyncio.wait_for(asyncio.sleep(0.02), timeout=0.1)
     assert not pending.done()
     assert await pending is None

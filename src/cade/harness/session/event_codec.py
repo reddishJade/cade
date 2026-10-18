@@ -121,7 +121,7 @@ def _event_payload(event: AgentHarnessEvent) -> object:
                 preserve_user_request=event.data.preserve_user_request,
             )
         else:
-            # External/custom rollover functions lack a replayable policy contract.
+            # 外部自定义换窗函数没有可重放的策略契约，保留快照。
             data["replacement"] = encode_surface_messages(list(event.data.replacement))
         return data
     if isinstance(event, UsageUpdateStructuredEvent):

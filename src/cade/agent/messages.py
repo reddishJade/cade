@@ -42,7 +42,7 @@ class SystemMessage(BaseModel):
 class UserMessage(BaseModel):
     role: str = "user"
     content: UserContent = ""
-    # Session origin is distinct from model role. Legacy entries default untrusted.
+    # 会话来源与模型角色不同；旧记录默认不可信。
     source: Literal["user", "runtime", "subagent", "unknown"] = "unknown"
     timestamp: int = 0
     model_config = ConfigDict(extra="forbid")

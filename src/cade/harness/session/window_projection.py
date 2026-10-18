@@ -1,7 +1,7 @@
-"""Versioned, fact-derived context window projection.
+"""带版本、由事实推导的上下文窗口投影。
 
-Window-reset records contain policy inputs, never generated model messages.
-Existing legacy reset records are decoded separately by session.surface.
+换窗记录只保存策略输入，不保存生成的模型消息。旧的 replacement
+记录由 session.surface 单独兼容解码。
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def encode_rollover_spec(
     *,
     preserve_user_request: bool = True,
 ) -> dict[str, JsonValue]:
-    """Persist a reproducible policy decision without copying its projection."""
+    """持久化可复现的策略决策，不复制投影结果。"""
     return {
         "version": WINDOW_PROJECTION_VERSION,
         "strategy": "cade_policy",
@@ -53,7 +53,7 @@ def apply_rollover_spec(
     spec: object,
     window_id: str,
 ) -> list[AgentMessage]:
-    """Replay a window boundary from the preceding durable conversation facts."""
+    """根据之前的持久会话事实重放窗口边界。"""
     from cade.harness.agent_runtime.context_window import ContextWindowRollover
 
     if not isinstance(spec, dict):

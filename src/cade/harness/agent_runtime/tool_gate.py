@@ -649,7 +649,7 @@ class ToolGate:
 
 
 def _approval_transcript(ctx: BeforeToolCallContext) -> str:
-    """Serialize review evidence with trusted host-assigned provenance."""
+    """序列化审批证据；来源与授权标记由宿主赋值。"""
     entries: list[dict[str, object]] = []
     if ctx.context.system_prompt.strip():
         entries.append(
@@ -674,7 +674,7 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
             source = message.source
             authorizes = source == "user"
         elif isinstance(message, SystemMessage):
-            # Prefix text can contain workspace facts; it cannot grant authority.
+            # 前缀文本可以包含工作区事实，但不能授予授权。
             authorizes = False
             source = "runtime"
         else:
@@ -690,7 +690,7 @@ def _approval_transcript(ctx: BeforeToolCallContext) -> str:
                 ),
             }
         )
-    # Remove entire old entries rather than slicing through JSON or trust metadata.
+    # 整条丢弃超限的旧证据，避免截断 JSON 或授权标记。
     while len(json.dumps(entries, ensure_ascii=False)) > 40_000 and len(entries) > 1:
         entries.pop(0)
     return json.dumps(entries, ensure_ascii=False)

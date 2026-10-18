@@ -422,8 +422,8 @@ async def _run_before_tool_hook(
         args=args,
         context=current_context,
     )
-    # Permission review may synchronously await the independent reviewer model.
-    # Keep the agent's event loop responsive, including while calls run in parallel.
+    # 权限审查可能同步调用 reviewer 模型；放到线程里执行，保持事件循环响应，
+    # 并行执行工具调用时同样如此。
     hook_task = asyncio.create_task(
         asyncio.to_thread(config.before_tool_call, ctx, signal)
     )
@@ -435,8 +435,7 @@ async def _run_before_tool_hook(
             {hook_task, cancel_waiter}, return_when=asyncio.FIRST_COMPLETED
         )
         if cancel_waiter in done:
-            # Cancelling an asyncio wrapper does not stop the underlying thread,
-            # but its late approval must never start a tool after interruption.
+            # 取消 asyncio 包装不会终止底层线程；中断后到达的审批不得再执行工具。
             hook_task.cancel()
             return BeforeToolCallResult(block=True, reason=cancel_reason(signal))
         result = hook_task.result()
@@ -572,8 +571,8 @@ def _tool_result_message(
         result_content = "".join(
             item.text for item in content if isinstance(item, TextContent)
         )
-    # Built-in image read tools expose the image in metadata; make it part
-    # of the model-visible tool result instead of a display-only attachment.
+    # 内置图片读取工具把图片放在 metadata 中；转为模型可见的工具结果，
+    # 而不是仅供展示的附件。
     if isinstance(metadata, dict) and isinstance(image := metadata.get("image"), dict):
         mime = image.get("mime")
         data = image.get("data")

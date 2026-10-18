@@ -264,8 +264,8 @@ class _TuiState:
                     data = content.get("data")
                     answer = data.get("answer") if isinstance(data, Mapping) else None
                     if isinstance(answer, str) and answer.strip():
-                        # Older transcripts copied this answer into an immediately
-                        # following assistant entry. Render either representation once.
+                        # 旧日志会把回答再写入紧随其后的 assistant 记录；
+                        # 两种表示只渲染一次。
                         following = (
                             records[index + 1] if index + 1 < len(records) else None
                         )

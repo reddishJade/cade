@@ -128,8 +128,8 @@ class SessionRecorder:
             self.store.append("event", encoded)
         self._recorded_events[id(event)] = event
         if isinstance(event, FinalStructuredEvent) and event.data.answer:
-            # The final event owns the displayed answer. Preserve the historical
-            # standalone assistant entry reader for existing sessions/partial saves.
+            # 展示用回答由 final 事件承载；保留对旧日志和中断存档中
+            # 独立 assistant 记录的读取。
             self.store.update_summary()
 
     def record_assistant(self, text: str) -> None:

@@ -1,4 +1,4 @@
-"""Interrupted tool attempts remain uncertain on restored sessions."""
+"""中断的工具调用在恢复后结果不确定，需要提示。"""
 
 from __future__ import annotations
 

@@ -78,7 +78,7 @@ class BeforeToolCallResult(BaseModel):
     suggestion: str = ""
     approval_denied: bool = False
     args: ToolArguments | None = None
-    # Opaque host-owned evidence bound to this invocation; never keyed globally.
+    # 宿主持有的不透明证据，绑定本次调用，不按全局键查找。
     permission_result: Annotated[object | None, SkipValidation] = None
     model_config = ConfigDict(extra="forbid")
 
