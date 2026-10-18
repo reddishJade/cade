@@ -324,11 +324,15 @@ def _replace_context_window(
     from cade.harness.agent_runtime.config import resolve_context_policy
     from cade.harness.agent_runtime.context_window import ContextWindowRollover
 
+    rollover_policy = None
     if isinstance(rollover, ContextWindowRollover):
+        rollover_policy = resolve_context_policy(
+            agent.provider, agent.composition.config
+        )
         after_msgs = rollover.rollover_messages(
             before_msgs,
             preserve_user_request=preserve_user_request,
-            policy=resolve_context_policy(agent.provider, agent.composition.config),
+            policy=rollover_policy,
         )
     else:
         dict_messages = [to_dict(message) for message in before_msgs]
@@ -348,6 +352,9 @@ def _replace_context_window(
         messages_before=len(before_msgs),
         messages_after=len(after_msgs),
         replacement=after_msgs,
+        reproject_from_facts=isinstance(rollover, ContextWindowRollover),
+        rollover_policy=rollover_policy,
+        preserve_user_request=preserve_user_request,
     )
 
     retention = (

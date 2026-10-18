@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Protocol
 
+from cade.agent.context_policy import ContextPolicy
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.request import RequestAssembly
 from cade.agent.types import AgentToolResult, ApprovalCallback, ToolInput, ToolSpec
@@ -158,4 +159,7 @@ class InteractionApp(ModelControlApp, ToolRegistryApp, Protocol):
         messages_before: int,
         messages_after: int,
         replacement: list[AgentMessage],
+        reproject_from_facts: bool = False,
+        rollover_policy: ContextPolicy | None = None,
+        preserve_user_request: bool = True,
     ) -> str: ...
