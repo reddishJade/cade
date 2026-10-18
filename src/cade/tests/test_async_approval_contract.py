@@ -15,13 +15,18 @@ from cade.harness.agent_runtime.cancellation import CancellationToken
 async def test_synchronous_approval_runs_off_event_loop() -> None:
     def review(_ctx, _signal):
         time.sleep(0.15)
-        return None
 
     tool = ToolCallContent(id="t1", name="bash", arguments={"command": "pwd"})
-    pending = asyncio.create_task(_run_before_tool_hook(
-        AgentContext(), AssistantMessage(content=[tool]), tool,
-        {"command": "pwd"}, AgentLoopConfig(before_tool_call=review), None,
-    ))
+    pending = asyncio.create_task(
+        _run_before_tool_hook(
+            AgentContext(),
+            AssistantMessage(content=[tool]),
+            tool,
+            {"command": "pwd"},
+            AgentLoopConfig(before_tool_call=review),
+            None,
+        )
+    )
     # A synchronous hook would prevent this independent coroutine from running.
     await asyncio.wait_for(asyncio.sleep(0.02), timeout=0.1)
     assert not pending.done()
@@ -35,10 +40,16 @@ async def test_cancelled_review_cannot_authorize_tool_execution() -> None:
 
     signal = CancellationToken()
     tool = ToolCallContent(id="t2", name="bash", arguments={"command": "pwd"})
-    pending = asyncio.create_task(_run_before_tool_hook(
-        AgentContext(), AssistantMessage(content=[tool]), tool,
-        {"command": "pwd"}, AgentLoopConfig(before_tool_call=review), signal,
-    ))
+    pending = asyncio.create_task(
+        _run_before_tool_hook(
+            AgentContext(),
+            AssistantMessage(content=[tool]),
+            tool,
+            {"command": "pwd"},
+            AgentLoopConfig(before_tool_call=review),
+            signal,
+        )
+    )
     await asyncio.sleep(0.02)
     signal.cancel("interrupted by user")
     result = await asyncio.wait_for(pending, timeout=0.1)
