@@ -19,7 +19,7 @@ Agent / user events
 - [replay.py](replay.py): ordered replay reconstructs messages and tool history.
 - [history.py](history.py): the `history` tool provides `list_windows`, `search`, paginated `read`, and `around`. Explicit `session_id` locates original entries across sessions. Explicit-session `around` follows ancestors with `before` and rejects `after`; active-branch queries support both directions.
 - [inbox.py](inbox.py): `SessionInbox` persists input arriving during execution.
-- [surface.py](surface.py): reconstructs active source messages, restores tool artifacts, and applies rollover replacements.
+- [surface.py](surface.py) and [window_projection.py](window_projection.py): replay canonical model facts, hydrate complete tool artifacts before selection, and regenerate built-in rollover windows from versioned policy recipes. Legacy `replacement` snapshots and externally supplied custom rollover projections remain readable.
 
 Exact reads do not depend on the `session_index.json` navigation cache. Default local storage uses physical location for ownership, allowing workspace moves without changing old `project_path` values. Shared/custom storage validates the first JSONL record's workspace binding. Directory links resolving outside the workspace use external-storage validation.
 

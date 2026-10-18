@@ -59,10 +59,11 @@ class ContextWindowRollover:
         *,
         preserve_user_request: bool = True,
         policy: ContextPolicy | None = None,
+        window_id: str | None = None,
     ) -> list[AgentMessage]:
-        """使用同一策略保留原始消息；不再另行按角色或字符数裁剪。"""
+        """使用同一策略保留原始消息，重放时可复用日志中的窗口 ID。"""
         active_policy = policy or ContextPolicy()
-        window_id = uuid4().hex[:12]
+        window_id = window_id or uuid4().hex[:12]
         self.last_window_id = window_id
         restored: list[AgentMessage] = []
         for message in messages:

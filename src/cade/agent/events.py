@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .context_policy import ContextPolicy
 from .messages import AgentMessage, ToolResultMessage
 from .types import AgentToolResult, ToolArguments
 
@@ -116,6 +117,9 @@ class ContextWindowResetEvent(BaseModel):
     messages_after: int = 0
     trigger: str = "token_limit"
     replacement: list[AgentMessage]
+    reproject_from_facts: bool = False
+    rollover_policy: ContextPolicy | None = None
+    preserve_user_request: bool = True
     model_config = ConfigDict(extra="forbid")
 
 

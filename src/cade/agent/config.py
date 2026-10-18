@@ -181,6 +181,7 @@ class AgentLoopConfig(BaseModel):
     rollover_decision: RolloverDecisionHook | None = None
     request_rollover_decision: RequestRolloverDecisionHook | None = None
     rollover_context: ContextWindowRolloverHook | None = None
+    reproject_rollover_from_facts: bool = False
     refresh_request_prefix: Callable[[], list[AgentMessage]] | None = None
     prepare_request_context: Callable[[int], bool] | None = None
 

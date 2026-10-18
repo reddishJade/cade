@@ -14,7 +14,7 @@ In the interface, use `/resume` to select a session, `/resume ID` to recover a s
 
 `/fork` opens a menu of user inputs on the current branch. `/fork N` selects the Nth input, counting from one; `/fork ENTRY_ID` selects a specific user input record. The new session retains the history before that input. The selected input returns to the TUI editor for revision and submission. Later input and results remain in the parent session.
 
-Rollover records in the retained prefix keep their original source IDs and replacements. The new branch inherits undo snapshots according to the number of completed tasks retained. Fork creation records the disposition of pending input in the prefix; the editor submits the selected input.
+Rollover records retain their source-entry IDs and a versioned retention-policy recipe. Replay reconstructs the active window from those facts; the generated message projection is not written to new built-in rollover records. Older sessions with serialized `replacement` windows remain readable. The new branch inherits undo snapshots according to the number of completed tasks retained. Fork creation records the disposition of pending input in the prefix; the editor submits the selected input.
 
 `/clone` copies the complete session log and snapshot repository, then switches to the copy. The success message shows its title and ID. The copy retains the parent session ID. Later input, renaming, and undo affect the copy. Both fork and clone share the current workspace files: branch history comes from the selected prefix, while workspace content comes from the current disk state.
 

@@ -24,6 +24,7 @@ from cade.ai.events import ProviderReplayPayload
 from .artifacts import resolve_tool_result_artifact
 from .schema import SESSION_EVENT_SCHEMA_VERSION, supports_session_event_schema
 from .types import JsonValue, SessionEntry
+from .window_projection import apply_rollover_spec
 
 
 class InvalidSessionSurfaceError(ValueError):
@@ -94,7 +95,7 @@ def decode_surface_messages(value: object) -> list[AgentMessage]:
 def project_session_surface(
     records: list[SessionEntry], *, artifacts_dir: Path | None = None
 ) -> SessionSurface:
-    """依次应用 transcript facts 与 surface replacement。"""
+    """从事件事实重建窗口；兼容历史 replacement 快照。"""
     messages: list[AgentMessage] = []
     pending_tool_calls: list[ToolCallContent] = []
     open_tool_calls: set[str] = set()
@@ -168,17 +169,43 @@ def project_session_surface(
             event_assistant_texts.clear()
             continue
         if event_type == "context_window_reset":
-            if not isinstance(data, dict) or "replacement" not in data:
-                raise InvalidSessionSurfaceError(
-                    "context window event is missing a typed surface replacement"
-                )
+            if not isinstance(data, dict):
+                raise InvalidSessionSurfaceError("invalid context window event data")
             source_entry_ids = data.get("source_entry_ids")
             expected_source_ids = [item.id for item in records[:record_index]]
             if source_entry_ids != expected_source_ids:
                 raise InvalidSessionSurfaceError(
                     "context window source entry IDs do not match the branch prefix"
                 )
-            messages = decode_surface_messages(data["replacement"])
+            if "rollover_spec" in data:
+                if "replacement" in data:
+                    raise InvalidSessionSurfaceError(
+                        "a window reset cannot contain both a recipe and replacement"
+                    )
+                window_id = data.get("window_id")
+                if not isinstance(window_id, str) or not window_id:
+                    raise InvalidSessionSurfaceError("missing window ID")
+                # Tool previews are not facts. Restore immutable artifacts before
+                # choosing the new working set, including durable tool results.
+                messages = _hydrate_tool_artifacts(
+                    messages, tool_artifacts, artifacts_dir
+                )
+                try:
+                    messages = apply_rollover_spec(
+                        messages, data["rollover_spec"], window_id
+                    )
+                    validate_tool_pairing(messages)
+                except (ValueError, TypeError) as exc:
+                    raise InvalidSessionSurfaceError(
+                        "invalid replayable context window recipe"
+                    ) from exc
+            elif "replacement" in data:
+                # Preserve the original meaning of existing schema 2/3 logs.
+                messages = decode_surface_messages(data["replacement"])
+            else:
+                raise InvalidSessionSurfaceError(
+                    "context window event lacks recipe or replacement"
+                )
             raw_generation = data.get("generation")
             if not isinstance(raw_generation, int) or raw_generation <= generation:
                 raise InvalidSessionSurfaceError(
@@ -222,7 +249,22 @@ def project_session_surface(
 
     # 崩溃可能留下未完成工具批次，已 claim 的输入不能因此消失。
     messages.extend(deferred_inputs)
-    for index, message in enumerate(messages):
+    messages = _hydrate_tool_artifacts(messages, tool_artifacts, artifacts_dir)
+    return SessionSurface(
+        messages=tuple(messages),
+        generation=generation,
+        replacement_entry_id=replacement_entry_id,
+    )
+
+
+def _hydrate_tool_artifacts(
+    messages: list[AgentMessage],
+    tool_artifacts: dict[str, object],
+    artifacts_dir: Path | None,
+) -> list[AgentMessage]:
+    """Use full tool facts for replay instead of the bounded log preview."""
+    result = list(messages)
+    for index, message in enumerate(result):
         if not isinstance(message, ToolResultMessage):
             continue
         reference = tool_artifacts.get(message.tool_call_id)
@@ -233,12 +275,8 @@ def project_session_surface(
             raise InvalidSessionSurfaceError(
                 "Tool result artifact is missing or invalid; preview is not replayable."
             )
-        messages[index] = message.model_copy(update={"content": content})
-    return SessionSurface(
-        messages=tuple(messages),
-        generation=generation,
-        replacement_entry_id=replacement_entry_id,
-    )
+        result[index] = message.model_copy(update={"content": content})
+    return result
 
 
 def validate_tool_pairing(messages: list[AgentMessage]) -> None:

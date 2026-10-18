@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cade.agent.context_policy import ContextPolicy
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, TextDelta
@@ -335,6 +336,9 @@ class CadeApp:
         messages_before: int,
         messages_after: int,
         replacement: list[AgentMessage],
+        reproject_from_facts: bool = False,
+        rollover_policy: ContextPolicy | None = None,
+        preserve_user_request: bool = True,
     ) -> str:
         recorder = self.session_recorder
         if recorder is None:
@@ -344,6 +348,9 @@ class CadeApp:
             messages_before=messages_before,
             messages_after=messages_after,
             replacement=replacement,
+            reproject_from_facts=reproject_from_facts,
+            rollover_policy=rollover_policy,
+            preserve_user_request=preserve_user_request,
         )
 
     def restore_session(self) -> None:

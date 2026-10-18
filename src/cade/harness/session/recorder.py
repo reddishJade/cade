@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from typing import Protocol, cast
 from weakref import WeakValueDictionary
 
+from cade.agent.context_policy import ContextPolicy
 from cade.agent.messages import AgentMessage
 from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
@@ -25,6 +26,7 @@ from .subagent_runs import (
 )
 from .surface import encode_surface_messages
 from .types import JsonValue, SessionEntry
+from .window_projection import encode_rollover_spec
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
     "provider",
@@ -143,15 +145,24 @@ class SessionRecorder:
         messages_before: int,
         messages_after: int,
         replacement: list[AgentMessage],
+        reproject_from_facts: bool = False,
+        rollover_policy: ContextPolicy | None = None,
+        preserve_user_request: bool = True,
     ) -> str:
-        """追加一次完整 surface replacement，不修改既有 transcript。"""
+        """追加换窗决策；内置策略可从日志事实重建工作窗口。"""
         data: dict[str, JsonValue] = {
             "window_id": window_id,
             "trigger": "manual",
             "messages_before": messages_before,
             "messages_after": messages_after,
-            "replacement": encode_surface_messages(replacement),
         }
+        if reproject_from_facts:
+            data["rollover_spec"] = encode_rollover_spec(
+                rollover_policy,
+                preserve_user_request=preserve_user_request,
+            )
+        else:
+            data["replacement"] = encode_surface_messages(replacement)
         restoration_context = self._context_window_state()
         if restoration_context is not None:
             data["restoration_context"] = restoration_context

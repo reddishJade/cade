@@ -455,6 +455,9 @@ def build_loop_config(
             rollover_decision_fn if context_rollover is not None else None
         ),
         rollover_context=rollover_fn if context_rollover is not None else None,
+        reproject_rollover_from_facts=isinstance(
+            context_rollover, ContextWindowRollover
+        ),
         completion_verifier=completion_verifier,
         is_tool_productive=gate.build_is_tool_productive_hook(),
         before_tool_call=gate.build_before_tool_hook(gate_snapshot),
