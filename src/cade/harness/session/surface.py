@@ -17,6 +17,7 @@ from cade.agent.messages import (
     SystemMessage,
     ToolResultMessage,
     UserMessage,
+    normalize_assistant_message,
 )
 from cade.agent.types import ToolCallContent
 from cade.ai.events import ProviderReplayPayload
@@ -410,18 +411,25 @@ def _assistant_event(data: object) -> _AssistantEvent | None:
             continue
         if raw.get("type") == "text":
             text = str(raw.get("text", ""))
+            content.append(TextContent(text=text))
             if text:
-                content.append(TextContent(text=text))
                 texts.append(text)
             continue
         call = _tool_call(raw)
         if call is not None:
             content.append(call)
             ids.add(call.id)
-    if not content and replay_payload is None:
+    normalized = normalize_assistant_message(
+        AssistantMessage(
+            content=content,
+            reasoning_content=reasoning_content,
+            replay_payload=replay_payload,
+        )
+    )
+    if normalized is None:
         return None
     return _AssistantEvent(
-        tuple(content),
+        tuple(normalized.content),
         frozenset(ids),
         tuple(texts),
         reasoning_content,

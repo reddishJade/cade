@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from cade.agent.messages import AgentMessage, AssistantMessage, ToolResultMessage
+from cade.agent.messages import (
+    AgentMessage,
+    AssistantMessage,
+    ToolResultMessage,
+    normalize_assistant_message,
+)
 from cade.agent.types import ToolCallContent
 
 
@@ -23,6 +28,10 @@ def repair_tool_pairing(messages: list[AgentMessage]) -> list[AgentMessage]:
     repaired: list[AgentMessage] = []
     for msg in messages:
         if isinstance(msg, AssistantMessage):
+            normalized = normalize_assistant_message(msg)
+            if normalized is None:
+                continue
+            msg = normalized
             filtered_content = [
                 block
                 for block in msg.content

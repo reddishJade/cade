@@ -101,3 +101,19 @@ type AgentMessage = (
     | ToolResultMessage
     | BranchSummaryMessage
 )
+
+
+def normalize_assistant_message(message: AssistantMessage) -> AssistantMessage | None:
+    """统一空文本表示；保留空白文本、工具调用和不透明回放状态。"""
+    content = [
+        block
+        for block in message.content
+        if not isinstance(block, TextContent) or block.text != ""
+    ]
+    if not content and message.replay_payload is None:
+        return None
+    return (
+        message
+        if len(content) == len(message.content)
+        else message.model_copy(update={"content": content})
+    )
