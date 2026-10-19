@@ -166,13 +166,9 @@ def _convert_assistant(m: AssistantMessage) -> dict[str, Any]:
         result["reasoning_content"] = m.reasoning_content
     elif thinking_parts:
         result["reasoning_content"] = "".join(thinking_parts)
-    if content_blocks:
-        result["content"] = (
-            "".join(
-                b.get("text", "") for b in content_blocks if b.get("type") == "text"
-            )
-            or None
-        )
+    text = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+    if text:
+        result["content"] = text
     if tool_calls:
         result["tool_calls"] = tool_calls
     if m.replay_payload is not None:
