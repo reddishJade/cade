@@ -17,6 +17,7 @@ from cade.harness.agent_runtime.events import (
     MessageStartStructuredEvent,
     ReasoningDeltaStructuredEvent,
     ResponseMetricsStructuredEvent,
+    RunStartedStructuredEvent,
     TextDeltaStructuredEvent,
     ToolResultStructuredEvent,
     ToolUpdateStructuredEvent,
@@ -42,6 +43,8 @@ def encode_session_event(event: AgentHarnessEvent) -> dict[str, Any]:
 
 
 def _event_payload(event: AgentHarnessEvent) -> object:
+    if isinstance(event, RunStartedStructuredEvent):
+        return asdict(event.data)
     if isinstance(event, (TextDeltaStructuredEvent, ReasoningDeltaStructuredEvent)):
         return event.data
     if isinstance(event, ContextStructuredEvent):

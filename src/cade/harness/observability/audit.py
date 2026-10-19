@@ -33,6 +33,7 @@ class AuditRecord:
     redacted_input: str
     redacted_output: str
     timestamp: str = ""
+    run_id: str = ""
     turn_id: str = ""
     request_id: str = ""
     tool_call_id: str = ""
@@ -54,6 +55,7 @@ class AuditRecord:
         created_at = self.timestamp or timestamp or datetime.now(UTC).isoformat()
         return {
             "session_id": self.session_id,
+            "run_id": self.run_id,
             "tool": self.tool,
             "dynamic_decision": self.dynamic_decision,
             "policy_decision": self.policy_decision,

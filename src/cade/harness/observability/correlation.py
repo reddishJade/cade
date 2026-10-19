@@ -14,6 +14,7 @@ class EventCorrelation:
 
     timestamp: str = ""
     session_id: str = ""
+    run_id: str = ""
     turn_id: str = ""
     request_id: str = ""
     tool_call_id: str = ""
@@ -24,6 +25,7 @@ class HookCorrelationFields(TypedDict):
 
     timestamp: str
     session_id: str
+    run_id: str
     turn_id: str
     request_id: str
     tool_call_id: str
@@ -36,6 +38,7 @@ def hook_correlation_fields(
     return {
         "timestamp": correlation.timestamp,
         "session_id": correlation.session_id,
+        "run_id": correlation.run_id,
         "turn_id": correlation.turn_id,
         "request_id": correlation.request_id,
         "tool_call_id": correlation.tool_call_id,
@@ -82,6 +85,7 @@ class RuntimeCorrelation:
         return EventCorrelation(
             timestamp=datetime.now(UTC).isoformat(),
             session_id=self.session_id,
+            run_id=self._run_id,
             turn_id=self.turn_id,
             request_id=self.request_id,
             tool_call_id=tool_call_id,

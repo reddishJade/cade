@@ -380,7 +380,7 @@ def _restore_exec_session(app: Any, args: argparse.Namespace) -> None:
 
 
 def _consume_exec_run(
-    app: Any,
+    app: CadeApp,
     prompt: str,
     config: CadeRuntimeConfig,
     args: argparse.Namespace,
@@ -388,29 +388,36 @@ def _consume_exec_run(
 ) -> int:
     session_id = app.session_store.session_id
     session_path = str(app.session_store.current_path)
-    emitter.emit(
-        {
-            "type": "run.started",
-            "run_id": session_id,
-            "session_id": session_id,
-            "session_path": session_path,
-        }
-    )
     resolved_config = _resolved_config_event(app, config, args)
     token_budget = resolved_config["token_budget"]
     emitter.token_budget = token_budget if isinstance(token_budget, int) else 0
-    emitter.emit(resolved_config)
 
     timeout_state = _TimeoutState(app, args.timeout)
-    run_control = SessionRunControl(Path(session_path).parent, session_id, app)
+    run_id: str | None = None
+    run_control: SessionRunControl | None = None
     workspace_before = _workspace_snapshot(args.project_root)
-    run_control.start()
     timeout_state.start()
     final_data: Any | None = None
     approval_denied = False
     validation = _ValidationTracker()
     try:
         for event in app.ask_stream(prompt):
+            if event.type == "run_started":
+                run_id = event.data.run_id
+                run_control = SessionRunControl(
+                    Path(session_path).parent, event.data.session_id, app, run_id
+                )
+                run_control.start()
+                emitter.emit(
+                    {
+                        "type": "run.started",
+                        "run_id": run_id,
+                        "session_id": event.data.session_id,
+                        "session_path": session_path,
+                    }
+                )
+                emitter.emit(resolved_config)
+                continue
             if event.type == "final":
                 final_data = event.data
                 continue
@@ -423,7 +430,8 @@ def _consume_exec_run(
                     break
     finally:
         timeout_state.stop()
-        run_control.stop()
+        if run_control is not None:
+            run_control.stop()
 
     if approval_denied:
         exit_code = 5
@@ -448,6 +456,7 @@ def _consume_exec_run(
         status=status,
         exit_code=exit_code,
         session_id=session_id,
+        run_id=run_id,
         changed_files=_changed_files(args.project_root, workspace_before),
         validation=validation.results(),
     )
@@ -584,6 +593,7 @@ def _completion_payload(
     status: str,
     exit_code: int,
     session_id: str,
+    run_id: str | None,
     changed_files: list[str],
     validation: list[dict[str, object]],
 ) -> dict[str, object]:
@@ -612,6 +622,7 @@ def _completion_payload(
             final_data.termination_reason.value if final_data is not None else status
         ),
         "session_id": session_id,
+        "run_id": run_id,
         "steps": 0 if final_data is None else final_data.steps,
         "llm_calls": 0 if metrics is None else metrics.get("llm_calls", 0),
         "tool_calls": 0 if metrics is None else metrics.get("tool_calls", 0),

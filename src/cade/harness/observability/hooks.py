@@ -46,6 +46,7 @@ class HookRecord:
     metadata: Mapping[str, object] | None = None
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     session_id: str = ""
+    run_id: str = ""
     turn_id: str = ""
     request_id: str = ""
     tool_call_id: str = ""
