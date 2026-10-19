@@ -280,13 +280,11 @@ class CadeApp:
                 UserMessage(content=question),
                 display_text=display_question,
             )
-        for event in self.agent.run_stream(
+        yield from self.agent.run_stream(
             None,
             mode=mode,
             display_question=display_question,
-        ):
-            recorder.record_event(event)
-            yield event
+        )
 
     def ask_side_question(self, question: str) -> Iterator[str]:
         """用独立 provider 回答旁支问题，主会话保留原运行状态。"""
@@ -447,8 +445,7 @@ def build_app(
         config=cfg.agent_config,
         audit_path=cfg.audit_path,
         runtime_config=cfg.runtime_config,
-        session_recorder=infra.session_recorder,
-        session_inbox=infra.session_inbox,
+        session=infra.session,
         shell_spec=shell_spec,
         context_rollover=infra.context_rollover,
         context_window_controller=infra.context_window_controller,

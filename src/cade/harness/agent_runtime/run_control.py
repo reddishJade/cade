@@ -157,6 +157,7 @@ class SessionRunController:
         with self._lock:
             if self._active is not None:
                 raise RuntimeError("session already has an active run")
+            cancellation_token.reset()
             handle = ActiveRunHandle(
                 uuid4().hex,
                 self.session_id,

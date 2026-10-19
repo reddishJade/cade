@@ -50,8 +50,7 @@ from cade.harness.observability import (
     SignalHookManager,
 )
 from cade.harness.security.permission_model import PolicyEvaluator
-from cade.harness.session.inbox import SessionInbox
-from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.runtime import RuntimeSession
 
 from ..prompting import CORE_IDENTITY
 from ..runtime import CodingAgentRuntimeConfig
@@ -70,17 +69,11 @@ if TYPE_CHECKING:
 
 def build_hook_manager(
     external_hook_runner: ExternalHookRunner | None,
-    session_recorder: SessionRecorder,
     project_root: Path,
     *,
     subagent: bool,
 ) -> HookManager:
     manager = SignalHookManager()
-    manager.register("on_agent_event", session_recorder.record_model_event)
-    manager.register(
-        "before_provider_request",
-        session_recorder.record_provider_request,
-    )
     if external_hook_runner is not None:
         for event in (
             "post_tool",
@@ -112,8 +105,7 @@ def build_agent(
     config: AgentConfig,
     audit_path: Path | None,
     runtime_config: CadeRuntimeConfig,
-    session_recorder: SessionRecorder,
-    session_inbox: SessionInbox,
+    session: RuntimeSession,
     shell_spec: ShellSpec | None = None,
     context_window_controller: ContextWindowController | None = None,
     cancellation_token: CancellationToken | None = None,
@@ -128,7 +120,6 @@ def build_agent(
 
     hook_manager = build_hook_manager(
         external_hook_runner,
-        session_recorder,
         project_root,
         subagent=False,
     )
@@ -154,7 +145,7 @@ def build_agent(
     context_collectors.register_section(
         make_collector_section(
             "recent_validation",
-            ValidationCollector(project_root, session_recorder.store),
+            ValidationCollector(project_root, session.recorder.store),
         )
     )
     context_collectors.register_section(
@@ -233,7 +224,7 @@ def build_agent(
         runtime=CodingAgentRuntimeConfig(
             initial_mode=runtime_config.execution_modes.default_mode,
             approval_router=runtime_config.security.approval_router,
-            session_inbox=session_inbox,
+            session=session,
             gate=GateRuntimeConfig(
                 auto_approval_callback=auto_approval_callback,
                 hook_manager=hook_manager,

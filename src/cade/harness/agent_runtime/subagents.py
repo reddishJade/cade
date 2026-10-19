@@ -15,8 +15,8 @@ from cade.agent.types import ToolSpec
 from cade.ai.providers.base import ModelProvider
 from cade.harness.observability import SignalHookManager
 from cade.harness.session import SessionStore
-from cade.harness.session.inbox import SessionInbox
 from cade.harness.session.recorder import SessionRecorder
+from cade.harness.session.runtime import RuntimeSession
 from cade.harness.session.subagent_runs import (
     SubagentActivationEvent,
     SubagentDescriptor,
@@ -302,8 +302,6 @@ class SubagentSessionManager:
         )
         recorder = SessionRecorder(child_store)
         hooks = SignalHookManager()
-        hooks.register("on_agent_event", recorder.record_model_event)
-        hooks.register("before_provider_request", recorder.record_provider_request)
         child_gate = parent_gate.fork_for_subagent(
             child_store.session_id,
             hook_manager=hooks,
@@ -312,7 +310,7 @@ class SubagentSessionManager:
         harness = AgentHarness(
             composition=composition,
             runtime=AgentRuntimeConfig(
-                session_inbox=SessionInbox(child_store),
+                session=RuntimeSession(recorder),
                 gate=GateRuntimeConfig(
                     hook_manager=hooks,
                     session_id=child_store.session_id,
@@ -371,7 +369,6 @@ class SubagentSessionManager:
             answer = ""
             final_result = None
             async for event in activation.harness.arun_stream(prompt):
-                activation.recorder.record_event(event)
                 if event.type == "tool_update" and on_update is not None:
                     on_update(str(event.data.partial_result))
                 if event.type == "final":

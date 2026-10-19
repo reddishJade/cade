@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -119,6 +119,7 @@ class AgentHarness:
         gate_runtime = runtime.gate
         self.project_root = runtime.project_root
         self._runtime = runtime
+        self._session = runtime.session
         self.context_rollover = runtime.context_rollover
         self._context_window_controller = runtime.context_window_controller
         self.cancellation_token = runtime.cancellation_token or CancellationToken()
@@ -164,7 +165,7 @@ class AgentHarness:
         self._context_manager = ContextManager()
         self._history = self._context_manager.history
         self._resumed_notice: str | None = None
-        self._run_controller = SessionRunController(runtime.session_inbox)
+        self._run_controller = SessionRunController(self._session.inbox)
 
     # ── 可被子类覆盖的扩展点 ──
 
@@ -578,7 +579,7 @@ class AgentHarness:
         question: str | None,
         *,
         display_question: str | None = None,
-    ) -> AsyncIterator[AgentHarnessEvent]:
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
         if question is not None:
             self.followup(
                 UserMessage(content=question),
@@ -587,21 +588,26 @@ class AgentHarness:
 
         if not self._run_controller.has_waking_input():
             return
-        with self._composition_lock:
-            run_handle = self._run_controller.begin_run(self.cancellation_token)
-        try:
-            turn_messages = self._run_controller.claim_initial(run_handle)
-            if not turn_messages:
-                return
-            question_text = _turn_text(turn_messages)
-            async for event in self._arun_claimed_turn(
-                question_text,
-                turn_messages,
-                run_handle,
-            ):
-                yield event
-        finally:
-            if self._run_controller.active_run() is run_handle:
+        with self._session.run_lock():
+            with self._composition_lock:
+                run_handle = self._run_controller.begin_run(self.cancellation_token)
+            try:
+                self._session.inbox.reload()
+                turn_messages = self._run_controller.claim_initial(run_handle)
+                if not turn_messages:
+                    return
+                question_text = _turn_text(turn_messages)
+                turn_stream = self._arun_claimed_turn(
+                    question_text,
+                    turn_messages,
+                    run_handle,
+                )
+                try:
+                    async for event in turn_stream:
+                        yield event
+                finally:
+                    await turn_stream.aclose()
+            finally:
                 run_handle.begin_finishing()
                 self._run_controller.complete_run(run_handle)
 
@@ -610,7 +616,7 @@ class AgentHarness:
         question: str,
         turn_messages: list[AgentMessage],
         run_handle: ActiveRunHandle,
-    ) -> AsyncIterator[AgentHarnessEvent]:
+    ) -> AsyncGenerator[AgentHarnessEvent, None]:
         from .tool_hooks import emit_hook as _emit_hook
 
         with self._composition_lock:
@@ -642,6 +648,7 @@ class AgentHarness:
             steer=inject_runtime,
             emit_hook=lambda rec: _emit_hook(self._hook_manager, rec),
             get_prompt_version=_get_prompt_version,
+            record_request=self._session.recorder.record_provider_request,
             correlation=self._correlation,
             **self._build_loop_config_extras(),
         )
@@ -650,7 +657,6 @@ class AgentHarness:
         )
 
         try:
-            self.cancellation_token.reset()
             self._correlation.reset(self.session_id)
 
             current = self._correlation.snapshot()
@@ -680,6 +686,7 @@ class AgentHarness:
                     translated if isinstance(translated, list) else [translated]
                 ):
                     if is_model_fact_event(fact):
+                        self._session.recorder.record_event(fact)
                         _emit_hook(
                             self._hook_manager,
                             HookRecord(
@@ -700,7 +707,7 @@ class AgentHarness:
                 cwd=self._effective_working_directory(),
             )
             result: AgentLoopResult | None = None
-            async for event in run_agent_loop(
+            loop_stream = run_agent_loop(
                 turn_messages,
                 context,
                 loop_config,
@@ -708,16 +715,20 @@ class AgentHarness:
                 steer_queue=run_handle.claim_step_input,
                 finish_steering=run_handle.finish_step_input,
                 reopen_steering=run_handle.reopen_step_input,
-            ):
-                if isinstance(event, AgentLoopResult):
-                    result = event
-                    continue
-                translated = translated_events.pop(id(event))
-                if translated is not None:
-                    for te in (
-                        translated if isinstance(translated, list) else [translated]
-                    ):
-                        yield te
+            )
+            try:
+                async for event in loop_stream:
+                    if isinstance(event, AgentLoopResult):
+                        result = event
+                        continue
+                    translated = translated_events.pop(id(event))
+                    if translated is not None:
+                        for te in (
+                            translated if isinstance(translated, list) else [translated]
+                        ):
+                            yield te
+            finally:
+                await loop_stream.aclose()
 
             if result is None:
                 raise RuntimeError("agent loop completed without a result")
@@ -731,14 +742,16 @@ class AgentHarness:
             )
             final = self._build_result(visible_result)
             self._post_run(final)
-            yield final_event(
+            event = final_event(
                 result.steps,
                 final,
                 self._correlation.snapshot(),
             )
+            run_handle.begin_finishing()
+            self._session.recorder.record_event(event)
+            yield event
         finally:
             run_handle.begin_finishing()
-            self._run_controller.complete_run(run_handle)
 
     # ── 内部 ──
 

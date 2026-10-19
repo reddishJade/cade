@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Protocol, cast
-from weakref import WeakValueDictionary
+from typing import Protocol
 
 from cade.agent.context_policy import ContextPolicy
 from cade.agent.messages import AgentMessage
@@ -80,9 +79,6 @@ class SessionRecorder:
     ) -> None:
         self.store = store
         self._context_window_state_provider = context_window_state_provider
-        self._recorded_events: WeakValueDictionary[int, AgentHarnessEvent] = (
-            WeakValueDictionary()
-        )
 
     def bind_agent(
         self,
@@ -92,17 +88,10 @@ class SessionRecorder:
         agent.session_id = session_id
         agent.set_history_session_id(session_id)
 
-    def record_model_event(self, record: ProviderRequestRecord) -> None:
-        """在生产事件的线程同步记录事实，不依赖 UI 是否消费事件。"""
-        if record.metadata is not None:
-            self.record_event(cast(AgentHarnessEvent, record.metadata["event"]))
-
     def record_event(self, event: AgentHarnessEvent) -> None:
         if not is_model_fact_event(event) and not isinstance(
             event, FinalStructuredEvent
         ):
-            return
-        if self._recorded_events.get(id(event)) is event:
             return
         encoded = encode_session_event(event)
         if isinstance(event, ToolResultStructuredEvent):
@@ -126,7 +115,6 @@ class SessionRecorder:
             self._append_surface_event(encoded, data)
         else:
             self.store.append("event", encoded)
-        self._recorded_events[id(event)] = event
         if isinstance(event, FinalStructuredEvent) and event.data.answer:
             # 展示用回答由 final 事件承载；保留对旧日志和中断存档中
             # 独立 assistant 记录的读取。

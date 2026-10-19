@@ -37,7 +37,7 @@ Agent requests models through provider protocols and actions through tool protoc
 
 ## Input, execution, and completion
 
-A session identifies a persistent conversation and its active branch. A run identifies one execution that owns that session. Within a runtime, a session has at most one active run. Queued input remains in the inbox. A user turn is one task input and its response process; the TUI records file snapshots at that boundary.
+A session identifies a persistent conversation and its active branch. A run identifies one execution that owns that session. A nonblocking file lock permits at most one active run per persistent session across runtimes and processes. Queued input remains in the inbox. A user turn is one task input and its response process; the TUI records file snapshots at that boundary.
 
 A step is one Agent loop iteration: model output, optional tool execution, and a continuation decision. Retries or output continuation can produce multiple provider requests in a step. Agent `TurnStart` and `TurnEnd` events occur per step, not per host-recorded user turn.
 
@@ -70,7 +70,7 @@ Normal completion, cancellation, step limits, model call limits, watchdog stops,
 
 With a goal configured, an independent judge checks existing messages and tool evidence when the main loop tries to stop. If the condition is unmet, feedback returns to the loop. Goal state stores conditions, pause status, and acceptance attempts, with limits on repeated checks. Impossible goals, unavailable acceptance, and exhausted attempts produce distinct notices. A normal `completed` result means the loop ended normally; evidence and goal acceptance establish task success.
 
-The harness records model-history facts synchronously through configured session hooks before delivering events to hosts. Direct harness callers must configure these hooks for pre-send durability. `CadeApp` also records final run metadata. Application shutdown cancels and waits for subagents, releases children, and then closes shared dependencies such as MCP. A child wait timeout interrupts shutdown and retains its dependencies.
+`RuntimeSession` binds the recorder and inbox to one store. The harness records model-history facts and final run metadata synchronously before delivering events to hosts. It records request audits before sending requests. Hooks observe these operations; they do not own persistence. The run retains session ownership until final delivery completes or the consumer closes the stream. Application shutdown cancels and waits for subagents, releases children, and then closes shared dependencies such as MCP. A child wait timeout interrupts shutdown and retains its dependencies.
 
 ## Requests and context
 

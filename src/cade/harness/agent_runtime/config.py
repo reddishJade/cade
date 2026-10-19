@@ -46,7 +46,7 @@ from ..security.permission_model import (
     Rule,
     SensitivePathOverride,
 )
-from ..session.inbox import SessionInbox
+from ..session.runtime import RuntimeSession
 from ..skill_activation import is_skill_activation_content
 from .cancellation import CancellationToken
 from .context_window import (
@@ -116,7 +116,7 @@ class GateRuntimeConfig:
 class AgentRuntimeConfig:
     """CodingAgentHarness 运行时基础设施配置。"""
 
-    session_inbox: SessionInbox
+    session: RuntimeSession
     gate: GateRuntimeConfig = field(default_factory=GateRuntimeConfig)
     gate_instance: ToolGate | None = None
     context_rollover: ContextRollover | None = None
@@ -185,6 +185,7 @@ def _build_before_provider_request_closure(
     correlation: RuntimeCorrelation,
     provider: ModelProvider,
     composition_id: str,
+    record_request: Callable[[HookRecord], None],
 ) -> Callable[[RequestAssembly], None]:
     """构建 provider 请求前的 hook 发射回调。"""
 
@@ -223,78 +224,77 @@ def _build_before_provider_request_closure(
             separators=(",", ":"),
             default=str,
         ).encode("utf-8")
-        emit_hook(
-            HookRecord(
-                "before_provider_request",
-                metadata={
-                    "messages": messages,
-                    "tools": tool_payload,
-                    "provider": provider_info,
-                    "options": options_payload,
-                    "composition_id": composition_id,
-                    "assembly": {
-                        "current_step": assembly.current_step,
-                        "estimated_tokens": assembly.estimated_tokens,
-                        "unreclaimed_input_tokens": assembly.unreclaimed_input_tokens,
-                        "local_estimated_tokens": assembly.local_estimated_tokens,
-                        "token_estimate_source": assembly.token_estimate_source,
-                        "context_policy": (
-                            {
-                                "physical_window": assembly.context_policy.physical_window,
-                                "output_reserve": assembly.context_policy.output_reserve,
-                                "headroom": assembly.context_policy.headroom,
-                                "input_budget": assembly.context_policy.input_budget,
-                                "rotation_threshold": assembly.context_policy.rotation_threshold,
-                                "evidence_budget": assembly.context_policy.evidence_budget,
-                                "working_budget": assembly.context_policy.working_budget,
-                                "next_input_allowance": assembly.context_policy.next_input_allowance,
-                                "admission_target": assembly.context_policy.admission_target,
-                                "output_limit_supported": assembly.context_policy.output_limit_supported,
-                            }
-                            if assembly.context_policy is not None
-                            else None
-                        ),
-                        "evidence_omitted": list(assembly.evidence_omitted),
-                        "working_omitted": list(assembly.working_omitted),
-                        "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
-                        "rotation_blocked_reason": assembly.rotation_blocked_reason,
-                        "mandatory_estimated_tokens": assembly.mandatory_estimated_tokens,
-                        "context_snapshot": (
-                            asdict(assembly.context_snapshot)
-                            if assembly.context_snapshot is not None
-                            else None
-                        ),
-                        "token_budget": assembly.token_budget,
-                        "budget_remaining": assembly.budget_remaining,
-                        "context_trace": [
-                            {
-                                "source": trace.source,
-                                "target": trace.target,
-                                "block_id": trace.block_id,
-                                "included": trace.included,
-                                "token_count": trace.token_count,
-                                "content_digest": trace.content_digest,
-                                "provenance": trace.provenance,
-                                "truncated": trace.truncated,
-                                "truncation_reason": trace.truncation_reason,
-                                "scope": trace.scope,
-                            }
-                            for trace in assembly.context_trace
-                        ],
-                    },
-                    "prompt_version": get_prompt_version(),
-                    "prompt_digest": prompt_digest,
-                    "request_digest": hashlib.blake2b(
-                        request_bytes, digest_size=32
-                    ).hexdigest(),
-                    "request_bytes": len(request_bytes),
-                    "system_prompt_bytes": prompt_bytes,
-                    "budget_reminder_present": "<context-budget-reminder>"
-                    in system_prompt,
+        record = HookRecord(
+            "before_provider_request",
+            metadata={
+                "messages": messages,
+                "tools": tool_payload,
+                "provider": provider_info,
+                "options": options_payload,
+                "composition_id": composition_id,
+                "assembly": {
+                    "current_step": assembly.current_step,
+                    "estimated_tokens": assembly.estimated_tokens,
+                    "unreclaimed_input_tokens": assembly.unreclaimed_input_tokens,
+                    "local_estimated_tokens": assembly.local_estimated_tokens,
+                    "token_estimate_source": assembly.token_estimate_source,
+                    "context_policy": (
+                        {
+                            "physical_window": assembly.context_policy.physical_window,
+                            "output_reserve": assembly.context_policy.output_reserve,
+                            "headroom": assembly.context_policy.headroom,
+                            "input_budget": assembly.context_policy.input_budget,
+                            "rotation_threshold": assembly.context_policy.rotation_threshold,
+                            "evidence_budget": assembly.context_policy.evidence_budget,
+                            "working_budget": assembly.context_policy.working_budget,
+                            "next_input_allowance": assembly.context_policy.next_input_allowance,
+                            "admission_target": assembly.context_policy.admission_target,
+                            "output_limit_supported": assembly.context_policy.output_limit_supported,
+                        }
+                        if assembly.context_policy is not None
+                        else None
+                    ),
+                    "evidence_omitted": list(assembly.evidence_omitted),
+                    "working_omitted": list(assembly.working_omitted),
+                    "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
+                    "rotation_blocked_reason": assembly.rotation_blocked_reason,
+                    "mandatory_estimated_tokens": assembly.mandatory_estimated_tokens,
+                    "context_snapshot": (
+                        asdict(assembly.context_snapshot)
+                        if assembly.context_snapshot is not None
+                        else None
+                    ),
+                    "token_budget": assembly.token_budget,
+                    "budget_remaining": assembly.budget_remaining,
+                    "context_trace": [
+                        {
+                            "source": trace.source,
+                            "target": trace.target,
+                            "block_id": trace.block_id,
+                            "included": trace.included,
+                            "token_count": trace.token_count,
+                            "content_digest": trace.content_digest,
+                            "provenance": trace.provenance,
+                            "truncated": trace.truncated,
+                            "truncation_reason": trace.truncation_reason,
+                            "scope": trace.scope,
+                        }
+                        for trace in assembly.context_trace
+                    ],
                 },
-                **hook_correlation_fields(current),
-            )
+                "prompt_version": get_prompt_version(),
+                "prompt_digest": prompt_digest,
+                "request_digest": hashlib.blake2b(
+                    request_bytes, digest_size=32
+                ).hexdigest(),
+                "request_bytes": len(request_bytes),
+                "system_prompt_bytes": prompt_bytes,
+                "budget_reminder_present": "<context-budget-reminder>" in system_prompt,
+            },
+            **hook_correlation_fields(current),
         )
+        record_request(record)
+        emit_hook(record)
 
     return closure
 
@@ -354,6 +354,7 @@ def build_loop_config(
     steer: Callable[[AgentMessage], None],
     emit_hook: Callable[[HookRecord], None],
     get_prompt_version: Callable[[], str],
+    record_request: Callable[[HookRecord], None],
     correlation: RuntimeCorrelation | None = None,
     get_last_prompt_tokens: Callable[[], int | None] | None = None,
     # 领域扩展参数由上层装配后注入。
@@ -468,6 +469,7 @@ def build_loop_config(
             active_correlation,
             provider,
             composition.generation_id,
+            record_request,
         ),
     )
 
