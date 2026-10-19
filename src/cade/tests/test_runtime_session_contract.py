@@ -13,7 +13,7 @@ import subprocess
 import sys
 from argparse import Namespace
 from collections.abc import AsyncIterator
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -22,15 +22,20 @@ from cade.agent.context import InstructionCollector
 from cade.agent.messages import AgentMessage, ToolResultMessage
 from cade.agent.request import DefaultRequestAssembler, RequestAssembly
 from cade.agent.types import ToolSpec
-from cade.ai.events import FinalMessage, Message, ProviderEvent
+from cade.ai.events import FinalMessage, Message, ProviderEvent, ToolCall, ToolCallEvent
 from cade.ai.providers.base import Provider
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.ai.usage import UsageTotals
 from cade.coding_agent.app import CadeApp
+from cade.coding_agent.cli.session_cmd import _last_result
 from cade.coding_agent.cli.session_control import SessionRunControl, session_run_status
 from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.coding_agent.harness import CodingAgentHarness
-from cade.coding_agent.modes.exec_mode import _consume_exec_run, _ExecEmitter
+from cade.coding_agent.modes.exec_mode import (
+    ExecHostError,
+    _consume_exec_run,
+    _ExecEmitter,
+)
 from cade.coding_agent.runtime import CodingAgentRuntimeConfig
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import (
@@ -144,6 +149,9 @@ async def test_final_is_durable_before_delivery_and_close_releases_run(
                 records = session.recorder.store.build_branch()
                 content = records[-1].content
                 assert isinstance(content, dict) and content["type"] == "final"
+                assert event.reference is not None
+                assert event.reference.final_entry_id == records[-1].id
+                assert event.reference.run_id == event.correlation.run_id
                 assert harness.active_run() is not None
                 break
     finally:
@@ -616,9 +624,223 @@ def test_exec_uses_runtime_identity_for_consecutive_runs(
     assert [event["data"]["run_id"] for event in persisted] == [
         event["run_id"] for event in starts
     ]
+    records = session.recorder.store.build_branch()
+    finals = {
+        entry.id: entry.content
+        for entry in records
+        if isinstance(entry.content, dict) and entry.content.get("type") == "final"
+    }
+    outcomes = [
+        entry.content
+        for entry in records
+        if isinstance(entry.content, dict)
+        and entry.content.get("type") == "host_outcome"
+    ]
+    assert len(finals) == len(outcomes) == 2
+    assert not any(
+        isinstance(entry.content, dict) and entry.content.get("type") == "exec_result"
+        for entry in records
+    )
+    for end, outcome in zip(ends, outcomes, strict=True):
+        assert end["final_entry_id"] == outcome["data"]["final_entry_id"]
+        final = finals[outcome["data"]["final_entry_id"]]
+        assert (
+            outcome["correlation"]["run_id"]
+            == final["correlation"]["run_id"]
+            == end["run_id"]
+        )
+        assert set(outcome["data"]["details"]) == {
+            "status",
+            "exit_code",
+            "changed_files",
+            "validation",
+        }
     assert session_run_status(
         session.recorder.store.sessions_dir, session.recorder.store.session_id
     ) == {"active": False}
+
+
+@pytest.mark.asyncio
+async def test_late_host_metadata_references_its_final_without_replacing_latest_result(
+    tmp_path: Path,
+) -> None:
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    harness = make_harness(session, TextProvider())
+    first = next(
+        event
+        for event in [event async for event in harness.arun_stream("First")]
+        if event.type == "final"
+    )
+    second = next(
+        event
+        for event in [event async for event in harness.arun_stream("Second")]
+        if event.type == "final"
+    )
+    assert first.reference is not None and second.reference is not None
+    history = session.history_messages()
+    session.recorder.record_host_outcome(
+        first.reference, "exec", {"status": "host_error", "exit_code": 3}
+    )
+    with pytest.raises(RuntimeError, match="already recorded"):
+        session.recorder.record_host_outcome(
+            first.reference, "exec", {"status": "completed"}
+        )
+    records = session.recorder.store.build_branch()
+    assert (
+        records[-1].content["data"]["final_entry_id"] == first.reference.final_entry_id
+    )
+    assert session.history_messages() == history
+    result = _last_result([asdict(entry) for entry in records])
+    assert (
+        result is not None
+        and result["final_entry_id"] == second.reference.final_entry_id
+    )
+    assert "status" not in result
+    assert result["termination_reason"] == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", ["session", "branch", "run", "entry"])
+async def test_host_outcome_rejects_stale_or_invalid_final_reference(
+    tmp_path: Path, invalid: str
+) -> None:
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    events = [
+        event
+        async for event in make_harness(session, TextProvider()).arun_stream("Task")
+    ]
+    final = next(event for event in events if event.type == "final")
+    reference = final.reference
+    assert reference is not None
+    store = session.recorder.store
+    if invalid == "session":
+        store.clear()
+    elif invalid == "branch":
+        store.jump_to_entry(store.build_branch()[0].id)
+    elif invalid == "run":
+        reference = replace(reference, run_id="wrong-run")
+    else:
+        reference = replace(reference, final_entry_id="missing-entry")
+    before = store.build_branch()
+    with pytest.raises(ValueError, match="host outcome"):
+        session.recorder.record_host_outcome(reference, "exec", {"status": "completed"})
+    assert store.build_branch() == before
+
+
+def test_failed_host_commit_does_not_report_success_or_replace_runtime_final(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    base = make_harness(session, TextProvider())
+    app = CadeApp(
+        agent=CodingAgentHarness(
+            base.composition, CodingAgentRuntimeConfig(session=session)
+        ),
+        session_recorder=session.recorder,
+    )
+    original = session.recorder.store.append
+
+    def fail_host(record_type: str, content: JsonValue) -> str:
+        if isinstance(content, dict) and content.get("type") == "host_outcome":
+            raise OSError("Injected host commit failure")
+        return original(record_type, content)
+
+    monkeypatch.setattr(session.recorder.store, "append", fail_host)
+    args = Namespace(
+        project_root=tmp_path,
+        model=None,
+        transport=None,
+        output_last_message=None,
+        timeout=None,
+        approval="auto-review",
+    )
+    with pytest.raises(ExecHostError, match="Injected host commit failure"):
+        _consume_exec_run(app, "Task", CadeRuntimeConfig(), args, _ExecEmitter("jsonl"))
+    records = session.recorder.store.build_branch()
+    finals = [
+        entry.content
+        for entry in records
+        if isinstance(entry.content, dict) and entry.content.get("type") == "final"
+    ]
+    assert len(finals) == 1 and finals[0]["data"]["termination_reason"] == "completed"
+    assert app.agent.active_run() is None
+    assert not any(
+        json.loads(line)["type"] == "run.completed"
+        for line in capsys.readouterr().out.splitlines()
+    )
+
+
+def test_denied_exec_drains_runtime_final_before_host_completion(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class RequestingProvider(TextProvider):
+        async def stream(
+            self,
+            messages: list[Message],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            self.requests.append(messages)
+            if len(self.requests) == 1:
+                yield ToolCallEvent(
+                    calls=[
+                        ToolCall(
+                            id="denied-call",
+                            name="write",
+                            input={"path": "blocked.txt", "content": "Denied"},
+                        )
+                    ]
+                )
+                yield FinalMessage(content="", stop_reason="tool_use")
+            else:
+                await asyncio.Event().wait()
+
+    executed: list[bool] = []
+    tool = ToolSpec(
+        name="write",
+        description="Write",
+        input_hint="JSON",
+        handler=lambda data, update: executed.append(True) or "written",
+        schema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+        },
+    )
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    base = make_harness(session, RequestingProvider(), (tool,))
+    agent = CodingAgentHarness(
+        base.composition, CodingAgentRuntimeConfig(session=session, initial_mode="act")
+    )
+    app = CadeApp(agent=agent, session_recorder=session.recorder)
+    args = Namespace(
+        project_root=tmp_path,
+        model=None,
+        transport=None,
+        output_last_message=None,
+        timeout=2.0,
+        approval="deny",
+    )
+    assert (
+        _consume_exec_run(
+            app, "Write a file", CadeRuntimeConfig(), args, _ExecEmitter("jsonl")
+        )
+        == 5
+    )
+    assert not executed
+    facts = [
+        entry.content
+        for entry in session.recorder.store.build_branch()
+        if isinstance(entry.content, dict)
+    ]
+    final = [fact for fact in facts if fact.get("type") == "final"]
+    outcomes = [fact for fact in facts if fact.get("type") == "host_outcome"]
+    assert len(final) == len(outcomes) == 1
+    assert final[0]["data"]["termination_reason"] == "cancelled"
+    assert outcomes[0]["data"]["details"]["status"] == "approval_denied"
+    assert agent.active_run() is None
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert events[-1]["final_entry_id"] == outcomes[0]["data"]["final_entry_id"]
 
 
 def test_old_host_cleanup_preserves_new_run_control(tmp_path: Path) -> None:

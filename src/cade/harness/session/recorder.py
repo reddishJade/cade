@@ -25,7 +25,7 @@ from .subagent_runs import (
     SubagentRunEvent,
 )
 from .surface import encode_surface_messages
-from .types import JsonValue, SessionEntry
+from .types import JsonValue, RunCompletionReference, SessionEntry
 from .window_projection import encode_rollover_spec
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
@@ -95,8 +95,10 @@ class SessionRecorder:
         agent.set_history_session_id(session_id)
 
     def record_event(self, event: AgentHarnessEvent) -> None:
+        if isinstance(event, FinalStructuredEvent):
+            raise TypeError("final events must be submitted through commit_final")
         if not is_model_fact_event(event) and not isinstance(
-            event, FinalStructuredEvent | RunStartedStructuredEvent
+            event, RunStartedStructuredEvent
         ):
             return
         encoded = encode_session_event(event)
@@ -121,10 +123,92 @@ class SessionRecorder:
             self._append_surface_event(encoded, data)
         else:
             self.store.append("event", encoded)
-        if isinstance(event, FinalStructuredEvent) and event.data.answer:
-            # 展示用回答由 final 事件承载；保留对旧日志和中断存档中
-            # 独立 assistant 记录的读取。
+
+    def commit_final(self, event: FinalStructuredEvent) -> RunCompletionReference:
+        """提交唯一运行结果，并返回可供宿主引用的持久身份。"""
+
+        def content(branch: list[SessionEntry]) -> JsonValue:
+            if (
+                not event.correlation.run_id
+                or event.correlation.session_id != self.store.session_id
+            ):
+                raise ValueError(
+                    "final event requires the current session and run identity"
+                )
+            if any(
+                entry.type == "event"
+                and isinstance(entry.content, dict)
+                and entry.content.get("type") == "final"
+                and isinstance(correlation := entry.content.get("correlation"), dict)
+                and correlation.get("run_id") == event.correlation.run_id
+                for entry in branch
+            ):
+                raise RuntimeError("run already has a committed final")
+            return encode_session_event(event)
+
+        entry_id = self.store.append_derived("event", content)
+        if event.data.answer:
             self.store.update_summary()
+        return RunCompletionReference(
+            event.correlation.session_id, event.correlation.run_id, entry_id
+        )
+
+    def record_host_outcome(
+        self,
+        reference: RunCompletionReference,
+        host: str,
+        details: Mapping[str, object],
+    ) -> str:
+        """在同一存储事务中校验终态引用，只附加宿主自己的结果。"""
+        if not host:
+            raise ValueError("host outcome requires a host name")
+
+        def content(branch: list[SessionEntry]) -> JsonValue:
+            if self.store.session_id != reference.session_id:
+                raise ValueError("host outcome belongs to another session")
+            final = next(
+                (entry for entry in branch if entry.id == reference.final_entry_id),
+                None,
+            )
+            payload = final.content if final is not None else None
+            if (
+                final is None
+                or final.type != "event"
+                or not isinstance(payload, dict)
+                or payload.get("type") != "final"
+                or not isinstance(correlation := payload.get("correlation"), dict)
+                or correlation.get("run_id") != reference.run_id
+                or correlation.get("session_id") != reference.session_id
+            ):
+                raise ValueError(
+                    "host outcome requires its committed final on the active branch"
+                )
+            if any(
+                entry.type == "event"
+                and isinstance(entry.content, dict)
+                and entry.content.get("type") == "host_outcome"
+                and isinstance(data := entry.content.get("data"), dict)
+                and data.get("final_entry_id") == reference.final_entry_id
+                and data.get("host") == host
+                for entry in branch
+            ):
+                raise RuntimeError("host outcome already recorded for this final")
+            return {
+                "schema_version": SESSION_EVENT_SCHEMA_VERSION,
+                "type": "host_outcome",
+                "step": 0,
+                "data": {
+                    "host": host,
+                    "final_entry_id": reference.final_entry_id,
+                    "details": _json_value(dict(details)),
+                },
+                "correlation": {
+                    "session_id": reference.session_id,
+                    "run_id": reference.run_id,
+                },
+            }
+
+        return self.store.append_derived("event", content)
 
     def record_assistant(self, text: str) -> None:
         if not text.strip():

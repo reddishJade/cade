@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from cade.coding_agent.modes.tui.state import _TuiState
 from cade.harness.agent_runtime.events import (
     AssistantStructuredEvent,
@@ -9,6 +11,7 @@ from cade.harness.agent_runtime.events import (
     FinalStructuredEvent,
 )
 from cade.harness.agent_runtime.result import AgentHarnessResult
+from cade.harness.observability import EventCorrelation
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.store import SessionStore
 from cade.harness.session.surface import project_session_surface
@@ -24,8 +27,14 @@ def test_final_answer_uses_one_durable_event_and_restores_ui(tmp_path) -> None:
         "final",
         1,
         AgentHarnessResult(answer="Done", messages=[], steps=1, tool_calls=[]),
+        correlation=EventCorrelation(session_id=store.session_id, run_id="test-run"),
     )
-    recorder.record_event(final)
+    reference = recorder.commit_final(final)
+    assert reference.final_entry_id == store.build_branch()[-1].id
+    with pytest.raises(RuntimeError, match="already has a committed final"):
+        recorder.commit_final(final)
+    with pytest.raises(TypeError, match="commit_final"):
+        recorder.record_event(final)
     entries = store.build_branch()
     assert [e.type for e in entries] == ["event", "event"]
     assert [e.content["type"] for e in entries] == ["assistant", "final"]

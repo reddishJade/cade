@@ -10,6 +10,15 @@ type JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 @dataclass(frozen=True)
+class RunCompletionReference:
+    """引用已提交的运行终态，不携带另一份执行结果。"""
+
+    session_id: str
+    run_id: str
+    final_entry_id: str
+
+
+@dataclass(frozen=True)
 class SessionEntry:
     """会话中的单条记录（树节点）。"""
 

@@ -200,9 +200,7 @@ def _status_payload(
     for entry in entries:
         entry_count += 1
         counts[str(entry.get("type", "unknown"))] += 1
-        entry_result = _last_result([entry])
-        if entry_result is not None:
-            last_result = entry_result
+        last_result = _last_result([entry], previous=last_result)
     return {
         "type": "session.status",
         "session_id": session_id,
@@ -221,8 +219,12 @@ def _status_payload(
     }
 
 
-def _last_result(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    for entry in reversed(entries):
+def _last_result(
+    entries: list[dict[str, Any]], *, previous: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """从运行终态派生展示结果，只合入匹配终态的宿主元数据。"""
+    result = previous
+    for entry in entries:
         if entry.get("type") != "event":
             continue
         content = entry.get("content")
@@ -230,9 +232,29 @@ def _last_result(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
             continue
         event_type = content.get("type")
         data = content.get("data")
-        if event_type in {"exec_result", "final"} and isinstance(data, dict):
-            return data
-    return None
+        if not isinstance(data, dict):
+            continue
+        if event_type == "final":
+            result = {**data, "final_entry_id": entry.get("id")}
+        elif event_type == "exec_result":
+            # 旧日志保留原有展示语义，新运行只提交 final 和 host_outcome。
+            result = data
+        elif (
+            event_type == "host_outcome"
+            and result is not None
+            and data.get("host") == "exec"
+            and data.get("final_entry_id") == result.get("final_entry_id")
+            and isinstance(details := data.get("details"), dict)
+        ):
+            result = {
+                **result,
+                **{
+                    key: details[key]
+                    for key in ("status", "exit_code", "changed_files", "validation")
+                    if key in details
+                },
+            }
+    return result
 
 
 def _export_payload(
