@@ -51,6 +51,7 @@ from .events import (
     is_model_fact_event,
     translate_event,
 )
+from .request_audit import build_request_audit
 from .result import (
     AgentHarnessResult,
     build_structured_result,
@@ -632,11 +633,23 @@ class AgentHarness:
             get_last_prompt_tokens=lambda: self._context_manager.last_prompt_tokens,
             steer=inject_runtime,
             emit_hook=lambda rec: _emit_hook(self._hook_manager, rec),
-            get_prompt_version=_get_prompt_version,
-            record_request=self._session.recorder.record_provider_request,
             correlation=self._correlation,
             **self._build_loop_config_extras(),
         )
+
+        def before_provider_request(assembly: RequestAssembly) -> None:
+            self._correlation.begin_turn()
+            record = build_request_audit(
+                assembly,
+                provider,
+                composition.generation_id,
+                _get_prompt_version(),
+                self._correlation.begin_request(),
+            )
+            self._session.recorder.record_provider_request(record)
+            _emit_hook(self._hook_manager, record)
+
+        loop_config.before_provider_request = before_provider_request
         loop_config.runtime_input = lambda text: self._session.inbox.claim_runtime(
             UserMessage(content=text, source="runtime"), run_handle.run_id
         )

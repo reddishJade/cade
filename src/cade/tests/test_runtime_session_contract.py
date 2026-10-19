@@ -7,15 +7,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import subprocess
 import sys
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
 from cade.agent.messages import AgentMessage, ToolResultMessage
-from cade.agent.request import DefaultRequestAssembler
+from cade.agent.request import DefaultRequestAssembler, RequestAssembly
 from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, Message, ProviderEvent
 from cade.ai.providers.base import Provider
@@ -25,10 +28,16 @@ from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.coding_agent.runtime import CodingAgentRuntimeConfig
 from cade.harness.agent_runtime.composition import AgentComposition
-from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
+from cade.harness.agent_runtime.config import (
+    AgentRuntimeConfig,
+    GateConfig,
+    GateRuntimeConfig,
+)
 from cade.harness.agent_runtime.events import AgentHarnessEvent
 from cade.harness.agent_runtime.harness import AgentHarness
+from cade.harness.agent_runtime.request_audit import build_request_audit
 from cade.harness.config import AgentConfig
+from cade.harness.observability import EventCorrelation, HookRecord, SignalHookManager
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import unresolved_tool_attempts
 from cade.harness.session.runtime import RuntimeSession
@@ -338,6 +347,107 @@ os._exit(73)
         and "Inspect before retrying" in str(fact)
     )
     assert recovery_positions[0] < next_claim
+
+
+@pytest.mark.asyncio
+async def test_request_snapshot_is_durable_reproducible_and_isolated(
+    tmp_path: Path,
+) -> None:
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    hooks = SignalHookManager()
+
+    def mutate_observation(record: HookRecord) -> None:
+        assert record.metadata is not None
+        observed = record.metadata["messages"]
+        assert isinstance(observed, list)
+        observed[0]["content"] = "Observer mutation"
+
+    hooks.register("before_provider_request", mutate_observation)
+
+    class AuditProvider(TextProvider):
+        async def stream(
+            self,
+            messages: list[Message],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            audits = [
+                entry.content
+                for entry in session.recorder.store.build_branch()
+                if isinstance(entry.content, dict)
+                and entry.content.get("type") == "provider_request"
+            ]
+            data = audits[-1]["data"]
+            assert data["messages"] == messages
+            assert data["tools"] == [asdict(tool) for tool in tools]
+            snapshot = {
+                key: data[key]
+                for key in (
+                    "messages",
+                    "tools",
+                    "provider",
+                    "options",
+                    "composition_id",
+                )
+            }
+            encoded = json.dumps(
+                snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()
+            assert len(encoded) == data["request_bytes"]
+            assert (
+                hashlib.blake2b(encoded, digest_size=32).hexdigest()
+                == data["request_digest"]
+            )
+            async for event in super().stream(messages, tools, options, **kwargs):
+                yield event
+
+    provider = AuditProvider()
+    base = make_harness(session, provider)
+    harness = AgentHarness(
+        base.composition,
+        AgentRuntimeConfig(session=session, gate=GateRuntimeConfig(hook_manager=hooks)),
+    )
+    await harness.arun("Original input")
+    assert provider.requests[0][0]["content"] == "Original input"
+
+
+def test_request_snapshot_preserves_builtins_but_excludes_transport_credentials() -> (
+    None
+):
+    tool = ToolDefinition(
+        name="search",
+        description="Search",
+        parameters={},
+        builtin={"type": "web_search"},
+    )
+    record = build_request_audit(
+        RequestAssembly(
+            messages=(),
+            wire_messages=(),
+            tools=(tool,),
+            context_trace=(),
+            current_step=1,
+            options=StreamOptions(
+                api_key="private-key",
+                headers={"Authorization": "private-header"},
+                max_tokens=128,
+                signal=object(),
+                on_payload=object(),
+            ),
+        ),
+        TextProvider(),
+        "composition",
+        "prompt",
+        EventCorrelation(),
+    )
+    assert record.metadata is not None
+    assert record.metadata["tools"] == [asdict(tool)]
+    assert "private-key" not in str(record.metadata)
+    assert "private-header" not in str(record.metadata)
+    options = record.metadata["options"]
+    assert isinstance(options, dict) and options["max_tokens"] == 128
+    assert not {"api_key", "headers", "signal", "on_payload"}.intersection(options)
 
 
 def test_session_run_lock_excludes_other_process_and_releases(tmp_path: Path) -> None:

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,10 +20,7 @@ from ...agent.messages import (
     AgentMessage,
     SystemMessage,
 )
-from ...agent.request import (
-    DefaultRequestAssembler,
-    RequestAssembly,
-)
+from ...agent.request import DefaultRequestAssembler
 from ...agent.types import ApprovalCallback, ToolSpec
 from ..config import AgentConfig
 from ..observability import (
@@ -179,152 +174,6 @@ def _to_dict_safe(message: AgentMessage) -> dict[str, Any]:
     return to_dict(message)
 
 
-def _build_before_provider_request_closure(
-    emit_hook: Callable[[HookRecord], None],
-    get_prompt_version: Callable[[], str],
-    correlation: RuntimeCorrelation,
-    provider: ModelProvider,
-    composition_id: str,
-    record_request: Callable[[HookRecord], None],
-) -> Callable[[RequestAssembly], None]:
-    """构建 provider 请求前的 hook 发射回调。"""
-
-    def closure(assembly: RequestAssembly) -> None:
-        correlation.begin_turn()
-        current = correlation.begin_request()
-        messages = list(assembly.wire_messages)
-        system_prompt = "\n\n".join(
-            str(message.get("content", ""))
-            for message in messages
-            if message.get("role") == "system"
-        )
-        prompt_bytes = len(system_prompt.encode("utf-8"))
-        prompt_digest = hashlib.blake2b(
-            system_prompt.encode("utf-8"), digest_size=32
-        ).hexdigest()
-        provider_info = {
-            "model": provider.model,
-            "base_url": provider.base_url,
-            "transport": provider.transport,
-            "thinking": provider.thinking,
-            "reasoning_effort": provider.reasoning_effort,
-        }
-        tool_payload = [tool_definition_to_dict(tool) for tool in assembly.tools]
-        options_payload = _request_options_payload(assembly.options)
-        request_bytes = json.dumps(
-            {
-                "messages": messages,
-                "tools": tool_payload,
-                "provider": provider_info,
-                "options": options_payload,
-                "composition_id": composition_id,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        ).encode("utf-8")
-        record = HookRecord(
-            "before_provider_request",
-            metadata={
-                "messages": messages,
-                "tools": tool_payload,
-                "provider": provider_info,
-                "options": options_payload,
-                "composition_id": composition_id,
-                "assembly": {
-                    "current_step": assembly.current_step,
-                    "estimated_tokens": assembly.estimated_tokens,
-                    "unreclaimed_input_tokens": assembly.unreclaimed_input_tokens,
-                    "local_estimated_tokens": assembly.local_estimated_tokens,
-                    "token_estimate_source": assembly.token_estimate_source,
-                    "context_policy": (
-                        {
-                            "physical_window": assembly.context_policy.physical_window,
-                            "output_reserve": assembly.context_policy.output_reserve,
-                            "headroom": assembly.context_policy.headroom,
-                            "input_budget": assembly.context_policy.input_budget,
-                            "rotation_threshold": assembly.context_policy.rotation_threshold,
-                            "evidence_budget": assembly.context_policy.evidence_budget,
-                            "working_budget": assembly.context_policy.working_budget,
-                            "next_input_allowance": assembly.context_policy.next_input_allowance,
-                            "admission_target": assembly.context_policy.admission_target,
-                            "output_limit_supported": assembly.context_policy.output_limit_supported,
-                        }
-                        if assembly.context_policy is not None
-                        else None
-                    ),
-                    "evidence_omitted": list(assembly.evidence_omitted),
-                    "working_omitted": list(assembly.working_omitted),
-                    "evidence_reclaimed_tokens": assembly.evidence_reclaimed_tokens,
-                    "rotation_blocked_reason": assembly.rotation_blocked_reason,
-                    "mandatory_estimated_tokens": assembly.mandatory_estimated_tokens,
-                    "context_snapshot": (
-                        asdict(assembly.context_snapshot)
-                        if assembly.context_snapshot is not None
-                        else None
-                    ),
-                    "token_budget": assembly.token_budget,
-                    "budget_remaining": assembly.budget_remaining,
-                    "context_trace": [
-                        {
-                            "source": trace.source,
-                            "target": trace.target,
-                            "block_id": trace.block_id,
-                            "included": trace.included,
-                            "token_count": trace.token_count,
-                            "content_digest": trace.content_digest,
-                            "provenance": trace.provenance,
-                            "truncated": trace.truncated,
-                            "truncation_reason": trace.truncation_reason,
-                            "scope": trace.scope,
-                        }
-                        for trace in assembly.context_trace
-                    ],
-                },
-                "prompt_version": get_prompt_version(),
-                "prompt_digest": prompt_digest,
-                "request_digest": hashlib.blake2b(
-                    request_bytes, digest_size=32
-                ).hexdigest(),
-                "request_bytes": len(request_bytes),
-                "system_prompt_bytes": prompt_bytes,
-                "budget_reminder_present": "<context-budget-reminder>" in system_prompt,
-            },
-            **hook_correlation_fields(current),
-        )
-        record_request(record)
-        emit_hook(record)
-
-    return closure
-
-
-def _request_options_payload(options: object) -> dict[str, object]:
-    if options is None or not is_dataclass(options):
-        return {}
-    payload: dict[str, object] = {}
-    for option in fields(options):
-        value = getattr(options, option.name)
-        if value is not None:
-            payload[option.name] = _request_option_value(value)
-    return payload
-
-
-def _request_option_value(value: object) -> object:
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _request_option_value(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_request_option_value(item) for item in value]
-    if is_dataclass(value) and not isinstance(value, type):
-        return {
-            item.name: _request_option_value(getattr(value, item.name))
-            for item in fields(value)
-        }
-    return f"<{type(value).__module__}.{type(value).__qualname__}>"
-
-
 def build_request_assembler(
     context_collectors: ContextCollectorRegistry | None,
     context_assembler: DefaultContextAssembler | None,
@@ -353,8 +202,6 @@ def build_loop_config(
     last_prompt_tokens: int | None,
     steer: Callable[[AgentMessage], None],
     emit_hook: Callable[[HookRecord], None],
-    get_prompt_version: Callable[[], str],
-    record_request: Callable[[HookRecord], None],
     correlation: RuntimeCorrelation | None = None,
     get_last_prompt_tokens: Callable[[], int | None] | None = None,
     # 领域扩展参数由上层装配后注入。
@@ -463,14 +310,6 @@ def build_loop_config(
         is_tool_productive=gate.build_is_tool_productive_hook(),
         before_tool_call=gate.build_before_tool_hook(gate_snapshot),
         after_tool_call=gate.build_after_tool_hook(),
-        before_provider_request=_build_before_provider_request_closure(
-            emit_hook,
-            get_prompt_version,
-            active_correlation,
-            provider,
-            composition.generation_id,
-            record_request,
-        ),
     )
 
 
@@ -537,11 +376,3 @@ def _rollover_token_threshold(
 ) -> int:
     """统一自动换窗及提前交接提醒的预算边界。"""
     return resolve_context_policy(provider, composition.config).rotation_threshold
-
-
-def tool_definition_to_dict(tool: Any) -> dict[str, Any]:
-    return {
-        "name": str(getattr(tool, "name", "")),
-        "description": str(getattr(tool, "description", "")),
-        "parameters": getattr(tool, "parameters", {}),
-    }

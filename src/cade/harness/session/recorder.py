@@ -28,6 +28,8 @@ from .types import JsonValue, SessionEntry
 from .window_projection import encode_rollover_spec
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
+    "messages",
+    "tools",
     "provider",
     "options",
     "composition_id",
@@ -205,7 +207,7 @@ class SessionRecorder:
         }
 
     def record_provider_request(self, record: ProviderRequestRecord) -> None:
-        """保存可审计请求指纹，不在 session 中重复完整 wire payload。"""
+        """保存规范化请求及指纹；投影不读取审计快照。"""
         metadata = record.metadata or {}
         durable = {
             key: metadata[key]
