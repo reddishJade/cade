@@ -203,6 +203,20 @@ class ContextWindowResetStructuredEvent:
 
 
 @dataclass(frozen=True)
+class RunStartedData:
+    run_id: str
+    session_id: str
+
+
+@dataclass(frozen=True)
+class RunStartedStructuredEvent:
+    type: Literal["run_started"]
+    step: int
+    data: RunStartedData
+    correlation: EventCorrelation = field(default_factory=EventCorrelation)
+
+
+@dataclass(frozen=True)
 class FinalStructuredEvent:
     type: Literal["final"]
     step: int
@@ -211,7 +225,8 @@ class FinalStructuredEvent:
 
 
 type AgentHarnessEvent = (
-    MessageStartStructuredEvent
+    RunStartedStructuredEvent
+    | MessageStartStructuredEvent
     | TurnEndStructuredEvent
     | TextDeltaStructuredEvent
     | ReasoningDeltaStructuredEvent

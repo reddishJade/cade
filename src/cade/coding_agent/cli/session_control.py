@@ -10,28 +10,35 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import filelock
+
 
 class SessionRunControl:
     """通过 session 目录中的原子标记协作中断活动 run。"""
 
-    def __init__(self, sessions_dir: Path, session_id: str, app: Any) -> None:
+    def __init__(
+        self, sessions_dir: Path, session_id: str, app: Any, run_id: str
+    ) -> None:
         self._paths = _control_paths(sessions_dir, session_id)
         self._session_id = session_id
+        self._run_id = run_id
         self._app = app
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         self._paths.control_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._paths.interrupt.unlink(missing_ok=True)
-        _write_private_json(
-            self._paths.active,
-            {
-                "session_id": self._session_id,
-                "pid": os.getpid(),
-                "started_at": datetime.now(UTC).isoformat(),
-            },
-        )
+        with self._paths.lock:
+            self._paths.interrupt.unlink(missing_ok=True)
+            _write_private_json(
+                self._paths.active,
+                {
+                    "session_id": self._session_id,
+                    "run_id": self._run_id,
+                    "pid": os.getpid(),
+                    "started_at": datetime.now(UTC).isoformat(),
+                },
+            )
         self._thread = threading.Thread(target=self._watch, daemon=True)
         self._thread.start()
 
@@ -39,20 +46,31 @@ class SessionRunControl:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=0.3)
-        self._paths.active.unlink(missing_ok=True)
-        self._paths.interrupt.unlink(missing_ok=True)
+        with self._paths.lock:
+            active = _read_json(self._paths.active)
+            if active is not None and active.get("run_id") == self._run_id:
+                self._paths.active.unlink(missing_ok=True)
+                self._paths.interrupt.unlink(missing_ok=True)
 
     def _watch(self) -> None:
         while not self._stop.wait(0.1):
-            if not self._paths.interrupt.exists():
+            request = _read_json(self._paths.interrupt)
+            if request is None or request.get("run_id") != self._run_id:
                 continue
-            if self._app.agent.interrupt("interrupted by session command"):
+            if self._app.agent.interrupt(
+                "interrupted by session command", run_id=self._run_id
+            ):
                 return
 
 
 def session_run_status(sessions_dir: Path, session_id: str) -> dict[str, object]:
     """返回活动 run 投影，并清理明显过期的标记。"""
     paths = _control_paths(sessions_dir, session_id)
+    with paths.lock:
+        return _run_status(paths)
+
+
+def _run_status(paths: _ControlPaths) -> dict[str, object]:
     payload = _read_json(paths.active)
     if payload is None:
         paths.active.unlink(missing_ok=True)
@@ -63,33 +81,40 @@ def session_run_status(sessions_dir: Path, session_id: str) -> dict[str, object]
         paths.active.unlink(missing_ok=True)
         paths.interrupt.unlink(missing_ok=True)
         return {"active": False}
+    request = _read_json(paths.interrupt)
     return {
         "active": True,
+        "run_id": payload.get("run_id"),
         "pid": pid,
         "started_at": payload.get("started_at"),
-        "interrupt_requested": paths.interrupt.exists(),
+        "interrupt_requested": request is not None
+        and request.get("run_id") == payload.get("run_id"),
     }
 
 
 def request_session_interrupt(sessions_dir: Path, session_id: str) -> bool:
     """仅向活动 Cade run 写入中断请求。"""
-    status = session_run_status(sessions_dir, session_id)
-    if not status["active"]:
-        return False
     paths = _control_paths(sessions_dir, session_id)
-    _write_private_json(
-        paths.interrupt,
-        {
-            "session_id": session_id,
-            "requested_at": datetime.now(UTC).isoformat(),
-        },
-    )
-    return True
+    with paths.lock:
+        status = _run_status(paths)
+        if not status["active"]:
+            return False
+        _write_private_json(
+            paths.interrupt,
+            {
+                "session_id": session_id,
+                "run_id": status["run_id"],
+                "requested_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        return True
 
 
 class _ControlPaths:
     def __init__(self, sessions_dir: Path, session_id: str) -> None:
         self.control_dir = sessions_dir / ".control"
+        self.control_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.lock = filelock.FileLock(str(self.control_dir / f"{session_id}.lock"))
         self.active = self.control_dir / f"{session_id}.active.json"
         self.interrupt = self.control_dir / f"{session_id}.interrupt.json"
 

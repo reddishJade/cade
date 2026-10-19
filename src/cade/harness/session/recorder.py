@@ -11,6 +11,7 @@ from cade.harness.agent_runtime.events import (
     AgentHarnessEvent,
     ContextWindowResetStructuredEvent,
     FinalStructuredEvent,
+    RunStartedStructuredEvent,
     ToolResultStructuredEvent,
     is_model_fact_event,
 )
@@ -64,6 +65,9 @@ class ProviderRequestRecord(Protocol):
     def session_id(self) -> str: ...
 
     @property
+    def run_id(self) -> str: ...
+
+    @property
     def turn_id(self) -> str: ...
 
     @property
@@ -92,7 +96,7 @@ class SessionRecorder:
 
     def record_event(self, event: AgentHarnessEvent) -> None:
         if not is_model_fact_event(event) and not isinstance(
-            event, FinalStructuredEvent
+            event, FinalStructuredEvent | RunStartedStructuredEvent
         ):
             return
         encoded = encode_session_event(event)
@@ -228,6 +232,7 @@ class SessionRecorder:
                 "correlation": {
                     "timestamp": record.timestamp,
                     "session_id": record.session_id,
+                    "run_id": record.run_id,
                     "turn_id": record.turn_id,
                     "request_id": record.request_id,
                     "tool_call_id": "",

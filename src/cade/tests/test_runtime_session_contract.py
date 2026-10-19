@@ -11,6 +11,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from argparse import Namespace
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from pathlib import Path
@@ -26,8 +27,10 @@ from cade.ai.providers.base import Provider
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.ai.usage import UsageTotals
 from cade.coding_agent.app import CadeApp
+from cade.coding_agent.cli.session_control import SessionRunControl, session_run_status
 from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.coding_agent.harness import CodingAgentHarness
+from cade.coding_agent.modes.exec_mode import _consume_exec_run, _ExecEmitter
 from cade.coding_agent.runtime import CodingAgentRuntimeConfig
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import (
@@ -38,7 +41,7 @@ from cade.harness.agent_runtime.config import (
 from cade.harness.agent_runtime.events import AgentHarnessEvent
 from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.agent_runtime.request_audit import build_request_audit
-from cade.harness.config import AgentConfig
+from cade.harness.config import AgentConfig, CadeRuntimeConfig
 from cade.harness.observability import EventCorrelation, HookRecord, SignalHookManager
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import unresolved_tool_attempts
@@ -81,6 +84,51 @@ def make_harness(
         ),
         AgentRuntimeConfig(session=session),
     )
+
+
+@pytest.mark.asyncio
+async def test_run_identity_is_persisted_before_claim_and_model_work(
+    tmp_path: Path,
+) -> None:
+    """运行本模块：开始事件必须先落盘，提前关闭不能丢掉待消费输入。"""
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    provider = TextProvider()
+    harness = make_harness(session, provider)
+    stream = harness.arun_stream("Task")
+    started = await anext(stream)
+    assert started.type == "run_started"
+    handle = harness.active_run()
+    assert handle is not None and handle.run_id == started.data.run_id
+    assert started.correlation.run_id == handle.run_id
+    assert started.data.session_id == session.recorder.store.session_id
+    assert started.data.run_id != started.data.session_id
+    records = session.recorder.store.build_branch()
+    assert records[-1].content["type"] == "run_started"
+    assert not provider.requests
+    assert session.inbox.pending_count() == 1
+    assert not harness.interrupt(run_id="stale-run")
+    await stream.aclose()
+    assert harness.active_run() is None
+    assert session.inbox.pending_count() == 1
+    events = [event async for event in harness.arun_stream(None)]
+    run_id = events[0].data.run_id
+    assert run_id != started.data.run_id
+    assert all(event.correlation.run_id == run_id for event in events)
+    records = session.recorder.store.build_branch()
+    claims = [
+        entry.content
+        for entry in records
+        if isinstance(entry.content, dict)
+        and entry.content.get("type") == "inbox/claimed"
+    ]
+    assert len(claims) == 1 and claims[0]["data"]["run_id"] == run_id
+    requests = [
+        entry.content
+        for entry in records
+        if isinstance(entry.content, dict)
+        and entry.content.get("type") == "provider_request"
+    ]
+    assert requests[0]["correlation"]["run_id"] == run_id
 
 
 @pytest.mark.asyncio
@@ -127,6 +175,7 @@ async def test_early_close_stops_provider_before_releasing_run(tmp_path: Path) -
     session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
     harness = make_harness(session, BlockingProvider())
     stream = harness.arun_stream("Task")
+    assert (await anext(stream)).type == "run_started"
     await anext(stream)
     await asyncio.wait_for(started.wait(), timeout=3)
     await stream.aclose()
@@ -137,7 +186,7 @@ async def test_early_close_stops_provider_before_releasing_run(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_type", ["provider_request", "final"])
+@pytest.mark.parametrize("failure_type", ["run_started", "provider_request", "final"])
 async def test_failed_commit_propagates_and_releases_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_type: str
 ) -> None:
@@ -155,7 +204,7 @@ async def test_failed_commit_propagates_and_releases_run(
     with pytest.raises(OSError, match="Injected commit failure"):
         await harness.arun("Task")
     assert harness.active_run() is None
-    assert len(provider.requests) == (0 if failure_type == "provider_request" else 1)
+    assert len(provider.requests) == (0 if failure_type != "final" else 1)
     assert not any(
         isinstance(entry.content, dict) and entry.content.get("type") == "final"
         for entry in session.recorder.store.build_branch()
@@ -523,6 +572,78 @@ def test_active_run_blocks_branch_and_session_transitions(
         with pytest.raises(RuntimeError, match="already has an active run"):
             target.resume(store.current_path)
     assert other.jump_to_entry(entry)
+
+
+def test_exec_uses_runtime_identity_for_consecutive_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """exec 输出必须引用实际 run；两轮同会话不能复用 session ID。"""
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    base = make_harness(session, TextProvider())
+    agent = CodingAgentHarness(
+        base.composition, CodingAgentRuntimeConfig(session=session)
+    )
+    app = CadeApp(agent=agent, session_recorder=session.recorder)
+    args = Namespace(
+        project_root=tmp_path,
+        model=None,
+        transport=None,
+        output_last_message=None,
+        timeout=None,
+        approval="auto-review",
+    )
+    for question in ("First", "Second"):
+        assert (
+            _consume_exec_run(
+                app, question, CadeRuntimeConfig(), args, _ExecEmitter("jsonl")
+            )
+            == 0
+        )
+    output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    starts = [event for event in output if event["type"] == "run.started"]
+    ends = [event for event in output if event["type"] == "run.completed"]
+    assert len(starts) == len(ends) == 2
+    assert starts[0]["session_id"] == starts[1]["session_id"]
+    assert starts[0]["run_id"] != starts[1]["run_id"]
+    for start, end in zip(starts, ends, strict=True):
+        assert start["run_id"] == end["run_id"] != start["session_id"]
+    persisted = [
+        entry.content
+        for entry in session.recorder.store.build_branch()
+        if isinstance(entry.content, dict)
+        and entry.content.get("type") == "run_started"
+    ]
+    assert [event["data"]["run_id"] for event in persisted] == [
+        event["run_id"] for event in starts
+    ]
+    assert session_run_status(
+        session.recorder.store.sessions_dir, session.recorder.store.session_id
+    ) == {"active": False}
+
+
+def test_old_host_cleanup_preserves_new_run_control(tmp_path: Path) -> None:
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    base = make_harness(session, TextProvider())
+    app = CadeApp(
+        agent=CodingAgentHarness(
+            base.composition, CodingAgentRuntimeConfig(session=session)
+        )
+    )
+    store = session.recorder.store
+    old = SessionRunControl(store.sessions_dir, store.session_id, app, "old-run")
+    new = SessionRunControl(store.sessions_dir, store.session_id, app, "new-run")
+    try:
+        old.start()
+        new.start()
+        old.stop()
+        assert (
+            session_run_status(store.sessions_dir, store.session_id)["run_id"]
+            == "new-run"
+        )
+    finally:
+        old.stop()
+        new.stop()
+    assert session_run_status(store.sessions_dir, store.session_id) == {"active": False}
 
 
 def test_session_run_lock_excludes_other_process_and_releases(tmp_path: Path) -> None:

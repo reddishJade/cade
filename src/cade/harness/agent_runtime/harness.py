@@ -47,6 +47,8 @@ from .config import (
 )
 from .events import (
     AgentHarnessEvent,
+    RunStartedData,
+    RunStartedStructuredEvent,
     _StreamTranslationState,
     is_model_fact_event,
     translate_event,
@@ -407,14 +409,16 @@ class AgentHarness:
         """返回当前 session 的 active run handle。"""
         return self._run_controller.active_run()
 
-    def interrupt(self, reason: str = "interrupted by user") -> bool:
+    def interrupt(
+        self, reason: str = "interrupted by user", *, run_id: str | None = None
+    ) -> bool:
         """请求取消当前 run，并尽力中止在途模型流。
 
         返回 True 表示本次打断被接受（run 进入取消流程）；
         对已处于取消中的 run 重复打断返回 False。
         """
         handle = self.active_run()
-        if handle is None:
+        if handle is None or (run_id is not None and handle.run_id != run_id):
             return False
         outcome = handle.interrupt(reason)
         if outcome is None:
@@ -575,6 +579,15 @@ class AgentHarness:
             with self._composition_lock:
                 run_handle = self._run_controller.begin_run(self.cancellation_token)
             try:
+                self._correlation.reset(self.session_id, run_id=run_handle.run_id)
+                started = RunStartedStructuredEvent(
+                    "run_started",
+                    0,
+                    RunStartedData(run_handle.run_id, self.session_id),
+                    self._correlation.snapshot(),
+                )
+                self._session.recorder.record_event(started)
+                yield started
                 self._session.inbox.reload()
                 self._session.recover_tool_attempts()
                 history = self.history_messages()
@@ -659,8 +672,6 @@ class AgentHarness:
         )
 
         try:
-            self._correlation.reset(self.session_id, run_id=run_handle.run_id)
-
             current = self._correlation.snapshot()
             _emit_hook(
                 self._hook_manager,
@@ -669,6 +680,7 @@ class AgentHarness:
                     metadata={"question": question},
                     timestamp=current.timestamp,
                     session_id=current.session_id,
+                    run_id=current.run_id,
                     turn_id=current.turn_id,
                     request_id=current.request_id,
                 ),

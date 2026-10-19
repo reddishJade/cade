@@ -63,6 +63,7 @@ def build_audit_record(
         redacted_input=redact_text(action_input),
         redacted_output=redact_text(result_text),
         timestamp=fields.get("timestamp", ""),
+        run_id=fields.get("run_id", ""),
         turn_id=fields.get("turn_id", ""),
         request_id=fields.get("request_id", ""),
         tool_call_id=tool_call.id,
