@@ -6,7 +6,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from threading import Lock
+from threading import RLock
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -15,7 +15,7 @@ from cade.agent.messages import AgentMessage, UserMessage
 from .schema import SESSION_EVENT_SCHEMA_VERSION, supports_session_event_schema
 from .store import SessionStore
 from .surface import decode_surface_messages, encode_surface_messages
-from .types import JsonValue
+from .types import JsonValue, SessionEntry
 
 
 class InboxLane(StrEnum):
@@ -45,7 +45,7 @@ class SessionInbox:
 
     def __init__(self, store: SessionStore) -> None:
         self._store = store
-        self._lock = Lock()
+        self._lock = RLock()
         self._items: deque[InboxItem] = deque()
         self.reload()
 
@@ -55,32 +55,8 @@ class SessionInbox:
 
     def reload(self) -> None:
         """从当前 branch 重建尚未 claim/discard 的输入。"""
-        pending: dict[str, InboxItem] = {}
-        order: list[str] = []
-        for entry in self._store.build_branch():
-            if entry.type != "event" or not isinstance(entry.content, dict):
-                continue
-            event_type = entry.content.get("type")
-            if str(event_type).startswith("inbox/") and (
-                not supports_session_event_schema(entry.content.get("schema_version"))
-            ):
-                raise ValueError("unsupported inbox event schema")
-            data = entry.content.get("data")
-            if not isinstance(data, dict):
-                continue
-            item_id = str(data.get("inbox_id", ""))
-            if not item_id:
-                continue
-            if event_type == "inbox/inserted":
-                item = _item_from_data(data)
-                pending[item_id] = item
-                order.append(item_id)
-            elif event_type in {"inbox/claimed", "inbox/discarded"}:
-                pending.pop(item_id, None)
         with self._lock:
-            self._items = deque(
-                pending[item_id] for item_id in order if item_id in pending
-            )
+            self._items = _pending_items(self._store.build_branch())
 
     def insert(
         self,
@@ -103,23 +79,23 @@ class SessionInbox:
         )
         with self._lock:
             self._store.ensure_metadata(item.display_text)
-            self._store.append("event", _event("inbox/inserted", item))
+            self._append_event(_event("inbox/inserted", item))
             self._items.append(item)
         return item
 
     def claim_runtime(self, message: UserMessage, run_id: str) -> UserMessage:
         """记录并立即消费内部输入，不取走同时到达的 steering。"""
-        item = self.insert(message, InboxLane.NEXT_STEP, source="runtime", wake=False)
         with self._lock:
+            item = self.insert(
+                message, InboxLane.NEXT_STEP, source="runtime", wake=False
+            )
             self._record_claimed([item], run_id)
-            self._items = deque(other for other in self._items if other.id != item.id)
         return message.model_copy(update={"source": "runtime"})
 
     def claim_initial(self, run_id: str) -> list[AgentMessage]:
         """在 turn 边界 claim next-step 输入和一条 next-turn 输入。"""
         with self._lock:
             claimed: list[InboxItem] = []
-            remaining: deque[InboxItem] = deque()
             turn_claimed = False
             for item in self._items:
                 if item.lane is InboxLane.NEXT_STEP:
@@ -127,9 +103,6 @@ class SessionInbox:
                 elif not turn_claimed:
                     claimed.append(item)
                     turn_claimed = True
-                else:
-                    remaining.append(item)
-            self._items = remaining
             self._record_claimed(claimed, run_id)
         return [_claimed_message(item) for item in claimed]
 
@@ -137,9 +110,6 @@ class SessionInbox:
         """claim 当前所有 next-step 输入。"""
         with self._lock:
             claimed = [item for item in self._items if item.lane is InboxLane.NEXT_STEP]
-            self._items = deque(
-                item for item in self._items if item.lane is InboxLane.NEXT_TURN
-            )
             self._record_claimed(claimed, run_id)
         return [_claimed_message(item) for item in claimed]
 
@@ -147,12 +117,9 @@ class SessionInbox:
         """显式丢弃当前 session 的所有 pending input。"""
         with self._lock:
             discarded = list(self._items)
-            self._items.clear()
             for item in discarded:
-                self._store.append(
-                    "event",
-                    _event("inbox/discarded", item, reason=reason),
-                )
+                self._append_event(_event("inbox/discarded", item, reason=reason))
+                self._items.remove(item)
 
     def has_waking_input(self) -> bool:
         with self._lock:
@@ -164,10 +131,42 @@ class SessionInbox:
 
     def _record_claimed(self, items: list[InboxItem], run_id: str) -> None:
         for item in items:
-            self._store.append(
-                "event",
-                _event("inbox/claimed", item, run_id=run_id),
-            )
+            self._append_event(_event("inbox/claimed", item, run_id=run_id))
+            self._items.remove(item)
+
+    def _append_event(self, event: dict[str, JsonValue]) -> None:
+        """持有 inbox 锁时提交；写入结果不确定时从事实重建缓存。"""
+        try:
+            self._store.append("event", event)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            self._items = _pending_items(self._store.build_branch())
+            raise
+
+
+def _pending_items(records: list[SessionEntry]) -> deque[InboxItem]:
+    """纯投影：只有 inserted 且未 claimed/discarded 的输入仍待处理。"""
+    pending: dict[str, InboxItem] = {}
+    order: list[str] = []
+    for entry in records:
+        if entry.type != "event" or not isinstance(entry.content, dict):
+            continue
+        event_type = entry.content.get("type")
+        if str(event_type).startswith("inbox/") and not supports_session_event_schema(
+            entry.content.get("schema_version")
+        ):
+            raise ValueError("unsupported inbox event schema")
+        data = entry.content.get("data")
+        if not isinstance(data, dict):
+            continue
+        item_id = str(data.get("inbox_id", ""))
+        if not item_id:
+            continue
+        if event_type == "inbox/inserted":
+            pending[item_id] = _item_from_data(data)
+            order.append(item_id)
+        elif event_type in {"inbox/claimed", "inbox/discarded"}:
+            pending.pop(item_id, None)
+    return deque(pending[item_id] for item_id in order if item_id in pending)
 
 
 def _claimed_message(item: InboxItem) -> AgentMessage:
