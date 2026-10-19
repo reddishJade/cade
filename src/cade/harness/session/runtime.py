@@ -7,8 +7,11 @@ from contextlib import contextmanager
 
 import filelock
 
+from cade.agent.messages import AgentMessage
+
 from .inbox import SessionInbox
 from .recorder import SessionRecorder
+from .surface import project_session_surface
 
 
 class RuntimeSession:
@@ -17,6 +20,13 @@ class RuntimeSession:
     def __init__(self, recorder: SessionRecorder) -> None:
         self.recorder = recorder
         self.inbox = SessionInbox(recorder.store)
+
+    def history_messages(self) -> list[AgentMessage]:
+        store = self.recorder.store
+        surface = project_session_surface(
+            store.build_branch(), artifacts_dir=store.artifacts_dir
+        )
+        return list(surface.messages)
 
     @contextmanager
     def run_lock(self) -> Iterator[None]:

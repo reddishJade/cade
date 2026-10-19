@@ -13,19 +13,24 @@ from cade.agent.config import AgentContext, BeforeToolCallContext
 from cade.agent.messages import (
     AgentMessage,
     AssistantMessage,
-    ToolResultMessage,
 )
 from cade.agent.results import AgentLoopResult
 from cade.agent.types import AgentToolResult, TextContent, ToolCallContent, ToolSpec
+from cade.ai.events import ToolCall
 from cade.ai.providers.base import ModelProvider
 from cade.harness.agent_runtime._mode_protocol import ToolGateMode
 from cade.harness.agent_runtime.agent_helpers import aiter_to_sync_iter, run_coro_sync
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import build_turn_context_messages
-from cade.harness.agent_runtime.events import AgentHarnessEvent
+from cade.harness.agent_runtime.events import (
+    AgentHarnessEvent,
+    ToolResultBlock,
+    ToolResultStructuredEvent,
+    ToolUseStructuredEvent,
+)
 from cade.harness.agent_runtime.goal import GoalController
 from cade.harness.agent_runtime.harness import AgentHarness
-from cade.harness.agent_runtime.result import AgentHarnessResult, RunState
+from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.harness.skill_activation import (
     ExplicitSkillActivationResult,
     is_skill_activation_content,
@@ -117,13 +122,9 @@ class CodingAgentHarness(AgentHarness):
             ),
         )
 
-    def _post_load_history(self, messages: list[AgentMessage]) -> None:
+    def _post_restore_history(self, messages: list[AgentMessage]) -> None:
         if self._coding_runtime.skill_registry is not None:
             self._coding_runtime.skill_registry.restore_activations(messages)
-
-    def load_run_state(self, run_state: RunState) -> None:
-        super().load_run_state(run_state)
-        self.restore_run_state_metadata(run_state)
 
     def restore_run_state_metadata(self, payload: object) -> None:
         """恢复模式与目标，但不替换已经重建好的消息历史。"""
@@ -135,12 +136,6 @@ class CodingAgentHarness(AgentHarness):
         self._mode.set_mode(run_state.current_mode)
         if run_state.goal is not None:
             self._goal.restore(run_state.goal)
-
-    def clear_history(self) -> None:
-        super().clear_history()
-        self._goal.clear()
-        if self._coding_runtime.skill_registry is not None:
-            self._coding_runtime.skill_registry.clear_activations()
 
     # ── 编码特定公共 API ──
 
@@ -223,14 +218,8 @@ class CodingAgentHarness(AgentHarness):
         )
         if isinstance(execution, ExplicitSkillActivationResult):
             return execution
-        assistant_message, tool_result = execution
-        return self._record_explicit_skill_activation(
-            name,
-            tool_call_id,
-            load_skill.name,
-            assistant_message,
-            tool_result,
-        )
+        tool_call, tool_result = execution
+        return self._record_explicit_skill_activation(name, tool_call, tool_result)
 
     def run(
         self, question: str, mode: ExecutionMode | None = None
@@ -333,7 +322,7 @@ class CodingAgentHarness(AgentHarness):
         name: str,
         load_skill: ToolSpec,
         tool_call_id: str,
-    ) -> tuple[AssistantMessage, AgentToolResult] | ExplicitSkillActivationResult:
+    ) -> tuple[ToolCallContent, AgentToolResult] | ExplicitSkillActivationResult:
         arguments: dict[str, object] = {"name": name}
         tool_call = ToolCallContent(
             id=tool_call_id,
@@ -373,16 +362,15 @@ class CodingAgentHarness(AgentHarness):
                 status="error",
                 message=f"Failed to activate skill {name}: {exc}",
             )
-        return assistant_message, tool_result
+        return tool_call.model_copy(update={"arguments": arguments}), tool_result
 
     def _record_explicit_skill_activation(
         self,
         name: str,
-        tool_call_id: str,
-        tool_name: str,
-        assistant_message: AssistantMessage,
+        tool_call: ToolCallContent,
         tool_result: AgentToolResult,
     ) -> ExplicitSkillActivationResult:
+        tool_call_id = tool_call.id
         content = "".join(
             block.text
             for block in tool_result.content
@@ -408,12 +396,24 @@ class CodingAgentHarness(AgentHarness):
                 message=content or f"Skill activation returned no content: {name}",
             )
 
-        result_message = ToolResultMessage(
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            content=content,
+        self._session.recorder.record_event(
+            ToolUseStructuredEvent(
+                "tool_use",
+                0,
+                ToolCall(
+                    id=tool_call_id,
+                    name=tool_call.name,
+                    input=tool_call.arguments or {},
+                ),
+            )
         )
-        self._context_manager.append([assistant_message, result_message])
+        self._session.recorder.record_event(
+            ToolResultStructuredEvent(
+                "tool_result",
+                0,
+                ToolResultBlock(tool_call_id, content),
+            )
+        )
         self._reset_provider_conversation_state()
         return ExplicitSkillActivationResult(
             name=name,

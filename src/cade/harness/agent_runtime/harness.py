@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import platform
 from collections.abc import AsyncGenerator, Callable, Iterator
-from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from threading import Lock
@@ -52,10 +51,8 @@ from .events import (
     is_model_fact_event,
     translate_event,
 )
-from .message_codec import messages_from_run_state
 from .result import (
     AgentHarnessResult,
-    RunState,
     build_structured_result,
     final_event,
 )
@@ -163,7 +160,6 @@ class AgentHarness:
         )
         self.audit_logger = gate_runtime.audit_logger
         self._context_manager = ContextManager()
-        self._history = self._context_manager.history
         self._resumed_notice: str | None = None
         self._run_controller = SessionRunController(self._session.inbox)
 
@@ -296,7 +292,7 @@ class AgentHarness:
             id=f"manual-{uuid4().hex}", name=tool.name, arguments=arguments
         )
         assistant_message = AssistantMessage(content=[tool_call])
-        context = AgentContext(messages=deepcopy(self._history))
+        context = AgentContext(messages=self.history_messages())
         snapshot = self._gate.snapshot_for((tool,))
         before = self._gate.build_before_tool_hook(snapshot)(
             BeforeToolCallContext(
@@ -435,11 +431,6 @@ class AgentHarness:
             return False
         return self._context_window_controller.request("manual")
 
-    def clear_history(self) -> None:
-        self._context_manager.clear()
-        self._gate.clear_session_grants()
-        self._reset_provider_conversation_state()
-
     @property
     def context_manager(self) -> ContextManager:
         """返回当前 session 的统一上下文状态管理器。"""
@@ -484,27 +475,22 @@ class AgentHarness:
         self._correlation.session_id = value
         self._run_controller.reload()
 
-    def load_history(self, messages: list[AgentMessage]) -> None:
-        self._context_manager.replace_history(deepcopy(messages))
-        self._context_manager.invalidate_token_anchor()
-        self._post_load_history(messages)
+    def restore_history_metadata(self, messages: list[AgentMessage]) -> None:
+        """恢复消息派生状态；活动历史始终从日志读取。"""
+        self._context_manager.clear()
+        self._post_restore_history(messages)
         if not messages:
             self._gate.clear_session_grants()
         self._reset_provider_conversation_state()
 
-    def _post_load_history(self, messages: list[AgentMessage]) -> None:
-        """load_history 的子类钩子，例如恢复技能激活。"""
+    def _post_restore_history(self, messages: list[AgentMessage]) -> None:
+        """恢复由历史派生的产品状态，例如技能激活。"""
 
     def set_resumed_notice(self, notice: str) -> None:
         self._resumed_notice = notice
 
-    def load_run_state(self, run_state: RunState) -> None:
-        self._context_manager.replace_history(messages_from_run_state(run_state))
-        self._context_manager.invalidate_token_anchor()
-        self._reset_provider_conversation_state()
-
     def history_messages(self) -> list[AgentMessage]:
-        return list(self._history)
+        return self._session.history_messages()
 
     def preview_request(self) -> RequestAssembly:
         """投影当前上下文供宿主观测，不执行模型、工具或会话写入。"""
@@ -512,12 +498,10 @@ class AgentHarness:
             composition = self._composition
             provider = self._provider
         registry = self._build_active_registry(composition.registry)
-        manager = replace(
-            self._context_manager, history=deepcopy(self.history_messages())
-        )
+        manager = replace(self._context_manager)
         manager.bind_provider(provider)
         context = AgentContext(
-            messages=manager.history,
+            messages=self.history_messages(),
             context_manager=manager,
             request_prefix=self._build_context_messages(composition, registry),
             tools=self._gate.adapt_tools(registry),
@@ -533,12 +517,9 @@ class AgentHarness:
     def prepare_read_only_request(self, question: str) -> RequestAssembly:
         """从会话副本组装一次工具集为空的请求，供宿主独立查询。"""
         composition = self.composition
-        manager = ContextManager(
-            history=deepcopy(self.history_messages()),
-        )
-        manager.append([UserMessage(content=question)])
+        manager = ContextManager()
         context = AgentContext(
-            messages=manager.history,
+            messages=[*self.history_messages(), UserMessage(content=question)],
             context_manager=manager,
             request_prefix=[
                 *self._build_context_messages(composition, ()),
@@ -593,6 +574,7 @@ class AgentHarness:
                 run_handle = self._run_controller.begin_run(self.cancellation_token)
             try:
                 self._session.inbox.reload()
+                history = self.history_messages()
                 turn_messages = self._run_controller.claim_initial(run_handle)
                 if not turn_messages:
                     return
@@ -601,6 +583,7 @@ class AgentHarness:
                     question_text,
                     turn_messages,
                     run_handle,
+                    history,
                 )
                 try:
                     async for event in turn_stream:
@@ -616,6 +599,7 @@ class AgentHarness:
         question: str,
         turn_messages: list[AgentMessage],
         run_handle: ActiveRunHandle,
+        history: list[AgentMessage],
     ) -> AsyncGenerator[AgentHarnessEvent, None]:
         from .tool_hooks import emit_hook as _emit_hook
 
@@ -651,6 +635,9 @@ class AgentHarness:
             record_request=self._session.recorder.record_provider_request,
             correlation=self._correlation,
             **self._build_loop_config_extras(),
+        )
+        loop_config.runtime_input = lambda text: self._session.inbox.claim_runtime(
+            UserMessage(content=text, source="runtime"), run_handle.run_id
         )
         loop_config.refresh_request_prefix = lambda: self._build_context_messages(
             composition, active_registry
@@ -698,7 +685,7 @@ class AgentHarness:
 
             loop_config.on_event = on_event
             context = AgentContext(
-                messages=self._context_manager.history_messages(),
+                messages=history,
                 request_prefix=context_messages,
                 tools=tools,
                 context_manager=self._context_manager,

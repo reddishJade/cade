@@ -890,7 +890,7 @@ class _RestoredHistory:
     def set_history_session_id(self, session_id: str) -> None:
         self.session_id = session_id
 
-    def load_history(self, messages: list[AgentMessage]) -> None:
+    def restore_history_metadata(self, messages: list[AgentMessage]) -> None:
         self.history = list(messages)
 
     def restore_run_state_metadata(self, payload: object) -> None:

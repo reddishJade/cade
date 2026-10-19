@@ -23,7 +23,7 @@ class _RestoredAgent:
     def set_history_session_id(self, value: str) -> None:
         self.history_session_id = value
 
-    def load_history(self, messages) -> None:
+    def restore_history_metadata(self, messages) -> None:
         self.messages = messages
 
     def restore_run_state_metadata(self, payload) -> None:

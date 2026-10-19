@@ -324,7 +324,7 @@ class SubagentSessionManager:
             child_store.build_branch(), artifacts_dir=child_store.artifacts_dir
         )
         if surface.messages:
-            harness.load_history(list(surface.messages))
+            harness.restore_history_metadata(list(surface.messages))
         active_descriptor = descriptor or SubagentDescriptor(
             child_session_id=child_store.session_id,
             parent_session_id=parent_session_id,

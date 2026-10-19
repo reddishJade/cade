@@ -16,7 +16,8 @@ Agent / user events
 ### Components
 
 - [recorder.py](recorder.py) and [store.py](store.py): immutable facts, event trees, branches, and display indexes, stored in `.cade/sessions/` by default. Persisted `TreeNode` entries support forks from history.
-- [replay.py](replay.py): ordered replay reconstructs messages and tool history.
+- [runtime.py](runtime.py): binds the inbox and recorder; reads cross-run history from a fresh fact projection.
+- [replay.py](replay.py): restores metadata and message-derived product state without installing a mutable history copy.
 - [history.py](history.py): the `history` tool provides `list_windows`, `search`, paginated `read`, and `around`. Explicit `session_id` locates original entries across sessions. Explicit-session `around` follows ancestors with `before` and rejects `after`; active-branch queries support both directions.
 - [inbox.py](inbox.py): `SessionInbox` persists input arriving during execution.
 - [surface.py](surface.py) and [window_projection.py](window_projection.py): replay canonical model facts, hydrate complete tool artifacts before selection, and regenerate built-in rollover windows from versioned policy recipes. Legacy `replacement` snapshots and externally supplied custom rollover projections remain readable.

@@ -24,7 +24,7 @@ class ReplayAgent(Protocol):
 
     def set_history_session_id(self, session_id: str) -> None: ...
 
-    def load_history(self, messages: list[AgentMessage]) -> None: ...
+    def restore_history_metadata(self, messages: list[AgentMessage]) -> None: ...
 
     def restore_run_state_metadata(self, payload: object) -> None: ...
 
@@ -38,12 +38,12 @@ def replay_session(
     store: SessionStore,
     restoration_context_renderer: Callable[[object], str | None] | None = None,
 ) -> None:
-    """把当前 session branch 的事实投影回 agent 内存。"""
+    """从当前分支恢复产品元数据；消息仍由事实投影提供。"""
     agent.session_id = store.session_id
     agent.set_history_session_id(store.session_id)
     records = store.build_branch()
     surface = project_session_surface(records, artifacts_dir=store.artifacts_dir)
-    agent.load_history(list(surface.messages))
+    agent.restore_history_metadata(list(surface.messages))
     run_state = latest_run_state(records)
     if run_state is not None:
         agent.restore_run_state_metadata(run_state)

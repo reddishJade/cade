@@ -107,6 +107,14 @@ class SessionInbox:
             self._items.append(item)
         return item
 
+    def claim_runtime(self, message: UserMessage, run_id: str) -> UserMessage:
+        """记录并立即消费内部输入，不取走同时到达的 steering。"""
+        item = self.insert(message, InboxLane.NEXT_STEP, source="runtime", wake=False)
+        with self._lock:
+            self._record_claimed([item], run_id)
+            self._items = deque(other for other in self._items if other.id != item.id)
+        return message.model_copy(update={"source": "runtime"})
+
     def claim_initial(self, run_id: str) -> list[AgentMessage]:
         """在 turn 边界 claim next-step 输入和一条 next-turn 输入。"""
         with self._lock:

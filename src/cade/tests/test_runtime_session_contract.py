@@ -14,19 +14,27 @@ from pathlib import Path
 
 import pytest
 
+from cade.agent.messages import AgentMessage
 from cade.agent.request import DefaultRequestAssembler
+from cade.agent.types import ToolSpec
 from cade.ai.events import FinalMessage, Message, ProviderEvent
 from cade.ai.providers.base import Provider
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.ai.usage import UsageTotals
+from cade.coding_agent.execution_modes import build_default_mode_rulesets
+from cade.coding_agent.harness import CodingAgentHarness
+from cade.coding_agent.runtime import CodingAgentRuntimeConfig
 from cade.harness.agent_runtime.composition import AgentComposition
 from cade.harness.agent_runtime.config import AgentRuntimeConfig, GateConfig
+from cade.harness.agent_runtime.events import AgentHarnessEvent
 from cade.harness.agent_runtime.harness import AgentHarness
 from cade.harness.config import AgentConfig
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.runtime import RuntimeSession
 from cade.harness.session.store import SessionStore
 from cade.harness.session.types import JsonValue
+from cade.harness.skills.registry import SkillRegistry
+from cade.harness.skills.tools import build_load_skill_tool
 
 
 class TextProvider(Provider):
@@ -47,13 +55,15 @@ class TextProvider(Provider):
         yield FinalMessage(content="Done", stop_reason="end_turn")
 
 
-def make_harness(session: RuntimeSession, provider: TextProvider) -> AgentHarness:
+def make_harness(
+    session: RuntimeSession, provider: TextProvider, tools: tuple[ToolSpec, ...] = ()
+) -> AgentHarness:
     return AgentHarness(
         AgentComposition.create(
             primary_provider=provider,
-            registry=(),
+            registry=tools,
             config=AgentConfig(),
-            gate=GateConfig(),
+            gate=GateConfig(default_mode_rulesets=build_default_mode_rulesets()),
             request_assembler=DefaultRequestAssembler(),
             runtime_context_provider=None,
         ),
@@ -140,6 +150,112 @@ async def test_failed_commit_propagates_and_releases_run(
     )
     monkeypatch.setattr(session.recorder.store, "append", original)
     await harness.arun("Next task")
+
+
+@pytest.mark.asyncio
+async def test_persisted_facts_survive_interrupted_commit_delivery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    provider = TextProvider()
+    harness = make_harness(session, provider)
+    original = session.recorder.record_event
+
+    def fail_after_commit(event: AgentHarnessEvent) -> None:
+        original(event)
+        if event.type == "assistant":
+            raise RuntimeError("Injected failure after durable response")
+
+    monkeypatch.setattr(session.recorder, "record_event", fail_after_commit)
+    with pytest.raises(RuntimeError, match="after durable response"):
+        await harness.arun("First task")
+    monkeypatch.setattr(session.recorder, "record_event", original)
+    await harness.arun("Second task")
+    assert provider.requests[-1][:2] == [
+        {"role": "user", "content": "First task"},
+        {"role": "assistant", "content": "Done"},
+    ]
+    cold_provider = TextProvider()
+    await make_harness(session, cold_provider).arun("Third task")
+    assert cold_provider.requests[0][:2] == provider.requests[-1][:2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["continuation", "goal"])
+async def test_internal_inputs_survive_projection(tmp_path: Path, kind: str) -> None:
+    class ContinuingProvider(TextProvider):
+        async def stream(
+            self,
+            messages: list[Message],
+            tools: list[ToolDefinition],
+            options: StreamOptions | None = None,
+            **kwargs: object,
+        ) -> AsyncIterator[ProviderEvent]:
+            self.requests.append(messages)
+            yield FinalMessage(
+                content="Partial" if len(self.requests) == 1 else "Done",
+                stop_reason=(
+                    "max_tokens"
+                    if kind == "continuation" and len(self.requests) == 1
+                    else "end_turn"
+                ),
+            )
+
+    class VerifyingHarness(AgentHarness):
+        def _build_loop_config_extras(self) -> dict[str, object]:
+            attempts = 0
+
+            async def verify(messages: list[AgentMessage]) -> str | None:
+                nonlocal attempts
+                attempts += 1
+                return "Check again" if attempts == 1 and kind == "goal" else None
+
+            return {"completion_verifier": verify}
+
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    provider = ContinuingProvider()
+    base = make_harness(session, provider)
+    harness = VerifyingHarness(base.composition, AgentRuntimeConfig(session=session))
+    await harness.arun("Task")
+    expected = "continue" if kind == "continuation" else "Check again"
+    assert len(provider.requests) == 2
+    assert any(message.get("content") == expected for message in provider.requests[1])
+    restored = session.history_messages()
+    assert any(message.content == expected for message in restored)
+    assert any(message.content == "Task" for message in restored)
+    cold_provider = TextProvider()
+    await make_harness(session, cold_provider).arun("Next task")
+    assert any(
+        message.get("content") == expected for message in cold_provider.requests[0]
+    )
+
+
+def test_explicit_skill_activation_persists_without_host_recording(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "review" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "---\nname: review\ndescription: Review changes\n---\nCheck behavior.",
+        encoding="utf-8",
+    )
+    registry = SkillRegistry()
+    registry.discover([(skill.parent.parent, 10)])
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    base = make_harness(session, TextProvider(), (build_load_skill_tool(registry),))
+    harness = CodingAgentHarness(
+        base.composition,
+        CodingAgentRuntimeConfig(
+            session=session, initial_mode="plan", skill_registry=registry
+        ),
+    )
+    result = harness.activate_skill("review")
+    assert result.status == "activated"
+    assert "Check behavior." in str(session.history_messages())
+    entries = session.recorder.store.build_branch()
+    assert len(entries) == 2
+    assert harness.activate_skill("review").status == "already_active"
+    assert len(session.recorder.store.build_branch()) == 2
 
 
 def test_session_run_lock_excludes_other_process_and_releases(tmp_path: Path) -> None:

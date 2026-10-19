@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 
 from cade.coding_agent.execution_modes import ExecutionMode
-from cade.harness.session import SessionStore
 from cade.harness.skill_activation import ExplicitSkillActivationResult
 
 _SKILL_INVOCATION_PATTERN = re.compile(
@@ -36,11 +35,10 @@ def available_skill_names(app: object) -> tuple[str, ...]:
 
 def activate_skill(
     app: object,
-    store: SessionStore,
     skill_name: str,
     mode: ExecutionMode | None = None,
 ) -> ExplicitSkillActivationResult:
-    """调用运行时激活技能，并将 canonical 工具事件写入会话。"""
+    """调用运行时激活技能，事实提交由运行时负责。"""
     agent = getattr(app, "agent", None)
     activate = getattr(agent, "activate_skill", None)
     if not callable(activate):
@@ -57,29 +55,4 @@ def activate_skill(
             status="error",
             message="Skill activation returned an invalid runtime result.",
         )
-    if result.status != "activated" or result.tool_call_id is None:
-        return result
-
-    store.append(
-        "event",
-        {
-            "type": "tool_use",
-            "data": {
-                "id": result.tool_call_id,
-                "name": "load_skill",
-                "input": {"name": result.name},
-            },
-        },
-    )
-    store.append(
-        "event",
-        {
-            "type": "tool_result",
-            "data": {
-                "tool_use_id": result.tool_call_id,
-                "content": result.content,
-                "status": "ok",
-            },
-        },
-    )
     return result

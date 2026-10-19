@@ -150,7 +150,6 @@ async def _run_agent_loop(
         finish_steering=finish_steering,
         reopen_steering=reopen_steering,
     )
-    current_context.context_manager.replace_history(result.surface)
     return result
 
 
@@ -304,7 +303,7 @@ async def _run_loop(
                     _append_messages(
                         current_context,
                         new_messages,
-                        [UserMessage(content=feedback)],
+                        [_runtime_input(config, feedback)],
                     )
                     continue
 
@@ -570,9 +569,8 @@ def _rotate_context(
         raise RuntimeError("context rollover is not configured")
     before = len(context.messages)
     next_window = config.rollover_context(context.messages)
-    context.messages = context.context_manager.complete_rollover(
-        next_window, reason=reason
-    )
+    context.messages = context.context_manager.normalize_messages(next_window)
+    context.context_manager.complete_rollover(reason=reason)
     _refresh_request_prefix(context, config)
     _reset_provider_conversation_state(provider)
     metrics.context_window_resets += 1
@@ -705,7 +703,8 @@ async def _run_inner_loop(
                 emit(MessageEndEvent(message=fallback))
                 return fallback, "error", provider
             state.consecutive_continuations = continuation_count
-            _append_continuation_prompt(context, message)
+            emit(MessageEndEvent(message=message))
+            _append_continuation_prompt(context, message, config)
             prepared_assembly = None
             continue
 
@@ -812,12 +811,19 @@ def _continuation_limit_message(config: AgentLoopConfig) -> AssistantMessage:
     )
 
 
+def _runtime_input(config: AgentLoopConfig, text: str) -> UserMessage:
+    if config.runtime_input is not None:
+        return config.runtime_input(text)
+    return UserMessage(content=text, source="runtime")
+
+
 def _append_continuation_prompt(
     context: AgentContext,
     message: AssistantMessage,
+    config: AgentLoopConfig,
 ) -> None:
     context.messages.append(message)
-    context.messages.append(UserMessage(content="continue"))
+    context.messages.append(_runtime_input(config, "continue"))
 
 
 def _cancelled_message(signal: CancellationSignal | None) -> AssistantMessage:

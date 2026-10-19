@@ -25,7 +25,7 @@ from cade.ai.types import StreamOptions
 from .context_manager import ContextManager
 from .context_policy import ContextPolicy
 from .events import AgentEvent
-from .messages import AgentMessage, AssistantMessage, ToolResultMessage
+from .messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 from .request import DefaultRequestAssembler, RequestAssembler, RequestAssembly
 
 
@@ -159,6 +159,7 @@ class AgentLoopConfig(BaseModel):
     after_tool_call: AfterToolCallHook | None = None
     should_stop_after_turn: ShouldStopAfterTurnHook | None = None
     completion_verifier: CompletionVerifier | None = None
+    runtime_input: Callable[[str], UserMessage] | None = None
 
     # 默认不限制循环步数；调用方仅在需要预算边界时显式设置正整数。
     max_steps: Annotated[int, Field(gt=0)] | None = None
