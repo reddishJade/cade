@@ -32,6 +32,7 @@ from ...agent.events import (
 from ...agent.messages import AgentMessage, AssistantMessage, ContextMessage
 from ...agent.types import AgentToolResult
 from ..observability import EventCorrelation, RuntimeCorrelation
+from ..session.types import RunCompletionReference
 
 if TYPE_CHECKING:
     from .result import AgentHarnessResult
@@ -222,6 +223,7 @@ class FinalStructuredEvent:
     step: int
     data: AgentHarnessResult
     correlation: EventCorrelation = field(default_factory=EventCorrelation)
+    reference: RunCompletionReference | None = None
 
 
 type AgentHarnessEvent = (

@@ -607,7 +607,6 @@ class AgentHarness:
                 finally:
                     await turn_stream.aclose()
             finally:
-                run_handle.begin_finishing()
                 self._run_controller.complete_run(run_handle)
 
     async def _arun_claimed_turn(
@@ -671,101 +670,90 @@ class AgentHarness:
             composition, active_registry
         )
 
+        current = self._correlation.snapshot()
+        _emit_hook(
+            self._hook_manager,
+            HookRecord(
+                "before_agent_start",
+                metadata={"question": question},
+                timestamp=current.timestamp,
+                session_id=current.session_id,
+                run_id=current.run_id,
+                turn_id=current.turn_id,
+                request_id=current.request_id,
+            ),
+        )
+
+        translation_state = _StreamTranslationState(correlation=self._correlation)
+        translated_events: dict[
+            int, AgentHarnessEvent | list[AgentHarnessEvent] | None
+        ] = {}
+
+        def on_event(event: AgentEvent) -> None:
+            translated = translate_event(event, translation_state)
+            translated_events[id(event)] = translated
+            if translated is None:
+                return
+            for fact in translated if isinstance(translated, list) else [translated]:
+                if is_model_fact_event(fact):
+                    self._session.recorder.record_event(fact)
+                    _emit_hook(
+                        self._hook_manager,
+                        HookRecord(
+                            "on_agent_event",
+                            metadata={"event": fact},
+                            **hook_correlation_fields(fact.correlation),
+                        ),
+                    )
+
+        loop_config.on_event = on_event
+        context = AgentContext(
+            messages=history,
+            request_prefix=context_messages,
+            tools=tools,
+            context_manager=self._context_manager,
+            state=context_snapshot_state,
+            project_root=self.project_root,
+            cwd=self._effective_working_directory(),
+        )
+        result: AgentLoopResult | None = None
+        loop_stream = run_agent_loop(
+            turn_messages,
+            context,
+            loop_config,
+            signal=self.cancellation_token,
+            steer_queue=run_handle.claim_step_input,
+            finish_steering=run_handle.finish_step_input,
+            reopen_steering=run_handle.reopen_step_input,
+        )
         try:
-            current = self._correlation.snapshot()
-            _emit_hook(
-                self._hook_manager,
-                HookRecord(
-                    "before_agent_start",
-                    metadata={"question": question},
-                    timestamp=current.timestamp,
-                    session_id=current.session_id,
-                    run_id=current.run_id,
-                    turn_id=current.turn_id,
-                    request_id=current.request_id,
-                ),
-            )
-
-            translation_state = _StreamTranslationState(correlation=self._correlation)
-            translated_events: dict[
-                int, AgentHarnessEvent | list[AgentHarnessEvent] | None
-            ] = {}
-
-            def on_event(event: AgentEvent) -> None:
-                translated = translate_event(event, translation_state)
-                translated_events[id(event)] = translated
-                if translated is None:
-                    return
-                for fact in (
-                    translated if isinstance(translated, list) else [translated]
-                ):
-                    if is_model_fact_event(fact):
-                        self._session.recorder.record_event(fact)
-                        _emit_hook(
-                            self._hook_manager,
-                            HookRecord(
-                                "on_agent_event",
-                                metadata={"event": fact},
-                                **hook_correlation_fields(fact.correlation),
-                            ),
-                        )
-
-            loop_config.on_event = on_event
-            context = AgentContext(
-                messages=history,
-                request_prefix=context_messages,
-                tools=tools,
-                context_manager=self._context_manager,
-                state=context_snapshot_state,
-                project_root=self.project_root,
-                cwd=self._effective_working_directory(),
-            )
-            result: AgentLoopResult | None = None
-            loop_stream = run_agent_loop(
-                turn_messages,
-                context,
-                loop_config,
-                signal=self.cancellation_token,
-                steer_queue=run_handle.claim_step_input,
-                finish_steering=run_handle.finish_step_input,
-                reopen_steering=run_handle.reopen_step_input,
-            )
-            try:
-                async for event in loop_stream:
-                    if isinstance(event, AgentLoopResult):
-                        result = event
-                        continue
-                    translated = translated_events.pop(id(event))
-                    if translated is not None:
-                        for te in (
-                            translated if isinstance(translated, list) else [translated]
-                        ):
-                            yield te
-            finally:
-                await loop_stream.aclose()
-
-            if result is None:
-                raise RuntimeError("agent loop completed without a result")
-
-            visible_result = (
-                result.model_copy(
-                    update={"messages": context_messages + result.messages}
-                )
-                if context_messages
-                else result
-            )
-            final = self._build_result(visible_result)
-            self._post_run(final)
-            event = final_event(
-                result.steps,
-                final,
-                self._correlation.snapshot(),
-            )
-            run_handle.begin_finishing()
-            self._session.recorder.record_event(event)
-            yield event
+            async for event in loop_stream:
+                if isinstance(event, AgentLoopResult):
+                    result = event
+                    continue
+                translated = translated_events.pop(id(event))
+                if translated is not None:
+                    for te in (
+                        translated if isinstance(translated, list) else [translated]
+                    ):
+                        yield te
         finally:
-            run_handle.begin_finishing()
+            await loop_stream.aclose()
+
+        if result is None:
+            raise RuntimeError("agent loop completed without a result")
+
+        visible_result = (
+            result.model_copy(update={"messages": context_messages + result.messages})
+            if context_messages
+            else result
+        )
+        final = self._build_result(visible_result)
+        self._post_run(final)
+        event = final_event(result.steps, final, self._correlation.snapshot())
+        run_handle.begin_finishing()
+        reference = self._session.recorder.commit_final(event)
+        yield replace(event, reference=reference)
 
     # ── 内部 ──
 

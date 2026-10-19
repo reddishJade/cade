@@ -5,7 +5,7 @@ CadeApp 数据类和 build_app 编排函数。装配逻辑委托给 assembly 子
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Generator, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -31,6 +31,7 @@ from cade.harness.observability import ExternalHookDiagnostic, ExternalHookRunne
 from cade.harness.session import SessionStore
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.replay import replay_session
+from cade.harness.session.types import RunCompletionReference
 
 from . import assembly as _assembly
 from .assembly import (
@@ -253,7 +254,7 @@ class CadeApp:
         mode: ExecutionMode | None = None,
         *,
         display_question: str | None = None,
-    ) -> Iterator[AgentHarnessEvent]:
+    ) -> Generator[AgentHarnessEvent, None, None]:
         recorder = self.session_recorder
         if recorder is None:
             raise RuntimeError("session recorder is not configured")
@@ -333,6 +334,18 @@ class CadeApp:
             rollover_policy=rollover_policy,
             preserve_user_request=preserve_user_request,
         )
+
+    def record_host_outcome(
+        self,
+        reference: RunCompletionReference,
+        host: str,
+        details: Mapping[str, object],
+    ) -> str:
+        """把宿主元数据关联到运行时终态，不重新提交执行结果。"""
+        recorder = self.session_recorder
+        if recorder is None:
+            raise RuntimeError("session recorder is not configured")
+        return recorder.record_host_outcome(reference, host, details)
 
     def restore_session(self) -> None:
         """从当前 session branch 恢复完整 agent 运行状态。"""

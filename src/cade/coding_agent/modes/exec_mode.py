@@ -24,9 +24,10 @@ from cade.harness.agent_runtime.events import (
     ToolResultStructuredEvent,
     ToolUseStructuredEvent,
 )
+from cade.harness.agent_runtime.result import AgentHarnessResult
 from cade.harness.config import CadeRuntimeConfig
 from cade.harness.security import HITLResult
-from cade.harness.session.schema import SESSION_EVENT_SCHEMA_VERSION
+from cade.harness.session.types import RunCompletionReference
 from cade.server.serialize import event_to_dict, to_jsonable
 
 from ..app import CadeApp, build_app
@@ -45,6 +46,10 @@ _TRANSPORTS = frozenset(
     }
 )
 _EVENT_PREVIEW_CHARS = 4000
+
+
+class ExecHostError(RuntimeError):
+    """宿主交付或元数据提交失败，不改变已提交的运行时结果。"""
 
 
 class ExecValidationError(ValueError):
@@ -248,6 +253,13 @@ def run_exec(
         except KeyboardInterrupt:
             emitter.completed(status="cancelled", exit_code=130)
             return 130
+        except ExecHostError as exc:
+            emitter.completed(
+                status="host_error",
+                exit_code=3,
+                error={"type": type(exc).__name__, "message": str(exc)},
+            )
+            return 3
         except (ExecValidationError, OSError, UnicodeError, ValueError) as exc:
             emitter.completed(
                 status="validation_error",
@@ -397,11 +409,13 @@ def _consume_exec_run(
     run_control: SessionRunControl | None = None
     workspace_before = _workspace_snapshot(args.project_root)
     timeout_state.start()
-    final_data: Any | None = None
+    final_data: AgentHarnessResult | None = None
+    reference: RunCompletionReference | None = None
     approval_denied = False
     validation = _ValidationTracker()
+    stream = app.ask_stream(prompt)
     try:
-        for event in app.ask_stream(prompt):
+        for event in stream:
             if event.type == "run_started":
                 run_id = event.data.run_id
                 run_control = SessionRunControl(
@@ -419,7 +433,10 @@ def _consume_exec_run(
                 emitter.emit(resolved_config)
                 continue
             if event.type == "final":
+                if event.reference is None:
+                    raise RuntimeError("runtime final has no committed reference")
                 final_data = event.data
+                reference = event.reference
                 continue
             validation.observe(event)
             emitter.emit_event(event)
@@ -427,11 +444,13 @@ def _consume_exec_run(
                 approval_denied = True
                 if args.approval == "deny":
                     app.agent.interrupt("approval denied")
-                    break
     finally:
-        timeout_state.stop()
-        if run_control is not None:
-            run_control.stop()
+        try:
+            stream.close()
+        finally:
+            timeout_state.stop()
+            if run_control is not None:
+                run_control.stop()
 
     if approval_denied:
         exit_code = 5
@@ -448,8 +467,11 @@ def _consume_exec_run(
 
     answer = "" if final_data is None else final_data.answer
     if args.output_last_message is not None:
-        args.output_last_message.parent.mkdir(parents=True, exist_ok=True)
-        args.output_last_message.write_text(answer, encoding="utf-8")
+        try:
+            args.output_last_message.parent.mkdir(parents=True, exist_ok=True)
+            args.output_last_message.write_text(answer, encoding="utf-8")
+        except OSError as exc:
+            raise ExecHostError(f"Failed to write the final answer: {exc}") from exc
 
     completion = _completion_payload(
         final_data,
@@ -460,23 +482,24 @@ def _consume_exec_run(
         changed_files=_changed_files(args.project_root, workspace_before),
         validation=validation.results(),
     )
-    _record_exec_result(app, completion)
+    if reference is not None:
+        _record_exec_outcome(app, reference, completion)
+        completion["final_entry_id"] = reference.final_entry_id
     emitter.completed(**completion)
     return exit_code
 
 
-def _record_exec_result(app: Any, completion: dict[str, object]) -> None:
-    payload = {
-        "schema_version": SESSION_EVENT_SCHEMA_VERSION,
-        "type": "exec_result",
-        "step": completion["steps"],
-        "data": to_jsonable(completion),
-        "correlation": {},
+def _record_exec_outcome(
+    app: CadeApp, reference: RunCompletionReference, completion: dict[str, object]
+) -> None:
+    details = {
+        key: completion[key]
+        for key in ("status", "exit_code", "changed_files", "validation")
     }
     try:
-        app.session_store.append("event", payload)
+        app.record_host_outcome(reference, "exec", details)
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
-        print(f"Failed to persist exec result: {exc}", file=sys.stderr)
+        raise ExecHostError(f"Failed to persist exec host metadata: {exc}") from exc
 
 
 def _resolved_config_event(
@@ -588,7 +611,7 @@ def _exit_code(final_data: Any) -> int:
 
 
 def _completion_payload(
-    final_data: Any | None,
+    final_data: AgentHarnessResult | None,
     *,
     status: str,
     exit_code: int,
@@ -728,8 +751,14 @@ class _ExecEmitter:
         self._event_detail = event_detail
         self._output = sys.stdout
         self.token_budget = 0
+        self._run_id: str | None = None
+        self._session_id: str | None = None
 
     def emit(self, payload: dict[str, object]) -> None:
+        if payload.get("type") == "run.started":
+            run_id, session_id = payload.get("run_id"), payload.get("session_id")
+            if isinstance(run_id, str) and isinstance(session_id, str):
+                self._run_id, self._session_id = run_id, session_id
         if self._event_format == "jsonl":
             print(
                 json.dumps(
@@ -802,6 +831,9 @@ class _ExecEmitter:
             self.emit(payload)
 
     def completed(self, **payload: object) -> None:
+        if self._run_id is not None:
+            payload.setdefault("run_id", self._run_id)
+            payload.setdefault("session_id", self._session_id)
         self.emit({"type": "run.completed", **payload})
 
 

@@ -37,6 +37,8 @@ cade exec "Run pytest and fix all failing tests"
 
 The `exec` subcommand can override the model, mode, approval policy, and run limits. See `cade exec --help`.
 
+JSONL `run.started` and `run.completed` events use the runtime's run ID. When a runtime final exists, `run.completed.final_entry_id` identifies its durable record. Output delivery or host-metadata persistence failure returns status `host_error` and exit code 3; it does not change an already committed runtime outcome.
+
 ## Terminal interaction
 
 ### Shortcuts
