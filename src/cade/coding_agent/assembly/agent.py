@@ -106,6 +106,7 @@ def build_agent(
     audit_path: Path | None,
     runtime_config: CadeRuntimeConfig,
     session: RuntimeSession,
+    instructions: InstructionCollector,
     shell_spec: ShellSpec | None = None,
     context_window_controller: ContextWindowController | None = None,
     cancellation_token: CancellationToken | None = None,
@@ -129,13 +130,7 @@ def build_agent(
     context_collectors.register_section(
         make_collector_section(
             "agents",
-            InstructionCollector(
-                sources=tuple(
-                    i.model_dump(exclude_none=True)
-                    for i in runtime_config.prompt.instructions
-                ),
-                project_root=project_root,
-            ),
+            instructions,
         )
     )
     if "cwd" in runtime_config.prompt.modules:

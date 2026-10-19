@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cade.agent.context import InstructionCollector
 from cade.agent.context_policy import ContextPolicy
 from cade.agent.messages import AgentMessage, UserMessage
 from cade.agent.types import ToolSpec
@@ -77,6 +78,7 @@ class CadeApp:
     _model_profiles: dict[str, Any] | None = None
     _runtime_config: CadeRuntimeConfig | None = None
     _env_files: tuple[Path, ...] = ()
+    _instruction_sources: InstructionCollector | None = None
     _closers: tuple[Callable[[], None], ...] = ()
     _closed: bool = False
 
@@ -228,27 +230,8 @@ class CadeApp:
 
     def instruction_paths(self) -> tuple[Path, ...]:
         """从当前指令收集器读取实际可用的文件来源，不改变上下文状态。"""
-        from cade.agent.context import (
-            ContextCollectionInput,
-            FrozenContextCollectorRegistry,
-        )
-        from cade.agent.request import DefaultRequestAssembler
-
-        assembler = self.agent.composition.request_assembler
-        if not isinstance(assembler, DefaultRequestAssembler):
-            return ()
-        collectors = assembler.context_collectors
-        if not isinstance(collectors, FrozenContextCollectorRegistry):
-            return ()
-        paths: list[Path] = []
-        for section in collectors.sections:
-            if section.section_id == "agents":
-                for block in section.collect(ContextCollectionInput()):
-                    if block.provenance and block.provenance != "inline instruction":
-                        path = Path(block.provenance)
-                        if path not in paths:
-                            paths.append(path)
-        return tuple(paths)
+        sources = self._instruction_sources
+        return sources.source_paths() if sources is not None else ()
 
     def ask(self, question: str) -> str:
         answer = ""
@@ -438,6 +421,13 @@ def build_app(
         auto_approval_callback = auto_reviewer
         closers = (*closers, auto_reviewer.close)
 
+    instructions = InstructionCollector(
+        sources=tuple(
+            entry.model_dump(exclude_none=True)
+            for entry in cfg.runtime_config.prompt.instructions
+        ),
+        project_root=project_root,
+    )
     agent = build_agent(
         project_root=project_root,
         llm=providers.llm,
@@ -446,6 +436,7 @@ def build_app(
         audit_path=cfg.audit_path,
         runtime_config=cfg.runtime_config,
         session=infra.session,
+        instructions=instructions,
         shell_spec=shell_spec,
         context_rollover=infra.context_rollover,
         context_window_controller=infra.context_window_controller,
@@ -470,6 +461,7 @@ def build_app(
         subagents=subagents,
         session_recorder=infra.session_recorder,
         _env_files=cfg.env_files,
+        _instruction_sources=instructions,
         _model_profiles=model_profiles,
         _runtime_config=cfg.runtime_config,
         _closers=closers,

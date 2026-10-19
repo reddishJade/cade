@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from cade.agent.context import InstructionCollector
 from cade.agent.messages import AgentMessage, ToolResultMessage
 from cade.agent.request import DefaultRequestAssembler, RequestAssembly
 from cade.agent.types import ToolSpec
@@ -24,6 +25,7 @@ from cade.ai.events import FinalMessage, Message, ProviderEvent
 from cade.ai.providers.base import Provider
 from cade.ai.types import StreamOptions, ToolDefinition
 from cade.ai.usage import UsageTotals
+from cade.coding_agent.app import CadeApp
 from cade.coding_agent.execution_modes import build_default_mode_rulesets
 from cade.coding_agent.harness import CodingAgentHarness
 from cade.coding_agent.runtime import CodingAgentRuntimeConfig
@@ -448,6 +450,32 @@ def test_request_snapshot_preserves_builtins_but_excludes_transport_credentials(
     options = record.metadata["options"]
     assert isinstance(options, dict) and options["max_tokens"] == 128
     assert not {"api_key", "headers", "signal", "on_payload"}.intersection(options)
+
+
+def test_instruction_sources_do_not_depend_on_request_assembler_internals(
+    tmp_path: Path,
+) -> None:
+    instructions = tmp_path / "AGENTS.md"
+    instructions.write_text("Project instructions", encoding="utf-8")
+    configured = tmp_path / "RULES.md"
+    configured.write_text("Configured instructions", encoding="utf-8")
+    sources = InstructionCollector(
+        sources=(
+            {"type": "inline", "content": "Inline instructions"},
+            {"type": "file", "path": "RULES.md"},
+        ),
+        project_root=tmp_path,
+    )
+    session = RuntimeSession(SessionRecorder(SessionStore(tmp_path / "sessions")))
+    base = make_harness(session, TextProvider())
+    agent = CodingAgentHarness(
+        base.composition, CodingAgentRuntimeConfig(session=session)
+    )
+    app = CadeApp(agent=agent, _instruction_sources=sources)
+    assert app.instruction_paths() == (configured, instructions)
+    instructions.unlink()
+    assert app.instruction_paths() == (configured,)
+    assert session.recorder.store.build_branch() == []
 
 
 def test_session_run_lock_excludes_other_process_and_releases(tmp_path: Path) -> None:
