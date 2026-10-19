@@ -478,6 +478,38 @@ def test_instruction_sources_do_not_depend_on_request_assembler_internals(
     assert session.recorder.store.build_branch() == []
 
 
+@pytest.mark.parametrize(
+    "operation", ["clear", "resume", "rewind", "jump", "fork", "clone", "assign"]
+)
+def test_active_run_blocks_branch_and_session_transitions(
+    tmp_path: Path, operation: str
+) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    entry = store.append("assistant", "Original branch")
+    other = SessionStore(tmp_path / "sessions")
+    other.resume(store.current_path)
+    target = SessionStore(tmp_path / "sessions")
+    target.append("assistant", "Other session")
+    original_path = other.current_path
+    operations = {
+        "clear": other.clear,
+        "resume": lambda: other.resume(target.current_path),
+        "rewind": other.rewind_turns,
+        "jump": lambda: other.jump_to_entry(entry),
+        "fork": lambda: other.fork_from_entry(entry),
+        "clone": other.fork_into,
+        "assign": lambda: setattr(other, "current_path", target.current_path),
+    }
+    with store.run_lock():
+        with pytest.raises(RuntimeError, match="already has an active run"):
+            operations[operation]()
+        assert other.current_path == original_path
+        assert [item.id for item in store.build_branch()] == [entry]
+        with pytest.raises(RuntimeError, match="already has an active run"):
+            target.resume(store.current_path)
+    assert other.jump_to_entry(entry)
+
+
 def test_session_run_lock_excludes_other_process_and_releases(tmp_path: Path) -> None:
     store = SessionStore(tmp_path / "sessions")
     store.append("assistant", "Existing answer")
@@ -489,8 +521,8 @@ from cade.harness.session.store import SessionStore
 from cade.harness.session.recorder import SessionRecorder
 from cade.harness.session.runtime import RuntimeSession
 store = SessionStore(Path(sys.argv[1]))
-store.resume(sys.argv[2])
 try:
+    store.resume(sys.argv[2])
     with RuntimeSession(SessionRecorder(store)).run_lock():
         print('acquired')
 except RuntimeError as exc:

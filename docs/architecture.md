@@ -37,7 +37,7 @@ Agent requests models through provider protocols and actions through tool protoc
 
 ## Input, execution, and completion
 
-A session identifies a persistent conversation and its active branch. A run identifies one execution that owns that session. A nonblocking file lock permits at most one active run per persistent session across runtimes and processes. Queued input remains in the inbox. A user turn is one task input and its response process; the TUI records file snapshots at that boundary.
+A session identifies a persistent conversation and its active branch. A run identifies one execution that owns that session. A nonblocking store-owned file lock permits at most one active run per persistent session across runtimes and processes. Branch changes, cloning, session switching, and manual window replacement use the same lock. Switching sessions checks both the source and target sessions. Queued input remains in the inbox. A user turn is one task input and its response process; the TUI records file snapshots at that boundary.
 
 A step is one Agent loop iteration: model output, optional tool execution, and a continuation decision. Retries or output continuation can produce multiple provider requests in a step. Agent `TurnStart` and `TurnEnd` events occur per step, not per host-recorded user turn.
 

@@ -287,7 +287,20 @@ def _replace_context_window(
     preserve_user_request: bool,
     action: str,
 ) -> bool:
-    """立即执行无摘要硬换窗并持久化新的 surface。"""
+    """在会话空闲时提交完整换窗操作。"""
+    with ctx.store.run_lock():
+        return _replace_idle_context_window(
+            ctx, preserve_user_request=preserve_user_request, action=action
+        )
+
+
+def _replace_idle_context_window(
+    ctx: CommandContext,
+    *,
+    preserve_user_request: bool,
+    action: str,
+) -> bool:
+    """从同一分支读取历史、计算窗口并提交事实。"""
     from cade.agent._context_window import estimate_message_tokens
     from cade.harness.agent_runtime.agent_helpers import to_dict
     from cade.harness.agent_runtime.message_codec import (
