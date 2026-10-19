@@ -319,8 +319,11 @@ class SubagentSessionManager:
                 project_root=child_store.project_root,
             ),
         )
+        view = child_store.read_view()
         surface = project_session_surface(
-            child_store.build_branch(), artifacts_dir=child_store.artifacts_dir
+            view.facts(),
+            artifacts_dir=child_store.artifacts_dir,
+            branch_entry_ids=view.branch_ids,
         )
         if surface.messages:
             harness.restore_history_metadata(list(surface.messages))

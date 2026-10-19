@@ -15,8 +15,9 @@ import pytest
 
 from cade.agent.messages import UserMessage
 from cade.harness.session.inbox import InboxLane, SessionInbox
+from cade.harness.session.read_model import SessionReadView
 from cade.harness.session.store import SessionStore
-from cade.harness.session.types import JsonValue, SessionEntry
+from cade.harness.session.types import JsonValue
 
 
 @pytest.mark.parametrize(
@@ -103,9 +104,9 @@ def test_reload_does_not_overwrite_concurrent_insert(
     snapshot_read, release_snapshot = threading.Event(), threading.Event()
     inserting, inserted = threading.Event(), threading.Event()
     failures: list[Exception] = []
-    original = store.build_branch
+    original = store.read_view
 
-    def read_snapshot() -> list[SessionEntry]:
+    def read_snapshot() -> SessionReadView:
         records = original()
         if threading.current_thread().name == "inbox-reload-probe":
             snapshot_read.set()
@@ -113,7 +114,7 @@ def test_reload_does_not_overwrite_concurrent_insert(
                 raise TimeoutError("snapshot probe was not released")
         return records
 
-    monkeypatch.setattr(store, "build_branch", read_snapshot)
+    monkeypatch.setattr(store, "read_view", read_snapshot)
 
     def reload() -> None:
         try:

@@ -62,6 +62,7 @@ def build_shared_infra(
         transcript_dir,
         artifacts_dir=session_recorder.store.artifacts_dir,
         project_root=project_root,
+        store=session_recorder.store,
     )
     session = RuntimeSession(session_recorder)
     return SharedInfra(

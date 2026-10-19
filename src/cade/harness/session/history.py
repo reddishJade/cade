@@ -11,8 +11,9 @@ from pathlib import Path
 from cade.agent.types import ToolInput, ToolSpec
 
 from .artifacts import resolve_history_event_content
+from .read_model import SessionReadView
 from .schema import supports_session_event_schema
-from .store import build_session_branch, read_session_entries
+from .store import SessionStore, build_session_branch, read_session_entries
 from .types import SessionEntry
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -52,14 +53,21 @@ class SessionHistory:
         *,
         project_root: Path,
         artifacts_dir: Path | None = None,
+        store: SessionStore | None = None,
     ) -> None:
         self.sessions_dir = sessions_dir
         self.artifacts_dir = artifacts_dir or _default_artifacts_dir(sessions_dir)
         self.session_id: str | None = None
         self.project_root = project_root.resolve()
+        self._store = store
 
     def get_entry(self, session_id: str, entry_id: str) -> SessionEntry | None:
         """按稳定来源定位 entry，不受当前 head 或会话切换影响。"""
+        view = self._current_view(session_id)
+        if view is not None:
+            first = view.get(view.entry_ids[0]) if view.entry_ids else None
+            self._validate_owner(first)
+            return view.get(entry_id)
         return next(
             (entry for entry in self._entries(session_id) if entry.id == entry_id),
             None,
@@ -84,7 +92,7 @@ class SessionHistory:
             return []
         phrase = query.strip().casefold()
         scored: list[tuple[int, int, SessionEntry]] = []
-        branch = self._branch()
+        branch = self._branch(include_audits=include_derived)
         retrieval_calls = _retrieval_call_ids(branch)
         for index, entry in enumerate(branch):
             if not include_derived and not _primary_search_entry(
@@ -117,6 +125,17 @@ class SessionHistory:
             raise ValueError(
                 "after is only supported on the current branch; omit session_id"
             )
+        view = self._current_view(self.session_id) if session_id is None else None
+        if view is not None:
+            ids = view.branch_ids
+            if entry_id not in ids:
+                return []
+            position = ids.index(entry_id)
+            start = max(0, position - min(max(before, 0), 20))
+            end = position + min(max(after if after is not None else 3, 0), 20) + 1
+            return [
+                entry for key in ids[start:end] if (entry := view.get(key)) is not None
+            ]
         if session_id is None:
             branch = self._branch()
         else:
@@ -148,14 +167,15 @@ class SessionHistory:
         session_id: str | None = None,
     ) -> HistoryRead | None:
         """按字符范围读取一条记录，不使用预览截断。"""
-        entry = (
-            self.get_entry(session_id, entry_id)
-            if session_id is not None
-            else next(
-                (entry for entry in self._branch() if entry.id == entry_id),
-                None,
+        view = self._current_view(self.session_id) if session_id is None else None
+        if view is not None:
+            entry = view.get(entry_id) if entry_id in view.branch_ids else None
+        elif session_id is not None:
+            entry = self.get_entry(session_id, entry_id)
+        else:
+            entry = next(
+                (entry for entry in self._branch() if entry.id == entry_id), None
             )
-        )
         if entry is None:
             return None
         text = self._entry_text(entry)
@@ -171,7 +191,7 @@ class SessionHistory:
     def list_windows(self, *, limit: int = 20) -> list[ContextWindowRecord]:
         """列出当前 branch 上已持久化的上下文窗口边界。"""
         windows: list[ContextWindowRecord] = []
-        for entry in self._branch():
+        for entry in self._branch(include_audits=False):
             if entry.type != "event" or not isinstance(entry.content, dict):
                 continue
             if entry.content.get("type") != "context_window_reset":
@@ -192,11 +212,22 @@ class SessionHistory:
             )
         return windows[-min(max(limit, 1), 100) :]
 
-    def _branch(self) -> list[SessionEntry]:
+    def _current_view(self, session_id: str | None) -> SessionReadView | None:
+        if self._store is None or session_id is None:
+            return None
+        path = self._checked_path(session_id)
+        if path != self._store.current_path:
+            return None
+        return self._store.read_view()
+
+    def _branch(self, *, include_audits: bool = True) -> list[SessionEntry]:
         session_id = self.session_id
         if session_id is None:
             return []
-        path = self.sessions_dir / f"session-{session_id}.jsonl"
+        view = self._current_view(session_id)
+        if view is not None:
+            return view.branch() if include_audits else view.facts()
+        path = self._checked_path(session_id)
         entries = read_session_entries(path)
         legacy_head = (
             self._head_id(session_id)
@@ -207,17 +238,26 @@ class SessionHistory:
 
     def _entries(self, session_id: str) -> list[SessionEntry]:
         """只读取许可目录中的指定会话，并检查 workspace 所属关系。"""
+        path = self._checked_path(session_id)
+        entries = read_session_entries(path)
+        self._validate_owner(entries[0] if entries else None)
+        return entries
+
+    def _checked_path(self, session_id: str) -> Path:
         if not _SESSION_ID.fullmatch(session_id):
             raise ValueError(f"invalid session id: {session_id!r}")
-        sessions_root = self.sessions_dir.resolve()
         path = self.sessions_dir / f"session-{session_id}.jsonl"
-        if path.is_symlink() or not path.resolve().is_relative_to(sessions_root):
+        if path.is_symlink() or not path.resolve().is_relative_to(
+            self.sessions_dir.resolve()
+        ):
             raise ValueError("History session path escapes its store")
-        entries = read_session_entries(path)
-        if not entries:
-            return []
-        if sessions_root != self.project_root / ".cade" / "sessions":
-            owner = entries[0].project_path
+        return path
+
+    def _validate_owner(self, first: SessionEntry | None) -> None:
+        if first is None:
+            return
+        if self.sessions_dir.resolve() != self.project_root / ".cade" / "sessions":
+            owner = first.project_path
             if owner is None:
                 raise ValueError(
                     "Cannot verify workspace ownership of this external session"
@@ -227,7 +267,6 @@ class SessionHistory:
                 or Path(owner).resolve() != self.project_root
             ):
                 raise ValueError("History session does not belong to this workspace")
-        return entries
 
     def _entry_text(
         self, entry: SessionEntry, *, include_artifacts: bool = True

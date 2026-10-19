@@ -18,6 +18,7 @@ from cade.harness.agent_runtime.events import (
 
 from .artifacts import offload_large_tool_result
 from .event_codec import SESSION_EVENT_SCHEMA_VERSION, encode_session_event
+from .read_model import SessionReadView
 from .store import SessionStore
 from .subagent_runs import (
     SubagentActivationEvent,
@@ -25,7 +26,7 @@ from .subagent_runs import (
     SubagentRunEvent,
 )
 from .surface import encode_surface_messages
-from .types import JsonValue, RunCompletionReference, SessionEntry
+from .types import JsonValue, RunCompletionReference
 from .window_projection import encode_rollover_spec
 
 _DURABLE_PROVIDER_REQUEST_FIELDS = (
@@ -127,7 +128,8 @@ class SessionRecorder:
     def commit_final(self, event: FinalStructuredEvent) -> RunCompletionReference:
         """提交唯一运行结果，并返回可供宿主引用的持久身份。"""
 
-        def content(branch: list[SessionEntry]) -> JsonValue:
+        def content(view: SessionReadView) -> JsonValue:
+            branch = view.facts("final")
             if (
                 not event.correlation.run_id
                 or event.correlation.session_id != self.store.session_id
@@ -163,7 +165,8 @@ class SessionRecorder:
         if not host:
             raise ValueError("host outcome requires a host name")
 
-        def content(branch: list[SessionEntry]) -> JsonValue:
+        def content(view: SessionReadView) -> JsonValue:
+            branch = view.facts("final", "host_outcome")
             if self.store.session_id != reference.session_id:
                 raise ValueError("host outcome belongs to another session")
             final = next(
@@ -270,17 +273,17 @@ class SessionRecorder:
     def _append_surface_event(
         self, event: dict[str, JsonValue], data: dict[str, JsonValue]
     ) -> str:
-        def content(branch: list[SessionEntry]) -> JsonValue:
-            data.update(self._surface_metadata(branch))
+        def content(view: SessionReadView) -> JsonValue:
+            data.update(self._surface_metadata(view))
             return event
 
         return self.store.append_derived("event", content)
 
     @staticmethod
-    def _surface_metadata(branch: list[SessionEntry]) -> dict[str, JsonValue]:
+    def _surface_metadata(view: SessionReadView) -> dict[str, JsonValue]:
         generations = [
             data.get("generation", 0)
-            for entry in branch
+            for entry in view.facts("context_window_reset")
             if entry.type == "event"
             and isinstance(entry.content, dict)
             and entry.content.get("type") == "context_window_reset"
@@ -291,7 +294,7 @@ class SessionRecorder:
         )
         return {
             "generation": generation,
-            "source_entry_ids": [entry.id for entry in branch],
+            "source_entry_ids": list(view.branch_ids),
         }
 
     def record_provider_request(self, record: ProviderRequestRecord) -> None:

@@ -94,7 +94,10 @@ def decode_surface_messages(value: object) -> list[AgentMessage]:
 
 
 def project_session_surface(
-    records: list[SessionEntry], *, artifacts_dir: Path | None = None
+    records: list[SessionEntry],
+    *,
+    artifacts_dir: Path | None = None,
+    branch_entry_ids: tuple[str, ...] | None = None,
 ) -> SessionSurface:
     """从事件事实重建窗口；兼容历史 replacement 快照。"""
     messages: list[AgentMessage] = []
@@ -107,8 +110,14 @@ def project_session_surface(
     generation = 0
     replacement_entry_id: str | None = None
     current_run_id: str | None = None
+    source_ids = (
+        tuple(record.id for record in records)
+        if branch_entry_ids is None
+        else branch_entry_ids
+    )
+    source_positions = {entry_id: index for index, entry_id in enumerate(source_ids)}
 
-    for record_index, record in enumerate(records):
+    for record in records:
         if record.type == "user":
             raise InvalidSessionSurfaceError(
                 "legacy user entries are not part of the session schema"
@@ -173,7 +182,10 @@ def project_session_surface(
             if not isinstance(data, dict):
                 raise InvalidSessionSurfaceError("invalid context window event data")
             source_entry_ids = data.get("source_entry_ids")
-            expected_source_ids = [item.id for item in records[:record_index]]
+            position = source_positions.get(record.id)
+            if position is None:
+                raise InvalidSessionSurfaceError("window record is missing from branch")
+            expected_source_ids = list(source_ids[:position])
             if source_entry_ids != expected_source_ids:
                 raise InvalidSessionSurfaceError(
                     "context window source entry IDs do not match the branch prefix"

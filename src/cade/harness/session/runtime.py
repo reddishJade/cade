@@ -23,7 +23,11 @@ class RuntimeSession:
 
     def recover_tool_attempts(self) -> int:
         """把未知工具结果记录为恢复事实，禁止自动重放副作用。"""
-        pending = unresolved_tool_attempts(self.recorder.store.build_branch())
+        pending = unresolved_tool_attempts(
+            self.recorder.store.read_view().facts(
+                "tool_use", "tool_result", "context_window_reset"
+            )
+        )
         for call_id in pending:
             self.recorder.record_event(
                 ToolResultStructuredEvent(
@@ -46,8 +50,11 @@ class RuntimeSession:
 
     def history_messages(self) -> list[AgentMessage]:
         store = self.recorder.store
+        view = store.read_view()
         surface = project_session_surface(
-            store.build_branch(), artifacts_dir=store.artifacts_dir
+            view.facts(),
+            artifacts_dir=store.artifacts_dir,
+            branch_entry_ids=view.branch_ids,
         )
         return list(surface.messages)
 
