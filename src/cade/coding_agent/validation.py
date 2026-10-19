@@ -77,7 +77,7 @@ class ValidationCollector:
         self._store = store
 
     def collect(self, input: ContextCollectionInput) -> list[ContextBlock]:
-        entries = self._store.build_branch()
+        entries = self._store.read_view().facts("tool_use", "tool_result")
         calls = {}
         for entry in entries:
             content = entry.content

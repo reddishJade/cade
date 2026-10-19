@@ -56,7 +56,7 @@ class SessionInbox:
     def reload(self) -> None:
         """从当前 branch 重建尚未 claim/discard 的输入。"""
         with self._lock:
-            self._items = _pending_items(self._store.build_branch())
+            self._items = self._pending_from_store()
 
     def insert(
         self,
@@ -139,8 +139,15 @@ class SessionInbox:
         try:
             self._store.append("event", event)
         except (OSError, RuntimeError, TypeError, ValueError):
-            self._items = _pending_items(self._store.build_branch())
+            self._items = self._pending_from_store()
             raise
+
+    def _pending_from_store(self) -> deque[InboxItem]:
+        return _pending_items(
+            self._store.read_view().facts(
+                "inbox/inserted", "inbox/claimed", "inbox/discarded"
+            )
+        )
 
 
 def _pending_items(records: list[SessionEntry]) -> deque[InboxItem]:

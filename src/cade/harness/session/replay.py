@@ -41,8 +41,11 @@ def replay_session(
     """从当前分支恢复产品元数据；消息仍由事实投影提供。"""
     agent.session_id = store.session_id
     agent.set_history_session_id(store.session_id)
-    records = store.build_branch()
-    surface = project_session_surface(records, artifacts_dir=store.artifacts_dir)
+    view = store.read_view()
+    records = view.facts()
+    surface = project_session_surface(
+        records, artifacts_dir=store.artifacts_dir, branch_entry_ids=view.branch_ids
+    )
     agent.restore_history_metadata(list(surface.messages))
     run_state = latest_run_state(records)
     if run_state is not None:

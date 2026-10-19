@@ -27,6 +27,7 @@ from uuid import uuid4
 import filelock
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from .read_model import SessionReadIndex, SessionReadView, select_branch_ids
 from .schema import supports_session_event_schema
 from .types import (
     JsonValue,
@@ -166,7 +167,7 @@ def read_session_entries(path: Path) -> list[SessionEntry]:
             seen.add(model.id)
             if model.head_id is not None and model.head_id not in seen:
                 raise ValueError(f"missing session head: {model.head_id}")
-            entries.append(SessionEntry(**model.model_dump()))
+            entries.append(_entry_from_model(model))
     return entries
 
 
@@ -178,17 +179,29 @@ def build_session_branch(
         return []
     head_id = entries[-1].head_id or legacy_head_id or entries[-1].id
     by_id = {entry.id: entry for entry in entries}
-    branch: list[SessionEntry] = []
-    seen: set[str] = set()
-    current: str | None = head_id
-    while current is not None:
-        if current in seen or current not in by_id:
-            raise ValueError(f"invalid session branch at entry: {current}")
-        seen.add(current)
-        entry = by_id[current]
-        branch.append(entry)
-        current = entry.parent_id
-    return list(reversed(branch))
+    return [
+        by_id[entry_id]
+        for entry_id in select_branch_ids(
+            {entry.id: entry.parent_id for entry in entries}, head_id
+        )
+    ]
+
+
+def _entry_from_model(model: TreeEntryModel) -> SessionEntry:
+    """校验后直接交接字段，不重复遍历整个 JSON 正文。"""
+    return SessionEntry(
+        id=model.id,
+        parent_id=model.parent_id,
+        type=model.type,
+        content=model.content,
+        created_at=model.created_at,
+        head_id=model.head_id,
+        project_path=model.project_path,
+    )
+
+
+def _decode_entry(payload: bytes) -> SessionEntry:
+    return _entry_from_model(TreeEntryModel.model_validate_json(payload))
 
 
 def _read_log_tail(path: Path) -> tuple[TreeEntryModel | None, int]:
@@ -276,6 +289,7 @@ class SessionStore:
     def current_path(self, value: Path) -> None:
         if not hasattr(self, "_current_path"):
             self._current_path = value
+            self._read_index: SessionReadIndex | None = None
             return
         with self._lock:
             if value == self._current_path:
@@ -284,6 +298,7 @@ class SessionStore:
                 target_lock = _acquire_run_lock(value)
                 try:
                     self._current_path = value
+                    self._read_index = None
                 finally:
                     target_lock.release()
 
@@ -322,25 +337,35 @@ class SessionStore:
     def append_derived(
         self,
         record_type: str,
-        content: Callable[[list[SessionEntry]], JsonValue],
+        content: Callable[[SessionReadView], JsonValue],
     ) -> str:
-        """在同一锁内读取分支并追加派生事实，避免引用过期的 head。"""
+        """在同一锁内读取提交视图并追加派生事实，避免引用过期的 head。"""
         with self._lock:
-            return self.append(record_type, content(self.build_branch()))
+            return self.append(record_type, content(self.read_view()))
+
+    def read_view(self) -> SessionReadView:
+        """同步提交后缀，交付由存储拥有的一致性读取视图。"""
+        with self._lock:
+            view = self._indexed_view()
+            if self._read_index is not None and self._read_index.needs_legacy_head():
+                meta = self._metadata_for_path(self.current_path)
+                return self._read_index.view(meta.head_id if meta else None)
+            return view
+
+    def _indexed_view(self) -> SessionReadView:
+        if self._read_index is None:
+            self._read_index = SessionReadIndex(self.current_path, _decode_entry)
+        return self._read_index.view()
 
     def read_entries(self) -> list[SessionEntry]:
-        """读取当前会话的全部 entry。"""
+        """精确读取当前会话的全部 entry，包括审计正文。"""
         with self._lock:
-            return read_session_entries(self.current_path)
+            return self._indexed_view().entries()
 
     def build_branch(self) -> list[SessionEntry]:
-        """从已提交 head 回溯到根，不截断或混合旁支。"""
+        """精确读取已提交分支，不截断或混合旁支。"""
         with self._lock:
-            entries = self.read_entries()
-            if entries and entries[-1].head_id is not None:
-                return build_session_branch(entries)
-            meta = self._metadata_for_path(self.current_path)
-            return build_session_branch(entries, meta.head_id if meta else None)
+            return self.read_view().branch()
 
     def fork_into(self, title: str = "", summary: str = "") -> SessionStore:
         """从当前 head 分叉，创建新会话（新文件，拷贝 entry）。"""
@@ -511,7 +536,7 @@ class SessionStore:
             meta = self._metadata_for_path(self.current_path)
             if meta is None:
                 return None
-            entries = self.build_branch()
+            entries = self.read_view().facts()
             user_text = ""
             assistant_text: str | None = None
             for e in entries:
