@@ -100,7 +100,6 @@ class GateRuntimeConfig:
     external_hooks_subagent: bool = False
     external_hooks_cwd: Path | None = None
     audit_logger: AuditLogger | None = None
-    session_id: str = "local"
     session_grant_store: GrantStore | None = None
     session_grant_store_provider: Callable[[], GrantStore | None] | None = None
     permanent_grant_store: GrantStore | None = None

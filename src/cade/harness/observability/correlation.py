@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypedDict
+from uuid import uuid4
 
 
 @dataclass(frozen=True)
@@ -47,15 +48,15 @@ class RuntimeCorrelation:
     def __init__(self, session_id: str) -> None:
         """初始化指定 session 的空运行状态。"""
         self.session_id = session_id
-        self._turn_index = 0
-        self._request_index = 0
-        self.turn_id = ""
-        self.request_id = ""
+        self.reset()
 
-    def reset(self, session_id: str | None = None) -> None:
+    def reset(
+        self, session_id: str | None = None, *, run_id: str | None = None
+    ) -> None:
         """开始新的 agent 运行。"""
         if session_id is not None:
             self.session_id = session_id
+        self._run_id = run_id or uuid4().hex
         self._turn_index = 0
         self._request_index = 0
         self.turn_id = ""
@@ -64,14 +65,16 @@ class RuntimeCorrelation:
     def begin_turn(self) -> EventCorrelation:
         """进入下一模型 turn。"""
         self._turn_index += 1
-        self.turn_id = f"{self.session_id}:turn:{self._turn_index}"
+        self.turn_id = f"{self.session_id}:{self._run_id}:turn:{self._turn_index}"
         self.request_id = ""
         return self.snapshot()
 
     def begin_request(self) -> EventCorrelation:
         """记录当前 turn 的下一次 provider 请求。"""
         self._request_index += 1
-        self.request_id = f"{self.session_id}:request:{self._request_index}"
+        self.request_id = (
+            f"{self.session_id}:{self._run_id}:request:{self._request_index}"
+        )
         return self.snapshot()
 
     def snapshot(self, tool_call_id: str = "") -> EventCorrelation:

@@ -122,10 +122,11 @@ class AgentHarness:
         self._context_window_controller = runtime.context_window_controller
         self.cancellation_token = runtime.cancellation_token or CancellationToken()
         supplied_gate = runtime.gate_instance
+        session_id = self._session.recorder.store.session_id
         self._correlation = (
             supplied_gate.correlation
             if supplied_gate is not None
-            else gate_runtime.correlation or RuntimeCorrelation(gate_runtime.session_id)
+            else gate_runtime.correlation or RuntimeCorrelation(session_id)
         )
         self._hook_manager = gate_runtime.hook_manager
         self.external_directories = gate.external_directories
@@ -143,7 +144,7 @@ class AgentHarness:
             external_hooks_cwd=gate_runtime.external_hooks_cwd,
             correlation=self._correlation,
             audit_logger=gate_runtime.audit_logger,
-            session_id=gate_runtime.session_id,
+            session_id=session_id,
             restricted_dirs=gate.restricted_dirs,
             hook_constraint_providers=gate.hook_constraint_providers,
             project_root=runtime.project_root,
@@ -658,7 +659,7 @@ class AgentHarness:
         )
 
         try:
-            self._correlation.reset(self.session_id)
+            self._correlation.reset(self.session_id, run_id=run_handle.run_id)
 
             current = self._correlation.snapshot()
             _emit_hook(

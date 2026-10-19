@@ -313,7 +313,6 @@ class SubagentSessionManager:
                 session=RuntimeSession(recorder),
                 gate=GateRuntimeConfig(
                     hook_manager=hooks,
-                    session_id=child_store.session_id,
                 ),
                 gate_instance=child_gate,
                 cancellation_token=cancellation_token,
