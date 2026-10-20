@@ -14,7 +14,7 @@ from typing import Any, TypeVar
 from ...agent._codec import convert_to_llm
 from ...agent.messages import AgentMessage, ContextMessage, ToolResultMessage
 from ...agent.types import ShellCallOutputContent, TextContent
-from .async_worker import IsolatedAsyncWorker
+from ..async_worker import IsolatedAsyncWorker
 from .cancellation import CancellationToken
 
 T = TypeVar("T")

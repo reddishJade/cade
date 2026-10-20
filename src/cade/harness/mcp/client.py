@@ -23,7 +23,7 @@ from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS as _SDK_PROTOCOL_VERS
 from pydantic import BaseModel
 from pydantic.networks import FileUrl
 
-from cade.harness.agent_runtime.async_worker import IsolatedAsyncWorker
+from cade.harness.async_worker import IsolatedAsyncWorker
 from cade.harness.observability.audit import redact_text
 
 logger = logging.getLogger(__name__)
