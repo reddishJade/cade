@@ -8,12 +8,12 @@ For runtime behavior, state ownership, and code entry points, see the [architect
 You need Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git
+uv tool install --python 3.12 git+https://github.com/reddishJade/cade.git@v0.4.0
 cd /path/to/your/project
 cade
 ```
 
-This command follows `main` rather than a pinned version. After the first release, the installation instructions will use a release tag. See [Versions and releases](docs/guide/releases.md) for the release policy.
+This command installs the fixed `v0.4.0` release. See [Versions and releases](docs/guide/releases.md) for the release policy.
 
 On first startup, Cade guides you through account login or API key authentication and model configuration. Save personal defaults to use them across projects, or save settings only for the current project. Use `cade login` to change authentication or `cade setup` to configure the provider again. See [Installation and environment setup](docs/guide/install.md) for Linux shell sandbox dependencies.
 
