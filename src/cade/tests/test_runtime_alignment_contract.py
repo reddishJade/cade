@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cade.harness.agent_runtime.async_worker import IsolatedAsyncWorker
+from cade.harness.async_worker import IsolatedAsyncWorker
 from cade.harness.mcp.tools import McpRuntimeRegistry
 from cade.harness.observability.audit import redact_json, redact_text
 
