@@ -20,7 +20,7 @@
 
 ## Working with the maintainer
 
-Read [HUMAN.md](HUMAN.md) at the start of each task. It defines reporting, progress updates, decisions, checkpoints, and handoffs. If it is unavailable, post short progress updates during long tasks, at least about every eight tool calls. Each update states one concrete result and the next action in one or two sentences.
+Read [HUMAN.md](HUMAN.md) at the start of each task. It defines reporting, progress updates, decisions, checkpoints, and handoffs. If it is unavailable, acknowledge multi-step tasks and state the first step before any tool calls. Send further updates only at major phase changes or when findings change the plan. Keep updates to one or two sentences, report a concrete outcome, and do not narrate routine tool calls.
 
 ## Project structure and architecture
 
