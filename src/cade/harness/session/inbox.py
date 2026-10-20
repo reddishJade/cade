@@ -125,6 +125,15 @@ class SessionInbox:
         with self._lock:
             return bool(self._items)
 
+    def approval_revision(self) -> tuple[str, ...]:
+        """返回待生效的用户 steering 身份，审批据此检测新增限制。"""
+        with self._lock:
+            return tuple(
+                item.id
+                for item in self._items
+                if item.source == "user" and item.lane is InboxLane.NEXT_STEP
+            )
+
     def pending_count(self) -> int:
         with self._lock:
             return len(self._items)

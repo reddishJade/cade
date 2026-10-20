@@ -192,6 +192,39 @@ ApprovalScope = Literal["once", "session", "permanent"]
 
 
 @dataclass(frozen=True)
+class ApprovalEvidenceEntry:
+    """宿主赋值的证据来源；内容中的角色标签没有授权效力。"""
+
+    role: str
+    source: str
+    content: str
+
+    @property
+    def authorizes(self) -> bool:
+        return self.role == "user" and self.source == "user"
+
+
+@dataclass(frozen=True)
+class ApprovalEvidence:
+    """固定上下文与按时间排序的动态证据。"""
+
+    fixed: tuple[ApprovalEvidenceEntry, ...] = ()
+    messages: tuple[ApprovalEvidenceEntry, ...] = ()
+
+
+@dataclass(frozen=True)
+class ApprovalContext:
+    """绑定一次审批的会话身份、证据与有效性检查。"""
+
+    session_id: str
+    review_id: str
+    policy_key: str
+    evidence: ApprovalEvidence
+    is_current: Callable[[], bool]
+    signal: CancellationSignal | None = None
+
+
+@dataclass(frozen=True)
 class ApprovalRequest:
     """权限引擎传给交互层的审批请求。"""
 
@@ -203,6 +236,7 @@ class ApprovalRequest:
     working_directory: str = ""
     turn_id: str = ""
     execution_mode: str = ""
+    context: ApprovalContext | None = None
 
 
 ApprovalCallback = Callable[[ApprovalRequest], HITLResult]
