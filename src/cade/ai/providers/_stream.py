@@ -12,7 +12,9 @@ from typing import Protocol
 
 import orjson
 
+from cade.ai.cache import extract_cache_usage
 from cade.ai.events import (
+    FinalMessage,
     ReasoningDelta,
     TextDelta,
     ToolCall,
@@ -91,28 +93,33 @@ def _tool_arguments(value: object) -> ToolArguments | None:
 
 def chat_stream_to_events(
     stream: Iterable[_ChatCompletionChunk],
-) -> Iterator[TextDelta | ReasoningDelta | ToolCallEvent | UsageUpdate]:
+) -> Iterator[TextDelta | ReasoningDelta | ToolCallEvent | UsageUpdate | FinalMessage]:
     """将 Chat Completions 流式 chunk 转换为统一事件流。"""
     calls: dict[int, dict[str, str]] = defaultdict(
         lambda: {"id": "", "name": "", "arguments": ""}
     )
+    finish_reason: str | None = None
+    text_parts: list[str] = []
     for chunk in stream:
         usage = getattr(chunk, "usage", None)
         if usage is not None:
             yield UsageUpdate(
                 input_tokens=usage.prompt_tokens or 0,
                 output_tokens=usage.completion_tokens or 0,
+                cached_input_tokens=extract_cache_usage(chunk).hit_tokens,
             )
 
         choices = chunk.choices
         if not choices:
             continue
+        finish_reason = getattr(choices[0], "finish_reason", None) or finish_reason
         delta = choices[0].delta
         reasoning = getattr(delta, "reasoning_content", None)
         if reasoning:
             yield ReasoningDelta(chunk=str(reasoning))
         text = delta.content
         if text:
+            text_parts.append(str(text))
             yield TextDelta(chunk=str(text))
         for call in delta.tool_calls or []:
             index = call.index
@@ -136,3 +143,16 @@ def chat_stream_to_events(
     ]
     if ready:
         yield ToolCallEvent(calls=ready)
+    if finish_reason is not None:
+        yield FinalMessage(
+            content="".join(text_parts),
+            stop_reason=(
+                "max_tokens"
+                if finish_reason == "length"
+                else "tool_use"
+                if ready and finish_reason in {"tool_calls", "stop"}
+                else "end_turn"
+                if finish_reason == "stop"
+                else "error"
+            ),
+        )
