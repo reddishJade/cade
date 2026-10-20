@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -23,6 +24,10 @@ from ...agent.types import (
     AgentTool,
     AgentToolResult,
     ApprovalCallback,
+    ApprovalContext,
+    ApprovalEvidence,
+    ApprovalEvidenceEntry,
+    ApprovalRequest,
     CancellationSignal,
     TextContent,
     ToolCallContent,
@@ -204,6 +209,11 @@ class ToolGate:
         self._session_grant_store = session_grant_store
         self._session_grant_store_provider = session_grant_store_provider
         self._permanent_grant_store = permanent_grant_store
+        self._approval_revision: Callable[[], object] = lambda: None
+
+    def set_approval_revision(self, revision: Callable[[], object]) -> None:
+        """绑定待生效用户输入的版本，不消费尚未处理的输入。"""
+        self._approval_revision = revision
 
     def _resolve_session_store(self) -> GrantStore | None:
         if self._session_grant_store_provider is not None:
@@ -434,11 +444,17 @@ class ToolGate:
                 decision,
                 tool_call.id,
             )
+            approval_snapshot = snapshot
+            if snapshot.approvals_reviewer == "auto_review":
+                approval_snapshot = replace(
+                    snapshot,
+                    approval_callback=self._bind_review(ctx, args, snapshot, _signal),
+                )
             permission = self._precheck_permission(
                 tool_call.name,
                 args,
                 decision,
-                snapshot,
+                approval_snapshot,
                 approval_transcript=_approval_transcript(ctx),
                 approval_turn_id=self._correlation.turn_id,
             )
@@ -470,6 +486,53 @@ class ToolGate:
             )
 
         return before_tool
+
+    def _bind_review(
+        self,
+        ctx: BeforeToolCallContext,
+        args: dict[str, Any],
+        snapshot: ToolGateSnapshot,
+        signal: CancellationSignal | None,
+    ) -> ApprovalCallback | None:
+        """将来源、配置与取消状态绑定到本次审批，不改变权限裁决。"""
+        callback = snapshot.approval_callback
+        if callback is None:
+            return None
+        evidence = _approval_evidence(ctx)
+        revision = self._approval_revision()
+        session_id = self._session_id
+        turn_id = self._correlation.turn_id
+        policy_key = _review_policy_key(snapshot)
+        review_id = json.dumps(
+            [turn_id, ctx.tool_call.id, ctx.tool_call.name, args],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        )
+
+        def is_current() -> bool:
+            return (
+                self._session_id == session_id
+                and self._correlation.turn_id == turn_id
+                and not (signal and signal.is_cancelled())
+                and self._approval_revision() == revision
+                and _review_policy_key(self.snapshot()) == policy_key
+                and _approval_evidence(ctx) == evidence
+            )
+
+        context = ApprovalContext(
+            session_id=session_id,
+            review_id=review_id if ctx.tool_call.id else "",
+            policy_key=policy_key,
+            evidence=evidence,
+            is_current=is_current,
+            signal=signal,
+        )
+
+        def review(request: ApprovalRequest) -> Any:
+            return callback(replace(request, context=context))
+
+        return review
 
     def build_after_tool_hook(self) -> AfterToolCallHook:
         def after_tool(
@@ -648,49 +711,72 @@ class ToolGate:
 # ── 模块级辅助 ──
 
 
-def _approval_transcript(ctx: BeforeToolCallContext) -> str:
-    """序列化审批证据；来源与授权标记由宿主赋值。"""
-    entries: list[dict[str, object]] = []
+def _review_policy_key(snapshot: ToolGateSnapshot) -> str:
+    """排除调用级工具表和回调身份，保留实际权限配置。"""
+    policy = replace(snapshot, approval_callback=None, tool_map={})
+    grants = tuple(
+        store.records()
+        for store in (snapshot.session_grant_store, snapshot.permanent_grant_store)
+        if store is not None
+    )
+    return hashlib.sha256(repr((policy, grants)).encode()).hexdigest()
+
+
+def _approval_evidence(ctx: BeforeToolCallContext) -> ApprovalEvidence:
+    """在裁剪前收集类型化证据，保留尚未入历史的助手调用。"""
+    fixed: list[ApprovalEvidenceEntry] = []
     if ctx.context.system_prompt.strip():
-        entries.append(
-            {
-                "role": "system",
-                "source": "runtime",
-                "authorizes": False,
-                "content": _truncate_transcript(ctx.context.system_prompt, 8_000),
-            }
+        fixed.append(
+            ApprovalEvidenceEntry("system", "runtime", ctx.context.system_prompt)
         )
-    messages = [
-        *ctx.context.request_prefix,
-        *ctx.context.messages,
-        ctx.assistant_message,
-    ]
-    for message in messages[-40:]:
+    messages = [*ctx.context.request_prefix, *ctx.context.messages]
+    recorded = any(
+        message is ctx.assistant_message
+        or (
+            getattr(message, "role", "") == "assistant"
+            and any(
+                isinstance(block, ToolCallContent) and block.id == ctx.tool_call.id
+                for block in getattr(message, "content", [])
+            )
+            and message == ctx.assistant_message
+        )
+        for message in messages
+    )
+    if not recorded:
+        messages.append(ctx.assistant_message)
+    entries: list[ApprovalEvidenceEntry] = []
+    for message in messages:
         role = str(getattr(message, "role", "unknown"))
         content = _transcript_message_text(message)
-        if not content or (role == "user" and content.casefold() == "continue"):
+        if not content:
             continue
         if isinstance(message, UserMessage):
             source = message.source
-            authorizes = source == "user"
         elif isinstance(message, SystemMessage):
             # 前缀文本可以包含工作区事实，但不能授予授权。
-            authorizes = False
             source = "runtime"
         else:
             source = "tool" if role == "tool_result" else "derived"
-            authorizes = False
-        entries.append(
-            {
-                "role": role,
-                "source": source,
-                "authorizes": authorizes,
-                "content": _truncate_transcript(
-                    content, 4_000 if role == "tool_result" else 8_000
-                ),
-            }
-        )
-    # 整条丢弃超限的旧证据，避免截断 JSON 或授权标记。
+        entry = ApprovalEvidenceEntry(role, source, content)
+        if isinstance(message, SystemMessage) and message in ctx.context.request_prefix:
+            fixed.append(entry)
+        else:
+            entries.append(entry)
+    return ApprovalEvidence(tuple(fixed), tuple(entries))
+
+
+def _approval_transcript(ctx: BeforeToolCallContext) -> str:
+    """为人工回调保留有界 JSON 展示；自动审批使用原始类型化证据。"""
+    evidence = _approval_evidence(ctx)
+    entries = [
+        {
+            "role": entry.role,
+            "source": entry.source,
+            "authorizes": entry.authorizes,
+            "content": _truncate_transcript(entry.content, 8_000),
+        }
+        for entry in (*evidence.fixed, *evidence.messages)[-40:]
+    ]
     while len(json.dumps(entries, ensure_ascii=False)) > 40_000 and len(entries) > 1:
         entries.pop(0)
     return json.dumps(entries, ensure_ascii=False)

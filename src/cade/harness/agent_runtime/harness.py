@@ -162,6 +162,7 @@ class AgentHarness:
             shell_mutation_policies=gate.shell_mutation_policies,
             tool_path_extractors=gate.tool_path_extractors,
         )
+        self._gate.set_approval_revision(self._session.inbox.approval_revision)
         self.audit_logger = gate_runtime.audit_logger
         self._context_manager = ContextManager()
         self._resumed_notice: str | None = None
@@ -483,6 +484,10 @@ class AgentHarness:
 
     def restore_history_metadata(self, messages: list[AgentMessage]) -> None:
         """恢复消息派生状态；活动历史始终从日志读取。"""
+        reviewer = self._gate.auto_approval_callback
+        invalidate = getattr(reviewer, "invalidate_session", None)
+        if callable(invalidate):
+            invalidate(self.session_id)
         self._context_manager.clear()
         self._post_restore_history(messages)
         if not messages:
