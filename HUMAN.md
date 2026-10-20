@@ -12,9 +12,9 @@ Lead with conclusions and organize replies into paragraphs by topic. Use consist
 
 Follow the Google developer documentation style guide for English writing. Use short, direct sentences and active voice in procedures, runbooks, commit messages, and handoffs. Give each procedural step one action. Follow the `zh-tech-writing` skill for Chinese code comments and docstrings. Keep conversation replies in the maintainer's language.
 
-## Report progress during long tasks
+## Report progress during multi-step tasks
 
-Before starting, state the work in one sentence. During long tasks, post short progress updates in the conversation. Each update contains one concrete result since the last update and the next action, in one or two sentences. Combine related operations. Report meaningful progress or findings, and post an update at least about every eight tool calls. Before a long focused work period, explain why it is needed and when you will report back. Include attempts, failures, and command output only when they affect a decision.
+Before any tool calls for a multi-step task, send a short user-visible update (one or two sentences) that acknowledges the request and states the first step. Send another brief update only when you start a new major phase of work or discover something that changes the plan. Do not narrate routine tool calls. Each update must report at least one concrete outcome ("Found X", "Confirmed Y", "Updated Z"). Include attempts, failures, and command output only when they affect a decision.
 
 When asked for progress, use two to four sentences. State completed results, current work, remaining items, and any blocker or pending decision.
 
