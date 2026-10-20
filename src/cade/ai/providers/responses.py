@@ -14,6 +14,7 @@ import platform
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterator, Mapping
+from contextvars import ContextVar
 from inspect import isawaitable
 from typing import Any, cast
 
@@ -660,7 +661,9 @@ class OpenAIResponsesProvider:
         self._usage = UsageAccumulator(config.model)
         self.runtime = runtime or ProviderRuntime()
         self._client = client
-        self._current_options: StreamOptions | None = None
+        self._options_context: ContextVar[StreamOptions | None] = ContextVar(
+            "responses_options", default=None
+        )
         self._metrics: dict[str, object] = {
             "transport": self.transport,
             "sent_messages": 0,
@@ -734,6 +737,14 @@ class OpenAIResponsesProvider:
             default_headers=headers if headers else None,
         )
         return client, headers
+
+    @property
+    def _current_options(self) -> StreamOptions | None:
+        return self._options_context.get()
+
+    @_current_options.setter
+    def _current_options(self, options: StreamOptions | None) -> None:
+        self._options_context.set(options)
 
     async def stream(
         self,
@@ -1049,6 +1060,7 @@ class OpenAIResponsesProvider:
                         yield UsageUpdate(
                             input_tokens=prompt_tokens,
                             output_tokens=completion_tokens,
+                            cached_input_tokens=cached_tokens,
                         )
 
         if last_response_id:

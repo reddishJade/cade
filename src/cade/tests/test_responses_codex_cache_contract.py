@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -220,7 +222,7 @@ async def test_codex_lite_request_shape_and_usage() -> None:
     ]
 
     assert [event for event in events if isinstance(event, UsageUpdate)] == [
-        UsageUpdate(input_tokens=2711, output_tokens=5)
+        UsageUpdate(input_tokens=2711, output_tokens=5, cached_input_tokens=2560)
     ]
     assert provider.usage_totals.input_tokens == 151
     assert provider.usage_totals.cache_read_tokens == 2560
@@ -293,6 +295,30 @@ async def test_codex_session_override_is_isolated_and_bounded() -> None:
         headers = request["extra_headers"]
         assert headers["session-id"] == request["prompt_cache_key"]
         assert headers["thread-id"] == request["prompt_cache_key"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_responses_stream_options_are_request_local() -> None:
+    class DelayedProvider(OpenAICodexResponsesProvider):
+        async def _stream(
+            self, messages: list[dict[str, Any]], tools: tuple[ToolDefinition, ...]
+        ) -> AsyncIterator[ProviderEvent]:
+            await asyncio.sleep(0)
+            async for event in super()._stream(messages, tools):
+                yield event
+
+    client = _InjectedClient()
+    provider = DelayedProvider(_config(), client=client)
+    await asyncio.gather(
+        _collect(provider, options=StreamOptions(session_id="one")),
+        _collect(provider, options=StreamOptions(session_id="two")),
+    )
+    assert {params["prompt_cache_key"] for params in client.responses.requests} == {
+        "one",
+        "two",
+    }
+    for params in client.responses.requests:
+        assert params["extra_headers"]["session-id"] == params["prompt_cache_key"]
 
 
 @pytest.mark.asyncio

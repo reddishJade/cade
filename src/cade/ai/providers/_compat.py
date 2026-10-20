@@ -6,9 +6,13 @@ ChatGLM、MiMo）共享此基类。子类只需覆写 _stream_sync 以定制 API
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 from collections.abc import AsyncIterator, Iterator
+from contextvars import ContextVar
+from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 from cade.ai.cache import extract_cache_usage
@@ -42,6 +46,14 @@ def _lookup_thinking_budget(budgets: ThinkingBudgets, level_name: str) -> int | 
     return None
 
 
+@dataclass
+class _ActiveChatStream:
+    """单个请求的取消状态；同步 SDK 返回前也能记录取消。"""
+
+    stream: Any = None
+    cancelled: bool = False
+
+
 class OpenAICompatProvider:
     """OpenAI Chat Completions 兼容基类。
 
@@ -72,10 +84,15 @@ class OpenAICompatProvider:
         self._usage = UsageAccumulator(config.model)
         self.runtime = runtime or ProviderRuntime()
         self.transport = transport
-        self._current_options: StreamOptions | None = None
+        self._options_context: ContextVar[StreamOptions | None] = ContextVar(
+            "chat_options", default=None
+        )
         self._metrics: dict[str, object] = self._init_metrics()
-        self._active_stream: Any | None = None
-        self._abort_pending = False
+        self._stream_context: ContextVar[_ActiveChatStream | None] = ContextVar(
+            "chat_stream", default=None
+        )
+        self._active_streams: dict[int, _ActiveChatStream] = {}
+        self._stream_lock = Lock()
 
     @property
     def model(self) -> str:
@@ -123,6 +140,14 @@ class OpenAICompatProvider:
             "reasoning_tokens": 0,
         }
 
+    @property
+    def _current_options(self) -> StreamOptions | None:
+        return self._options_context.get()
+
+    @_current_options.setter
+    def _current_options(self, options: StreamOptions | None) -> None:
+        self._options_context.set(options)
+
     async def stream(
         self,
         messages: list[dict[str, Any]],
@@ -132,8 +157,23 @@ class OpenAICompatProvider:
     ) -> AsyncIterator[ProviderEvent]:
         self._current_options = options
         messages = self._normalize_messages(messages)
-        for event in self._stream_sync(messages, tuple(tools)):
-            yield event
+        state = _ActiveChatStream()
+        self._stream_context.set(state)
+        with self._stream_lock:
+            self._active_streams[id(state)] = state
+        events = self._stream_sync(messages, tuple(tools))
+        try:
+            # 同步 SDK 的网络等待不得阻塞其他审批或取消检查。
+            while True:
+                event = await asyncio.to_thread(next, events, None)
+                if event is None:
+                    break
+                yield event
+        finally:
+            state.cancelled = True
+            self._close_stream(state.stream)
+            with self._stream_lock:
+                self._active_streams.pop(id(state), None)
 
     def _stream_sync(
         self,
@@ -201,18 +241,20 @@ class OpenAICompatProvider:
             if extra_headers:
                 params["extra_headers"] = extra_headers
 
-        self._abort_pending = False
+        state = self._stream_context.get()
+        if state is not None and state.cancelled:
+            raise RuntimeError("Provider stream was cancelled")
         stream = self.runtime.run(lambda: self.client.chat.completions.create(**params))
-        self._active_stream = stream
-        if self._abort_pending:
-            # 请求建立期间收到打断：立即关闭，避免阻塞读取。
-            self._close_stream(stream)
+        if state is not None:
+            state.stream = stream
+            if state.cancelled:
+                self._close_stream(stream)
+                return
         try:
             intercepted = self._intercept_usage(stream, message_count)
             yield from chat_stream_to_events(intercepted)
         finally:
-            if self._active_stream is stream:
-                self._active_stream = None
+            self._close_stream(stream)
 
     def abort_active_stream(self) -> None:
         """从任意线程中止在途流式请求，使阻塞的 chunk 读取立即失败。
@@ -220,8 +262,11 @@ class OpenAICompatProvider:
         interrupt 路径调用此方法以在模型生成期间真正停止响应；
         底层连接被关闭后，读取会抛出异常，由消费端识别为取消。
         """
-        self._abort_pending = True
-        self._close_stream(self._active_stream)
+        with self._stream_lock:
+            states = tuple(self._active_streams.values())
+        for state in states:
+            state.cancelled = True
+            self._close_stream(state.stream)
 
     def _close_stream(self, stream: Any | None) -> None:
         """尽力关闭流句柄；句柄缺失或不可关闭时静默忽略。"""

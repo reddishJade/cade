@@ -58,6 +58,7 @@ class UsageUpdate:
 
     input_tokens: int
     output_tokens: int
+    cached_input_tokens: int = 0
 
 
 @dataclass(frozen=True)
